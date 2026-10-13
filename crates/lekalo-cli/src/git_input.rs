@@ -13,7 +13,7 @@
 //! physical rename therefore never masquerades as a semantic one.
 
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use lekalo_core::diagnostics::DiagnosticSet;
 use lekalo_core::impact::input::is_revision_grammar;
@@ -58,10 +58,21 @@ struct GitChanges {
 
 /// Run one read-only Git command in `project_root`; stdout must be UTF-8.
 fn git(project_root: &Path, args: &[&str]) -> Result<String, GitInputFailure> {
-    let output = Command::new("git")
+    // The changed-mode MCP worker checks abandonment at EVERY spawned
+    // Git command, not merely at initial admission (r4 F10). Ordinary
+    // CLI calls carry no guard and are unchanged.
+    let mut command = Command::new("git");
+    command
         .current_dir(project_root)
         .args(args)
-        .output()
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let child = crate::mcp::work::spawn_if_active(&mut command)
+        .map_err(|_| GitInputFailure::Unavailable)?
+        .ok_or(GitInputFailure::Unavailable)?;
+    let output = child
+        .wait_with_output()
         .map_err(|_| GitInputFailure::Unavailable)?;
     if !output.status.success() {
         // 128 with "ambiguous argument" style refusals map to a selector

@@ -93,7 +93,7 @@ try {
     {
       cwd: root,
       input:
-        JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25" } }) +
+        JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "lekalo-host-probe", version: "0.8.0" } } }) +
         "\n",
       encoding: "utf8",
       timeout: 30000,

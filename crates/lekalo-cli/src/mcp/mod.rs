@@ -15,6 +15,7 @@ mod execution;
 mod read;
 mod snapshot;
 mod stdio;
+pub(crate) mod work;
 
 use lekalo_core::DomainResult;
 

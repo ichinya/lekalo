@@ -240,7 +240,7 @@ pub fn initialize(id: i64) -> String {
     frame(
         id,
         "initialize",
-        serde_json::json!({"protocolVersion": "2025-11-25"}),
+        serde_json::json!({"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "lekalo-test", "version": "0.8.0"}}),
     )
 }
 

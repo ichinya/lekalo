@@ -795,6 +795,114 @@ pub(crate) fn disclosed_closure_refusal(
     }
 }
 
+/// A bounded, deterministic content pin of one governed `.lekalo` tree.
+/// The cache-health and bindings checks read these finite homes; a
+/// presence-only marker cannot bind a changed observation (r4 F9).
+fn pin_governed_tree(root: &std::path::Path, logical: &str, inputs: &mut Inputs) -> Option<()> {
+    const MAX_ENTRIES: usize = 256;
+    const MAX_BYTES: usize = 16 * 1024 * 1024;
+    fn walk(
+        root: &std::path::Path,
+        logical: &str,
+        inputs: &mut Inputs,
+        count: &mut usize,
+    ) -> Option<()> {
+        let path = root.join(logical.replace('/', std::path::MAIN_SEPARATOR_STR));
+        let metadata = match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                inputs.insert(format!("state:{logical}"), "absent".to_owned());
+                return Some(());
+            }
+            Err(_) => return None,
+        };
+        if metadata.file_type().is_symlink() {
+            return None;
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            if metadata.file_attributes() & 0x0400 != 0 {
+                return None;
+            }
+        }
+        if metadata.is_file() {
+            let bytes = read::read_governed(root, logical, MAX_BYTES).ok()?;
+            inputs.insert(format!("state:{logical}"), domain_digest("state", &bytes));
+            return Some(());
+        }
+        if !metadata.is_dir() {
+            return None;
+        }
+        inputs.insert(format!("state:{logical}"), "directory".to_owned());
+        let mut entries = std::fs::read_dir(&path)
+            .ok()?
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            *count += 1;
+            if *count > MAX_ENTRIES {
+                return None;
+            }
+            let name = entry.file_name().into_string().ok()?;
+            if name == "." || name == ".." || name.contains('/') || name.contains('\\') {
+                return None;
+            }
+            walk(root, &format!("{logical}/{name}"), inputs, count)?;
+        }
+        Some(())
+    }
+    walk(root, logical, inputs, &mut 0)
+}
+
+/// Pin the artifact manifest and every observed file it names, not a
+/// whole-root hash. Invalid manifest bytes are pinned as bytes (the
+/// doctor reports them invalid); a valid manifest's finite path set is
+/// identity- and content-pinned (r4 F9).
+fn pin_artifacts(root: &std::path::Path, inputs: &mut Inputs) -> Option<()> {
+    const MANIFEST: &str = ".lekalo/generated/manifests/ownership.json";
+    let path = root.join(MANIFEST.replace('/', std::path::MAIN_SEPARATOR_STR));
+    match std::fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            inputs.insert("artifacts:manifest".to_owned(), "absent".to_owned());
+            return Some(());
+        }
+        Err(_) => return None,
+        Ok(metadata) if !metadata.is_file() => return None,
+        Ok(_) => {}
+    }
+    let bytes = read::read_governed(root, MANIFEST, read::MANIFEST_READ_CAP).ok()?;
+    inputs.insert(
+        "artifacts:manifest".to_owned(),
+        domain_digest("artifact-manifest", &bytes),
+    );
+    let Ok(document) = serde_json::from_slice::<Value>(&bytes) else {
+        return Some(());
+    };
+    let Some(artifacts) = document.get("artifacts").and_then(Value::as_array) else {
+        return Some(());
+    };
+    if artifacts.len() > 256 {
+        return None;
+    }
+    for artifact in artifacts {
+        let logical = artifact.get("path")?.as_str()?;
+        policy::admit_relative_path(logical).ok()?;
+        let path = root.join(logical.replace('/', std::path::MAIN_SEPARATOR_STR));
+        let digest = match std::fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => "absent".to_owned(),
+            Ok(metadata) if metadata.is_file() => domain_digest(
+                "artifact",
+                &read::read_admitted(root, logical, read::MANIFEST_READ_CAP).ok()?,
+            ),
+            _ => return None,
+        };
+        inputs.insert(format!("artifact:{logical}"), digest);
+    }
+    Some(())
+}
+
 /// The admitted-input digest of one project: the canonical model bytes,
 /// the raw `lekalo.lock` bytes when present, and the derived-bindings
 /// home presence the status checks read (review r2 F7, r3 F6). The
@@ -805,6 +913,9 @@ pub(crate) fn disclosed_closure_refusal(
 /// a generated/removed bindings home cannot hide behind an unchanged
 /// ref. A load failure is `None`; the caller fails closed.
 pub(crate) fn admitted_inputs_for(entry: &super::catalog::ProjectEntry) -> Option<Inputs> {
+    if super::work::should_stop() {
+        return None;
+    }
     let selection = LoadSelection {
         project: Some(entry.selector.clone()),
     };
@@ -820,7 +931,11 @@ pub(crate) fn admitted_inputs_for(entry: &super::catalog::ProjectEntry) -> Optio
     let lock_path = entry.root.join("lekalo.lock");
     let lock_digest = match std::fs::symlink_metadata(&lock_path) {
         Ok(metadata) if metadata.is_file() => {
-            let bytes = std::fs::read(&lock_path).ok()?;
+            // The lock is governed input, not a trusted launcher operand:
+            // the same component-wise identity and hardlink policy that
+            // confines trace reads must pin its bytes (r4 F3).
+            let bytes =
+                read::read_admitted(&entry.root, "lekalo.lock", read::MANIFEST_READ_CAP).ok()?;
             domain_digest("lock", &bytes)
         }
         Ok(_) => return None,
@@ -828,20 +943,13 @@ pub(crate) fn admitted_inputs_for(entry: &super::catalog::ProjectEntry) -> Optio
         Err(_) => return None,
     };
     inputs.insert("lock:project".to_owned(), lock_digest);
-    // r3 F6: `lekalo_target_status` also reads derived `.lekalo` state —
-    // `bindings.freshness` observes the consumer bindings home — so the
-    // pin covers that presence too: a generated or removed bindings
-    // home between the before/after re-check is a stale snapshot, never
-    // a silently mixed projection. Any non-NotFound metadata failure
-    // fails closed exactly like the lock leg.
-    let bindings_home = entry.root.join(".lekalo").join("consumer").join("bindings");
-    let bindings_digest = match std::fs::symlink_metadata(&bindings_home) {
-        Ok(metadata) if metadata.is_dir() => "present".to_owned(),
-        Ok(_) => "absent".to_owned(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => "absent".to_owned(),
-        Err(_) => return None,
-    };
-    inputs.insert("bindings:consumer-home".to_owned(), bindings_digest);
+    // r4 F9: pin the EXACT finite governed homes that status serves.
+    // Cache health observes cache store/sidecars, bindings freshness
+    // observes its home, and artifacts drift observes the manifest and
+    // declared artifact file bytes. Content changes now move the ref.
+    pin_governed_tree(&entry.root, ".lekalo/cache", &mut inputs)?;
+    pin_governed_tree(&entry.root, ".lekalo/consumer/bindings", &mut inputs)?;
+    pin_artifacts(&entry.root, &mut inputs)?;
     Some(inputs)
 }
 
@@ -1052,17 +1160,22 @@ fn run(
     // The group ceiling also bounds the disclosed payload (r2 F1): a
     // grouped symbol run whose result carries another module's facts
     // refuses before serialization.
-    if scope.group.is_some() && result.status() == lekalo_core::Status::Valid {
+    if scope.group.is_some() {
         let raw = result.to_json_string();
         let document: Value = serde_json::from_str(&raw).map_err(|error| error.to_string())?;
-        let payload_for_check = if family.slug == "target-status" {
-            document
-        } else {
-            document
-                .get(family.payload_key)
-                .cloned()
-                .unwrap_or(Value::Null)
-        };
+        // A failed domain call can disclose foreign-module identities in
+        // diagnostics and reason codes just as a valid payload can. Check
+        // the WHOLE failure document before serialization (r4 F2); the
+        // successful projection keeps its existing payload closure.
+        let payload_for_check =
+            if result.status() != lekalo_core::Status::Valid || family.slug == "target-status" {
+                document
+            } else {
+                document
+                    .get(family.payload_key)
+                    .cloned()
+                    .unwrap_or(Value::Null)
+            };
         if let Some(group) = scope.group {
             if let Some(output) = disclosed_closure_refusal(
                 catalog,
@@ -1117,7 +1230,14 @@ fn run_target_status(
     // capability. Without the explicit changed-mode admission the status
     // projection degrades to typed git-unavailable facts instead of
     // spawning any process.
-    let result = if catalog.core.admits_git_changed_mode() {
+    // Status only produces lock/artifacts/bindings/cache checks. Adapter
+    // and capability selectors require the DOCTOR-kind report that
+    // actually emits their check ids (r4 F4); never project an empty
+    // `ready` panel against the schema's checks.minItems=1.
+    let doctor = selected.iter().any(|panel| *panel != "lock");
+    let result = if doctor {
+        crate::run_doctor_for_mcp(project, catalog.core.admits_git_changed_mode())
+    } else if catalog.core.admits_git_changed_mode() {
         crate::run_status(project)
     } else {
         crate::run_status_without_git(project)
@@ -1131,9 +1251,9 @@ fn run_target_status(
 /// The doctor panel projection: filter the status report's checks to the
 /// selected closed panels and derive the panel verdict with the same
 /// rule the doctor uses for `status` (blocked only on blocked checks).
-/// The projection never fabricates a check: an empty panel ships an
-/// empty check set with the derived `ready` verdict, honestly reporting
-/// that the panel has no observations.
+/// The projection never fabricates a check: callers select the report
+/// kind that emits the requested check ids, and missing checks refuse
+/// rather than asserting readiness without observations.
 fn project_doctor_panels(result: &DomainResult, selected: &[&str]) -> DomainResult {
     const PANEL_CHECKS: [(&str, &[&str]); 4] = [
         ("lock", &["lock.freshness", "artifacts.drift"]),
@@ -1145,6 +1265,7 @@ fn project_doctor_panels(result: &DomainResult, selected: &[&str]) -> DomainResu
     let Ok(mut document) = serde_json::from_str::<Value>(&raw) else {
         return result.clone();
     };
+    let doctor_kind = document.get("report").and_then(Value::as_str) == Some("doctor");
     let Some(checks) = document.get_mut("checks").and_then(Value::as_array_mut) else {
         return result.clone();
     };
@@ -1157,18 +1278,19 @@ fn project_doctor_panels(result: &DomainResult, selected: &[&str]) -> DomainResu
             .filter(|(name, _)| selected.contains(name))
             .any(|(_, ids)| ids.contains(&id))
     });
-    // The panel verdict follows the status rule the doctor itself uses
-    // for `status` reports (ADR-0032, `derive_verdict`): blocked ONLY on
-    // a blocked check; every other non-ok state — degraded or unknown —
-    // degrades (r3 F3: `unknown` is a degradation for a status
-    // projection, never a block, so a panel can never report a verdict
-    // the full status engine would not produce).
+    if checks.is_empty() {
+        return DomainResult::unsupported_version(
+            lekalo_core::mcp::diagnostic::contract_unsupported_set("target-status-panel"),
+        );
+    }
+    // ADR-0032: status blocks only on blocked; doctor blocks on blocked
+    // OR unknown. Every other non-ok state degrades (r3 F3/r4 F4).
     let verdict = checks.iter().fold("ready", |current, check| {
         let state = check.get("state").and_then(Value::as_str).unwrap_or("ok");
         match (current, state) {
-            (_, "blocked") => "blocked",
-            ("blocked", _) => "blocked",
-            (_, "unknown") | (_, "degraded") => "degraded",
+            ("blocked", _) | (_, "blocked") => "blocked",
+            (_, "unknown") if doctor_kind => "blocked",
+            (_, "unknown" | "degraded") => "degraded",
             (previous, _) => previous,
         }
     });

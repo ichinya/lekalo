@@ -5201,6 +5201,22 @@ fn run_doctor(project: Option<String>, fix: bool, traces: Vec<String>) -> Domain
     lekalo_core::doctor::report(&selection, &git, &options)
 }
 
+/// MCP's selected adapter/capability panels need the actual doctor-kind
+/// checks, but Git remains behind the trusted changed-mode catalog grant.
+/// This reuses the ordinary read-only doctor report with unavailable Git
+/// facts when that grant is absent (issue #33 r4 F4).
+fn run_doctor_for_mcp(project: Option<String>, allow_git: bool) -> DomainResult {
+    let selection = selection_for(&project);
+    let git = doctor_git_facts_with(&selection, allow_git);
+    let options = lekalo_core::doctor::Options {
+        kind: lekalo_core::doctor::model::ReportKind::Doctor,
+        phase: None,
+        fix: false,
+        traces: Vec::new(),
+    };
+    lekalo_core::doctor::report(&selection, &git, &options)
+}
+
 /// `lekalo status`: the freshness panel plus the exact revisions.
 fn run_status(project: Option<String>) -> DomainResult {
     let selection = selection_for(&project);

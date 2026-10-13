@@ -48,12 +48,11 @@ fn resources_read_respects_the_launch_group_ceiling() {
         &frames,
         &["--group", "planner-review"],
     );
-    let refused = session.tool(10);
-    assert_eq!(refused["status"], "denied");
-    assert_eq!(refused["failure"]["failureClass"], "scope-denied");
-    let resolved = session.tool(11);
-    assert_eq!(resolved["status"], "denied");
-    assert_eq!(resolved["failure"]["failureClass"], "scope-denied");
+    for id in [10, 11] {
+        assert_eq!(session.error_code(id), Some(-32602));
+        assert_eq!(session.response(id)["error"]["message"], "mcp.scope-denied");
+        assert!(session.response(id)["result"].is_null());
+    }
 }
 
 #[test]

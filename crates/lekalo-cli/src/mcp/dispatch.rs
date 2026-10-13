@@ -37,6 +37,7 @@ use super::catalog::ServerCatalog;
 use super::execution;
 use super::stdio::log_event;
 use super::stdio::Writer;
+use super::work::{self, WorkGuard};
 
 /// The slot-ownership states of one dispatched worker (`SLOT_BUSY` while
 /// the worker still holds its concurrency slot; `SLOT_RELEASED` once the
@@ -149,8 +150,12 @@ fn header_from_value(document: &Value) -> HeaderOutcome {
             id: scalar_id.unwrap_or(Value::Null),
         },
         (Some(method), false) => {
-            // A method without an id member IS a notification (JSON-RPC
-            // 2.0): the server never answers it, valid or not.
+            // A notification can mutate lifecycle/cancellation state only
+            // after the SAME JSON-RPC 2.0 envelope admission as requests
+            // (r4 F8). Invalid notifications never act.
+            if document.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
+                return HeaderOutcome::Invalid { id: Value::Null };
+            }
             HeaderOutcome::Notification {
                 method: method.to_owned(),
                 params: document.get("params").cloned(),
@@ -201,7 +206,12 @@ fn id_to_key(id: &Value) -> Option<String> {
 /// are queued in arrival order behind it, bounded by the recorded queue
 /// limit.
 pub fn serve(session: Arc<Session>) {
-    let (frame_tx, frame_rx) = mpsc::channel::<Result<String, super::stdio::FrameError>>();
+    // Rendezvous channel: the reader cannot accumulate an unbounded
+    // second queue while the dispatcher enforces queuedRequests=16.
+    // The one frame in the reader and the bounded pending deque are the
+    // only retained application frames (r4 F5). A full pending queue is
+    // still actively drained for cancel/EOF priority below.
+    let (frame_tx, frame_rx) = mpsc::sync_channel::<Result<String, super::stdio::FrameError>>(0);
     let reader = std::thread::Builder::new()
         .name("lekalo-mcp-reader".to_owned())
         .spawn(move || {
@@ -362,6 +372,15 @@ fn route(
 ) -> bool {
     match incoming.method.as_str() {
         "initialize" => {
+            // Require a structurally recognized InitializeRequestParams
+            // before advancing the handshake (r4 F8/F11). Negotiation
+            // still answers the pinned profile; garbage cannot unlock it.
+            if !valid_initialize_params(incoming.params.as_ref()) {
+                session
+                    .writer
+                    .send_error(&incoming.id, INVALID_PARAMS, "invalid-params");
+                return true;
+            }
             // MCP treats `initialize` as single-shot (r3 F7): once the
             // handshake was answered, a second `initialize` is the typed
             // lifecycle violation — never a fresh result that resets the
@@ -423,6 +442,32 @@ fn route(
         }
     }
     true
+}
+
+/// The MCP initialize request's required structural members. Capabilities
+/// and clientInfo are objects, version/name strings, and the offered
+/// protocolVersion is an explicit string (never missing or garbage).
+fn valid_initialize_params(params: Option<&Value>) -> bool {
+    let Some(Value::Object(params)) = params else {
+        return false;
+    };
+    params
+        .get("protocolVersion")
+        .and_then(Value::as_str)
+        .is_some_and(|v| !v.is_empty())
+        && params.get("capabilities").is_some_and(Value::is_object)
+        && params
+            .get("clientInfo")
+            .and_then(Value::as_object)
+            .is_some_and(|info| {
+                info.get("name")
+                    .and_then(Value::as_str)
+                    .is_some_and(|v| !v.is_empty())
+                    && info
+                        .get("version")
+                        .and_then(Value::as_str)
+                        .is_some_and(|v| !v.is_empty())
+            })
 }
 
 /// The initialize handshake: the supported profile is answered exactly;
@@ -517,6 +562,7 @@ fn supervise<T: Send + 'static>(
     session: &Arc<Session>,
     key: Option<String>,
     timeout_ms: u64,
+    guard: WorkGuard,
     work: impl FnOnce() -> T + Send + 'static,
     frame_rx: &mpsc::Receiver<Result<String, super::stdio::FrameError>>,
     pending: &mut VecDeque<Result<String, super::stdio::FrameError>>,
@@ -591,17 +637,27 @@ fn supervise<T: Send + 'static>(
         if slot_released.swap(SLOT_RELEASED, Ordering::SeqCst) == SLOT_BUSY {
             session.live.fetch_sub(1, Ordering::SeqCst);
         }
-        break match received {
-            WorkerPayload::Ok(value) => Supervised::Done(value),
-            WorkerPayload::Fault => Supervised::Fault,
+        break if guard.should_stop() {
+            // A worker may notice the deadline at a read/spawn checkpoint
+            // and return before the supervisor's next poll. Its response
+            // is still a timeout, never a backend-unavailable candidate.
+            Supervised::Timeout
+        } else {
+            match received {
+                WorkerPayload::Ok(value) => Supervised::Done(value),
+                WorkerPayload::Fault => Supervised::Fault,
+            }
         };
     };
     match outcome {
         Supervised::Timeout | Supervised::Cancelled => {
-            // The worker keeps executing, so it keeps its slot and
-            // releases on completion; `detached` moves only here, in the
-            // arm that records the abandonment (r2 F18).
-            session.detached.fetch_add(1, Ordering::SeqCst);
+            guard.abandon(); // No new child process after abandonment.
+                             // The worker keeps executing, so it keeps its slot and
+                             // releases on completion; `detached` moves only here, in the
+                             // arm that records the abandonment (r2 F18).
+            if slot_released.load(Ordering::SeqCst) == SLOT_BUSY {
+                session.detached.fetch_add(1, Ordering::SeqCst);
+            }
         }
         _ => {}
     }
@@ -615,15 +671,34 @@ fn supervise<T: Send + 'static>(
         let mut late_cancel = false;
         drain_while_waiting(session, key.as_deref(), &mut late_cancel, frame_rx, pending);
         if late_cancel {
+            guard.abandon();
             return Supervised::Cancelled;
         }
     }
     outcome
 }
 
-/// One poll of the inbound channel while a worker runs: a cancellation
-/// for the live id is observed immediately; every other frame queues in
-/// arrival order behind the current request.
+/// Whether a cancellable request with this scalar id is already queued.
+/// The queue is bounded, so inspecting its checked headers on demand is
+/// cheap; invalid/notification frames cannot poison a reused id (r4 F6).
+fn pending_has_key(
+    pending: &VecDeque<Result<String, super::stdio::FrameError>>,
+    key: &str,
+) -> bool {
+    pending.iter().any(|frame| {
+        let Ok(text) = frame else { return false };
+        let Ok(document) = lekalo_core::mcp::parse_checked(text) else {
+            return false;
+        };
+        matches!(header_from_value(&document), HeaderOutcome::Request(incoming)
+            if Session::key_of(&incoming.id).as_deref() == Some(key)
+                && matches!(incoming.method.as_str(), "tools/call" | "resources/read"))
+    })
+}
+
+/// One poll of the inbound channel while a worker runs: a validated
+/// cancellation for the live or a queued id is observed immediately;
+/// other frames queue only up to the advertised bound (r4 F5/F6).
 fn drain_while_waiting(
     session: &Arc<Session>,
     key: Option<&str>,
@@ -634,25 +709,30 @@ fn drain_while_waiting(
     loop {
         match frame_rx.try_recv() {
             Ok(Ok(text)) => {
-                if let Ok(document) = lekalo_core::mcp::parse_checked(&text) {
-                    if document.get("method").and_then(Value::as_str)
-                        == Some("notifications/cancelled")
-                    {
-                        let id = document
-                            .get("params")
-                            .and_then(|params| params.get("requestId").or_else(|| params.get("id")))
-                            .cloned();
-                        match id.as_ref().and_then(Session::key_of) {
-                            Some(wait_key) if Some(wait_key.as_str()) == key => {
+                // The fast path is permitted ONLY after the same checked
+                // parse and header validation as process_frame. A malformed
+                // `notifications/cancelled` with an id or JSON-RPC 1.0
+                // queues for -32600; it never mutates cancellation state.
+                let header = lekalo_core::mcp::parse_checked(&text)
+                    .ok()
+                    .map(|document| header_from_value(&document));
+                if let Some(HeaderOutcome::Notification { method, params }) = &header {
+                    if method == "notifications/cancelled" {
+                        let id = params.as_ref().and_then(|params| {
+                            params.get("requestId").or_else(|| params.get("id"))
+                        });
+                        if let Some(wait_key) = id.and_then(Session::key_of) {
+                            if Some(wait_key.as_str()) == key {
                                 *cancelled = true;
-                            }
-                            Some(other)
-                                if session.outstanding.lock().expect("flag").contains(&other) =>
+                            } else if session
+                                .outstanding
+                                .lock()
+                                .expect("flag")
+                                .contains(&wait_key)
+                                || pending_has_key(pending, &wait_key)
                             {
-                                session.cancelled.lock().expect("flag").insert(other);
+                                session.cancelled.lock().expect("flag").insert(wait_key);
                             }
-                            Some(_) => {}
-                            None => {}
                         }
                         if *cancelled {
                             return;
@@ -660,12 +740,39 @@ fn drain_while_waiting(
                         continue;
                     }
                 }
+                if pending.len() >= session.limits.queued_requests {
+                    // Cancel and EOF retain priority. A full queue
+                    // refuses each excess request on its own id rather
+                    // than retaining unbounded raw frames (r4 F5).
+                    if let Some(HeaderOutcome::Request(incoming)) = header {
+                        session.writer.send_error(
+                            &incoming.id,
+                            INVALID_REQUEST,
+                            "mcp.request-limit",
+                        );
+                    } else if let Some(HeaderOutcome::Invalid { id }) = header {
+                        session
+                            .writer
+                            .send_error(&id, INVALID_REQUEST, "invalid-request");
+                    }
+                    continue;
+                }
                 pending.push_back(Ok(text));
             }
             Ok(Err(error)) => {
-                pending.push_back(Err(error));
                 if error == super::stdio::FrameError::Eof {
+                    // A client may half-close stdin while retaining the
+                    // stdout read half (including the wire harness). EOF
+                    // ends admission after queued calls, not their work.
+                    pending.push_back(Err(error));
                     return;
+                }
+                if pending.len() < session.limits.queued_requests {
+                    pending.push_back(Err(error));
+                } else {
+                    session
+                        .writer
+                        .send_error(&Value::Null, INVALID_REQUEST, "mcp.request-limit");
                 }
             }
             Err(mpsc::TryRecvError::Empty) | Err(mpsc::TryRecvError::Disconnected) => return,
@@ -799,11 +906,18 @@ fn tools_call(
     }
     let worker_session = Arc::clone(session);
     let worker_request = request.clone();
+    let guard = WorkGuard::new(timeout_ms);
+    let worker_guard = guard.clone();
     let outcome = supervise(
         session,
         key,
         timeout_ms,
-        move || execution::execute(&worker_session.catalog, &worker_request),
+        guard,
+        move || {
+            work::with_guard(worker_guard, || {
+                execution::execute(&worker_session.catalog, &worker_request)
+            })
+        },
         frame_rx,
         pending,
     );
@@ -1002,6 +1116,28 @@ fn templates_list() -> Value {
     serde_json::json!({ "resourceTemplates": templates })
 }
 
+/// Send a resource refusal on resources/read's OWN JSON-RPC error channel.
+/// A tools/call-shaped envelope labeled `lekalo_inspect` is never a
+/// resource result (r4 F7). The internal typed refusal still supplies a
+/// closed class; only the registered `mcp.*` token survives to the wire.
+fn send_resource_refusal(session: &Session, id: &Value, envelope: &str) {
+    let parsed: Value = serde_json::from_str(envelope).unwrap_or(Value::Null);
+    let class = parsed["failure"]["failureClass"]
+        .as_str()
+        .unwrap_or("result-invalid");
+    let (code, token) = match class {
+        "scope-denied" => (INVALID_PARAMS, "mcp.scope-denied"),
+        "sensitive-output" => (INVALID_PARAMS, "mcp.sensitive-output"),
+        "snapshot-stale" => (INVALID_PARAMS, "mcp.snapshot-stale"),
+        "request-limit" => (INVALID_REQUEST, "mcp.request-limit"),
+        "backend-unavailable" => (-32603, "mcp.backend-unavailable"),
+        "timeout" => (-32603, "mcp.timeout"),
+        "invalid-input" => (INVALID_PARAMS, "mcp.input-invalid"),
+        _ => (-32603, "mcp.result-invalid"),
+    };
+    session.writer.send_error(id, code, token);
+}
+
 /// resources/read: parse, authorize, and produce the closed resource
 /// envelope as application/json text — on a bounded supervised worker
 /// like every tool call, so a slow resource can never run past the
@@ -1053,9 +1189,7 @@ fn resources_read(
                     "scope-denied",
                     "mcp.scope-denied",
                 );
-                session
-                    .writer
-                    .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+                send_resource_refusal(session, &incoming.id, &envelope);
                 return;
             }
         }
@@ -1064,9 +1198,7 @@ fn resources_read(
     // group (if any) must belong to exactly that project.
     if !session.catalog.core.admits_project(&scope.project) {
         let envelope = refused(&scope, "project", "unregistered");
-        session
-            .writer
-            .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+        send_resource_refusal(session, &incoming.id, &envelope);
         return;
     }
     if let Some(group) = &scope.group {
@@ -1074,9 +1206,7 @@ fn resources_read(
             != session.catalog.core.admits_group(&scope.project, group)
         {
             let envelope = refused(&scope, "group", "unregistered");
-            session
-                .writer
-                .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+            send_resource_refusal(session, &incoming.id, &envelope);
             return;
         }
     }
@@ -1114,9 +1244,7 @@ fn resources_read(
                 "scope-denied",
                 "mcp.scope-denied",
             );
-            session
-                .writer
-                .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+            send_resource_refusal(session, &incoming.id, &envelope);
             return;
         }
     }
@@ -1141,9 +1269,7 @@ fn resources_read(
             "request-limit",
             "mcp.request-limit",
         );
-        session
-            .writer
-            .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+        send_resource_refusal(session, &incoming.id, &envelope);
         return;
     }
     if let Some(key) = &key {
@@ -1155,12 +1281,17 @@ fn resources_read(
     }
     let worker_session = Arc::clone(session);
     let worker_scope = scope.clone();
+    let guard = WorkGuard::new(session.limits.timeout_ms);
+    let worker_guard = guard.clone();
     let outcome = supervise(
         session,
         key,
         session.limits.timeout_ms,
+        guard,
         move || {
-            build_resource_checked(&worker_session, &worker_scope, family, qualifier.as_deref())
+            work::with_guard(worker_guard, || {
+                build_resource_checked(&worker_session, &worker_scope, family, qualifier.as_deref())
+            })
         },
         frame_rx,
         pending,
@@ -1180,10 +1311,7 @@ fn resources_read(
             );
         }
         Supervised::Done(Err(refusal_envelope)) => {
-            session.writer.send_result(
-                &incoming.id,
-                tool_result(&incoming.id, &refusal_envelope, true),
-            );
+            send_resource_refusal(session, &incoming.id, &refusal_envelope);
         }
         Supervised::Fault | Supervised::Timeout => {
             // A worker fault is the typed result-invalid refusal; a
@@ -1213,9 +1341,7 @@ fn resources_read(
                 class,
                 detail,
             );
-            session
-                .writer
-                .send_result(&incoming.id, tool_result(&incoming.id, &envelope, true));
+            send_resource_refusal(session, &incoming.id, &envelope);
         }
     }
 }
@@ -1519,4 +1645,89 @@ fn denied_summary(scope: &UriScope) -> String {
         "backend-unavailable",
         "mcp.backend-unavailable",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[derive(Clone)]
+    struct Sink(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Sink {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn session() -> (Arc<Session>, Arc<Mutex<Vec<u8>>>) {
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let writer = Writer::new(Box::new(Sink(Arc::clone(&bytes))), 1024 * 1024);
+        (
+            Arc::new(Session::new(
+                ServerCatalog::single(".", Path::new(".")),
+                Limits::default(),
+                None,
+                writer,
+            )),
+            bytes,
+        )
+    }
+
+    #[test]
+    fn the_advertised_queue_bound_refuses_excess_frames_on_their_own_ids() {
+        let (session, sink) = session();
+        let (tx, rx) = mpsc::channel();
+        let mut pending = VecDeque::new();
+        for id in 0..40 {
+            tx.send(Ok(
+                serde_json::json!({"jsonrpc":"2.0","id":id,"method":"ping"}).to_string(),
+            ))
+            .unwrap();
+        }
+        let mut cancelled = false;
+        drain_while_waiting(&session, None, &mut cancelled, &rx, &mut pending);
+        assert_eq!(pending.len(), session.limits.queued_requests);
+        assert!(!cancelled);
+        let output = String::from_utf8(sink.lock().unwrap().clone()).unwrap();
+        let replies: Vec<Value> = output
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(replies.len(), 24);
+        assert!(replies
+            .iter()
+            .all(|reply| reply["error"]["message"] == "mcp.request-limit"));
+        assert_eq!(replies[0]["id"], 16);
+        assert_eq!(replies[23]["id"], 39);
+    }
+
+    #[test]
+    fn queued_cancel_is_retained_but_a_malformed_cancel_cannot_act() {
+        let (session, sink) = session();
+        let (tx, rx) = mpsc::channel();
+        let mut pending = VecDeque::new();
+        pending.push_back(Ok(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"lekalo_inspect","arguments":{"projectId":"project","symbol":"planner.focus_task"}}}).to_string()));
+        tx.send(Ok(serde_json::json!({"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":3}}).to_string())).unwrap();
+        tx.send(Ok(r#"{"jsonrpc":"1.0","id":99,"method":"notifications/cancelled","params":{"requestId":5}}"#.to_owned())).unwrap();
+        let mut cancelled = false;
+        drain_while_waiting(&session, Some("n:2"), &mut cancelled, &rx, &mut pending);
+        assert!(!cancelled);
+        assert!(session.cancelled.lock().unwrap().contains("n:3"));
+        assert!(!session.cancelled.lock().unwrap().contains("n:5"));
+        assert_eq!(
+            pending.len(),
+            2,
+            "invalid cancellation queues for ordinary validation"
+        );
+        let invalid = pending.pop_back().unwrap().unwrap();
+        process_frame(&session, &invalid, &rx, &mut pending);
+        let output = String::from_utf8(sink.lock().unwrap().clone()).unwrap();
+        assert!(output.contains("\"id\":99"));
+        assert!(output.contains("invalid-request"));
+    }
 }

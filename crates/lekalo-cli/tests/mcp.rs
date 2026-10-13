@@ -375,12 +375,15 @@ fn unregistered_project_group_and_hostile_symbols_refuse_before_reads() {
         serde_json::json!({"uri": "lekalo://evil/summary"}),
     ));
     let session = root.serve(&frames, &[]);
-    for id in [50, 54] {
-        let tool = session.tool(id);
-        assert_eq!(tool["status"], "denied", "id {id}");
-        assert_eq!(tool["failure"]["failureClass"], "scope-denied");
-        assert_eq!(session.response(id)["result"]["isError"], true);
-    }
+    let tool = session.tool(50);
+    assert_eq!(tool["status"], "denied");
+    assert_eq!(tool["failure"]["failureClass"], "scope-denied");
+    assert_eq!(session.response(50)["result"]["isError"], true);
+    // resources/read refuses on its own method channel, never with a
+    // foreign lekalo_inspect tool owner (r4 F7).
+    assert_eq!(session.error_code(54), Some(-32602));
+    assert_eq!(session.response(54)["error"]["message"], "mcp.scope-denied");
+    assert!(session.response(54)["result"].is_null());
     // Malformed identifiers are structural -32602 (no echo); a
     // well-formed but unregistered group is a typed scope denial.
     assert_eq!(session.error_code(51), Some(-32602));
@@ -649,14 +652,14 @@ fn resources_read_respects_the_launch_group_ceiling() {
         &frames,
         &["--group", "planner-review"],
     );
-    let refused = session.tool(10);
-    assert_eq!(refused["status"], "denied");
-    assert_eq!(refused["failure"]["failureClass"], "scope-denied");
-    let resolved = session.tool(11);
-    // The unqualified URI narrows to the launch group: the outside symbol
-    // refuses under the module closure instead of leaking.
-    assert_eq!(resolved["status"], "denied");
-    assert_eq!(resolved["failure"]["failureClass"], "scope-denied");
+    for id in [10, 11] {
+        // The unqualified URI narrows to the launch group: the outside
+        // symbol refuses under the module closure instead of leaking.
+        // Both denials belong to resources/read, not lekalo_inspect.
+        assert_eq!(session.error_code(id), Some(-32602));
+        assert_eq!(session.response(id)["error"]["message"], "mcp.scope-denied");
+        assert!(session.response(id)["result"].is_null());
+    }
 }
 
 #[test]

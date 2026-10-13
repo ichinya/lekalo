@@ -59,6 +59,7 @@ if (!existsSync(binary)) {
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const outputSchemas = new Map();
+const inputSchemas = new Map();
 for (const slug of [
   "inspect",
   "impact",
@@ -70,6 +71,7 @@ for (const slug of [
 ]) {
   const schema = read(`contracts/mcp-tool-${slug}-output.schema.v0.8.0.json`);
   outputSchemas.set(slug, ajv.compile(schema));
+  inputSchemas.set(slug, ajv.compile(read(`contracts/mcp-tool-${slug}-input.schema.v0.8.0.json`)));
 }
 const capabilitiesSchema = read("contracts/mcp-capabilities.schema.v0.8.0.json");
 const validateCapabilities = ajv.compile(capabilitiesSchema);
@@ -168,7 +170,7 @@ async function serve(frames, extraArgs, config) {
   return { responses, stderr, code, stdout };
 }
 
-const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25" } };
+const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "lekalo-stdio-test", version: "0.8.0" } } };
 const initialized = { jsonrpc: "2.0", method: "notifications/initialized" };
 const lifecycle = () => [initialize, initialized];
 const call = (id, name, arguments_) => ({
@@ -436,7 +438,8 @@ const validateToolOutput = (responses, id, slug) => {
   check(findResponse(responses, 50).result.isError === true, "denial-is-error");
   check(findResponse(responses, 51).error?.code === -32602, "malformed-id-32602");
   check(findResponse(responses, 52).error?.code === -32602, "file-uri-32602");
-  check(toolOutput(responses, 53).status === "denied", "resource-scope-denied");
+  check(findResponse(responses, 53).error?.message === "mcp.scope-denied", "resource-scope-denied");
+  check(findResponse(responses, 53).result === undefined, "resource-own-error-channel");
   check(!stdout.includes("/etc/passwd"), "no-path-echo");
   check(!stdout.includes("file://"), "no-scheme-echo");
 }
@@ -579,8 +582,9 @@ const validateToolOutput = (responses, id, slug) => {
     ["--group", "planner-review"],
     "mcp.local.json",
   );
-  check(toolOutput(responses, 70).status === "denied", "resource-outside-group-denied");
-  check(toolOutput(responses, 71).status === "denied", "resource-unqualified-narrows-to-launch-group");
+  check(findResponse(responses, 70).error?.message === "mcp.scope-denied", "resource-outside-group-denied");
+  check(findResponse(responses, 71).error?.message === "mcp.scope-denied", "resource-unqualified-narrows-to-launch-group");
+  check(!findResponse(responses, 70).result && !findResponse(responses, 71).result, "no-foreign-tool-owner-on-resource-refusal");
 }
 
 // F13: subscribe is refused while the capability is unadvertised — an
@@ -725,16 +729,10 @@ const validateToolOutput = (responses, id, slug) => {
     "enumeration-under-group-discloses-nothing-unreadable",
     list,
   );
-  const targets = toolOutput(responses, 111);
-  check(targets.status === "denied", "targets-under-group-refused", targets.failure);
-  const diagnostics = toolOutput(responses, 112);
-  check(diagnostics.status === "denied", "diagnostics-under-group-refused", diagnostics.failure);
-  const shortSymbol = toolOutput(responses, 113);
-  check(
-    shortSymbol.status === "denied" || shortSymbol.status === "invalid",
-    "short-symbol-resource-refused",
-    shortSymbol.failure,
-  );
+  for (const id of [111, 112, 113]) {
+    check(findResponse(responses, id).error?.message === "mcp.scope-denied", "resource-scope-refused", { id });
+    check(findResponse(responses, id).result === undefined, "resource-owner-not-a-tool", { id });
+  }
 }
 
 // r2 F3: without a launch group, enumeration lists exactly the readable
@@ -859,13 +857,22 @@ const validateToolOutput = (responses, id, slug) => {
       call(161, "lekalo_target_status", { projectId: "planner", targetId: "lock" }),
       call(162, "lekalo_target_status", { projectId: "planner", targetId: "profiles" }),
       call(163, "lekalo_target_status", { projectId: "planner", targetId: "not-a-panel" }),
+      call(164, "lekalo_target_status", { projectId: "planner", targetId: "inventory" }),
+      call(165, "lekalo_target_status", { projectId: "planner", targetId: "trust" }),
     ],
     [],
     "mcp.local.json",
   );
-  const full = toolOutput(responses, 160);
-  const lock = toolOutput(responses, 161);
-  const profiles = toolOutput(responses, 162);
+  // r4 F4: Ajv validates EVERY selector, not just the full receipt.
+  // Empty fabricated `ready` panels violate checks.minItems=1.
+  const full = validateToolOutput(responses, 160, "target-status");
+  const lock = validateToolOutput(responses, 161, "target-status");
+  const profiles = validateToolOutput(responses, 162, "target-status");
+  const inventory = validateToolOutput(responses, 164, "target-status");
+  const trust = validateToolOutput(responses, 165, "target-status");
+  check(inventory.result.doctor.checks.some((c) => c.id === "adapters.inventory"), "real-inventory-panel");
+  check(trust.result.doctor.checks.some((c) => c.id === "adapters.trust"), "real-trust-panel");
+  check(profiles.result.doctor.checks.some((c) => c.id === "capabilities.profiles"), "real-profiles-panel");
   check(full.status === "valid", "target-status-full-valid", full.failure);
   check(lock.status === "valid", "target-status-lock-valid", lock.failure);
   check(profiles.status === "valid", "target-status-profiles-valid", profiles.failure);
@@ -1003,6 +1010,32 @@ const validateToolOutput = (responses, id, slug) => {
     "mcp.local.json",
   );
   check(toolOutput(clean, 192).status === "valid", "screen-clean-control-serves");
+}
+
+// r4 F11: the pinned Ajv grammar and the live Rust parser agree on
+// structural error CLASS. Cross-field graph exclusivity remains a typed
+// semantic refusal over schema-valid members, as the schema describes.
+{
+  const structural = [
+    [200, "context", { projectId: "planner", mode: "symbol", symbol: "planner.focus_task", budget: 5000, changedSymbolCount: 0 }],
+    [201, "context", { projectId: "planner", mode: "symbol", symbol: "planner.focus_task", budget: 1000001 }],
+    [202, "context", { projectId: "planner", mode: "symbol", symbol: "planner.focus/task", budget: 5000 }],
+    [203, "impact", { projectId: "planner", mode: "symbol", symbol: "planner.focus_task", relations: ["bad/relation"] }],
+    [204, "impact", { projectId: "planner", mode: "symbol", symbol: "planner.focus_task", profile: "UPPER" }],
+    [205, "graph", { projectId: "planner", mode: "show", symbol: "planner.focus/task" }],
+  ];
+  const semantic = [206, "graph", { projectId: "planner", mode: "export", symbol: "planner.focus_task" }];
+  const { responses } = await serve(
+    [...lifecycle(), ...structural.map(([id, slug, args]) => call(id, `lekalo_${slug}`, args)), call(semantic[0], `lekalo_${semantic[1]}`, semantic[2])],
+    [],
+    "mcp.local.json",
+  );
+  for (const [id, slug, args] of structural) {
+    check(inputSchemas.get(slug)(args) === false, "ajv-rejects-structural-input", { id, slug });
+    check(findResponse(responses, id)?.error?.code === -32602, "rust-refuses-same-structural-class", { id, slug });
+  }
+  check(inputSchemas.get("graph")(semantic[2]) === true, "graph-members-schema-valid");
+  check(toolOutput(responses, semantic[0]).failure?.failureClass === "invalid-input", "graph-exclusivity-is-typed-semantic-refusal");
 }
 
 rmSync(tempRoot, { recursive: true, force: true });

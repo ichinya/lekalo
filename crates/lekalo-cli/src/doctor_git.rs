@@ -72,20 +72,25 @@ enum Failure {
 /// valid UTF-8. On timeout the child is killed and Git counts as
 /// unavailable.
 fn bounded_git(project_root: &Path, args: &[&str]) -> Result<String, Failure> {
-    let mut child = Command::new("git")
+    // MCP abandonment is checked at the ACTUAL spawn boundary, not just
+    // before model traversal; a cancelled status worker cannot spawn Git
+    // seconds after its reply was suppressed (issue #33 r4 F10).
+    let mut command = Command::new("git");
+    command
         .current_dir(project_root)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|_| Failure::Unavailable)?;
+        .stderr(Stdio::null());
+    let mut child = crate::mcp::work::spawn_if_active(&mut command)
+        .map_err(|_| Failure::Unavailable)?
+        .ok_or(Failure::Unavailable)?;
     let deadline = Instant::now() + GIT_TIMEOUT;
     let status = loop {
         match child.try_wait().expect("child status is inspectable") {
             Some(status) => break status,
             None => {
-                if Instant::now() >= deadline {
+                if Instant::now() >= deadline || crate::mcp::work::should_stop() {
                     let _ = child.kill();
                     let _ = child.wait();
                     return Err(Failure::Unavailable);

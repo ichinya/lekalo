@@ -38,6 +38,7 @@ check(
       "read.rs",
       "snapshot.rs",
       "stdio.rs",
+      "work.rs",
     ]),
   "cli-module-layout",
   cliMcpFiles,

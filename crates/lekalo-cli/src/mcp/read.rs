@@ -277,6 +277,24 @@ pub fn read_admitted(root: &Path, logical: &str, cap: usize) -> Result<Vec<u8>, 
     if policy::admit_relative_path(logical).is_err() {
         return Err(ReadRefusal::NotAdmitted);
     }
+    read_checked(root, logical, cap)
+}
+
+/// The governed `.lekalo/**` variant for finite status inputs: these
+/// internal paths may shape a doctor check but can never be addressed by
+/// a client. Admission is still lexical and the SAME no-follow,
+/// identity-pinned, single-owner read applies (r4 F9).
+pub fn read_governed(root: &Path, logical: &str, cap: usize) -> Result<Vec<u8>, ReadRefusal> {
+    if !policy::governed_internal_path(logical) {
+        return Err(ReadRefusal::NotAdmitted);
+    }
+    read_checked(root, logical, cap)
+}
+
+fn read_checked(root: &Path, logical: &str, cap: usize) -> Result<Vec<u8>, ReadRefusal> {
+    if super::work::should_stop() {
+        return Err(ReadRefusal::Unreadable);
+    }
     let path = resolve_component_wise(root, logical)?;
     // The pre-open identity pin of the final component.
     let captured = path_identity(&path).ok_or(ReadRefusal::Unreadable)?;
