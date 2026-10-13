@@ -6,3 +6,6 @@
 /.pi/
 node_modules/
 /.ai-workspace.local.json
+# Generated pilot-fixture runtime residue: no CLI-produced cache or
+# state under the public fixture ever gets committed.
+tests/fixtures/pilot/worklog-changelog/model/.lekalo/

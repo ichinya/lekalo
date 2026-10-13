@@ -282,6 +282,11 @@
       "note": "issue #49 observed-mode pilot: the taskhub consumer fixture, its pinned scan document, and its native gate plan are exclusively synthetic; issue #118 adds the brownfield-ts workspace fixture (Hono + Drizzle sqliteTable + vitest), equally authored in-repo Issue #105 adds the separate brownfield-mysql Hono/Drizzle/MySQL 8.4 fixture, authored synthetic; its actual-package native tests and authored offline declarations are distinct from the unchanged SQLite pilot."
     },
     {
+      "family": "portability",
+      "origin": "synthetic",
+      "note": "Issue #19: authored planner workload, target/profile pins, evidence manifest, invalid controls, and production CLI goldens over synthetic receipts. No private code, native runtime execution, or equivalence claims."
+    },
+    {
       "family": "privacy",
       "origin": "synthetic"
     },

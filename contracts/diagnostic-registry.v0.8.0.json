@@ -8503,6 +8503,228 @@
       "lifecycle": "active"
     },
     {
+      "id": "portability.analysis-incomplete",
+      "code": "LEK-PORT-008",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "portability.analysis-incomplete",
+      "default_message": "The portability analysis hit a deterministic bound or an unimplemented requirement extraction.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.behavior-loss",
+      "code": "LEK-PORT-007",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "portability.behavior-loss",
+      "default_message": "A required semantic policy maps lossily onto the destination target.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.capability-unsupported",
+      "code": "LEK-PORT-005",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "portability.capability-unsupported",
+      "default_message": "A required capability is explicitly unsupported for the destination target.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.check-denied",
+      "code": "LEK-PORT-009",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "portability.check-denied",
+      "default_message": "The strict portability check refused unresolved required obligations.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.evidence-incomplete",
+      "code": "LEK-PORT-003",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "portability.evidence-incomplete",
+      "default_message": "Qualified portability evidence is missing, stale, or untrusted for a required obligation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.implementation-required",
+      "code": "LEK-PORT-006",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "portability.implementation-required",
+      "default_message": "The complete implementation inventory proves a missing or unsupported destination hook.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.input-invalid",
+      "code": "LEK-PORT-001",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "portability.input-invalid",
+      "default_message": "The portability request, configuration, or evidence input is malformed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.mapping-partial",
+      "code": "LEK-PORT-004",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "portability.mapping-partial",
+      "default_message": "A qualified semantic mapping covers only part of a required obligation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.version-unsupported",
+      "code": "LEK-PORT-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "portability.version-unsupported",
+      "default_message": "A portability contract version is outside the accepted registry.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "publication.consent-missing",
       "code": "LEK-XE-006",
       "category": "compatibility",
@@ -12336,6 +12558,146 @@
         {
           "name": "documents",
           "type": "records"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "worklog-changelog.approval-unbound",
+      "code": "LEK-WC-003",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "worklog-changelog.approval-unbound",
+      "default_message": "Publication preconditions cannot bind approval to the current preview, tenant, destination, and authority.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "worklog-changelog.effects-coupled",
+      "code": "LEK-WC-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "worklog-changelog.effects-coupled",
+      "default_message": "Composition roles merged effects or enabled an unselected independent effect.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "worklog-changelog.evidence-incomplete",
+      "code": "LEK-WC-007",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported"
+      ],
+      "message_id": "worklog-changelog.evidence-incomplete",
+      "default_message": "Required native assertion, capability, or consumer evidence is absent, stale, or incomplete.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "worklog-changelog.input-invalid",
+      "code": "LEK-WC-001",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "worklog-changelog.input-invalid",
+      "default_message": "The worklog-changelog pilot composition document was refused.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "worklog-changelog.public-data-unsafe",
+      "code": "LEK-WC-005",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "worklog-changelog.public-data-unsafe",
+      "default_message": "The public projection violates a private-field, visibility, renderer, or safe-URL obligation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "worklog-changelog.replay-scope-invalid",
+      "code": "LEK-WC-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "worklog-changelog.replay-scope-invalid",
+      "default_message": "Operation or tenant replay scopes collide, or a retry lacks its payload-bound safety policy.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "worklog-changelog.snapshot-mutable",
+      "code": "LEK-WC-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "worklog-changelog.snapshot-mutable",
+      "default_message": "A published projection points to mutable source state or admitted evidence changes an existing snapshot.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
         }
       ],
       "allowed_fix_ids": [],

@@ -46,6 +46,7 @@ pub mod openapi;
 pub mod orchestration;
 pub mod php_operations;
 pub mod php_routes;
+pub mod portability;
 pub mod privacy;
 pub mod project_fs;
 pub mod provider;
@@ -68,6 +69,7 @@ pub mod transport_http;
 pub mod validator;
 pub mod versioning;
 pub mod waivers;
+pub mod worklog_changelog;
 
 pub use result::{Capability, DomainResult, ReasonCode, Status, CAPABILITY_UNAVAILABLE, CLI_USAGE};
 

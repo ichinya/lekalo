@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "lekalo/portability-receipt/v0.8.0",
+  "identity": "dev.lekalo.portability-receipt@0.8.0",
+  "kind": "scenario",
+  "subject": "planner.focus_flow",
+  "targetId": "php-laravel",
+  "result": "pass",
+  "projectRef": {
+    "projectId": "planner",
+    "modelVersion": "0.2.16",
+    "irDigest": "sha256:f9a4b5d6649787482014dffcdac03de55e231950af28cd853e6deaa6f1a29578"
+  },
+  "profileRef": {
+    "id": "laravel-postgres-http",
+    "version": "0.2.16",
+    "resolvedDigest": "sha256:501c4672bdca8dbc6e812f21fc4eb38ab7380fef34c1ab5c6e2d74826601511f"
+  }
+}

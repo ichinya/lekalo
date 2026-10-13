@@ -100,6 +100,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-run-history-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-workspace-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-provider-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-contracts.mjs
       - name: Execute protocol semantic vectors through production Rust decoding
         run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites
@@ -222,6 +223,12 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
+      - name: Run the live portability contract gate (issue #19)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-portability-contracts.mjs
       - name: Run neutral trace evidence and assessment contracts (issue #35)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
@@ -720,3 +727,34 @@ jobs:
         # gates, with the violating negative control proving the rules
         # ran. A missing tool fails this leg, never a silent skip.
         run: node scripts/test-php-laravel-type-roundtrip.mjs --require-mago
+
+  worklog-changelog-pilot:
+    name: Worklog-changelog pilot binary gates (issue #51)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+      - name: Build the locked CLI and provision the exact schema validator
+        run: |
+          set -euo pipefail
+          cargo build -p lekalo-cli --locked
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.17.1" --ignore-scripts --no-audit --no-fund --no-save ajv@8.17.1
+      - name: Run the pilot harness, impact, and neutrality gates
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target php --profile strict --case all
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target go --profile strict --case all --expect-denied
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target go --profile permissive --case all
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-impact.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-admission.mjs
+          node scripts/test-worklog-changelog-neutrality.mjs

@@ -218,3 +218,27 @@ fn the_types_input_home_validates_with_closed_children() {
         StructureOutcome::Valid(_) => panic!("the stray types child must refuse"),
     }
 }
+
+/// A checked-in hardlink to bytes outside the root must be refused: path
+/// containment holds while the bytes are foreign, which would defeat byte
+/// custody for every digest-pinned read (issue #19, r3 finding 14).
+#[test]
+fn read_refuses_multiply_linked_files() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("root");
+    fs::create_dir(&root).unwrap();
+    let outside = temp.path().join("outside.txt");
+    fs::write(&outside, b"foreign bytes").unwrap();
+    let linked = root.join("linked.txt");
+    fs::hard_link(&outside, &linked).unwrap();
+    let plain = root.join("plain.txt");
+    fs::write(&plain, b"project bytes").unwrap();
+    let cap = Fs::open(&root).unwrap();
+    let read = |name: &str| cap.read_file_opt("", name, 1024);
+    assert_eq!(read("plain.txt").unwrap(), Some(b"project bytes".to_vec()));
+    let refused = read("linked.txt");
+    assert!(
+        matches!(refused, Err(FsErrorKind::Io)),
+        "a hardlink to outside bytes must refuse, got {refused:?}"
+    );
+}

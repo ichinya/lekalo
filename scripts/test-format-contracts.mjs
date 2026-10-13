@@ -77,7 +77,8 @@ if (policy.ordering.setLists.length !== 1 || policy.ordering.setLists[0].member 
 
 // 3. The union registry successor: every 0.6.5 entry is preserved
 // unchanged, plus the landed 0.8.0 families (`format.*`, `adoption.*`,
-// and `module-api.*`), sorted by id bytes.
+// `portability.*`, `worklog-changelog.*`, and `module-api.*`), sorted
+// by id bytes.
 const predecessor = read("contracts/diagnostic-registry.v0.6.5.json");
 const successorSchema = read("contracts/diagnostic-registry.schema.v0.8.0.json");
 const registry = read("contracts/diagnostic-registry.v0.8.0.json");
@@ -89,7 +90,7 @@ if (registry.registry_version !== "0.8.0") fail("registry-version");
 if (registry.closed !== true) fail("registry-not-closed");
 const byId = new Map(predecessor.entries.map((entry) => [entry.id, entry]));
 const formatEntries = registry.entries.filter((entry) => entry.id.startsWith("format."));
-const landedFamilies = ["format.", "adoption.", "module-api."];
+const landedFamilies = ["format.", "adoption.", "portability.", "worklog-changelog.", "module-api."];
 const additions = registry.entries.filter((entry) => !byId.has(entry.id));
 if (registry.entries.length !== predecessor.entries.length + additions.length || additions.length === 0) {
   fail("registry-not-a-union");

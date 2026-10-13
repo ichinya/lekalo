@@ -1,0 +1,6 @@
+{"schema_version":"0.2.16","definitions":[
+{"id":"worklog.member_writes_own_task","kind":"policy","version":1,"description":"Only the task owner may complete the task","applies_to":["worklog.complete_task"],"decision":"allow"},
+{"id":"worklog.author_writes_worklog","kind":"policy","version":1,"description":"The author writes and edits private worklogs inside the tenant","applies_to":["worklog.write_worklog","worklog.edit_worklog"],"decision":"allow"},
+{"id":"worklog.member_requests_provider","kind":"policy","version":1,"description":"A member explicitly requests one provider comment","applies_to":["worklog.request_provider_comment"],"decision":"allow"},
+{"id":"worklog.service_delivers_provider","kind":"policy","version":1,"description":"The service worker actor performs the declared provider delivery","applies_to":["worklog.deliver_provider_comment"],"decision":"allow"}
+]}

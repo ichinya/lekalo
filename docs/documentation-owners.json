@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:de26e7a771208444de10ae96bd0d566e0af7f3903d9c2b1fcc34e515b2b39746",
+  "cliSourceDigest": "sha256:973c9d345ba9434fc73478398fd22a4ad509cac1a94fbd82c905b324c25aaa34",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1532,6 +1532,50 @@
       "status": "implemented"
     },
     {
+      "id": "cli:pilot",
+      "kind": "command",
+      "command": "pilot",
+      "usage": "lekalo pilot [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:1a939abde287339d8416986c6abd5830b90e2bf6c232d713a44d1cf611661fbb",
+      "summary": "Validate the issue #51 worklog-changelog pilot composition against its pinned project: the pure composition contract",
+      "leaf": false,
+      "owner": "docs/m8/issue-51-implementation.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:pilot admit",
+      "kind": "command",
+      "command": "pilot admit",
+      "usage": "lekalo pilot admit [OPTIONS] <PATH> <COMPOSITION>",
+      "helpDigest": "sha256:f00860fd1c7f30ba688fdcc1b9cc5a08fabaecc74dab194032e1ef946b1baa2f",
+      "summary": "Admit one evidence report under the selected profile, bound to the exact composition document it pins: strict refuses any required unsupported or unknown row (exit 4) while keeping the report; permissive emits the degraded verdict",
+      "leaf": true,
+      "owner": "docs/m8/issue-51-implementation.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:pilot validate",
+      "kind": "command",
+      "command": "pilot validate",
+      "usage": "lekalo pilot validate [OPTIONS] <PATH>",
+      "helpDigest": "sha256:f37a3ba0bba675ff5ce097b9f732afadc3a7c7acc1a1bdf7e012d5190ff0119e",
+      "summary": "Validate one composition document against its pinned project: custody, role resolution, effect separation, approval binding, snapshot immutability, public allowlist, replay scopes, and capability coverage",
+      "leaf": true,
+      "owner": "docs/m8/issue-51-implementation.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:portability",
+      "kind": "command",
+      "command": "portability",
+      "usage": "lekalo portability [OPTIONS]",
+      "helpDigest": "sha256:6a636e6beae67d490161c8090aeeaf8245d079474b756f54eb7e8bb93a337e0e",
+      "summary": "Assess the capability-based portability of the project's typed symbols across exact target/profile pins and qualified recorded evidence (issue #19). Read-only: consumes recorded evidence by default and launches no adapter, generator, or provider",
+      "leaf": true,
+      "owner": "docs/portability.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:privacy",
       "kind": "command",
       "command": "privacy",
@@ -2688,7 +2732,7 @@
       "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
-      "sourceDigest": "sha256:0690ba33f770f6b12365327df7898cfb0010d1bdef9b834453fa2645fd1d7d77",
+      "sourceDigest": "sha256:31c391c0307469313f3b674bdc94817379a2d097b367fdce7902711a8a55aae7",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2733,7 +2777,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.8.0.json",
-      "sourceDigest": "sha256:02f43738579f74513ebeafd7ae420bb17d27ee53add394187097fcd5b0c7f319",
+      "sourceDigest": "sha256:33ca099911c24b6ac0069562a626732fd136c22f0a804af7d52dd8f945ddedd8",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3270,6 +3314,78 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/portability-adapter-snapshot.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-adapter-snapshot.schema.v0.8.0.json",
+      "sourceDigest": "sha256:d2d98789ceae2ac181cf9cfd188a8a2c0aad54fdc72937b172d3b8976c5bad04",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-evidence.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-evidence.schema.v0.8.0.json",
+      "sourceDigest": "sha256:7a5a8b2196ae60b132fc4205ea8d969eba59cbb116b9312aeb0c767ccaf47d0c",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-family.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-family.schema.v0.8.0.json",
+      "sourceDigest": "sha256:f9bdd70c657d34ca9243d642ac4309bf37195812457b8f923188a96ca5694603",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-receipt.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-receipt.schema.v0.8.0.json",
+      "sourceDigest": "sha256:7dbf83c63765b6e6bfc2650690634696c7c1412c1d3f7f4ebc3cbd755188bb8e",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-recipe.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-recipe.schema.v0.8.0.json",
+      "sourceDigest": "sha256:332aa7a9975a90b772e25b8bc533560023d39a1b946695bee4ef0f32bc331ccf",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-recipe.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-recipe.v0.8.0.json",
+      "sourceDigest": "sha256:d715766f8daf9410ff63fd31ddd6e9cc07403d5b1767911f2dec5d88bea5cb04",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-report.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-report.schema.v0.8.0.json",
+      "sourceDigest": "sha256:f4b25a4c0a84c170b0d7929b932a004b8293935465c80a12cd2f145fe08fabb3",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/portability-targets.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/portability-targets.schema.v0.8.0.json",
+      "sourceDigest": "sha256:d6346833e22ba680831a1485a18b5963b95383e787c7692573f1e717345e095c",
+      "owner": "docs/portability.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/privacy-authorization-subject-profile.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/privacy-authorization-subject-profile.v0.2.16.json",
@@ -3743,6 +3859,24 @@
       "source": "contracts/waiver-input.schema.v0.6.5.json",
       "sourceDigest": "sha256:061d6713a74da631ac2c812efb23c19e30acb6c7a064fb1a4fd011bfce3ae176",
       "owner": "docs/waivers.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/worklog-changelog-evidence.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/worklog-changelog-evidence.schema.v0.8.0.json",
+      "sourceDigest": "sha256:39f5a82fafc6e94b4b968e46badd579521d434b92058fdb2bc3c357b0c8392e6",
+      "owner": "docs/m8/issue-51-implementation.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/worklog-changelog-pilot.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/worklog-changelog-pilot.schema.v0.8.0.json",
+      "sourceDigest": "sha256:fcf2ba0b7bf8f6210a75f9821af993a88d4086933d0b5a5bb2c1858cd1333ae0",
+      "owner": "docs/m8/issue-51-implementation.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
