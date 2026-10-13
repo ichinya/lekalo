@@ -274,6 +274,28 @@ impl ToolRequest {
     }
 }
 
+/// The published input-schema symbol grammar: ASCII letter first,
+/// followed by at most 191 ASCII letters, digits, underscores, dots,
+/// or dashes. Every symbol-like member passes this structural check
+/// before semantic evaluation (review r4 F11).
+fn admitted_symbol(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 192
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1..]
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'))
+}
+
+fn admitted_relation(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= 32
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || matches!(byte, b'_' | b'-'))
+}
+
 /// The closed member vocabulary of each tool beyond the common three.
 fn known_members(tool: &str) -> &'static [&'static str] {
     match tool {
@@ -290,14 +312,7 @@ fn known_members(tool: &str) -> &'static [&'static str] {
             "relations",
             "profile",
         ],
-        "lekalo_context" => &[
-            "mode",
-            "symbol",
-            "changedSymbols",
-            "budget",
-            "spans",
-            "changedSymbolCount",
-        ],
+        "lekalo_context" => &["mode", "symbol", "changedSymbols", "budget", "spans"],
         "lekalo_graph" => &["mode", "symbol", "from", "to", "transitive"],
         "lekalo_validate" => &["module", "strict"],
         "lekalo_target_status" => &["targetId", "profileId"],
@@ -388,13 +403,9 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
     match tool {
         "lekalo_inspect" => {
             let symbol = string_field(arguments, "symbol").ok_or(field("symbol"))?;
-            if symbol.is_empty() || symbol.len() > 192 {
-                return Err(field("symbol"));
-            }
-            // A comma is the CLI's changed-list separator, never part of a
-            // semantic id: refusing it here keeps one operand from
-            // smuggle-splitting into a set the closure never checked.
-            if symbol.contains(',') {
+            // The published schema's pattern excludes commas and paths:
+            // the parser and host validator must refuse the same grammar.
+            if !admitted_symbol(&symbol) {
                 return Err(field("symbol"));
             }
             let include = match arguments.get("include") {
@@ -431,7 +442,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
             let symbol = match arguments.get("symbol") {
                 None => None,
                 Some(Value::String(symbol)) => {
-                    if symbol.is_empty() || symbol.len() > 192 || symbol.contains(',') {
+                    if !admitted_symbol(symbol) {
                         return Err(field("symbol"));
                     }
                     Some(symbol.clone())
@@ -482,12 +493,15 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
             let relations = match arguments.get("relations") {
                 None => Vec::new(),
                 Some(Value::Array(items)) => {
+                    if items.len() > 32 {
+                        return Err(field("relations"));
+                    }
                     let mut parsed = Vec::new();
                     for item in items {
                         let Value::String(relation) = item else {
                             return Err(field("relations"));
                         };
-                        if relation.is_empty() || relation.len() > 32 {
+                        if !admitted_relation(relation) {
                             return Err(field("relations"));
                         }
                         if parsed.contains(relation) {
@@ -502,7 +516,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
             let profile = match arguments.get("profile") {
                 None => None,
                 Some(Value::String(profile)) => {
-                    if profile.is_empty() || profile.len() > 32 {
+                    if policy::admit_id(profile).is_err() || profile.len() > 32 {
                         return Err(field("profile"));
                     }
                     Some(profile.clone())
@@ -568,13 +582,13 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
                 .get("budget")
                 .and_then(|value| value.as_u64())
                 .ok_or(field("budget"))?;
-            if budget == 0 {
+            if budget == 0 || budget > 1_000_000 {
                 return Err(field("budget"));
             }
             let symbol = match arguments.get("symbol") {
                 None => None,
                 Some(Value::String(symbol)) => {
-                    if symbol.is_empty() || symbol.len() > 192 {
+                    if !admitted_symbol(symbol) {
                         return Err(field("symbol"));
                     }
                     Some(symbol.clone())
@@ -595,11 +609,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
                         // A comma is the CLI's list separator; a member
                         // carrying one would re-split downstream into a
                         // symbol set the closure never checked.
-                        if symbol.is_empty()
-                            || symbol.len() > 192
-                            || symbol.contains(',')
-                            || parsed.contains(symbol)
-                        {
+                        if !admitted_symbol(symbol) || parsed.contains(symbol) {
                             return Err(field("changedSymbols"));
                         }
                         parsed.push(symbol.clone());
@@ -609,17 +619,6 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
                 Some(_) => return Err(field("changedSymbols")),
             };
             let spans = bool_field(arguments, "spans")?.unwrap_or(false);
-            let changed_symbol_count = match arguments.get("changedSymbolCount") {
-                None => changed_symbols.len() as u64,
-                Some(value) => {
-                    let count = value.as_u64().ok_or(field("changedSymbolCount"))?;
-                    if count != changed_symbols.len() as u64 {
-                        return Err(field("changedSymbolCount"));
-                    }
-                    count
-                }
-            };
-            let _ = changed_symbol_count;
             let changed_symbols_len = changed_symbols.len() as u64;
             match mode {
                 ContextMode::Symbol if symbol.is_none() => {
@@ -658,7 +657,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
             let symbol = match arguments.get("symbol") {
                 None => None,
                 Some(Value::String(symbol)) => {
-                    if symbol.is_empty() || symbol.len() > 192 {
+                    if !admitted_symbol(symbol) {
                         return Err(field("symbol"));
                     }
                     Some(symbol.clone())
@@ -668,7 +667,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
             let from = match arguments.get("from") {
                 None => None,
                 Some(Value::String(from)) => {
-                    if from.is_empty() || from.len() > 192 {
+                    if !admitted_symbol(from) {
                         return Err(field("from"));
                     }
                     Some(from.clone())
@@ -678,7 +677,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
             let to = match arguments.get("to") {
                 None => None,
                 Some(Value::String(to)) => {
-                    if to.is_empty() || to.len() > 192 {
+                    if !admitted_symbol(to) {
                         return Err(field("to"));
                     }
                     Some(to.clone())
@@ -690,8 +689,22 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
                 GraphMode::Show | GraphMode::Callers if symbol.is_none() => {
                     return Err(semantic("symbol", "required-for-mode"))
                 }
+                GraphMode::Show | GraphMode::Callers if from.is_some() || to.is_some() => {
+                    return Err(semantic("mode", "path-operands-forbidden"))
+                }
+                GraphMode::Show if transitive => {
+                    return Err(semantic("transitive", "callers-only"))
+                }
                 GraphMode::Path if from.is_none() || to.is_none() => {
                     return Err(semantic("from", "path-requires-from-and-to"))
+                }
+                GraphMode::Path if symbol.is_some() || transitive => {
+                    return Err(semantic("mode", "stray-mode-operand"))
+                }
+                GraphMode::Export
+                    if symbol.is_some() || from.is_some() || to.is_some() || transitive =>
+                {
+                    return Err(semantic("mode", "stray-mode-operand"))
                 }
                 _ => {}
             }

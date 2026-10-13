@@ -24,6 +24,9 @@ pub const SUCCESSOR_REGISTRY_BYTES: &[u8] =
 
 pub const MCP_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+/// Issue #94 and #136 share the same immutable 0.8.0 grand union.
+pub const FORMAT_REGISTRY_BYTES: &[u8] = MCP_REGISTRY_BYTES;
+pub const ADOPTION_REGISTRY_BYTES: &[u8] = MCP_REGISTRY_BYTES;
 
 /// Why the embedded registry could not be trusted.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -174,6 +177,16 @@ impl DiagnosticRegistry {
                 )
             });
         REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
+    /// The merged issue #94 format family reads the same 0.8.0 union.
+    pub fn format_successor() -> Result<&'static Self, RegistryError> {
+        Self::mcp_successor()
+    }
+
+    /// The merged issue #136 adoption family reads the same 0.8.0 union.
+    pub fn adoption() -> Result<&'static Self, RegistryError> {
+        Self::mcp_successor()
     }
 
     pub fn for_version(version: &str) -> Result<&'static Self, RegistryError> {

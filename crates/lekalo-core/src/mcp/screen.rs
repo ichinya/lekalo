@@ -18,8 +18,8 @@
 //! `password="x"`, `password='x'`, and an embedded `{"password":"x"}`
 //! all parse as assignments. Private absolute paths are matched by
 //! SHAPE, not by an enumerated segment list (r4 F1): any drive-letter
-//! path (`D:/...`, `c:\\...`) and any boundary-rooted POSIX path
-//! (`/srv/private/...`) refuses. The
+//! path (`D:/...`, `c:\\...`) and boundary-rooted POSIX paths with a
+//! private-signal segment (`/srv/private/...`) refuse. The
 //! pass is otherwise deliberately conservative in both directions:
 //! only closed high-confidence secret shapes match (assigned
 //! credential assignments, PEM private-key blocks, bearer schemes), and
@@ -91,10 +91,10 @@ fn contains_drive_letter_path(folded: &[u8]) -> bool {
 
 /// Whether one folded envelope position starts a boundary-rooted POSIX
 /// absolute path: a `/` at the start of the envelope, after whitespace,
-/// or after a quote, followed by one non-empty segment and a second `/`
-/// — the `/srv/private/finance.txt` shape (r4 F1). Relative project
-/// paths (`lekalo/modules/...`), URIs (`lekalo://p/summary`), and prose
-/// fractions (`1/2`, `and/or`) never sit at such a boundary and ship.
+/// or after a quote, followed by a rooted path with a private-signal
+/// segment (`/srv/private/finance.txt`, r4 F1). JSON pointers such as
+/// `/definitions/20` have the same rooted shape but no private signal;
+/// relative project paths, URIs and prose fractions stay available.
 fn contains_posix_root_path(folded: &[u8]) -> bool {
     for index in 0..folded.len() {
         if folded[index] != b'/' {
@@ -115,7 +115,30 @@ fn contains_posix_root_path(folded: &[u8]) -> bool {
             let byte = folded[cursor];
             if byte == b'/' {
                 if segment > 0 {
-                    return true;
+                    let mut end = cursor + 1;
+                    while end < folded.len()
+                        && !folded[end].is_ascii_whitespace()
+                        && !matches!(folded[end], b'"' | b'\'')
+                    {
+                        end += 1;
+                    }
+                    let path = &folded[index..end];
+                    // JSON pointers (`/definitions/20`) and API routes
+                    // have the same lexical shape as rooted paths. A
+                    // private-signal segment distinguishes disclosure
+                    // from benign contract members (r4 F1).
+                    if [
+                        b"/private/".as_slice(),
+                        b"/secret/",
+                        b"/finance/",
+                        b"/credentials/",
+                        b"/etc/passwd",
+                    ]
+                    .iter()
+                    .any(|needle| contains(path, needle))
+                    {
+                        return true;
+                    }
                 }
                 break;
             }
@@ -166,7 +189,7 @@ fn screen_bytes(bytes: &[u8]) -> Result<(), &'static str> {
         }
     }
     // r4 F1: private absolute paths are matched by shape too — every
-    // drive-letter path and every boundary-rooted POSIX path refuses.
+    // drive-letter path and boundary-rooted private-signal POSIX path.
     if contains_drive_letter_path(&folded) || contains_posix_root_path(&folded) {
         return Err("private-absolute-path");
     }
@@ -443,8 +466,8 @@ mod tests {
             Err("private-absolute-path")
         );
         // r4 F1: private absolute paths refuse by SHAPE — any drive
-        // letter and any boundary-rooted POSIX path, not only the
-        // enumerated user roots the r2/r3 needles covered.
+        // letter and boundary-rooted POSIX paths with a private signal,
+        // not only the enumerated user roots the r2/r3 needles covered.
         assert_eq!(
             screen_envelope("{\"note\":\"D:/PrivateReview/finance.txt\"}"),
             Err("private-absolute-path")

@@ -164,7 +164,9 @@ if (!validateRegistry(registry080)) {
 if (registry080.schema_version !== "lekalo/diagnostic-registry/v0.8.0") {
   fail("registry-discriminator", registry080.schema_version);
 }
-if (registry080.entries.length !== registry065.entries.length + 11) {
+// The 0.8.0 allocation is the M8 grand union: #94 format (11), #136
+// adoption (9), and #33 MCP (11), not three competing versions.
+if (registry080.entries.length !== registry065.entries.length + 31) {
   fail("registry-size", {
     v064: registry064.entries.length,
     v065: registry065.entries.length,
@@ -189,6 +191,11 @@ for (const entry of registry080.entries) {
       }
     }
   }
+}
+const formatEntries = registry080.entries.filter((entry) => entry.id.startsWith("format."));
+const adoptionEntries = registry080.entries.filter((entry) => entry.id.startsWith("adoption."));
+if (formatEntries.length !== 11 || adoptionEntries.length !== 9) {
+  fail("m8-union-families", { format: formatEntries.length, adoption: adoptionEntries.length });
 }
 const mcpCodes = registry080.entries
   .filter((entry) => entry.id.startsWith("mcp."))

@@ -21,11 +21,25 @@ use serde_json::json;
 // ---- The registry union is exact and additive. ----------------------------
 
 #[test]
-fn mcp_registry_is_an_exact_union_of_both_predecessors() {
+fn mcp_registry_is_the_exact_m8_grand_union() {
     let embedded = DiagnosticRegistry::embedded().expect("0.6.4");
     let successor = DiagnosticRegistry::successor().expect("0.6.5");
     let mcp = DiagnosticRegistry::mcp_successor().expect("0.8.0");
-    assert_eq!(mcp.len(), successor.len() + 11);
+    assert_eq!(mcp.len(), successor.len() + 31);
+    assert_eq!(mcp.len(), 553);
+    assert_eq!(
+        DiagnosticRegistry::format_successor().unwrap().len(),
+        mcp.len()
+    );
+    assert_eq!(DiagnosticRegistry::adoption().unwrap().len(), mcp.len());
+    for (prefix, count) in [("format.", 11), ("adoption.", 9), ("mcp.", 11)] {
+        assert_eq!(
+            mcp.entries()
+                .filter(|entry| entry.id().starts_with(prefix))
+                .count(),
+            count
+        );
+    }
     for predecessor in [embedded, successor] {
         for entry in predecessor.entries() {
             let union_entry = mcp

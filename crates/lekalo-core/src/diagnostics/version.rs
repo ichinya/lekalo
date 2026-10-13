@@ -56,9 +56,11 @@ pub const REGISTRY_VERSION: &str = "0.6.4";
 /// Opt-in issue #84 union successor. Predecessor producers keep their exact pins.
 pub const SUCCESSOR_REGISTRY_VERSION: &str = "0.6.5";
 
-/// Issue #33 MCP union successor: the 0.6.5 union plus the closed
-/// `mcp.*` transport family. Predecessor producers keep their exact pins.
+/// The shared 0.8.0 grand union of the M8 `format.*`, `adoption.*`, and
+/// issue #33 `mcp.*` families. Existing producer pins remain unchanged.
 pub const MCP_REGISTRY_VERSION: &str = "0.8.0";
+pub const FORMAT_REGISTRY_VERSION: &str = MCP_REGISTRY_VERSION;
+pub const ADOPTION_REGISTRY_VERSION: &str = MCP_REGISTRY_VERSION;
 
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
