@@ -29,6 +29,7 @@ pub mod conflict;
 pub mod diagnostic;
 pub mod edge;
 pub mod envelope;
+mod execution;
 pub mod identity;
 pub mod index;
 pub(crate) mod json;
@@ -74,6 +75,7 @@ pub struct EffectGraph {
     declared: Vec<EffectEdge>,
     detected: Vec<EffectEdge>,
     envelopes: usize,
+    execution_digest: Option<String>,
     transactions: Vec<provenance::LocalTransaction>,
     partial_failures: Vec<provenance::PartialFailure>,
     index: index::EffectIndex,
@@ -112,6 +114,7 @@ impl EffectGraph {
             declared,
             detected,
             envelopes,
+            execution_digest: None,
             transactions,
             partial_failures,
             index,
@@ -202,6 +205,17 @@ impl EffectGraph {
         envelope: &EvidenceEnvelope,
     ) -> Result<Self, DiagnosticSet> {
         build::attach(self, envelope)
+    }
+
+    /// Join a sealed owner execution after same-compilation transaction and
+    /// extended-effect owner admission. No raw envelope can confer this trust.
+    pub fn with_execution(
+        &self,
+        execution: &crate::task_links::execution::Execution,
+        transactions: &crate::transaction_concurrency::TransactionConcurrencyAttachment,
+        extended: &crate::extended_effects::ExtendedEffectsAttachment,
+    ) -> Result<Self, DiagnosticSet> {
+        execution::attach_execution(self, execution, transactions, extended)
     }
 
     /// Every operation the graph carries, in canonical order.

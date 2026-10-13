@@ -33,6 +33,7 @@ mod metrics_export;
 mod report_git;
 pub(crate) mod report_output;
 mod task_links;
+mod task_links_native;
 mod waivers;
 
 const PROGRAM_NAME: &str = "lekalo";
@@ -2296,6 +2297,15 @@ enum EffectsCommands {
         /// the exact live compilation's IR digest, or the join refuses.
         #[arg(long, value_name = "PATH")]
         evidence: Option<String>,
+        /// Execute the task-links mock owner and join authoritative effect contracts.
+        #[arg(long, value_name = "PATH", requires_all = ["transactions", "extended_effects"], conflicts_with = "evidence")]
+        task_links_attachment: Option<String>,
+        /// Same-compilation transaction-concurrency owner attachment.
+        #[arg(long, value_name = "PATH", requires = "task_links_attachment")]
+        transactions: Option<String>,
+        /// Same-compilation extended-effects owner attachment.
+        #[arg(long, value_name = "PATH", requires = "task_links_attachment")]
+        extended_effects: Option<String>,
     },
     /// Report which operations write (or read with `--readers`) one
     /// resource or exact field.
@@ -4938,8 +4948,29 @@ fn run_effects(command: EffectsCommands, no_cache: bool) -> DomainResult {
             operation,
             project,
             evidence,
-        } => with_effects(&project, no_cache, |project, graph| {
-            effects_show(project, graph, &operation, evidence.as_deref())
+            task_links_attachment,
+            transactions,
+            extended_effects,
+        } => with_effects(&project, no_cache, |compiled, graph| {
+            if let Some(path) = &task_links_attachment {
+                let executed = match task_links::executed_graph(
+                    &project,
+                    path,
+                    transactions.as_deref().unwrap_or_default(),
+                    extended_effects.as_deref().unwrap_or_default(),
+                ) {
+                    Ok(graph) => graph,
+                    Err(result) => return result,
+                };
+                if executed.ir_digest() != graph.ir_digest() {
+                    return DomainResult::invalid(
+                        lekalo_core::effects::diagnostic::input_invalid_detail("effects-stale-pin"),
+                    );
+                }
+                effects_show(compiled, &executed, &operation, None)
+            } else {
+                effects_show(compiled, graph, &operation, evidence.as_deref())
+            }
         }),
         EffectsCommands::Writers {
             resource,

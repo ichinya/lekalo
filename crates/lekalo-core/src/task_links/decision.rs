@@ -691,18 +691,18 @@ impl ResolutionDecision {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolutionAuthority {
     /// The resolving actor class (admitted, never free text).
-    pub actor: String,
+    actor: String,
     /// The exact link this authority resolves conflicts on.
-    pub link_id: String,
+    link_id: String,
     /// The current authorization decision for this resolution.
-    pub authorization: AuthorizationOutcome,
+    authorization: AuthorizationOutcome,
     /// The allowed field scope of the resolution (the exact fields the
-    /// admitted decision covers).
-    pub fields: Vec<String>,
+    /// admitted decision covers). Private: struct literals cannot bypass admission.
+    fields: Vec<String>,
     /// The explicit resolution decision the authority permits.
-    pub decision: ResolutionDecision,
+    decision: ResolutionDecision,
     /// The causation identity of the resolution command.
-    pub causation_id: String,
+    causation_id: String,
 }
 
 impl ResolutionAuthority {
@@ -726,6 +726,12 @@ impl ResolutionAuthority {
         let actor_ok = ADMITTED_ACTORS.contains(&actor);
         let link_ok = bounded(link_id) && bounded(causation_id);
         let fields_ok = !fields.is_empty()
+            && fields.len() <= 64
+            && fields
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                == fields.len()
             && fields.iter().all(|field| {
                 bounded(field)
                     && !super::validate::PROTECTED_PLANNING_FIELDS.contains(&field.as_str())
@@ -777,10 +783,19 @@ pub fn resolve_conflict(
     // link, or covering fields this conflict is not about, resolves
     // nothing here.
     if record.link_id != authority.link_id
-        || !authority
+        || record.fields.is_empty()
+        || record
             .fields
             .iter()
-            .all(|field| record.fields.contains(field))
+            .any(|field| super::validate::PROTECTED_PLANNING_FIELDS.contains(&field.as_str()))
+        || record
+            .fields
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            != authority
+                .fields
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
     {
         return ResolveOutcome::Denied;
     }
@@ -903,7 +918,7 @@ impl PlanOutcome {
     }
 }
 
-/// Build one collision-free intent id: `<link-hexlen>:<link>:<key-hexlen>:<key>`.
+/// Build one collision-free intent id: `<link-decimal-len>:<link>:<key-decimal-len>:<key>`.
 /// The length prefixes make the encoding injective for arbitrary text.
 fn injective_intent_id(link_id: &str, key: &str) -> String {
     format!("{}:{}:{}:{}", link_id.len(), link_id, key.len(), key)

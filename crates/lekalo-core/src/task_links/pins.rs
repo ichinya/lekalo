@@ -112,7 +112,7 @@ pub fn verify_owner_pins(
     for pin in attachment.owner_pins() {
         let Some(verified) = accepted
             .iter()
-            .find(|candidate| candidate.family == pin.family)
+            .find(|candidate| candidate.family == pin.family && candidate.identity == pin.identity)
         else {
             return Err(diagnostic::input_invalid("owner-pin-family"));
         };

@@ -189,7 +189,7 @@
         },
         "identity": {
           "type": "string",
-          "pattern": "^dev\\.lekalo\\.(authorization|transaction-concurrency|extended-effects|invariant-transition|storage-projection)@(0\\.2\\.16|0\\.4\\.0)$"
+          "pattern": "^dev\\.lekalo\\.((authorization|invariant-transition)@0\\.2\\.16|(transaction-concurrency|extended-effects)@(0\\.2\\.16|0\\.8\\.0)|storage-projection@0\\.4\\.0)$"
         },
         "digest": {
           "$ref": "#/$defs/digest"

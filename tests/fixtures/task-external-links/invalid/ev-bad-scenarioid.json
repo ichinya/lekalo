@@ -4,10 +4,10 @@
   "evidenceId": "tasklinks.evidence.two_providers",
   "origin": "mock",
   "scenarioId": "NOT-A-SYMBOL",
-  "attachmentRevision": "sha256:96c24ab42620ef3e79f11f674b0182ec7a46710ea7c475b1e03b0f514280488e",
+  "attachmentRevision": "sha256:8c3cfac775745e43ccafa9149cc7282d2eb70414b987c63fd6c89c3311b7db6f",
   "modelRef": {
     "schemaVersion": "0.8.0",
-    "irDigest": "sha256:27757f5015d1bc4b75a9b2e46102c2d6ffdd6eab083528ea2cecc0809cfac552"
+    "irDigest": "sha256:1b57dac24ac877caf5779a324d459ab08fa13e641e9c7e51599df1b9e04f8525"
   },
   "clock": {
     "policy": "injected",

@@ -145,6 +145,56 @@ definitions:
       - name: actor
         type: "tasklinks.external_id"
         required: true
+      - name: decision
+        type: "tasklinks.external_id"
+        required: true
+      - name: causation_id
+        type: "tasklinks.external_id"
+        required: true
+      - name: expected_conflict_version
+        type: "tasklinks.revision"
+        required: true
+      - name: expected_link_version
+        type: "tasklinks.revision"
+        required: true
+    identity:
+      - audit_id
+  - id: tasklinks.policy_decision
+    kind: entity
+    version: 1
+    description: "Revision-bound per-link action and field authority committed before fan-out"
+    fields:
+      - name: decision_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: link_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: actor
+        type: "tasklinks.external_id"
+        required: true
+      - name: policy_revision
+        type: "tasklinks.revision"
+        required: true
+      - name: capability_revision
+        type: "tasklinks.revision"
+        required: true
+    identity:
+      - decision_id
+  - id: tasklinks.action_audit
+    kind: entity
+    version: 1
+    description: "Immutable causation and decision audit of one canonical task action"
+    fields:
+      - name: audit_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: causation_id
+        type: "tasklinks.external_id"
+        required: true
+      - name: decision_id
+        type: "tasklinks.link_id"
+        required: true
     identity:
       - audit_id
   - id: tasklinks.task_external_link

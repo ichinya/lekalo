@@ -7,7 +7,7 @@
   "attachmentRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
   "modelRef": {
     "schemaVersion": "0.8.0",
-    "irDigest": "sha256:27757f5015d1bc4b75a9b2e46102c2d6ffdd6eab083528ea2cecc0809cfac552"
+    "irDigest": "sha256:1b57dac24ac877caf5779a324d459ab08fa13e641e9c7e51599df1b9e04f8525"
   },
   "clock": {
     "policy": "injected",

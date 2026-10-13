@@ -1,15 +1,15 @@
 {
   "schemaVersion": "lekalo/task-links-integration/v0.8.0",
   "identity": "dev.lekalo.task-links-integration@0.8.0",
-  "attachmentRevision": "sha256:48861f95c6219bd275677de69e3c54c4c3441fc6f65f50a88d4769d7f2dcecf0",
+  "attachmentRevision": "sha256:e845a02690c861de9043a097a7031c8c5b16ce64f6f32f5a6c477cffea7d838a",
   "projectId": "tasklinks",
   "modelRef": {
     "schemaVersion": "0.8.0",
-    "irDigest": "sha256:27757f5015d1bc4b75a9b2e46102c2d6ffdd6eab083528ea2cecc0809cfac552"
+    "irDigest": "sha256:1b57dac24ac877caf5779a324d459ab08fa13e641e9c7e51599df1b9e04f8525"
   },
   "irRef": {
     "identity": "dev.lekalo.ir@0.8.0",
-    "digest": "sha256:27757f5015d1bc4b75a9b2e46102c2d6ffdd6eab083528ea2cecc0809cfac552"
+    "digest": "sha256:1b57dac24ac877caf5779a324d459ab08fa13e641e9c7e51599df1b9e04f8525"
   },
   "ownerContractPins": [
     {
@@ -19,8 +19,8 @@
     },
     {
       "family": "extended-effects",
-      "identity": "dev.lekalo.extended-effects@0.2.16",
-      "digest": "sha256:57619a7ef4a8dc2e4fb2a2dbd5427421df399634d3a74642cae1f8eed3860197"
+      "identity": "dev.lekalo.extended-effects@0.8.0",
+      "digest": "sha256:53701216301940cb9f25b53ff1c75ea365e0f7c63bdae214c37d38e922aad456"
     },
     {
       "family": "invariant-transition",
@@ -34,8 +34,8 @@
     },
     {
       "family": "transaction-concurrency",
-      "identity": "dev.lekalo.transaction-concurrency@0.2.16",
-      "digest": "sha256:b7c2b3a821d3d21f033fbc926a72c68d93e75d2489f27fbbfc04bcfae8304229"
+      "identity": "dev.lekalo.transaction-concurrency@0.8.0",
+      "digest": "sha256:1babb65786a181a0897c8f0ba7ef1c5c1be2e4c42cbb3138444928cc52139b03"
     }
   ],
   "entities": [

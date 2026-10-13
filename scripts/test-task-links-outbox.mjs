@@ -90,6 +90,29 @@ if (rust.error) {
   }
 }
 
+// 2a. Execution-owner regressions, distinct from declaration-only file joins.
+{
+  const executed = spawnSync("cargo", ["test", "--locked", "-p", "lekalo-core", "--test", "task_links_execution"], { cwd: root, encoding: "utf8", timeout: 600000 });
+  if (executed.error || executed.status !== 0) fail("execution-owner-regressions", String(executed.error ?? (executed.stdout + executed.stderr).slice(-1200)));
+  const show = operation => spawnSync(resolvedBinary, ["--no-cache", "--json", "effects", "show", operation,
+    "--project", "tests/fixtures/task-external-links/project",
+    "--task-links-attachment", "tests/fixtures/task-external-links/contracts/integration.json",
+    "--transactions", "tests/fixtures/task-external-links/contracts/transaction-concurrency.json",
+    "--extended-effects", "tests/fixtures/task-external-links/contracts/extended-effects.json"], { cwd: root, encoding: "utf8", timeout: 120000 });
+  const local = show("tasklinks.request_action"), partial = show("tasklinks.dispatch_outbox");
+  for (const run of [local, partial]) if (run.error || run.status !== 0) fail("executed-effect-owner", String(run.error ?? run.stderr));
+  if (local.status === 0 && partial.status === 0) {
+    const localEffects = JSON.parse(local.stdout).effects, dispatch = JSON.parse(partial.stdout).effects;
+    const tx = localEffects.transactions[0];
+    if (tx?.basis !== "owner-admitted-execution" || tx.members.length !== 4) fail("executed-local-atomic-members", tx);
+    const canonical = localEffects.edges.filter(edge => edge.confidence === "canonical");
+    if (canonical.length !== 4 || canonical.some(edge => edge.transactionGroup !== tx.groupId)) fail("canonical-transaction-owner", canonical);
+    if (dispatch.edges.filter(edge => edge.kind === "external-call").some(edge => edge.confidence !== "verified" || edge.transactionGroup !== null)) fail("executed-network-boundary", dispatch);
+    const record = dispatch.partialFailures[0];
+    if (record?.basis !== "owner-admitted-execution" || JSON.stringify(record.retryEligible) !== JSON.stringify(["tasklinks.provider/mock-secondary"]) || !record.recipients.find(row => row.result === "delivered")?.receiptDigest) fail("executed-partial-trace", record);
+  }
+}
+
 // 2b. The declared effect graph carries the atomic intent group: the
 //     canonical local write and the durable outbox commit are declared
 //     edges of the SAME command, and the dispatch/ack commands carry
@@ -223,7 +246,7 @@ if (rust.error) {
     if (effects) {
       // The typed extracted group names two real local writes of this
       // compilation. It is a caller declaration, not proof of atomic
-      // execution; authoritative transaction-owner admission is pending.
+      // execution; authoritative admission is exercised separately above.
       const grouped = effects.edges.filter((edge) => edge.transactionGroup === "tasklinks/tx-intent-local");
       const groupedKinds = grouped.map((edge) => edge.kind + ":" + edge.resource.id).sort();
       if (

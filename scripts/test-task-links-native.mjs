@@ -105,8 +105,8 @@ if (provisioned) {
         timeout: 600000,
         env: {
           ...process.env,
-          // The absolute path keeps the battery, this gate, and the
-          // CLI admission aligned no matter their working directories.
+          // Absolute diagnostic DB location, independent of caller cwd.
+          // File/row custody is never CLI execution authority.
           LEKALO_TASKLINKS_NATIVE_DB: resolvePath(root, database),
         },
       },
@@ -127,9 +127,9 @@ if (provisioned) {
       if (passed < 4 || started < 4) {
         fail("native-battery-empty", `passed=${passed} started=${started}`);
       } else {
-        // The qualification receipt is the admission artifact: the CLI
-        // admits native-origin evidence only against it. A battery run
-        // that did not execute and pass leaves no (complete) receipt.
+        // Export-only diagnostics from the run this gate just observed.
+        // Neither this receipt nor caller-writable DB rows can qualify
+        // a later CLI report; the maintained owner executes separately.
         const receiptPath = resolvePath(root, database) + ".qualified.json";
         if (!existsSync(receiptPath)) {
           fail("native-receipt-missing", receiptPath);
@@ -189,8 +189,8 @@ if (provisioned) {
               }
             }
             // Read back the rows after this gate's observed subprocess
-            // completed successfully. The CLI also checks row consistency,
-            // but cannot infer execution from caller-writable rows alone.
+            // completed successfully. Row consistency records this observed
+            // run; it is not authentication of a caller-imported artifact.
             const { DatabaseSync } = await import("node:sqlite").catch(() => ({}));
             if (!DatabaseSync) {
               fail(
@@ -253,7 +253,7 @@ if (provisioned) {
                   // The battery executed its four tests, not this producer-
                   // authored trace. Even genuine local rows cannot supply
                   // authenticated scenario/input/build/result provenance
-                  // to the read-only CLI; its guarantees must stay unknown.
+                  // to file admission; those guarantees must stay unknown.
                   const declaredRun = read("tests/fixtures/task-external-links/evidence/mock-run.json");
                   const evidencePath = join(scratch, "declared-run.json");
                   writeFileSync(evidencePath, JSON.stringify(declaredRun, null, 2));
@@ -337,6 +337,39 @@ if (provisioned) {
   }
 }
 
+// Required maintained-port leg: the CLI owner launches fresh managed Laravel
+// processes, synchronizes competing workers, kills at uncommitted/accepted
+// boundaries and independently verifies full durable state. No copied native
+// sidecar or success-labelled evidence can enter this channel.
+if (provisioned && failures.length === 0) {
+  const binary = ["lekalo", "lekalo.exe"].map(name => join(root, "target/debug", name)).find(existsSync);
+  if (!binary) fail("binary-missing", "cargo build --workspace --locked");
+  else {
+    const run = (profile) => spawnSync(binary, ["--no-cache", "--json", "task-links", "portability",
+      "tests/fixtures/task-external-links/contracts/integration.json", "--project", "tests/fixtures/task-external-links/project",
+      "--from-profile", "tests/fixtures/task-external-links/profiles/node.json", "--to-profile", profile,
+      "--profile", "permissive", "--execute-mock", "--execute-native"], { cwd: root, encoding: "utf8", timeout: 180000 });
+    for (const profile of ["laravel", "node"]) {
+      const result = run(`tests/fixtures/task-external-links/profiles/${profile}.json`);
+      if (result.error || result.status !== 0) { fail("maintained-process-battery-failed", `${profile}: ${String(result.error ?? result.stderr).slice(0,300)}`); continue; }
+      const report = JSON.parse(result.stdout).taskLinks;
+      const native = report.executionProvenance.find(row => row.origin === "native");
+      if (!native || native.profileId !== "php-laravel-maintained"
+          || !native.implementation.includes("laravel-13.33.0-pdo-sqlite")) fail("native-execution-provenance", native);
+      for (const obligation of ["process-interruption-rollback", "process-restart-full-context", "synchronized-competing-workers", "acceptance-before-ack-no-resend", "durable-attempt-bound"]) {
+        if (!native?.assertions.includes(obligation)) fail("native-assertion-missing", obligation);
+      }
+      for (const row of report.targetGuarantees.filter(row => ["unique-index", "compare-and-swap", "local-transaction", "durable-outbox"].includes(row.fact))) {
+        const expected = profile === "laravel" ? "supported" : "unknown";
+        if (row.provided !== expected) fail("native-target-binding", row);
+        if (expected === "supported" && (row.evidenceSource !== "native-evidence" || row.pin !== native.resultDigest || native.profileDigest !== report.toProfile.digest)) fail("native-result-binding", row);
+      }
+      if (profile === "node" && report.evidenceCoverage.nativeEvidenceIds.length !== 0) fail("unexecuted-target-coverage", report.evidenceCoverage);
+    }
+    if (failures.length === 0) nativeLeg = "maintained-port-process-battery-executed";
+  }
+}
+
 if (failures.length > 0) {
   process.stderr.write(`${JSON.stringify({ ok: false, gate, failures }, null, 2)}\n`);
   process.exit(1);
@@ -346,8 +379,8 @@ process.stdout.write(
     ok: true,
     gate,
     nativeLeg,
-    note: nativeLeg === "local-battery-executed"
-      ? "the local battery executed real SQLite legs (identity race, in-process recovery, attempt bound, process-kill interruption); maintained Laravel port remains pending qualification and is never claimed"
+    note: nativeLeg === "maintained-port-process-battery-executed"
+      ? "Rust SQLite and maintained Laravel 13.33.0/PDO SQLite executed: synchronized identity/lease/version races, ungraceful transaction and ack-window termination, full-context restart, durable retries; only the actual maintained profile earns native rows"
       : "mock evidence never satisfies the durable/race assertions; native coverage stays unclaimed until the qualified environment runs this gate with LEKALO_TASKLINKS_NATIVE=1",
   })}\n`,
 );

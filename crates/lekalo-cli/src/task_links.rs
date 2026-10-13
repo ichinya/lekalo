@@ -27,6 +27,14 @@ pub enum Command {
         #[arg(long, value_name = "PROFILE", default_value = "strict")]
         profile: String,
     },
+    /// Execute the deterministic mock battery locally and export an owner receipt.
+    Execute {
+        /// The compilation-bound integration attachment.
+        path: String,
+        /// Project root selector.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
     /// Display typed relations, decisions, effects, and admitted
     /// evidence for the requested symbol; missing evidence stays
     /// unavailable. An unknown symbol is a typed not-found refusal.
@@ -66,6 +74,12 @@ pub enum Command {
         /// evidence stay honestly `unknown`.
         #[arg(long, value_name = "PATH")]
         evidence: Vec<String>,
+        /// Execute the deterministic owner battery in this process; files never qualify.
+        #[arg(long)]
+        execute_mock: bool,
+        /// Execute the maintained PHP/Laravel PDO SQLite port in fresh child processes.
+        #[arg(long)]
+        execute_native: bool,
     },
     /// Derive the reverse impact of one provider contract: every
     /// capability, binding, policy, command, effect, and verification
@@ -192,7 +206,9 @@ fn accepted_owner_pins() -> Vec<tl::OwnerPin> {
     for (family, version) in [
         ("authorization", "v0.2.16"),
         ("transaction-concurrency", "v0.2.16"),
+        ("transaction-concurrency", "v0.8.0"),
         ("extended-effects", "v0.2.16"),
+        ("extended-effects", "v0.8.0"),
         ("invariant-transition", "v0.2.16"),
         ("storage-projection", "v0.4.0"),
     ] {
@@ -439,27 +455,6 @@ fn declared_targets(compilation: &lekalo_core::ir::Compilation) -> Vec<String> {
         .collect()
 }
 
-/// The scenario coverage table of the compilation: scenario id -> the
-/// symbols it covers. Evidence binds to facts through this table.
-fn scenario_covers(
-    compilation: &lekalo_core::ir::Compilation,
-) -> std::collections::BTreeMap<String, std::collections::BTreeSet<String>> {
-    let mut covers = std::collections::BTreeMap::new();
-    for definition in &compilation.project.definitions {
-        if let lekalo_core::ir::Definition::Scenario(scenario) = definition {
-            covers.insert(
-                scenario.id.as_str().to_owned(),
-                scenario
-                    .covers
-                    .iter()
-                    .map(|symbol| symbol.as_str().to_owned())
-                    .collect(),
-            );
-        }
-    }
-    covers
-}
-
 fn profile_ref(
     path: &str,
     compilation: &lekalo_core::ir::Compilation,
@@ -508,12 +503,61 @@ fn verified_attachment(
     Ok(attachment)
 }
 
+/// Adapter read boundary for the authoritative effects route. Both owner
+/// documents are closed/duplicate-safe and pinned to this exact compilation.
+pub(super) fn executed_graph(
+    project: &Option<String>,
+    attachment_path: &str,
+    transaction_path: &str,
+    extended_path: &str,
+) -> Result<lekalo_core::effects::EffectGraph, DomainResult> {
+    let (compilation, _) = compilation(project)?;
+    let attachment = verified_attachment(attachment_path, &compilation)?;
+    let transaction_value = tl::json_parse(&read_bounded(transaction_path)?)
+        .map_err(|_| invalid("execution-owner-json"))?;
+    let extended_value = tl::json_parse(&read_bounded(extended_path)?)
+        .map_err(|_| invalid("execution-owner-json"))?;
+    let transactions =
+        lekalo_core::transaction_concurrency::TransactionConcurrencyAttachment::from_value(
+            &transaction_value,
+        )
+        .map_err(DomainResult::invalid)?;
+    let extended =
+        lekalo_core::extended_effects::ExtendedEffectsAttachment::from_value(&extended_value)
+            .map_err(DomainResult::invalid)?;
+    for (family, identity) in [
+        ("transaction-concurrency", transactions.identity()),
+        ("extended-effects", extended.identity()),
+    ] {
+        if !attachment
+            .owner_pins()
+            .iter()
+            .any(|pin| pin.family == family && pin.identity == identity)
+        {
+            return Err(invalid("execution-owner-contract-pin"));
+        }
+    }
+    let execution = tl::execution::run_mock(&attachment, &compilation)
+        .map_err(|failure| tl::into_result(&failure))?;
+    let graph = lekalo_core::effects::build(&compilation.project).map_err(DomainResult::invalid)?;
+    graph
+        .with_execution(&execution, &transactions, &extended)
+        .map_err(DomainResult::invalid)
+}
+
 pub fn run(command: Command) -> DomainResult {
     execute(command).unwrap_or_else(|result| result)
 }
 
 fn execute(command: Command) -> Result<DomainResult, DomainResult> {
     match command {
+        Command::Execute { path, project } => {
+            let (compilation, _) = compilation(&project)?;
+            let attachment = verified_attachment(&path, &compilation)?;
+            let run = tl::execution::run_mock(&attachment, &compilation)
+                .map_err(|failure| tl::into_result(&failure))?;
+            Ok(tl::render(run.report()))
+        }
         Command::Validate {
             path,
             project,
@@ -584,6 +628,8 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
             to_profile,
             profile,
             evidence,
+            execute_mock,
+            execute_native,
         } => {
             check_profile(&profile)?;
             let (compilation, project_id) = compilation(&project)?;
@@ -639,15 +685,26 @@ fn execute(command: Command) -> Result<DomainResult, DomainResult> {
                         target_implementation: qualification.target_implementation.clone(),
                         target_profile: qualification.target_profile.clone(),
                     });
-            let report = tl::portability::report(
+            // Neither co-located native files nor producer success labels can
+            // enter the sealed channel. Only an observed owner execution can.
+            let _declared_native = native_evidence;
+            let executions = if execute_mock {
+                vec![tl::execution::run_mock(&attachment, &compilation)
+                    .map_err(|failure| tl::into_result(&failure))?]
+            } else {
+                Vec::new()
+            };
+            let mut report = tl::portability::report_with_execution(
                 &attachment,
                 from,
                 to,
                 &profile,
                 &admitted,
-                &scenario_covers(&compilation),
-                native_evidence.as_ref(),
+                &executions,
             );
+            if execute_native {
+                super::task_links_native::qualify(&attachment, &mut report)?;
+            }
             let gaps = tl::portability::findings(&report);
             if profile == "strict" && !gaps.is_empty() {
                 Ok(tl::render_invalid(&report, &gaps))

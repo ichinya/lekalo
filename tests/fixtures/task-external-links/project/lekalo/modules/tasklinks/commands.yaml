@@ -24,6 +24,18 @@ definitions:
     description: "Durable outbox intent commit"
     operation: create
     entity: "tasklinks.outbox_item"
+  - id: tasklinks.effect.record_decision
+    kind: effect
+    version: 1
+    description: "Revision-bound per-link decision commit"
+    operation: create
+    entity: "tasklinks.policy_decision"
+  - id: tasklinks.effect.record_action_audit
+    kind: effect
+    version: 1
+    description: "Immutable canonical action audit append"
+    operation: create
+    entity: "tasklinks.action_audit"
   - id: tasklinks.effect.record_receipt
     kind: effect
     version: 1
@@ -114,6 +126,8 @@ definitions:
     effects:
       - "tasklinks.effect.write_outbox"
       - "tasklinks.effect.update_task_from_provider"
+      - "tasklinks.effect.record_decision"
+      - "tasklinks.effect.record_action_audit"
   - id: tasklinks.detach_link
     kind: command
     version: 1
@@ -134,6 +148,12 @@ definitions:
         required: true
       - name: expected_link_version
         type: "tasklinks.revision"
+        required: true
+      - name: expected_conflict_version
+        type: "tasklinks.revision"
+        required: true
+      - name: resolution
+        type: "tasklinks.external_id"
         required: true
     effects:
       - "tasklinks.effect.resolve_conflict"

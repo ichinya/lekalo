@@ -130,6 +130,57 @@ base.irRef.identity = "dev.lekalo.ir@0.8.0";
 base.modelRef.irDigest = irDigest;
 base.modelRef.schemaVersion = "0.8.0";
 
+// Negotiated 0.8.0 owners admit the actual source Model/IR, not placeholder
+// 0.2.16 metadata. Frozen predecessors remain byte-untouched.
+for (const pin of base.ownerContractPins) {
+  if (["transaction-concurrency", "extended-effects"].includes(pin.family)) {
+    pin.identity = `dev.lekalo.${pin.family}@0.8.0`;
+    pin.digest = sha(readFileSync(join(root, `contracts/${pin.family}.schema.v0.8.0.json`)));
+  }
+}
+const writeOwner = (name, value) => writeFileSync(join(fixtureRoot, `contracts/${name}.json`), JSON.stringify(value, null, 2) + "\n");
+const definitionDigest = (id) => sha(canonicalBytes(irObject.definitions.find(row => row.id === id)));
+const sourcePins = (family) => ({ schemaVersion: `lekalo/${family}/v0.8.0`, identity: `dev.lekalo.${family}@0.8.0`, projectId: "tasklinks",
+  modelRef: { modelVersion: "0.8.0", digest: irDigest }, irRef: { identity: "dev.lekalo.ir@0.8.0", digest: irDigest },
+  effectGraphRef: { identity: "dev.lekalo.effects@0.2.16", digest: irDigest } });
+const effectRun = spawnSync(binary, ["--no-cache", "--json", "effects", "show", "tasklinks.request_action", "--project", projectRel], { cwd: root, encoding: "utf8", timeout: 120000 });
+if (effectRun.error || effectRun.status !== 0) throw new Error("live effect identity unavailable");
+const localRefs = JSON.parse(effectRun.stdout).effects.edges.map(edge =>
+  `${edge.operation}|${edge.kind}|${edge.resource.id}|${edge.effect}|${edge.occurrence}`);
+const txRequirements = ["transaction.atomic_group", "transaction.rollback", "isolation.serializable", "idempotency.durable_key", "idempotency.replay"];
+const txRefs = txRequirements.map((_, index) => `tasklinks.req/transaction-${index}`);
+writeOwner("transaction-concurrency", { ...sourcePins("transaction-concurrency"), capabilityRequirements: txRequirements.map((capability,index) =>
+  ({ capability, minimum: "full", reason: "The local Task/decision/outbox/audit commit is indivisible and durable.", requirementId: txRefs[index] })),
+  operations: [{ operationRef: "operation:tasklinks.request_action", operationVersion: "0.8.0", transaction: "required", isolationRequirement: "serializable",
+    atomicEffectGroups: [{ groupId: "tasklinks/tx-intent-local", scope: "local", atomicity: "all_or_nothing", failurePolicy: "abort", commitBoundary: "before_external_effects", effectRefs: localRefs }],
+    preconditions: [], failureBoundaries: [], capabilityRequirements: txRefs,
+    idempotency: { mode: "key_required", keyRef: "intent_id", scope: "tasklinks.resource/intent", record: "durable", duplicate: "replay_result", sameKeyDifferentRequest: "conflict" },
+    retry: { condition: "idempotency_key", phases: ["before_commit", "after_commit_unknown"], safety: "conditional" } }], invariants: [], concurrencyCases: [] });
+const extended = JSON.parse(readFileSync(join(fixtureRoot, "contracts/extended-effects.json"), "utf8"));
+Object.assign(extended, sourcePins("extended-effects"));
+const primaryCall = extended.calls[0];
+primaryCall.contributions.graph = true;
+primaryCall.effectRef = "operation:tasklinks.dispatch_outbox|external-call|tasklinks.provider/github-issues|#0|0";
+primaryCall.requestDigest = definitionDigest("tasklinks.primary_request");
+primaryCall.responseDigest = definitionDigest("tasklinks.primary_response");
+const secondaryCall = JSON.parse(JSON.stringify(primaryCall));
+secondaryCall.contractRef = "tasklinks.call/secondary-write";
+secondaryCall.effectRef = "operation:tasklinks.dispatch_outbox|external-call|tasklinks.provider/mock-secondary|#1|1";
+secondaryCall.requestDigest = definitionDigest("tasklinks.secondary_request");
+secondaryCall.responseDigest = definitionDigest("tasklinks.secondary_response");
+extended.calls = [primaryCall, secondaryCall];
+extended.jobs[0].contributions.graph = true;
+extended.jobs[0].effectRef = "operation:tasklinks.dispatch_outbox|enqueue-job|tasklinks.queue/outbox|#2|2";
+extended.jobs[0].payloadDigest = definitionDigest("tasklinks.outbox_item");
+extended.events[0].contributions.graph = true;
+extended.events[0].effectRef = "operation:tasklinks.ack_delivery|emit-event|tasklinks.delivery_recorded|#3|3";
+extended.events[0].schemaDigest = definitionDigest("tasklinks.delivery_recorded");
+const partial = extended.partialFailureCases[0];
+partial.scenarioRef.irDigest = definitionDigest("tasklinks.scenario.partial_delivery");
+partial.steps = [{ stepId: "s_primary", contractRef: primaryCall.contractRef, fault: "none" }, { stepId: "s_secondary", contractRef: secondaryCall.contractRef, fault: "timeout" }];
+partial.expectedOutcomes = [{ contractRef: primaryCall.contractRef, outcome: "success" }, { contractRef: secondaryCall.contractRef, outcome: "error" }];
+partial.schedule = [{ nodeId: "n_primary", kind: "invoke", stepId: "s_primary", joins: [] }, { nodeId: "n_secondary", kind: "invoke", stepId: "s_secondary", joins: ["n_primary"] }, { nodeId: "n_eval", kind: "barrier", joins: ["n_primary", "n_secondary"] }];
+writeOwner("extended-effects", extended);
 const baseRevision = revisionOf(base);
 
 // The changed side of the impact pair: exactly the upstream pin moves.
@@ -173,6 +224,9 @@ const walk = (current) => {
         document.sourceRevision = sourceRevision;
         touched = true;
       }
+      const payload = { ...document }; delete payload.evidenceDigest;
+      const digest = sha(canonicalBytes(payload));
+      if (document.evidenceDigest !== digest) { document.evidenceDigest = digest; touched = true; }
     } else if (
       typeof schemaVersion === "string"
       && schemaVersion.startsWith("lekalo/task-links-integration/")
@@ -180,6 +234,14 @@ const walk = (current) => {
     ) {
       if (document.deliveryRules) {
         document.deliveryRules.outboxStates = [...OUTBOX_STATES];
+      }
+      for (const pin of document.ownerContractPins ?? []) {
+        const accepted = base.ownerContractPins.find(row => row.family === pin.family);
+        if (!accepted || !["extended-effects", "transaction-concurrency"].includes(pin.family)) continue;
+        if (pin.identity !== accepted.identity) { pin.identity = accepted.identity; touched = true; }
+        if (!relativePath.endsWith("invalid/pin-owner-pin-stale.json") && pin.digest !== accepted.digest) {
+          pin.digest = accepted.digest; touched = true;
+        }
       }
       // The stale-IR-digest trigger keeps its committed stale pin: the
       // divergent digest IS its targeted refusal. Every other

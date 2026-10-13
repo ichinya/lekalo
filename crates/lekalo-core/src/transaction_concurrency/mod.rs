@@ -74,14 +74,14 @@ pub use version::{FAMILY, IDENTITY, SCHEMA_VERSION, VERSION};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelPin {
     /// The accepted Model contract version.
-    pub(crate) version: crate::scenario::ModelPin,
+    pub(crate) version: crate::loader::ModelVersion,
     /// The digest of the exact source Model document.
     pub(crate) digest: Sha256Digest,
 }
 
 impl ModelPin {
     /// The accepted Model contract version.
-    pub const fn version(&self) -> &crate::scenario::ModelPin {
+    pub const fn version(&self) -> &crate::loader::ModelVersion {
         &self.version
     }
 
@@ -135,6 +135,24 @@ impl TransactionConcurrencyAttachment {
     /// return the typed rejection set.
     pub fn from_value(json: &serde_json::Value) -> Result<Self, DiagnosticSet> {
         wire::from_value(json)
+    }
+
+    /// Negotiated family identity for the bound source Model.
+    pub fn identity(&self) -> &'static str {
+        if self.model_ref.version.relations_supported() {
+            "dev.lekalo.transaction-concurrency@0.8.0"
+        } else {
+            IDENTITY
+        }
+    }
+
+    /// Negotiated family discriminator for the bound source Model.
+    pub fn schema_version(&self) -> &'static str {
+        if self.model_ref.version.relations_supported() {
+            "lekalo/transaction-concurrency/v0.8.0"
+        } else {
+            SCHEMA_VERSION
+        }
     }
 
     /// The canonical payload bytes (compact JSON, byte-sorted keys,

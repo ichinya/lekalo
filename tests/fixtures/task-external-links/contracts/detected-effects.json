@@ -2,8 +2,8 @@
   "adapterId": "tasklinks/engine",
   "targetId": "tasklinks/outbox-worker",
   "protocolVersion": "0.2.16",
-  "evidenceDigest": "sha256:5a45a5b65ce2477004624c370df9b802a534e42e5473c8db131ff227b180f383",
-  "sourceRevision": "sha256:27757f5015d1bc4b75a9b2e46102c2d6ffdd6eab083528ea2cecc0809cfac552",
+  "evidenceDigest": "sha256:bfc046a60250bb165979aff8883a864223a4f370471d56e2a9263b4c0df28110",
+  "sourceRevision": "sha256:1b57dac24ac877caf5779a324d459ab08fa13e641e9c7e51599df1b9e04f8525",
   "trust": "verified",
   "transactions": [
     {
@@ -63,7 +63,9 @@
             "errorClass": "timeout"
           }
         ],
-        "retryEligible": ["tasklinks.provider/mock-secondary"]
+        "retryEligible": [
+          "tasklinks.provider/mock-secondary"
+        ]
       },
       "trust": "verified"
     },

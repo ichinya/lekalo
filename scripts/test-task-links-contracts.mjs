@@ -10,9 +10,9 @@
 // (default) fails closed when the built binary is missing.
 
 import { createRequire } from "node:module";
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, existsSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
@@ -64,6 +64,11 @@ const schemas = {
   evidence: "contracts/task-links-evidence.schema.v0.8.0.json",
   report: "contracts/task-links-report.schema.v0.8.0.json",
   portability: "contracts/task-links-portability.schema.v0.8.0.json",
+  execution: "contracts/task-links-execution.schema.v0.8.0.json",
+  model: "contracts/model.schema.v0.8.0.json",
+  ir: "contracts/ir.schema.v0.8.0.json",
+  transactions: "contracts/transaction-concurrency.schema.v0.8.0.json",
+  extended: "contracts/extended-effects.schema.v0.8.0.json",
 };
 const compiled = {};
 for (const [name, path] of Object.entries(schemas)) {
@@ -130,6 +135,23 @@ for (const [name, path] of Object.entries(schemas)) {
   if (!compiled.evidence(evidence)) {
     fail("valid-evidence-rejected", ajv.errorsText(compiled.evidence.errors));
   }
+}
+
+// 3b. Negotiated execution owners and bidirectional Model member language
+// controls: literal separators, explicit-null normalization and Unicode scope.
+for (const [kind, path] of [["transactions", "transaction-concurrency"], ["extended", "extended-effects"]]) {
+  if (!compiled[kind](read(`tests/fixtures/task-external-links/contracts/${path}.json`))) fail("valid-owner-rejected", `${path}: ${ajv.errorsText(compiled[kind].errors)}`);
+}
+{
+  const schema = read(schemas.model);
+  const fragment = name => new Ajv2020({ strict: true, allErrors: true }).compile({ $schema: schema.$schema, $ref: `#/$defs/${name}`, $defs: schema.$defs });
+  const relation = fragment("relation"), constraint = fragment("uniqueConstraint");
+  const rel = { id: "tasklinks.rel.task_links", target: "planner.task", localFields: ["task_id"], targetFields: ["task_id"], min: 1, max: 1, ownership: "local", onDetach: "retain-history", onDelete: "restrict" };
+  if (!relation(rel)) fail("model-relation-control", relation.errors);
+  for (const id of ["a!b", "a/b", "a_b", "a." + "a".repeat(64)]) if (relation({ ...rel, id })) fail("model-symbol-separator", id);
+  const uq = { id: "tasklinks.uq_external_identity", fields: ["external_id"], comparison: "exact-text", scope: "é".repeat(128) };
+  if (!constraint(uq)) fail("model-unicode-scope", constraint.errors);
+  if (constraint({ ...uq, scope: "é".repeat(129) }) || constraint({ ...uq, normalizationRef: null })) fail("model-constraint-parity", "scope/null");
 }
 
 // 4. Shape-level negatives are rejected by the schemas: unknown
@@ -433,6 +455,38 @@ if (!schemaOnly) {
           fail("report-identity", "report pins");
         }
       }
+    }
+    // Same new-member language through the real loader, not just fragments.
+    // Guard every mutation against no-ops caused by fixture quoting changes.
+    {
+      const scratch = mkdtempSync(join(root, "target", "tasklinks-model-parity-"));
+      try {
+        for (const [name, mutate, expected] of [
+          ["separator", text => text.replace('id: "tasklinks.rel.task_links"', 'id: "tasklinks!rel!task_links"'), 1],
+          ["long-segment", text => text.replace('id: "tasklinks.rel.task_links"', `id: "a.${"a".repeat(64)}"`), 1],
+          ["explicit-null", text => text.replace(/(        comparison: "?exact-text"?)/, "$1\n        normalizationRef: null"), 1],
+          ["unicode-128", text => text.replace(/(        scope: )[^\n]+/, `$1"${"é".repeat(128)}"`), 0],
+          ["unicode-129", text => text.replace(/(        scope: )[^\n]+/, `$1"${"é".repeat(129)}"`), 1],
+        ]) {
+          const destination = join(scratch, name);
+          cpSync(join(root, project), destination, { recursive: true });
+          const path = join(destination, "lekalo/modules/tasklinks/entities.yaml");
+          const before = readFileSync(path, "utf8").replaceAll("\r\n", "\n"), after = mutate(before);
+          if (before === after) { fail("model-mutation-no-op", name); continue; }
+          writeFileSync(path, after);
+          const loaded = runCli(["--json", "load", "--project", relative(root, destination).replaceAll("\\", "/"), "--ir"]);
+          if (loaded.code !== expected) fail("model-runtime-parity", `${name}: expected ${expected}, got ${loaded.code}`);
+          if (expected === 0 && loaded.code === 0 && !compiled.ir(JSON.parse(loaded.stdout).ir)) fail("unicode-ir-parity", compiled.ir.errors);
+        }
+      } finally { rmSync(scratch, { recursive: true, force: true }); }
+    }
+    // Actual owner receipt/export schema plus live compilation IR schema.
+    {
+      const executed = runCli(["--json", "task-links", "execute", attachment, "--project", project]);
+      if (executed.code !== 0) fail("execution-owner-exit", executed.code);
+      else if (!compiled.execution(JSON.parse(executed.stdout).taskLinks)) fail("execution-owner-schema", ajv.errorsText(compiled.execution.errors));
+      const loaded = runCli(["--json", "load", "--project", project, "--ir"]);
+      if (loaded.code !== 0 || !compiled.ir(JSON.parse(loaded.stdout).ir)) fail("compiled-ir-schema", compiled.ir.errors);
     }
     // inspect admits evidence and shows the typed view.
     {

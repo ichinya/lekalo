@@ -881,12 +881,11 @@ fn native_claims_are_qualification_gated() {
     );
 }
 
-/// Native file admission requires an internally consistent real DB and
-/// closed receipt. Counterfeit headers, missing/divergent rows and links
-/// refuse. A producer can ALSO write every matching row, as this test
-/// does, so even perfect consistency never promotes execution guarantees.
+/// Native file admission always refuses, even with a real DB, exact rows
+/// and an exported receipt. Only an explicit live owner execution qualifies;
+/// caller-created/copyable rows, magic headers and environment flags do not.
 #[test]
-fn native_qualification_requires_the_executed_battery_receipt() {
+fn native_files_and_consistent_battery_rows_cannot_authenticate_execution() {
     let database = scratch("native-qualification", "provisioned.sqlite");
     let _ = std::fs::remove_dir_all(database.parent().unwrap());
     std::fs::create_dir_all(database.parent().unwrap()).expect("provision root");
@@ -961,11 +960,7 @@ fn native_qualification_requires_the_executed_battery_receipt() {
     let output = run_inspect(&env);
     refused_unqualified(&output, "a receipt without its database refuses");
     // A header-only counterfeit database plus that hand-written
-    // receipt still refuses: row consistency requires a real DB. The
-    // 16 magic bytes make the file look like SQLite, but no battery
-    // ever wrote qualification rows into it, and the CLI reads the
-    // database's own durable rows back through real SQLite before
-    // believing any receipt.
+    // receipt still refuses. Magic bytes do not authenticate a run.
     let mut header = vec![0u8; 100];
     header[..16].copy_from_slice(b"SQLite format 3\0");
     header[16] = 0x10;
@@ -978,10 +973,8 @@ fn native_qualification_requires_the_executed_battery_receipt() {
     );
     // A hand-written real database with forged rows agreeing with the receipt
     // (boundary, runner, run id, target binding, and the exact leg
-    // set). With the durable rows present the qualification itself
-    // passes, and the evidence refusal moves past the admission gate
-    // (this fixture's injected clock is incoherent for a native
-    // claim - the right reason, a different registered detail).
+    // set) still cannot pass admission: no file/DB contents authenticate
+    // actual execution, irrespective of the subsequent clock policy.
     let _ = std::fs::remove_file(&database);
     {
         let connection = rusqlite::Connection::open(&database).expect("open provisioned db");
@@ -1009,15 +1002,9 @@ fn native_qualification_requires_the_executed_battery_receipt() {
         }
     }
     let output = run_inspect(&env);
-    assert_eq!(
-        output.status.code(),
-        Some(1),
-        "the forged native document (injected clock) still refuses, but for the RIGHT reason"
-    );
-    let envelope: Value = serde_json::from_str(stderr_text(&output).trim()).expect("envelope");
-    assert_ne!(
-        envelope["diagnostics"][0]["data"]["detail"], "evidence-native-unqualified",
-        "the qualification itself passed: the refusal is the clock policy, not the admission gate"
+    refused_unqualified(
+        &output,
+        "even internally consistent forged execution rows refuse",
     );
     // All the rows above were written by THIS TEST, not by any battery.
     // Correctly shaped native evidence plus an identical receipt must
@@ -1054,30 +1041,10 @@ fn native_qualification_requires_the_executed_battery_receipt() {
                 &forged_path.to_string_lossy(),
             ],
         );
-        assert_eq!(output.status.code(), Some(0), "{}", stderr_text(&output));
-        let report: Value = serde_json::from_str(&stdout_text(&output)).unwrap();
-        assert_eq!(
-            report["taskLinks"]["evidenceCoverage"]["nativeEvidenceIds"],
-            serde_json::json!([])
+        refused_unqualified(
+            &output,
+            &format!("forged native evidence refuses on {target}"),
         );
-        for row in report["taskLinks"]["coreSemantics"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .chain(
-                report["taskLinks"]["targetGuarantees"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .filter(|row| row["fact"] != "delivery-uncertainty"),
-            )
-        {
-            assert_eq!(
-                row["provided"], "unknown",
-                "forged execution on {target}: {row}"
-            );
-            assert_eq!(row["evidenceSource"], "attachment-declaration");
-        }
     }
     // The native database obeys the same no-follow policy as the other
     // operands, including ancestor junctions on Windows.

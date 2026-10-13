@@ -13,6 +13,7 @@
 
 pub mod decision;
 pub mod diagnostic;
+pub mod execution;
 pub mod json;
 pub mod pins;
 pub mod portability;
@@ -348,17 +349,14 @@ fn is_evidence_digest(text: &str) -> bool {
 /// unsupported capability or a denied authorization), an allowed
 /// decision may never touch the protected planning fields, step ids
 /// are unique, and coverage observations cannot claim more than the
-/// recorded steps. The origin must be one the environment can actually
-/// stand behind: `native` claims are admitted only when
-/// `qualified_native` is asserted by the caller (the
-/// qualified-environment contract), and `native` always implies the
-/// `wall-clock-native` clock policy. A forged native claim without
-/// qualification is one registered failure, never a silent pass.
+/// recorded steps. File-origin `native` claims are always refused. The legacy
+/// qualification argument is ignored: a caller boolean cannot confer execution
+/// custody. Actual execution uses a sealed owner channel, never file import.
 pub fn admit_evidence(
     bytes: &[u8],
     attachment: &Attachment,
     compilation: &crate::ir::Compilation,
-    qualified_native: bool,
+    _qualified_native: bool,
 ) -> Result<EvidenceSummary, Failure> {
     if bytes.len() > version::MAX_BYTES {
         return Err(diagnostic::rule_invalid(
@@ -434,14 +432,11 @@ pub fn admit_evidence(
     ) {
         return Err(evidence_invalid("evidence-origin", None));
     }
-    // Native claims are qualification-gated and clock-coherent.
+    // No file or caller boolean can authenticate native execution. The live
+    // adapter owner has a separate sealed process-local channel; an exported
+    // native receipt is an observation, never re-importable authority.
     if evidence.origin == "native" {
-        if !qualified_native {
-            return Err(evidence_invalid("evidence-native-unqualified", None));
-        }
-        if evidence.clock.policy != "wall-clock-native" {
-            return Err(evidence_invalid("evidence-native-clock", None));
-        }
+        return Err(evidence_invalid("evidence-native-unqualified", None));
     }
     // The scenario must be declared by the compilation: evidence can
     // never witness an invented scenario.

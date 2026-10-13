@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:468a8f49ed5879aa207a8d5760f95669f6610519e6451b2974c6fa433c4843c5",
+  "cliSourceDigest": "sha256:21e9250df7e1992910e41ac05c89e0ecabfd1c40fdc552269c479e20c171b98f",
   "p0Pages": [
     {
       "page": "README.md",
@@ -57,30 +57,6 @@
     }
   ],
   "records": [
-    {
-      "id": "cli:--help",
-      "kind": "global",
-      "owner": "docs/cli.md",
-      "status": "implemented"
-    },
-    {
-      "id": "cli:--version",
-      "kind": "global",
-      "owner": "docs/cli.md",
-      "status": "implemented"
-    },
-    {
-      "id": "cli:--json",
-      "kind": "global",
-      "owner": "docs/cli.md",
-      "status": "implemented"
-    },
-    {
-      "id": "cli:--no-cache",
-      "kind": "global",
-      "owner": "docs/cli.md",
-      "status": "implemented"
-    },
     {
       "id": "cli:adapter",
       "kind": "command",
@@ -603,7 +579,7 @@
       "kind": "command",
       "command": "effects show",
       "usage": "lekalo effects show [OPTIONS] <OPERATION>",
-      "helpDigest": "sha256:5d8b05c3d5605f897fe57cf0d7331bb19410c5fa29b9017edd04d368ad94f090",
+      "helpDigest": "sha256:6346541ae599d984db931cacc70586e79676c5a592cbdfe84e4cfad4c069d26c",
       "summary": "Show one operation's declared and detected effects",
       "leaf": true,
       "owner": "docs/effect-graph.md",
@@ -1780,9 +1756,20 @@
       "kind": "command",
       "command": "task-links",
       "usage": "lekalo task-links [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:a1a493e8e348c8cb11469a60201fcbbdbb614adddc766d1a05f645d8dafb0281",
+      "helpDigest": "sha256:c561554f49eb779c1539ac3ec795542428f837ffad6f35d2b5586fa23944db29",
       "summary": "The read-only multi-provider TaskExternalLink pilot surface (issue #52)",
       "leaf": false,
+      "owner": "docs/task-external-links.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:task-links execute",
+      "kind": "command",
+      "command": "task-links execute",
+      "usage": "lekalo task-links execute [OPTIONS] <PATH>",
+      "helpDigest": "sha256:accf847b7fa3e1c1b802b78fd9378abe54956f0c03953f291918ba4a1c64e4c4",
+      "summary": "Execute the deterministic mock battery locally and export an owner receipt",
+      "leaf": true,
       "owner": "docs/task-external-links.md",
       "status": "implemented"
     },
@@ -1813,7 +1800,7 @@
       "kind": "command",
       "command": "task-links portability",
       "usage": "lekalo task-links portability [OPTIONS] --from-profile <PATH> --to-profile <PATH> <PATH>",
-      "helpDigest": "sha256:eeaad6a91ca8231a44c6a48e2921dd2917a30714bc68014000a8b0ba28c8082f",
+      "helpDigest": "sha256:a84c6f172ed5da974d962bf9714a939bce74f6022be237c4cb1a303cec7e1981",
       "summary": "Join resolved target/component profiles and provider contract requirements into the closed portability projection",
       "leaf": true,
       "owner": "docs/task-external-links.md",
@@ -2026,6 +2013,30 @@
       "summary": "List committed waiver entries without claiming current effectiveness",
       "leaf": true,
       "owner": "docs/waivers.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:--help",
+      "kind": "global",
+      "owner": "docs/cli.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:--version",
+      "kind": "global",
+      "owner": "docs/cli.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:--json",
+      "kind": "global",
+      "owner": "docs/cli.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:--no-cache",
+      "kind": "global",
+      "owner": "docs/cli.md",
       "status": "implemented"
     },
     {
@@ -2600,6 +2611,15 @@
       "kind": "contract",
       "source": "contracts/extended-effects.schema.v0.2.16.json",
       "sourceDigest": "sha256:57619a7ef4a8dc2e4fb2a2dbd5427421df399634d3a74642cae1f8eed3860197",
+      "owner": "docs/extended-effects.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/extended-effects.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/extended-effects.schema.v0.8.0.json",
+      "sourceDigest": "sha256:53701216301940cb9f25b53ff1c75ea365e0f7c63bdae214c37d38e922aad456",
       "owner": "docs/extended-effects.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3334,10 +3354,19 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/task-links-execution.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/task-links-execution.schema.v0.8.0.json",
+      "sourceDigest": "sha256:57c9131f584eb5bd36c1d58f7ee7c96c040ab13c1ae14725ac29b99aacb33dc1",
+      "owner": "docs/task-external-links.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/task-links-integration.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/task-links-integration.schema.v0.8.0.json",
-      "sourceDigest": "sha256:f87da68c2584de65e333fd14502385b62de05bb1811ac735685b678214258906",
+      "sourceDigest": "sha256:b9e1b799c4d89b005678994bc62384d70826212966de39833bbf6c3d1e614794",
       "owner": "docs/task-external-links.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3346,7 +3375,7 @@
       "id": "contract:contracts/task-links-portability.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/task-links-portability.schema.v0.8.0.json",
-      "sourceDigest": "sha256:23207d1539d6fb73e36144bcd362fdab1b4a48ef366ce2f3879af8d88ee66102",
+      "sourceDigest": "sha256:b306220618d1836f6bc120761d10072b086b873c6cb6b3e567788608c2c8e9fb",
       "owner": "docs/task-external-links.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3401,6 +3430,15 @@
       "kind": "contract",
       "source": "contracts/transaction-concurrency.schema.v0.2.16.json",
       "sourceDigest": "sha256:b7c2b3a821d3d21f033fbc926a72c68d93e75d2489f27fbbfc04bcfae8304229",
+      "owner": "docs/transaction-concurrency.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/transaction-concurrency.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/transaction-concurrency.schema.v0.8.0.json",
+      "sourceDigest": "sha256:1babb65786a181a0897c8f0ba7ef1c5c1be2e4c42cbb3138444928cc52139b03",
       "owner": "docs/transaction-concurrency.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

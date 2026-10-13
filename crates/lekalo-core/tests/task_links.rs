@@ -2096,6 +2096,19 @@ fn scenario_stale_resolution_refuses_and_fresh_resolution_audits() {
         audit_log.is_empty(),
         "an out-of-scope field set never audits"
     );
+    // A narrower authority cannot close a conflict containing other fields.
+    assert_eq!(
+        decision::resolve_conflict(
+            &mut conflicts,
+            &mut audit_log,
+            "conflict-1",
+            "r-7",
+            4,
+            &authority(&["state"])
+        ),
+        decision::ResolveOutcome::Denied
+    );
+    assert!(audit_log.is_empty());
     // Unknown conflict ids refuse too.
     assert_eq!(
         decision::resolve_conflict(
@@ -2286,8 +2299,8 @@ fn extended_effects_declare_the_external_write_and_partial_failure() {
         })?;
         assert_eq!(
             attachment.calls().len(),
-            1,
-            "the provider write is declared"
+            2,
+            "both provider writes are declared"
         );
         assert_eq!(attachment.jobs().len(), 1, "the outbox worker is declared");
         assert_eq!(
@@ -2300,9 +2313,10 @@ fn extended_effects_declare_the_external_write_and_partial_failure() {
             1,
             "the partial-failure case is declared"
         );
-        attachment
-            .validate_against_graph(&graph)
-            .map_err(|e| format!("graph join: {:?}", e.reason_ids()))?;
+        assert!(
+            attachment.validate_against_graph(&graph).is_err(),
+            "canonical declarations alone contain no executed external-call facts"
+        );
         // The declared failure case is keyed to the real scenario.
         let case = &attachment.cases()[0];
         assert!(

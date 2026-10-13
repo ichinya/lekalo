@@ -1,18 +1,18 @@
 {
-  "schemaVersion": "lekalo/extended-effects/v0.2.16",
-  "identity": "dev.lekalo.extended-effects@0.2.16",
+  "schemaVersion": "lekalo/extended-effects/v0.8.0",
+  "identity": "dev.lekalo.extended-effects@0.8.0",
   "projectId": "tasklinks",
   "modelRef": {
-    "digest": "sha256:aa10000000000000000000000000000000000000000000000000000000000000",
-    "modelVersion": "0.2.16"
+    "modelVersion": "0.8.0",
+    "digest": "sha256:1b57dac24ac877caf5779a324d459ab08fa13e641e9c7e51599df1b9e04f8525"
   },
   "irRef": {
-    "digest": "sha256:bb10000000000000000000000000000000000000000000000000000000000000",
-    "identity": "dev.lekalo.ir@0.2.16"
+    "identity": "dev.lekalo.ir@0.8.0",
+    "digest": "sha256:1b57dac24ac877caf5779a324d459ab08fa13e641e9c7e51599df1b9e04f8525"
   },
   "effectGraphRef": {
-    "digest": "sha256:cc10000000000000000000000000000000000000000000000000000000000000",
-    "identity": "dev.lekalo.effects@0.2.16"
+    "identity": "dev.lekalo.effects@0.2.16",
+    "digest": "sha256:1b57dac24ac877caf5779a324d459ab08fa13e641e9c7e51599df1b9e04f8525"
   },
   "capabilityRequirements": [
     {
@@ -57,19 +57,49 @@
       "contractVersion": "0.2.16",
       "contributions": {
         "context": false,
-        "graph": false,
+        "graph": true,
         "impact": true,
         "scenarios": true
       },
-      "effectRef": "operation:tasklinks.dispatch_outbox|external-call|tasklinks.provider/github-issues|effect:tasklinks.dispatch_outbox|0",
+      "effectRef": "operation:tasklinks.dispatch_outbox|external-call|tasklinks.provider/github-issues|#0|0",
       "errorRefs": [
         "errors.tasklinks-provider/rejected",
         "errors.tasklinks-provider/timeout"
       ],
       "portability": "portable",
       "providerContract": "tasklinks.provider-contract/write@0.8.0",
-      "requestDigest": "sha256:ff11000000000000000000000000000000000000000000000000000000000000",
-      "responseDigest": "sha256:aa22000000000000000000000000000000000000000000000000000000000000",
+      "requestDigest": "sha256:f97da288553bcbe33c9dc21b24775ce9b93baab2416160164ddfb0644f6aeb22",
+      "responseDigest": "sha256:9553841524d148601ab974623acc111518776069668176077967c013354e36a0",
+      "retry": {
+        "maxAttempts": 5,
+        "safety": "conditional_idempotent"
+      },
+      "sensitivity": "standard",
+      "timeoutMillis": 5000
+    },
+    {
+      "capabilityRequirementRefs": [
+        "tasklinks.req/compensation"
+      ],
+      "classification": "write",
+      "compensationRef": "operation:tasklinks.ack_delivery",
+      "contractRef": "tasklinks.call/secondary-write",
+      "contractVersion": "0.2.16",
+      "contributions": {
+        "context": false,
+        "graph": true,
+        "impact": true,
+        "scenarios": true
+      },
+      "effectRef": "operation:tasklinks.dispatch_outbox|external-call|tasklinks.provider/mock-secondary|#1|1",
+      "errorRefs": [
+        "errors.tasklinks-provider/rejected",
+        "errors.tasklinks-provider/timeout"
+      ],
+      "portability": "portable",
+      "providerContract": "tasklinks.provider-contract/write@0.8.0",
+      "requestDigest": "sha256:bff9a954a36ca66ff6b92a84b63ad87eef4574a1bea289c151199f2613941f08",
+      "responseDigest": "sha256:90294e85fa352ee3a64d830a9c41a6ee8c12842fd1f56d2cf379592762cca27c",
       "retry": {
         "maxAttempts": 5,
         "safety": "conditional_idempotent"
@@ -88,17 +118,17 @@
       "contractVersion": "0.2.16",
       "contributions": {
         "context": false,
-        "graph": false,
+        "graph": true,
         "impact": true,
         "scenarios": true
       },
       "deadLetter": "park",
-      "effectRef": "operation:tasklinks.dispatch_outbox|enqueue-job|tasklinks.queue/outbox|effect:tasklinks.dispatch_outbox|0",
+      "effectRef": "operation:tasklinks.dispatch_outbox|enqueue-job|tasklinks.queue/outbox|#2|2",
       "idempotency": {
         "keyField": "intent_id",
         "mode": "key"
       },
-      "payloadDigest": "sha256:ee11000000000000000000000000000000000000000000000000000000000000",
+      "payloadDigest": "sha256:18382834464e96106a41dbfdab202844fdd7727389ccbb609c587b7166a23151",
       "portability": "portable",
       "queueClass": "tasklinks.queue/outbox",
       "retry": {
@@ -122,7 +152,7 @@
       "contractVersion": "0.2.16",
       "contributions": {
         "context": false,
-        "graph": false,
+        "graph": true,
         "impact": true,
         "scenarios": true
       },
@@ -132,11 +162,11 @@
         "mode": "durable_key"
       },
       "delivery": "durable",
-      "effectRef": "operation:tasklinks.dispatch_outbox|emit-event|tasklinks.delivery_recorded|effect:tasklinks.dispatch_outbox|0",
+      "effectRef": "operation:tasklinks.ack_delivery|emit-event|tasklinks.delivery_recorded|#3|3",
       "eventVersion": "0.2.16",
       "ordering": "per_key",
       "portability": "portable",
-      "schemaDigest": "sha256:dd11000000000000000000000000000000000000000000000000000000000000",
+      "schemaDigest": "sha256:b944892a0463a81674bf4e8bbf61d9fb0b61f57404ead6fa1581055328b00ac3",
       "sensitivity": "standard"
     }
   ],
@@ -151,52 +181,52 @@
       "expectedOutcomes": [
         {
           "contractRef": "tasklinks.call/provider-write",
-          "outcome": "recovery_required"
+          "outcome": "success"
         },
         {
-          "contractRef": "tasklinks.event/delivery-recorded",
-          "outcome": "success"
+          "contractRef": "tasklinks.call/secondary-write",
+          "outcome": "error"
         }
       ],
       "scenarioRef": {
-        "irDigest": "sha256:dd22000000000000000000000000000000000000000000000000000000000000",
+        "irDigest": "sha256:c228b2370b71e10348ecaa3ebeaaa1bca16958f41fa8ad27f8d6e5c921f45f69",
         "scenarioId": "tasklinks.scenario.partial_delivery",
         "scenarioVersion": "0.2.16"
       },
       "schedule": [
         {
-          "joins": [
-            "n_event"
-          ],
+          "nodeId": "n_primary",
           "kind": "invoke",
-          "nodeId": "n_call",
-          "stepId": "s_call"
+          "stepId": "s_primary",
+          "joins": []
         },
         {
+          "nodeId": "n_secondary",
+          "kind": "invoke",
+          "stepId": "s_secondary",
           "joins": [
-            "n_call",
-            "n_event"
-          ],
+            "n_primary"
+          ]
+        },
+        {
+          "nodeId": "n_eval",
           "kind": "barrier",
-          "nodeId": "n_eval"
-        },
-        {
-          "joins": [],
-          "kind": "invoke",
-          "nodeId": "n_event",
-          "stepId": "s_event"
+          "joins": [
+            "n_primary",
+            "n_secondary"
+          ]
         }
       ],
       "steps": [
         {
+          "stepId": "s_primary",
           "contractRef": "tasklinks.call/provider-write",
-          "fault": "infrastructure",
-          "stepId": "s_call"
+          "fault": "none"
         },
         {
-          "contractRef": "tasklinks.event/delivery-recorded",
-          "fault": "none",
-          "stepId": "s_event"
+          "stepId": "s_secondary",
+          "contractRef": "tasklinks.call/secondary-write",
+          "fault": "timeout"
         }
       ]
     }

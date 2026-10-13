@@ -255,6 +255,7 @@ pub struct EntityBinding {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Attachment {
     attachment_revision: Digest,
+    computed_revision: String,
     project_id: String,
     model_ref: ModelRef,
     ir_digest: Digest,
@@ -275,6 +276,11 @@ impl Attachment {
     /// The declared attachment revision digest.
     pub fn attachment_revision(&self) -> &Digest {
         &self.attachment_revision
+    }
+
+    /// The revision recomputed from the parsed payload, not its claimed pin.
+    pub fn computed_revision(&self) -> &str {
+        &self.computed_revision
     }
 
     /// The bound project id.
@@ -550,6 +556,8 @@ pub fn parse(bytes: &[u8]) -> Result<Attachment, diagnostic::Failure> {
     )?;
     Ok(Attachment {
         attachment_revision,
+        computed_revision: super::pins::compute_revision(bytes)
+            .ok_or_else(|| diagnostic::input_invalid("revision-digest"))?,
         project_id: project_id.to_owned(),
         model_ref,
         ir_digest,
@@ -638,7 +646,9 @@ fn owner_pins(array: &[Json]) -> Result<Vec<OwnerPin>, diagnostic::Failure> {
             "storage-projection" => format!("dev.lekalo.{family}@0.4.0"),
             other => format!("dev.lekalo.{other}@0.2.16"),
         };
-        if identity != expected {
+        let successor = matches!(family, "transaction-concurrency" | "extended-effects")
+            && identity == format!("dev.lekalo.{family}@0.8.0");
+        if identity != expected && !successor {
             return Err(diagnostic::input_invalid("pin-identity"));
         }
         let digest = digest_member(

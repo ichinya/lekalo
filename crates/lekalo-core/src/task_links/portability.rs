@@ -97,6 +97,35 @@ pub struct Report {
     pub target_guarantees: Vec<Row>,
     /// The evidence coverage summary.
     pub evidence_coverage: EvidenceCoverage,
+    /// Transparent owner/input/build/profile/result bindings of live executions.
+    /// Exported records cannot be re-imported as execution authority.
+    pub execution_provenance: Vec<ExecutionProvenance>,
+}
+
+/// Export-only provenance of a live owner execution.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionProvenance {
+    /// The executing owner.
+    pub owner: String,
+    /// The actual implementation.
+    pub implementation: String,
+    /// Embedded implementation/toolchain build digest.
+    pub build_digest: String,
+    /// Actual compiled source digest.
+    pub source_digest: String,
+    /// Input/recipe/profile binding.
+    pub input_digest: String,
+    /// Independently asserted result digest.
+    pub result_digest: String,
+    /// Executed profile identity.
+    pub profile_id: String,
+    /// Exact selected profile/build digest.
+    pub profile_digest: String,
+    /// Origin established by execution, never by a file label.
+    pub origin: String,
+    /// Passed assertions (specific guarantees, not scenario-name inference).
+    pub assertions: Vec<String>,
 }
 
 /// One profile reference.
@@ -175,6 +204,19 @@ pub fn report(
     _scenario_covers: &BTreeMap<String, BTreeSet<String>>,
     _native: Option<&NativeEvidence>,
 ) -> Report {
+    report_with_execution(attachment, from_profile, to_profile, profile, evidence, &[])
+}
+
+/// Join only sealed process-local execution-owner capabilities. Exported receipts
+/// and legacy producer summaries cannot populate this channel.
+pub fn report_with_execution(
+    attachment: &Attachment,
+    from_profile: ProfileRef,
+    to_profile: ProfileRef,
+    profile: &str,
+    evidence: &[AdmittedEvidence],
+    execution: &[super::execution::Execution],
+) -> Report {
     let revision = attachment.attachment_revision().as_str().to_owned();
     let project_id = attachment.project_id().to_owned();
     let ir_digest = attachment.ir_digest().as_str().to_owned();
@@ -208,16 +250,27 @@ pub fn report(
     // channel. There is currently no owner-attested run/input/build/result
     // receipt in this API. Do not promote execution-dependent guarantees
     // from any of these caller-writable facts (even for the named target).
-    let core_row = |declared: bool, fact: &'static str, pin: String| Row {
-        fact,
-        requirement: Requirement::Required,
-        provided: if declared {
-            Provided::Unknown
-        } else {
-            Provided::Unsupported
-        },
-        pin,
-        evidence_source: EvidenceSource::AttachmentDeclaration,
+    let core_row = |declared: bool, fact: &'static str, pin: String| {
+        let witnessed = declared
+            .then(|| execution.iter().find(|run| run.witnesses(attachment, fact)))
+            .flatten();
+        Row {
+            fact,
+            requirement: Requirement::Required,
+            provided: if witnessed.is_some() {
+                Provided::Supported
+            } else if declared {
+                Provided::Unknown
+            } else {
+                Provided::Unsupported
+            },
+            pin: witnessed.map_or(pin, |run| run.report().result_digest.clone()),
+            evidence_source: if witnessed.is_some() {
+                EvidenceSource::MockEvidence
+            } else {
+                EvidenceSource::AttachmentDeclaration
+            },
+        }
     };
     let core_semantics = vec![
         core_row(
@@ -338,11 +391,36 @@ pub fn report(
         core_semantics,
         provider_adapters,
         target_guarantees,
+        execution_provenance: execution
+            .iter()
+            .filter(|run| run.witnesses(attachment, "idempotent-intent"))
+            .map(|run| {
+                let receipt = run.report();
+                ExecutionProvenance {
+                    owner: receipt.owner.to_owned(),
+                    implementation: receipt.implementation.to_owned(),
+                    build_digest: receipt.build_digest.clone(),
+                    source_digest: receipt.source_digest.clone(),
+                    input_digest: receipt.input_digest.clone(),
+                    result_digest: receipt.result_digest.clone(),
+                    profile_id: receipt.implementation.to_owned(),
+                    profile_digest: receipt.build_digest.clone(),
+                    origin: receipt.origin.to_owned(),
+                    assertions: receipt.assertions.clone(),
+                }
+            })
+            .collect(),
         evidence_coverage: EvidenceCoverage {
             mock_evidence_ids: evidence
                 .iter()
                 .filter(|run| run.origin != "native")
                 .map(|run| run.evidence_id.clone())
+                .chain(
+                    execution
+                        .iter()
+                        .filter(|run| run.witnesses(attachment, "idempotent-intent"))
+                        .map(|run| run.report().execution_id.clone()),
+                )
                 .collect(),
             // A producer's origin label does not establish native
             // execution coverage. No attested channel exists here yet.

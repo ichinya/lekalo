@@ -142,7 +142,10 @@ pub fn show_payload_bytes(
             json.push(',');
         }
         first = false;
-        json.push_str(&partial_failure_bytes(record));
+        json.push_str(&partial_failure_bytes(
+            record,
+            graph.execution_digest.is_some(),
+        ));
     }
     // The typed local-atomic transactions declared for this
     // operation's grouped writes: network calls are never members.
@@ -158,15 +161,25 @@ pub fn show_payload_bytes(
             json.push(',');
         }
         first = false;
-        json.push_str(&transaction_bytes(transaction));
+        json.push_str(&transaction_bytes(
+            transaction,
+            graph.execution_digest.is_some(),
+        ));
     }
     json.push_str("]}");
     Ok(json)
 }
 
 /// The canonical bytes of one typed partial-failure record.
-fn partial_failure_bytes(record: &super::provenance::PartialFailure) -> String {
-    let mut json = String::from("{\"basis\":\"envelope-declaration\",\"caseRef\":");
+fn partial_failure_bytes(record: &super::provenance::PartialFailure, executed: bool) -> String {
+    let mut json = format!(
+        "{{\"basis\":{},\"caseRef\":",
+        quote(if executed {
+            "owner-admitted-execution"
+        } else {
+            "envelope-declaration"
+        })
+    );
     json.push_str(&quote(&record.case_ref));
     json.push_str(",\"operation\":");
     json.push_str(&quote(&record.operation));
@@ -207,8 +220,15 @@ fn partial_failure_bytes(record: &super::provenance::PartialFailure) -> String {
 }
 
 /// The canonical bytes of one declared local-atomic transaction.
-fn transaction_bytes(transaction: &super::provenance::LocalTransaction) -> String {
-    let mut json = String::from("{\"basis\":\"envelope-declaration\",\"groupId\":");
+fn transaction_bytes(transaction: &super::provenance::LocalTransaction, executed: bool) -> String {
+    let mut json = format!(
+        "{{\"basis\":{},\"groupId\":",
+        quote(if executed {
+            "owner-admitted-execution"
+        } else {
+            "envelope-declaration"
+        })
+    );
     json.push_str(&quote(transaction.group.as_str()));
     json.push_str(",\"members\":[");
     let mut first = true;

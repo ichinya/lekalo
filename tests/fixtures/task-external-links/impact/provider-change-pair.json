@@ -38,8 +38,8 @@
       "role": "link aggregate (Model entity)"
     }
   ],
-  "baseRevisionToken": "sha256:96c24ab42620ef3e79f11f674b0182ec7a46710ea7c475b1e03b0f514280488e",
-  "changedRevision": "sha256:22e1e5ad08bcade6438be944fb5fa80e69f642b522815762f3b45c1e6f5bdcc8",
+  "baseRevisionToken": "sha256:8c3cfac775745e43ccafa9149cc7282d2eb70414b987c63fd6c89c3311b7db6f",
+  "changedRevision": "sha256:15d74159fc3c474d9f75dfa0575eb9fe0d07bf95059336322687f7691ae7bf39",
   "attachmentLevelConsumers": [
     {
       "symbol": "tasklinks.cap.issue_write",

@@ -346,6 +346,28 @@ pub(crate) fn attach(
     graph: &EffectGraph,
     envelope: &EvidenceEnvelope,
 ) -> Result<EffectGraph, DiagnosticSet> {
+    attach_inner(graph, envelope, false)
+}
+
+/// Crate-private owner path: only the sealed Execution join calls this.
+pub(crate) fn attach_attested(
+    graph: &EffectGraph,
+    envelope: &EvidenceEnvelope,
+) -> Result<EffectGraph, DiagnosticSet> {
+    attach_inner(graph, envelope, true)
+}
+
+fn attach_inner(
+    graph: &EffectGraph,
+    envelope: &EvidenceEnvelope,
+    attested: bool,
+) -> Result<EffectGraph, DiagnosticSet> {
+    if graph.execution_digest.is_some() {
+        return Err(diagnostic::input_invalid_detail("execution-mixed-custody"));
+    }
+    if attested && envelope.source_revision != graph.ir_digest() {
+        return Err(diagnostic::input_invalid_detail("effects-stale-pin"));
+    }
     if let Err(violation) = validate_envelope(envelope, super::version::MAX_ENVELOPE_ENTRIES) {
         return Err(diagnostic::envelope_violation_set(&violation));
     }
@@ -380,9 +402,15 @@ pub(crate) fn attach(
     // a forged envelope can never mint verified-confidence public
     // edges; owner confirmation still flows through its own accepted
     // channel, never this operand.
-    let clamped = |asserted: TrustState| match asserted {
-        TrustState::Verified | TrustState::Current => TrustState::Extracted,
-        other => other,
+    let clamped = |asserted: TrustState| {
+        if attested {
+            TrustState::Verified
+        } else {
+            match asserted {
+                TrustState::Verified | TrustState::Current => TrustState::Extracted,
+                other => other,
+            }
+        }
     };
     let mut detected = Vec::with_capacity(envelope.entries.len());
     let mut partial_failures = Vec::new();

@@ -3,15 +3,20 @@
 The `tasklinks` pilot (issue #52) is the target-neutral multi-provider
 `TaskExternalLink` domain: one local task owns zero or more external
 links, and every external identity belongs to at most one task in its
-installation scope. The surface is read-only: it validates
-declarations, projects typed views, and compares portability — it
-never executes a provider, never writes outbox state, imports tokens,
-or stores reports.
+installation scope. File-based commands validate declarations and project
+views; they never call a live provider or import credentials. Explicit
+`execute` / `--execute-mock` runs the deterministic scenario owner, and
+`--execute-native` provisions disposable local state and executes the
+maintained Laravel port with synthetic providers; no production state is used.
 
 - Contract family: `dev.lekalo.task-links-integration@0.8.0` (wire
   `lekalo/task-links-integration/v0.8.0`), with the derived
   `task-links-report`, `task-links-evidence`, and
-  `task-links-portability` documents at the same version.
+  `task-links-portability` documents at the same version. The export-only
+  `task-links-execution.schema.v0.8.0.json` records execution-owner,
+  implementation/build, source/input, assertions and result bindings.
+  Transaction-concurrency and extended-effects 0.8.0 successors negotiate
+  Model/IR 0.8.0; their frozen 0.2.16 predecessors remain unchanged.
 - Model/IR ownership (AC1): the typed `Task -> links 0..N` relation,
   the aggregate-child relation, and the exact external-identity
   constraint are declared IN the Model and carried in the canonical IR
@@ -69,12 +74,10 @@ symbol is one typed refusal, a malformed attachment never renders as
 an authoritative view. With `--evidence`, an admitted receipt joins
 the view (origin, pins, step count); missing evidence stays explicitly
 unavailable, and stale or wrong pins fail closed with
-`tasklink.evidence-invalid`. A `native` origin claim is admitted only
-when the environment actually stands behind it: the provisioning flag
-(`LEKALO_TASKLINKS_NATIVE=1`) plus the executed native battery's
-qualification receipt beside the provisioned DB (every required leg,
-the exact identity, the named database). A flag without an executed
-battery refuses with `tasklink.evidence-invalid`. The contribution
+`tasklink.evidence-invalid`. Every file-origin `native` claim is refused,
+including a genuine exported sidecar or a caller-supplied qualification
+boolean: files/rows cannot authenticate a past execution. Actual native
+qualification requires the explicit live owner channel below. The contribution
 switches are consumed: a disabled `inspect`/`impact`/`scenarios`
 contribution refuses the inspect/portability/evidence surfaces with
 `contribution-disabled`, and the view renders the full switch row.
@@ -103,19 +106,57 @@ shared semantic validation runs before any report. A provider-only
 change preserves the pinned core fact rows while the adapter rows
 move. File-origin evidence is a producer declaration, even when its
 steps, digests and SQLite run rows agree: it cannot authenticate
-execution. Core execution facts and target guarantees therefore stay
-`unknown` and are refused under `strict`; `executed` remains empty in
-file-admitted summaries. The native gate records its observed battery
-execution separately and never re-labels mock steps as native runs.
+execution. Without live owner execution, core facts and target guarantees
+stay `unknown` and are refused under `strict`; `executed` remains empty
+in file-admitted summaries.
 
-Detected effects are capped at `extracted` confidence. Their content
-hash covers compact recursively key-sorted envelope JSON excluding
-`evidenceDigest` itself; it detects tampering, not producer authenticity.
-Typed local groups must join real canonical writes, network calls stay
-outside them, and partial-failure records require mixed recipient
-results with exactly the failed-only retry set. These sections explicitly
-carry `basis: envelope-declaration`: authoritative transaction/case owner
-admission and executed atomic/partial traces remain pending.
+## Execution-owner channel
+
+`lekalo task-links execute PATH --project DIR` executes all ten compiled
+pilot scenarios through the deterministic core engine and independently
+asserts state, decisions, receipts, replay, stale resolution, rollback,
+partial recipients and failed-only retries. `--execute-mock` on portability
+uses the same sealed process-local capability to qualify core facts.
+Only the executing module can construct that capability: it has private
+fields, no deserializer/import path, and no boolean qualification API.
+A serialized receipt is exportable evidence, **not re-importable authority**.
+This is local owner authentication, not a signed remote/hosted CI attestation.
+The normalized receipt and portability `executionProvenance` bind the actual
+implementation/build, canonical source, admitted attachment/recipe inputs,
+selected profile and individually asserted result; copied results do not qualify.
+
+`--execute-native` on portability runs the maintained
+`App\\Lekalo\\TaskLinksStore` implementation through locked Laravel **13.33.0**
+(`tests/fixtures/php-laravel/planner/composer.lock`) and PDO SQLite. Provision
+its dependencies explicitly with `composer install --no-interaction
+--prefer-dist --no-scripts --working-dir tests/fixtures/php-laravel/planner`.
+Missing/mismatched runtime provisioning refuses, never falls back to mocks.
+The owner stages embedded worker/implementation bytes in a fresh disposable
+DB, synchronizes distinct processes for identity/lease/version races, kills
+workers inside an uncommitted four-write transaction and after committed
+provider acceptance before acknowledgement, and independently reads the DB
+after new-process recovery. It checks the full persisted command/action,
+workspace/task/link/generation/version, actor/fields, policy/capability pins,
+payload/causation/key, attempts and receipt context; stale authority refuses.
+Only the actual `php-laravel-maintained` profile earns the four native target
+rows (unique index, compare-and-swap, local transaction, durable outbox).
+A real Laravel run selected against Node/Rust leaves those target rows unknown.
+Provider behavior is still a synthetic receipt service, not authenticated
+GitHub execution or remote exactly-once support.
+
+Raw `effects show --evidence PATH` envelopes remain capped at `extracted`.
+Their compact key-sorted content hash (excluding `evidenceDigest`) proves
+integrity, not execution; typed sections carry `basis: envelope-declaration`.
+For authoritative executed traces, use `effects show OPERATION --project DIR
+--task-links-attachment PATH --transactions PATH --extended-effects PATH`.
+This executes the sealed mock owner and admits exact same-compilation
+transaction/extended-effect documents through their typed owners. All four
+canonical task/decision/outbox/audit edges join the exact required local group;
+network calls remain outside it. Partial-failure case, scenario digest,
+per-provider fault/outcome/receipt and failed-only retry set must match the
+actual run. Invented groups/cases, omitted members, stale pins, conflicting
+faults and mixed file/executed custody refuse. Verified edges and typed
+`basis: owner-admitted-execution` are emitted only through this channel.
 
 ## Guarantees and limits
 
@@ -128,13 +169,13 @@ acceptance-pending-ack uncertainty, bounded retry with durable
 attempt accounting, echo suppression, crash recovery) is exercised by
 the Rust battery and the six family gates under
 `scripts/test-task-links-*.mjs`, and the qualified native legs run a
-pinned bundled-SQLite runner under provisioning. Its four legs cover
-identity races, in-process acknowledgement recovery, durable attempts
-and a real child-process kill during an uncommitted transaction. This
-is not maintained Laravel execution or full worker-context recovery;
-those native acceptance obligations remain pending. Mock/file evidence
-never satisfies durable/race qualification, and a co-located receipt
-alone cannot establish authenticated execution provenance. The external
+pinned bundled-SQLite runner under provisioning, followed by the maintained
+Laravel multi-process battery above. The Rust leg covers identity races,
+in-process acknowledgement recovery, durable attempts and child-process
+transaction interruption; the maintained leg adds synchronized process
+races, real acknowledgement-window termination and full-context restart.
+Mock/file evidence never satisfies native qualification, and a co-located
+receipt alone cannot establish authenticated execution provenance. The external
 identity tuple is `(workspace_id, installation_id, provider_id,
 object_type, external_id)`, compared as exact text; detach retains
 history and the external object; the network call is declared outside
