@@ -6861,14 +6861,17 @@ fn check_model_custody(
     Ok(digest)
 }
 
-/// The engine backend provenance receipt: for each target the engine
-/// shell declares for this compilation, the exact backend identity and
-/// the `sha256:` digest of the native lane bytes the engine executes
-/// for this composition. Reports claiming a bound backend must match
-/// this receipt byte for byte; identities the engine never declared,
-/// or digests naming bytes the lane does not carry, are forged
-/// provenance. The go target stays undeclared here (its committed
-/// refusal record is the honest absence), so any `bound` go row is
+/// The independently custodied implementation identity, frozen into
+/// the trusted engine artifact at build time. Caller-supplied neighboring
+/// files and evidence can never redefine the eligible backend pin.
+const REVIEWED_PHP_BACKEND: &[u8] =
+    include_bytes!("../../../tests/fixtures/pilot/worklog-changelog/php/run.php");
+
+/// Engine backend eligibility requires the exact reviewed implementation
+/// embedded in this binary, as well as confined custody of its fixture
+/// copy. The expected digest is never derived from a replacement file.
+/// The go target stays undeclared here (its committed refusal record is
+/// the honest absence), so any `bound` go row is
 /// provenance-forged under the receipt rule.
 fn engine_backend_provenance(
     selection: &LoadSelection,
@@ -6893,7 +6896,13 @@ fn engine_backend_provenance(
                 let Some(bytes) = confined_read(fixture_root, &lane_path).ok() else {
                     continue;
                 };
-                let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
+                if bytes != REVIEWED_PHP_BACKEND {
+                    continue;
+                }
+                let digest = format!(
+                    "sha256:{}",
+                    lekalo_core::digest::sha256_hex(REVIEWED_PHP_BACKEND)
+                );
                 provenance.insert(
                     lane.to_owned(),
                     lekalo_core::worklog_changelog::BackendProvenance {
@@ -6922,8 +6931,9 @@ fn native_lane_for(target: &str) -> Option<(&'static str, &'static str)> {
 /// engine-derived rows to the pure core. The battery is derived from
 /// the custody-read, pin-verified scenario corpus of the pinned
 /// compilation — never from the lane's own output — and a fresh
-/// per-run nonce probe defeats captured-output replay, so a program
-/// that only prints pass text cannot qualify as trusted execution.
+/// per-run nonce probe defeats captured-output replay. Eligibility is
+/// separately bound to the reviewed implementation embedded in the
+/// trusted binary: a battery-aware printer cannot qualify either.
 /// A lane that cannot launch at all is recorded as an engine-side
 /// failure, never mislabeled as an unverified execution claim, and
 /// the absolute lane path makes the admission verdict independent of
@@ -6984,6 +6994,12 @@ fn native_execution_receipts(
                 },
             );
         };
+        // R6 F2: a replacement cannot mint its own eligibility by
+        // printing its digest or answering the disclosed battery.
+        if bytes != REVIEWED_PHP_BACKEND {
+            fail_closed("backend-untrusted");
+            continue;
+        }
         // The battery: the custody-read scenario corpus, pin-verified
         // against the exact compilation the composition pinned, with
         // a fresh nonce. Corpus or pin drift refuses the target.
@@ -6996,9 +7012,16 @@ fn native_execution_receipts(
                     continue;
                 }
             };
-        let battery_path =
-            std::env::temp_dir().join(format!("lekalo-battery-{}.json", battery.nonce));
-        let writable = std::fs::write(&battery_path, &battery.bytes).is_ok();
+        // Execute private, engine-owned bytes, not the neighboring
+        // pathname we checked. Replacing that file after custody cannot
+        // swap the implementation between eligibility and spawn.
+        let run_dir = std::env::temp_dir().join(format!("lekalo-battery-{}", battery.nonce));
+        let battery_path = run_dir.join("battery.json");
+        let executed_lane = run_dir.join("run.php");
+        let owns_run_dir = std::fs::create_dir(&run_dir).is_ok();
+        let writable = owns_run_dir
+            && std::fs::write(&battery_path, &battery.bytes).is_ok()
+            && std::fs::write(&executed_lane, REVIEWED_PHP_BACKEND).is_ok();
         // The interpreter resolves exactly the way the harness
         // resolves it: LEKALO_PHP first, then the PATH default.
         let interpreters: Vec<String> = std::env::var("LEKALO_PHP")
@@ -7013,16 +7036,14 @@ fn native_execution_receipts(
             })
             .unwrap_or_else(|| vec!["php".to_owned()]);
         let outcome = if writable {
-            let outcome = pilot_battery::run_battery(
+            pilot_battery::run_battery(
                 &interpreters,
-                &lane_path,
+                &executed_lane,
                 &fixture_root,
                 &battery_path,
                 &battery,
                 &allowlist,
-            );
-            let _ = std::fs::remove_file(&battery_path);
-            outcome
+            )
         } else {
             pilot_battery::BatteryOutcome {
                 failure: Some("engine-unavailable"),
@@ -7030,6 +7051,11 @@ fn native_execution_receipts(
                 capabilities: Vec::new(),
             }
         };
+        // Failed staging also cleans up partial files, but never a
+        // directory that this invocation did not create.
+        if owns_run_dir {
+            let _ = std::fs::remove_dir_all(&run_dir);
+        }
         receipts.insert(
             lane.to_owned(),
             lekalo_core::worklog_changelog::NativeExecutionReceipt {

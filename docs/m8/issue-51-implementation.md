@@ -382,6 +382,78 @@ round; every union finding is fixed and probe-verified:
    (`differential-unicode-bound`, regression
    `unicode_text_bounds_count_scalars_like_the_published_schema`).
 
+## Review round 6: independent eligibility and durable transitions
+
+The union of both r6 reviews is closed by mechanisms, not by weakening
+admission or hiding unsupported rows:
+
+1. **Action identity is allocated inside the durable request commit.**
+   `provider_outbox::commit_request` locks the journal, rebuilds its
+   current request inventory, re-arbitrates the replay key, allocates an
+   unused action id, and appends the paired outbox/replay record before
+   updating memory. Two already-live generations with different keys or
+   tenants retain distinct rows and replay bindings. Recovery refuses
+   duplicate committed action identities rather than choosing the last
+   request. Existing colliding journals are refused, not silently repaired.
+2. **The battery is not an execution attestation.** Backend eligibility
+   additionally requires the exact reviewed implementation embedded in
+   the compiled CLI artifact (`REVIEWED_PHP_BACKEND`), independently of
+   caller-supplied neighboring files, their self-reported digest, and the
+   report. Changing the implementation requires a reviewed engine rebuild;
+   refreshing only evidence can never approve a substituted printer.
+   Admission executes a private copy of the embedded implementation, not
+   the neighboring pathname it checked. A battery-aware printer with no
+   domain operations is refused as `backend:provenance` and
+   `execution:backend-untrusted`, including through the complete strict
+   PHP gate. The engine binary, host and selected interpreter remain the
+   trusted execution boundary; this is not remote/signed attestation of a
+   hostile toolchain.
+3. **Delivery acquisition uses current durable state atomically.** The
+   journal-backed claim transition checks the state under the same lock
+   as its append. A confirmed delivery replays; an outstanding claim or
+   ambiguous acceptance returns recovery-required before transport.
+   Already-live snapshots cannot repeat either kind of effect. Refreshing
+   the local view alone is not relied upon for arbitration.
+4. **A torn tail cannot poison the next acknowledged commit.** Under the
+   exclusive commit lock, every complete record is decoded before the
+   ignored unterminated tail is truncated to the verified newline
+   boundary. The next record is fully written, flushed and synced before
+   success. Restore followed by a new request and another restore retains
+   both replay records; complete malformed records still refuse recovery.
+5. **Every corpus document goes through the Scenario IR owner.** Battery
+   construction calls `ScenarioIr::from_value` and uses canonical JSON
+   projected from the validated typed steps. Missing or empty required
+   action/assertion arrays, unsupported versions, unknown members and
+   malformed reference shapes refuse as `battery-scenario-invalid` before
+   execution. Required obligations are never defaulted away. Exact Ajv
+   8.17.1 differential vectors also exercise standalone production admission.
+6. **Unavailable recovery data is not an empty store.** Only a new
+   default journal creates a file; an explicit path is an existing
+   recovery source. Locked reads preserve failures as
+   `journal-read-failed`; writes open existing files without creation and
+   fail closed. Missing/unreadable committed sources refuse both restores
+   and live cached retries, and never reissue the request or transport call.
+7. **All scheme-shaped tokens share the HTTP/HTTPS allowlist.** Unknown
+   identifiers followed by colon and whitespace are evaluated too;
+   `mailto:`, `ftp:` and `intent:` spellings cannot evade policy. This is
+   deliberately conservative: scheme-shaped prose is refused rather than
+   guessed safe, while ordinary plain text and allowed HTTPS stay safe.
+8. **Recovery validates transition references and request shape.** Orphan
+   claims/outcomes, partial request rows, invalid state transitions and
+   duplicate identities refuse recovery; no phantom outbox rows are
+   auto-created by associative-array assignment.
+
+Regressions live in `tests/pilot/worklog-changelog-journal.php` (the real
+application and journal) and `scripts/test-worklog-changelog-admission.mjs`
+(production admission, frozen-schema corpus differential controls, an
+adaptive printer control, and full strict-gate refusal). The admission
+regression gate is mandatory in the pilot CI job and joins the complete
+public-script neutrality inventory; the CLI also has a closed-corpus
+battery unit regression. The PHP capability remains scoped to modeled
+store generations over a local journal and scripted transport, not proof
+of deployed simultaneous processes, physical power-loss recovery, or real
+provider-side idempotency.
+
 ## Boundary
 
 Real provider integration, live publication, private requirement

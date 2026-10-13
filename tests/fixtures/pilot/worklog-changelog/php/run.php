@@ -176,63 +176,112 @@ final class durable_journal
 {
     public function __construct(private string $path = "")
     {
+        // Only this branch creates a new journal. An explicit path is
+        // an existing recovery source; neither reads nor writes create it.
         if ($this->path === "") {
-            $this->path = (string) tempnam(sys_get_temp_dir(), "lekalo-lane-journal-");
+            $created = tempnam(sys_get_temp_dir(), "lekalo-lane-journal-");
+            if ($created === false) {
+                throw new store_unavailable("journal-write-failed");
+            }
+            $this->path = $created;
         }
     }
 
-    /** Append one complete journal record: the write must land in
-     * full or the store is unavailable — a silent short write would
-     * be a lost commit reported as success. */
+    /** One locked read/decide/append transition over journal-visible
+     * state. The callback returns [optional record, result]. All live
+     * generations arbitrate inside this boundary, not in local memory. */
+    public function commit(callable $prepare): mixed
+    {
+        return $this->locked(true, function ($file, string $raw) use ($prepare): mixed {
+            $records = self::decode($raw);
+            [$record, $result] = $prepare($records);
+            if ($record === null) {
+                return $result;
+            }
+            $encoded = json_encode($record, JSON_UNESCAPED_SLASHES);
+            if ($encoded === false) {
+                throw new store_unavailable("journal-write-failed");
+            }
+            // Reconcile the interrupted append before the next commit:
+            // only verified newline-terminated bytes survive. A complete
+            // malformed line was already refused by decode().
+            $last = strrpos($raw, "\n");
+            $boundary = $last === false ? 0 : $last + 1;
+            if (!ftruncate($file, $boundary) || fseek($file, $boundary) !== 0) {
+                throw new store_unavailable("journal-write-failed");
+            }
+            $line = $encoded . "\n";
+            if (fwrite($file, $line) !== strlen($line) || !fflush($file) || !fsync($file)) {
+                // An unacknowledged write must not become a future commit.
+                ftruncate($file, $boundary);
+                throw new store_unavailable("journal-write-failed");
+            }
+            return $result;
+        });
+    }
+
     public function append(string $kind, array $row): void
     {
-        $line = json_encode(["kind" => $kind, "row" => $row], JSON_UNESCAPED_SLASHES) . "\n";
-        $written = @file_put_contents($this->path, $line, FILE_APPEND);
-        if ($written !== strlen($line)) {
-            throw new store_unavailable("journal-write-failed");
+        $this->commit(static fn(array $records): array => [["kind" => $kind, "row" => $row], null]);
+    }
+
+    /** Failed reads stay failures; they never become an empty store. */
+    private function locked(bool $write, callable $operation): mixed
+    {
+        $error = $write ? "journal-write-failed" : "journal-read-failed";
+        clearstatcache(true, $this->path);
+        $file = is_file($this->path) ? @fopen($this->path, $write ? "r+b" : "rb") : false;
+        if ($file === false) {
+            throw new store_unavailable($error);
+        }
+        try {
+            if (!flock($file, $write ? LOCK_EX : LOCK_SH)) {
+                throw new store_unavailable($error);
+            }
+            $raw = stream_get_contents($file);
+            $stat = fstat($file);
+            if ($raw === false || $stat === false || strlen($raw) !== $stat["size"]) {
+                throw new store_unavailable("journal-read-failed");
+            }
+            return $operation($file, $raw);
+        } finally {
+            flock($file, LOCK_UN);
+            fclose($file);
         }
     }
 
-    /** The raw journal bytes (probe and restore support). */
     public function raw(): string
     {
-        return (string) @file_get_contents($this->path);
+        return $this->locked(false, static fn($file, string $raw): string => $raw);
     }
 
-    /** The journal file path (probe support: fault injection and
-     * interruption windows append through the same file). */
     public function path(): string
     {
         return $this->path;
     }
 
-    /** The journaled records in commit order. A torn final line (no
-     * trailing newline) is the interrupted append window and is
-     * dropped; any COMPLETE line that fails to decode is corruption
-     * and refuses the read — a durable store never silently forgets
-     * a committed record it cannot explain. */
-    public function lines(): array
+    /** A torn final line is ignored on read and removed on the next
+     * locked commit; complete malformed records always refuse. */
+    private static function decode(string $raw): array
     {
-        $raw = $this->raw();
-        if ($raw === "") {
-            return [];
-        }
         $records = explode("\n", $raw);
-        // The element after the final newline is the empty tail (or
-        // the torn line itself when the append was interrupted).
         array_pop($records);
         $lines = [];
         foreach ($records as $line) {
-            if ($line === "") {
-                throw new store_unavailable("journal-corrupt");
-            }
             $decoded = json_decode($line, true);
-            if (!is_array($decoded) || !isset($decoded["kind"], $decoded["row"]) || !is_array($decoded["row"])) {
+            if (!is_array($decoded) || count($decoded) !== 2
+                || !isset($decoded["kind"], $decoded["row"]) || !is_array($decoded["row"])
+                || !in_array($decoded["kind"], ["idempotency", "provider_request", "outbox", "delivery_claim", "outbox-outcome"], true)) {
                 throw new store_unavailable("journal-corrupt");
             }
             $lines[] = $decoded;
         }
         return $lines;
+    }
+
+    public function lines(): array
+    {
+        return self::decode($this->raw());
     }
 
     public function dispose(): void
@@ -261,31 +310,15 @@ final class idempotency_store
 
     /** replay_result: same scope, key, and payload; conflict: same scope+key, other payload.
      *
-     * The journal arbitrates across store generations: when memory
-     * has no record, the committed journal records decide — two live
-     * instances over one journal can never both claim the same
-     * scope/key as fresh. */
+     * Read the current durable view, never a stale memory cache.
+     * This is a snapshot, not a reservation: overlapping callers may
+     * both observe fresh. record()/commit_request() re-arbitrate under
+     * the journal lock before acknowledging a commit. */
     public function begin(string $scope, string $key, string $payload_digest): string
     {
         $composite = $this->composite($scope, $key);
-        if (!isset($this->records[$composite])) {
-            foreach ($this->journal?->lines() ?? [] as $line) {
-                if (!in_array($line["kind"], ["idempotency", "provider_request"], true)) {
-                    continue;
-                }
-                $row = $line["row"];
-                if (($row["scope"] ?? null) !== $scope || ($row["key"] ?? null) !== $key) {
-                    continue;
-                }
-                if (!isset($this->records[$composite])) {
-                    $this->records[$composite] = [
-                        "scope" => $scope,
-                        "key" => $key,
-                        "payload_digest" => $row["payload_digest"],
-                        "result" => $row["result"],
-                    ];
-                }
-            }
+        if ($this->journal !== null) {
+            $this->records = self::records_from_lines($this->journal->lines());
         }
         if (!isset($this->records[$composite])) {
             return "fresh";
@@ -304,7 +337,19 @@ final class idempotency_store
             "payload_digest" => $payload_digest,
             "result" => $result,
         ];
-        $this->journal?->append("idempotency", $row);
+        if ($this->journal !== null) {
+            $composite = $this->composite($scope, $key);
+            $this->journal->commit(static function (array $lines) use ($row, $composite): array {
+                $records = self::records_from_lines($lines);
+                if (isset($records[$composite])) {
+                    if ($records[$composite] !== $row) {
+                        throw new store_unavailable("journal-conflict");
+                    }
+                    return [null, null];
+                }
+                return [["kind" => "idempotency", "row" => $row], null];
+            });
+        }
         $this->records[$this->composite($scope, $key)] = $row;
     }
 
@@ -333,29 +378,34 @@ final class idempotency_store
     public static function restore(durable_journal $journal): self
     {
         $store = new self($journal);
-        foreach ($journal->lines() as $line) {
-            $row = null;
-            if ($line["kind"] === "idempotency") {
-                $row = $line["row"];
-            } elseif ($line["kind"] === "provider_request") {
-                $row = [
-                    "scope" => $line["row"]["scope"],
-                    "key" => $line["row"]["key"],
-                    "payload_digest" => $line["row"]["payload_digest"],
-                    "result" => $line["row"]["result"],
-                ];
-            }
-            if ($row === null) {
+        $store->records = self::records_from_lines($journal->lines());
+        return $store;
+    }
+
+    public static function records_from_lines(array $lines): array
+    {
+        $records = [];
+        foreach ($lines as $line) {
+            if (!in_array($line["kind"], ["idempotency", "provider_request"], true)) {
                 continue;
             }
+            $source = $line["row"];
+            foreach (["scope", "key", "payload_digest"] as $field) {
+                if (!is_string($source[$field] ?? null) || $source[$field] === "") {
+                    throw new store_unavailable("journal-corrupt");
+                }
+            }
+            if (!is_array($source["result"] ?? null)) {
+                throw new store_unavailable("journal-corrupt");
+            }
+            $row = array_intersect_key($source, array_flip(["scope", "key", "payload_digest", "result"]));
             $composite = $row["scope"] . "|" . $row["key"];
-            if (isset($store->records[$composite])
-                && $store->records[$composite]["payload_digest"] !== $row["payload_digest"]) {
+            if (isset($records[$composite]) && $records[$composite] !== $row) {
                 throw new store_unavailable("journal-conflict");
             }
-            $store->records[$composite] = $row;
+            $records[$composite] = $row;
         }
-        return $store;
+        return $records;
     }
 }
 
@@ -369,14 +419,25 @@ final class provider_outbox
 
     public function enqueue(array $row): void
     {
-        // Journal first: the durable record is the commit; memory follows.
-        $this->journal?->append("outbox", $row);
+        $prepare = function (array $lines) use ($row): array {
+            $rows = $this->journal === null ? $this->rows : self::rows_from_lines($lines);
+            self::validate_row($row);
+            if (isset($rows[$row["action_id"]])) {
+                throw new store_unavailable("journal-conflict");
+            }
+            return [["kind" => "outbox", "row" => $row], null];
+        };
+        if ($this->journal !== null) {
+            $this->journal->commit($prepare);
+        } else {
+            $prepare([]);
+        }
         $this->rows[$row["action_id"]] = $row;
     }
 
-    /** Commit one provider request atomically: the outbox row and its
-     * replay record are ONE journal record, so an interruption between
-     * two separate appends can never commit one half of the request. */
+    /** Allocation, replay arbitration and the paired request commit
+     * share ONE locked durable boundary. A stale generation cannot
+     * allocate another request's action identity or overwrite it. */
     public function commit_request(
         array $row,
         string $scope,
@@ -384,67 +445,157 @@ final class provider_outbox
         string $payload_digest,
         array $result,
         idempotency_store $idempotency,
-    ): void {
-        $this->journal?->append("provider_request", [
-            "outbox_row" => $row,
-            "scope" => $scope,
-            "key" => $key,
-            "payload_digest" => $payload_digest,
-            "result" => $result,
-        ]);
-        $this->rows[$row["action_id"]] = $row;
-        $idempotency->adopt($scope, $key, $payload_digest, $result);
+    ): array {
+        $prepare = function (array $lines) use (&$row, $scope, $key, $payload_digest, $result, $idempotency): array {
+            $rows = $this->journal === null ? $this->rows : self::rows_from_lines($lines);
+            $records = $this->journal === null ? $idempotency->records : idempotency_store::records_from_lines($lines);
+            $existing = $records[$scope . "|" . $key] ?? null;
+            if ($existing !== null) {
+                $reply = $existing["payload_digest"] === $payload_digest
+                    ? ["outcome" => "replayed", "recorded" => $existing["result"]]
+                    : ["outcome" => "duplicate_request"];
+                return [null, $reply];
+            }
+            $next = count($rows) + 1;
+            while (isset($rows["action-" . $next])) {
+                $next++;
+            }
+            $row["action_id"] = "action-" . $next;
+            self::validate_row($row);
+            $result["action_id"] = $row["action_id"];
+            return [["kind" => "provider_request", "row" => [
+                "outbox_row" => $row, "scope" => $scope, "key" => $key,
+                "payload_digest" => $payload_digest, "result" => $result,
+            ]], $result];
+        };
+        $reply = $this->journal !== null ? $this->journal->commit($prepare) : $prepare([])[1];
+        if ($reply["outcome"] === "success") {
+            $this->rows[$row["action_id"]] = $row;
+            $idempotency->adopt($scope, $key, $payload_digest, $reply);
+        }
+        return $reply;
     }
 
-    /** Durable delivery claim, recorded BEFORE the external call: a
-     * crash between the claim and the outcome restores as unknown —
-     * recovery-required, never a blind duplicate transport write. */
-    public function claim_delivery(string $action_id): void
+    /** Atomically acquire the CURRENT durable state before transport.
+     * Confirmed effects replay; unresolved claims stay recovery-only. */
+    public function claim_delivery(string $action_id): string
     {
-        $this->journal?->append("delivery_claim", ["action_id" => $action_id]);
-        if (isset($this->rows[$action_id])) {
+        $prepare = function (array $lines) use ($action_id): array {
+            $rows = $this->journal === null ? $this->rows : self::rows_from_lines($lines);
+            $state = $rows[$action_id]["delivery_state"] ?? null;
+            if ($state === null) {
+                throw new store_unavailable("journal-corrupt");
+            }
+            if (!in_array($state, ["pending", "failed"], true)) {
+                return [null, $state];
+            }
+            return [["kind" => "delivery_claim", "row" => ["action_id" => $action_id]], "claimed"];
+        };
+        $state = $this->journal !== null ? $this->journal->commit($prepare) : $prepare([])[1];
+        if ($state === "claimed") {
             $this->rows[$action_id]["delivery_state"] = "unknown";
+        }
+        return $state;
+    }
+
+    private function refresh(): void
+    {
+        if ($this->journal !== null) {
+            $this->rows = self::rows_from_lines($this->journal->lines());
         }
     }
 
     public function get(string $action_id): ?array
     {
+        $this->refresh();
         return $this->rows[$action_id] ?? null;
     }
 
     public function set_outcome(string $action_id, string $outcome): void
     {
-        $this->journal?->append("outbox-outcome", ["action_id" => $action_id, "delivery_state" => $outcome]);
+        $prepare = function (array $lines) use ($action_id, $outcome): array {
+            $rows = $this->journal === null ? $this->rows : self::rows_from_lines($lines);
+            if (($rows[$action_id]["delivery_state"] ?? null) !== "unknown"
+                || !in_array($outcome, ["delivered", "failed", "unknown", "recovery_required"], true)) {
+                throw new store_unavailable("journal-corrupt");
+            }
+            return [["kind" => "outbox-outcome", "row" => ["action_id" => $action_id, "delivery_state" => $outcome]], null];
+        };
+        if ($this->journal !== null) {
+            $this->journal->commit($prepare);
+        } else {
+            $prepare([]);
+        }
         $this->rows[$action_id]["delivery_state"] = $outcome;
     }
 
     public function all(): array
     {
+        $this->refresh();
         return $this->rows;
     }
 
-    /** Rebuild the rows, claims, and outcomes from the journal:
-     * recovery after process death. A claimed delivery without a
-     * resolved outcome restores as unknown — the honest ambiguous
-     * window — and never as pending. */
     public static function restore(durable_journal $journal): self
     {
         $store = new self($journal);
-        foreach ($journal->lines() as $line) {
-            $kind = $line["kind"];
-            if ($kind === "provider_request") {
-                $row = $line["row"]["outbox_row"];
-                $store->rows[$row["action_id"]] = $row;
-            } elseif ($kind === "outbox") {
-                $row = $line["row"];
-                $store->rows[$row["action_id"]] = $row;
-            } elseif ($kind === "delivery_claim") {
-                $store->rows[$line["row"]["action_id"]]["delivery_state"] = "unknown";
-            } elseif ($kind === "outbox-outcome") {
-                $store->rows[$line["row"]["action_id"]]["delivery_state"] = $line["row"]["delivery_state"];
+        $store->refresh();
+        return $store;
+    }
+
+    private static function validate_row(array $row): void
+    {
+        foreach (["action_id", "tenant_id", "task_id", "requestor_id", "correlation_key", "payload_digest", "delivery_state"] as $field) {
+            if (!is_string($row[$field] ?? null) || $row[$field] === "") {
+                throw new store_unavailable("journal-corrupt");
             }
         }
-        return $store;
+        if ($row["delivery_state"] !== "pending") {
+            throw new store_unavailable("journal-corrupt");
+        }
+    }
+
+    /** Validate identities and transition references; never fabricate
+     * a partial row from an orphan claim/outcome or overwrite a request. */
+    public static function rows_from_lines(array $lines): array
+    {
+        $rows = [];
+        foreach ($lines as $line) {
+            $kind = $line["kind"];
+            if (in_array($kind, ["provider_request", "outbox"], true)) {
+                $row = $kind === "provider_request" ? ($line["row"]["outbox_row"] ?? null) : $line["row"];
+                if (!is_array($row)) {
+                    throw new store_unavailable("journal-corrupt");
+                }
+                self::validate_row($row);
+                if (isset($rows[$row["action_id"]])) {
+                    throw new store_unavailable("journal-conflict");
+                }
+                if ($kind === "provider_request"
+                    && ($line["row"]["result"]["action_id"] ?? null) !== $row["action_id"]) {
+                    throw new store_unavailable("journal-corrupt");
+                }
+                $rows[$row["action_id"]] = $row;
+            } elseif (in_array($kind, ["delivery_claim", "outbox-outcome"], true)) {
+                $id = $line["row"]["action_id"] ?? null;
+                if (!is_string($id) || !isset($rows[$id])) {
+                    throw new store_unavailable("journal-corrupt");
+                }
+                if ($kind === "delivery_claim") {
+                    if (!in_array($rows[$id]["delivery_state"], ["pending", "failed"], true)) {
+                        throw new store_unavailable("journal-corrupt");
+                    }
+                    $rows[$id]["delivery_state"] = "unknown";
+                } else {
+                    $state = $line["row"]["delivery_state"] ?? null;
+                    if ($rows[$id]["delivery_state"] !== "unknown"
+                        || !in_array($state, ["delivered", "failed", "unknown", "recovery_required"], true)) {
+                        throw new store_unavailable("journal-corrupt");
+                    }
+                    $rows[$id]["delivery_state"] = $state;
+                }
+            }
+        }
+        return $rows;
     }
 }
 
@@ -746,31 +897,15 @@ final class public_renderer
     }
 
     /**
-     * The scheme tokens of a text: every `scheme:` prefix shape whose
-     * colon is followed by a non-space character (a trailing or
-     * prose-space colon is punctuation, not a scheme), PLUS every
-     * `scheme:` prefix whose colon IS followed by whitespace when the
-     * identifier names a known scheme — url contexts strip the
-     * whitespace before the payload, so `scheme:` + space is the
-     * executable spelling, while prose colons (whose identifiers are
-     * not schemes) stay safe.
+     * Every scheme-shaped token is evaluated, including whitespace
+     * after its colon and unknown identifiers. This conservative plain
+     * text policy does not guess whether a colon was intended as prose:
+     * consumers may interpret the same spelling as a link.
      */
     public static function scheme_tokens(string $decoded): array
     {
-        $tokens = [];
-        if (preg_match_all('{([a-zA-Z][a-zA-Z0-9+.\-]*):(?=[^\s])}', $decoded, $matches)) {
-            $tokens = $matches[1];
-        }
-        if (preg_match_all('{([a-zA-Z][a-zA-Z0-9+.\-]*):\s}', $decoded, $spaced)) {
-            foreach ($spaced[1] as $candidate) {
-                $lower = strtolower($candidate);
-                if (in_array($lower, self::ALLOWED_SCHEMES, true)
-                    || in_array($lower, self::FORBIDDEN_SCHEMES, true)) {
-                    $tokens[] = $candidate;
-                }
-            }
-        }
-        return $tokens;
+        return preg_match_all('{([a-zA-Z][a-zA-Z0-9+.\-]*):}', $decoded, $matches)
+            ? $matches[1] : [];
     }
 
     /** @return "safe"|"unsafe" */
@@ -1022,16 +1157,14 @@ final class application
             if ($verdict === "replay") {
                 return ["outcome" => "replayed", "recorded" => $this->idempotency->replayed_result($scope, $input["correlation_key"])];
             }
-            $action_id = "action-" . (count($this->outbox->rows) + 1);
-            $result = ["outcome" => "success", "action_id" => $action_id];
+            $result = ["outcome" => "success"];
             // One atomic journal record commits the outbox row and the
             // replay record together — journal first, memory after — so
             // an interruption between two appends can never commit one
             // half of the request, and a failed append refuses the
             // whole operation with nothing committed.
-            $this->outbox->commit_request(
+            $result = $this->outbox->commit_request(
                 [
-                    "action_id" => $action_id,
                     "tenant_id" => $input["tenant_id"],
                     "task_id" => $input["task_id"],
                     "requestor_id" => $input["requestor_id"],
@@ -1057,6 +1190,15 @@ final class application
     /** Service-worker external call with a typed, independent outcome. */
     public function deliver_provider_comment(array $input): array
     {
+        try {
+            return $this->deliver_claimed_comment($input);
+        } catch (store_unavailable $failure) {
+            return ["outcome" => "error", "error" => $failure->error];
+        }
+    }
+
+    private function deliver_claimed_comment(array $input): array
+    {
         $action = $this->outbox->get($input["action_id"]);
         if ($action === null || $action["tenant_id"] !== $input["tenant_id"]) {
             return ["outcome" => "forbidden"];
@@ -1075,7 +1217,13 @@ final class application
         // between the claim and the outcome restores as unknown, so a
         // restored generation reconciles instead of blindly retrying
         // the remote write.
-        $this->outbox->claim_delivery($input["action_id"]);
+        $claim = $this->outbox->claim_delivery($input["action_id"]);
+        if ($claim === "delivered") {
+            return ["outcome" => "replayed"];
+        }
+        if ($claim !== "claimed") {
+            return ["outcome" => "recovery_required"];
+        }
         $verdict = $this->transport->call($input["action_id"]);
         if ($verdict === "delivered") {
             $this->outbox->set_outcome($input["action_id"], "delivered");
@@ -1733,7 +1881,7 @@ function repeated_correlation_key(): bool
         "task_id" => "task-1", "tenant_id" => "tenant-1", "requestor_id" => "requestor-1",
         "correlation_key" => "corr-j", "payload_digest" => "digest-j",
     ]);
-    $nothing_committed = $fault_app->outbox->all() === [] && $fault_app->idempotency->records === [];
+    $nothing_committed = $fault_app->outbox->rows === [] && $fault_app->idempotency->records === [];
     $shared = new durable_journal();
     $GLOBALS["journals"][] = $shared;
     $generation_one = new idempotency_store($shared);
@@ -1778,7 +1926,7 @@ function repeated_correlation_key(): bool
         && $replayed_after_restart["recorded"]["action_id"] === $first["action_id"]
         && $restart_outbox_before === 3
         && count($app->outbox->all()) === 3
-        && $refused["outcome"] === "error" && $refused["error"] === "journal-write-failed"
+        && $refused["outcome"] === "error" && in_array($refused["error"], ["journal-write-failed", "journal-read-failed"], true)
         && $nothing_committed
         && $arbitrated
         && $torn_dropped
@@ -1844,11 +1992,16 @@ function provider_partial_failure(): bool
     // exists — a fresh generation restored from the journal delivers
     // it.
     $restored = restart_lane($lane);
-    $after_restart = $restored->invoke("worklog.deliver_provider_comment", [
+    // Carry the actual pre-restart log into the continued scenario:
+    // its observed ambiguous result belongs to this delivery invocation,
+    // not to the stale generation's subsequent recovery-only probe.
+    $restored->invocations = $lane->invocations;
+    $restored->app->transport->arm("ambiguous");
+    $delivery = $restored->invoke("worklog.deliver_provider_comment", [
         "action_id" => "action-1", "tenant_id" => "tenant-1",
     ]);
-    $lane->app->transport->arm("ambiguous");
-    $delivery = $lane->invoke("worklog.deliver_provider_comment", [
+    // The still-live old generation must observe the unresolved effect.
+    $stale = $lane->invoke("worklog.deliver_provider_comment", [
         "action_id" => "action-1", "tenant_id" => "tenant-1",
     ]);
     // The ambiguous acceptance is never retried blindly: a repeated
@@ -1898,10 +2051,11 @@ function provider_partial_failure(): bool
         && $delivery["outcome"] === "error" && $delivery["error"] === "taskhub.provider_ambiguous"
         && $state === "unknown"
         && $blind["outcome"] === "recovery_required"
-        && count($app->transport->attempts) === 1
-        && $after_restart["outcome"] === "success"
+        && count($app->transport->attempts) === 0
+        && count($restored->app->transport->attempts) === 1
+        && $stale["outcome"] === "recovery_required"
         && $claim_no_duplicate;
-    return lane_result($lane, [
+    return lane_result($restored, [
         "completion_intact" => entity_fact($app, "worklog.task"),
         "delivery_failed" => error_fact($delivery),
         "action_explicit" => entity_fact($app, "worklog.provider_action"),
@@ -2228,7 +2382,8 @@ function unsafe_content(): bool
         "source_worklog_id" => null, "draft_body" => "see https://taskhub.synthetic/notes for details",
     ]);
     $safe_preview = $lane->invoke("changelog.preview_entry", ["entry_id" => "entry-safe", "tenant_id" => "tenant-1"]);
-    // Plain prose colons stay safe: the policy refuses schemes, not text.
+    // Scheme-shaped prose is conservatively refused too: the same
+    // bytes must not become an unapproved link in another consumer.
     $lane->invoke("changelog.create_draft", [
         "entry_id" => "entry-prose", "tenant_id" => "tenant-1", "workspace_id" => "workspace-1",
         "source_worklog_id" => null, "draft_body" => "meeting notes: released at noon",
@@ -2239,7 +2394,7 @@ function unsafe_content(): bool
     $binding = approved_entry($lane, "entry-bypass", "tenant-1", "safe body");
     $published_ok = $binding !== null
         && $lane->invoke("changelog.publish_entry", array_merge(["entry_id" => "entry-bypass", "tenant_id" => "tenant-1"], $binding))["outcome"] === "success";
-    $ok = $all_refused && $safe_preview["outcome"] === "success" && $prose_preview["outcome"] === "success" && $published_ok;
+    $ok = $all_refused && $safe_preview["outcome"] === "success" && $prose_preview["outcome"] === "unsafe_content" && $published_ok;
     return lane_result($lane, $GLOBALS["observations"], $ok);
 }
 
@@ -2407,6 +2562,12 @@ function publish_withdraw_ordering(): bool
 // print the canonical result document.
 // ---------------------------------------------------------------------------
 
+// Regression probes load the real domain classes without running the
+// scenario printer. Production standalone/battery execution is unchanged.
+if (defined("LEKALO_LANE_LIBRARY_ONLY")) {
+    return;
+}
+
 const SCENARIOS = [
     "worklog.scenario.completion_without_worklog" => "completion_without_worklog",
     "worklog.scenario.completion_with_worklog" => "completion_with_worklog",
@@ -2562,7 +2723,7 @@ $capabilities = [
     ["capability" => "transaction.atomic_group", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Declared groups stage worklog and publication writes and roll back every member on a mid-group store fault (rollback observed)."],
     ["capability" => "idempotency.durable_key", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Replay records commit through the same journal (journal first, memory after) keyed by tenant, actor, operation, and correlation key with canonical payload digests; restart replay, journal arbitration across store generations, and conflict refusal on contradictory committed records are exercised in-process (store-instance recovery, not a separate deployed process)."],
     ["capability" => "authorization.tenant_scope", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Tenant equality enforced on create, approve, publish, withdraw, provider request/delivery, and the public read; cross-tenant denials exercised."],
-    ["capability" => "rendering.safe_url", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Decoded scheme allowlisting on every scheme token: script-url, local-file, data, mailto/tel/ftp, entity- or percent-encoded spellings, the whitespace-after-colon spelling, and encoded allowed schemes refuse; plain prose colons stay safe."],
+    ["capability" => "rendering.safe_url", "support" => "supported", "approval" => "reviewed", "blocking" => false, "note" => "Decoded scheme allowlisting on every scheme token: script-url, local-file, data, mailto/tel/ftp, entity- or percent-encoded spellings, the whitespace-after-colon spelling, and encoded allowed schemes refuse; scheme-shaped prose is conservatively refused too."],
 ];
 
 // The nonce probe: an engine-supplied operation whose outcome facts

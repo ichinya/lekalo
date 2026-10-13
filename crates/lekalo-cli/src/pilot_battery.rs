@@ -27,12 +27,12 @@
 //!   whose outcome facts embed the per-run nonce, so captured output
 //!   replayed by a printer carries stale facts and fails.
 //!
-//! The residual impossibility is documented: any deterministic check
-//! an honest lane computes from public inputs can in principle be
-//! computed by a dedicated fabricator; what the battery guarantees is
-//! that execution trust binds to the executed battery — corpus,
-//! arrange, invocations, assertions, and a fresh probe — instead of
-//! to self-asserted output.
+//! A battery is not an attestation: a fabricator can compute answers
+//! from public inputs. Eligibility therefore ALSO requires the exact
+//! reviewed implementation embedded in the trusted engine, never a pin
+//! derived from neighboring caller-supplied bytes. The CLI executes a
+//! private copy of that embedded implementation; the battery binds its
+//! validated corpus and evaluated results to this admission.
 
 use lekalo_core::worklog_changelog::parse_unique_consumed;
 use serde_json::{Map, Value as Json};
@@ -118,7 +118,18 @@ pub(crate) fn build_battery(
     catalog: &BTreeSet<String>,
 ) -> Result<Battery, &'static str> {
     let documents = documents.as_ref().map_err(|detail| *detail)?;
-    let mut ordered = documents.clone();
+    // Decode through the Scenario IR owner before any obligation is
+    // extracted. Canonical JSON below is a projection of validated typed
+    // steps, not a permissive map with required members defaulted away.
+    let mut ordered = Vec::with_capacity(documents.len());
+    for document in documents {
+        let scenario = lekalo_core::scenario::ScenarioIr::from_value(document)
+            .map_err(|_| "battery-scenario-invalid")?;
+        let canonical = scenario
+            .canonical_bytes()
+            .map_err(|_| "battery-scenario-invalid")?;
+        ordered.push(serde_json::from_str::<Json>(&canonical).expect("Scenario IR canonical JSON"));
+    }
     ordered.sort_by_key(scenario_id);
     let mut ids = BTreeSet::new();
     for document in &ordered {
@@ -148,9 +159,9 @@ pub(crate) fn build_battery(
         .map(|document| {
             serde_json::json!({
                 "scenarioId": scenario_id(document),
-                "given": document.get("given").cloned().unwrap_or(Json::Array(vec![])),
-                "when": document.get("when").cloned().unwrap_or(Json::Array(vec![])),
-                "then": document.get("then").cloned().unwrap_or(Json::Array(vec![])),
+                "given": document["given"],
+                "when": document["when"],
+                "then": document["then"],
             })
         })
         .collect();
@@ -324,7 +335,6 @@ pub(crate) fn run_battery(
         let when = document.get("when").and_then(Json::as_array);
         let invocations_bound = match (log, when) {
             (Some(log), Some(when)) => invocation_bound(log, when),
-            (Some(_), None) => true,
             _ => false,
         };
         if !invocations_bound {
@@ -333,29 +343,33 @@ pub(crate) fn run_battery(
         // 3. The assertion semantics: the engine evaluates every
         //    `then` assertion against the lane's reported facts.
         let facts = row.get("observations").cloned().unwrap_or(Json::Null);
-        if let Some(then) = document.get("then").and_then(Json::as_array) {
-            for step in then {
-                let kind = step
-                    .get("assertion")
-                    .and_then(|assertion| assertion.get("kind"))
-                    .and_then(Json::as_str)
-                    .unwrap_or("");
-                if kind == "forbidden_effect" {
-                    // Asserted statically against the compiled effect
-                    // projection; retained as runtime evidence.
-                    continue;
-                }
-                let Some(step_id) = step.get("stepId").and_then(Json::as_str) else {
-                    failures.push("battery-assertions");
-                    continue;
-                };
-                let fact = facts.get(step_id);
-                let assertion = step.get("assertion").unwrap_or(&Json::Null);
-                let ok =
-                    fact.is_some_and(|fact| evaluate_assertion(assertion, fact, allowlist_fields));
-                if !ok {
-                    failures.push("battery-assertions");
-                }
+        let Some(then) = document
+            .get("then")
+            .and_then(Json::as_array)
+            .filter(|then| !then.is_empty())
+        else {
+            return failed("battery-scenario-invalid");
+        };
+        for step in then {
+            let kind = step
+                .get("assertion")
+                .and_then(|assertion| assertion.get("kind"))
+                .and_then(Json::as_str)
+                .unwrap_or("");
+            if kind == "forbidden_effect" {
+                // Asserted statically against the compiled effect
+                // projection; retained as runtime evidence.
+                continue;
+            }
+            let Some(step_id) = step.get("stepId").and_then(Json::as_str) else {
+                failures.push("battery-assertions");
+                continue;
+            };
+            let fact = facts.get(step_id);
+            let assertion = step.get("assertion").unwrap_or(&Json::Null);
+            let ok = fact.is_some_and(|fact| evaluate_assertion(assertion, fact, allowlist_fields));
+            if !ok {
+                failures.push("battery-assertions");
             }
         }
         let status = if failures.is_empty() { "pass" } else { "fail" };
@@ -717,14 +731,10 @@ mod tests {
     /// The battery refuses corpus pin drift and catalog mismatch.
     #[test]
     fn battery_build_refuses_pin_and_corpus_drift() {
-        let document = serde_json::json!({
-            "scenarioId": "worklog.scenario.one",
-            "modelRef": {"digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"},
-            "irRef": {"digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"},
-            "given": [], "when": [], "then": [],
-        });
-        let mut catalog = BTreeSet::new();
-        catalog.insert("worklog.scenario.one".to_owned());
+        let mut document = valid_scenario();
+        document["modelRef"]["digest"] = Json::from(format!("sha256:{}", "1".repeat(64)));
+        document["irRef"]["digest"] = Json::from(format!("sha256:{}", "2".repeat(64)));
+        let catalog = BTreeSet::from([scenario_id(&document).unwrap()]);
         let ok = build_battery(
             &Ok(vec![document.clone()]),
             "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -747,5 +757,51 @@ mod tests {
             &pruned_catalog,
         );
         assert_eq!(pruned.err(), Some("battery-corpus"));
+    }
+
+    fn valid_scenario() -> Json {
+        serde_json::from_str(include_str!("../../../tests/fixtures/pilot/worklog-changelog/scenarios/worklog.scenario.completion_without_worklog.scenario.json")).unwrap()
+    }
+
+    /// R6 F5: admission cannot erase required obligations, accept an
+    /// unsupported version, or bypass closed reference/member decoding.
+    #[test]
+    fn battery_requires_validated_nonempty_scenario_ir() {
+        let original = valid_scenario();
+        let catalog = BTreeSet::from([scenario_id(&original).unwrap()]);
+        let model = original["modelRef"]["digest"].as_str().unwrap();
+        let ir = original["irRef"]["digest"].as_str().unwrap();
+        for mutation in [
+            "missing-when",
+            "missing-then",
+            "empty-when",
+            "empty-then",
+            "version",
+            "rogue",
+            "ref-version",
+            "ref-shape",
+        ] {
+            let mut document = original.clone();
+            match mutation {
+                "missing-when" => {
+                    document.as_object_mut().unwrap().remove("when");
+                }
+                "missing-then" => {
+                    document.as_object_mut().unwrap().remove("then");
+                }
+                "empty-when" => document["when"] = serde_json::json!([]),
+                "empty-then" => document["then"] = serde_json::json!([]),
+                "version" => document["schemaVersion"] = Json::from("lekalo/scenario-ir/v9.9.9"),
+                "rogue" => document["rogue"] = Json::Bool(true),
+                "ref-version" => document["modelRef"]["modelVersion"] = Json::from("9.9.9"),
+                "ref-shape" => document["irRef"]["rogue"] = Json::Bool(true),
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                build_battery(&Ok(vec![document]), model, ir, &catalog).err(),
+                Some("battery-scenario-invalid"),
+                "{mutation}"
+            );
+        }
     }
 }

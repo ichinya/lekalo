@@ -29,6 +29,7 @@ const SCRIPTS = [
   "scripts/test-worklog-changelog-contracts.mjs",
   "scripts/test-worklog-changelog-pilot.mjs",
   "scripts/test-worklog-changelog-impact.mjs",
+  "scripts/test-worklog-changelog-admission.mjs",
   "scripts/gen-worklog-changelog-contracts.mjs",
   "scripts/gen-worklog-changelog-attachments.mjs",
   "scripts/gen-worklog-changelog-pilot-fixture.mjs",
