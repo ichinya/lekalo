@@ -169,8 +169,14 @@ const MAX_NESTING_DEPTH = 128;
  * and refuses malformed number spellings positionally. Refusal
  * precedence matches the old JSON.parse-based pass: any syntax error
  * anywhere is `not-json`, duplicates only surface for otherwise-valid
- * documents. */
-function parseDocument(text) {
+ * documents. Duplicate positions are tracked as member-name paths
+ * (issue #106 review r5): production's typed wire structs refuse every
+ * duplicate, but a map-typed member (`capabilities.capabilities` is a
+ * serde `BTreeMap`, last-wins) admits them — the caller decides which
+ * object positions are map positions through `allowDuplicatePaths`,
+ * which receives the CONTAINING object's path. */
+function parseDocument(text, allowDuplicatePaths) {
+  const allows = (path, previous, next) => allowDuplicatePaths === undefined ? false : allowDuplicatePaths(path, previous, next);
   let index = 0;
   let depth = 0;
   const length = text.length;
@@ -264,11 +270,11 @@ function parseDocument(text) {
     if (integral && Object.is(value, -0)) return { ok: true, value: new JsonFloat(raw) };
     return { ok: true, value: integral ? value : new JsonFloat(raw) };
   };
-  const parseValue = () => {
+  const parseValue = (path) => {
     skipWhitespace();
     const ch = text[index];
-    if (ch === "{") return parseObject();
-    if (ch === "[") return parseArray();
+    if (ch === "{") return parseObject(path);
+    if (ch === "[") return parseArray(path);
     if (ch === '"') {
       index += 1;
       const value = parseString();
@@ -289,15 +295,15 @@ function parseDocument(text) {
     if (ch === "-" || (ch >= "0" && ch <= "9")) return parseNumber();
     return notJson();
   };
-  const parseObject = () => {
+  const parseObject = (path) => {
     index += 1;
     depth += 1;
     if (depth > MAX_NESTING_DEPTH) return notJson();
-    const result = parseObjectMembers();
+    const result = parseObjectMembers(path);
     depth -= 1;
     return result;
   };
-  const parseObjectMembers = () => {
+  const parseObjectMembers = (path) => {
     const members = {};
     const seen = new Set();
     skipWhitespace();
@@ -314,9 +320,9 @@ function parseDocument(text) {
       skipWhitespace();
       if (text[index] !== ":") return notJson();
       index += 1;
-      const member = parseValue();
+      const member = parseValue([...path, key]);
       if (!member.ok) return member;
-      duplicated = duplicated || seen.has(key);
+      if (seen.has(key) && !allows(path, members[key], member.value)) duplicated = true;
       seen.add(key);
       // Keep the last duplicate's value (JSON.parse semantics); defineProperty
       // keeps `__proto__` an ordinary own member exactly like JSON.parse.
@@ -333,15 +339,15 @@ function parseDocument(text) {
       return notJson();
     }
   };
-  const parseArray = () => {
+  const parseArray = (path) => {
     index += 1;
     depth += 1;
     if (depth > MAX_NESTING_DEPTH) return notJson();
-    const result = parseArrayItems();
+    const result = parseArrayItems(path);
     depth -= 1;
     return result;
   };
-  const parseArrayItems = () => {
+  const parseArrayItems = (path) => {
     const items = [];
     skipWhitespace();
     if (text[index] === "]") {
@@ -349,7 +355,7 @@ function parseDocument(text) {
       return { ok: true, value: items };
     }
     for (;;) {
-      const item = parseValue();
+      const item = parseValue(path);
       if (!item.ok) return item;
       items.push(item.value);
       skipWhitespace();
@@ -364,7 +370,7 @@ function parseDocument(text) {
       return notJson();
     }
   };
-  const value = parseValue();
+  const value = parseValue([]);
   if (!value.ok) return value;
   skipWhitespace();
   if (index !== length) return { ok: false, reason: "trailing-document" };
@@ -431,14 +437,17 @@ function duplicateKeys(text) {
 /**
  * Strict parse of one complete JSON document: refuses BOM, trailing
  * documents, duplicate keys (including escaped spellings), malformed
- * number spellings, and non-finite numbers.
+ * number spellings, and non-finite numbers. `allowDuplicatePaths`
+ * (issue #106 review r5) admits duplicate keys at map-typed member
+ * positions — production's serde `BTreeMap` members take last-wins —
+ * while every struct-position duplicate still refuses.
  */
-function strictParse(text) {
+function strictParse(text, allowDuplicatePaths) {
   if (typeof text !== "string") return { ok: false, reason: "not-json" };
   if (text.startsWith("\uFEFF")) return { ok: false, reason: "not-json" };
   const first = text.replace(/^[\s]+/, "")[0];
   if (first !== "{" && first !== "[") return { ok: false, reason: "not-json" };
-  return parseDocument(text);
+  return parseDocument(text, allowDuplicatePaths);
 }
 
 /** Byte length of a UTF-8 encoding of the text. */
@@ -448,11 +457,12 @@ function utf8Length(text) {
 
 /**
  * Read exactly one bounded UTF-8 JSON object document; oversize input is
- * refused before parsing.
+ * refused before parsing. `allowDuplicatePaths` propagates to the
+ * parser's duplicate-key policy (map-typed member positions only).
  */
-function readSingleObject(text, maxBytes) {
+function readSingleObject(text, maxBytes, allowDuplicatePaths) {
   if (utf8Length(text) > maxBytes) return { ok: false, reason: "oversize" };
-  const parsed = strictParse(text);
+  const parsed = strictParse(text, allowDuplicatePaths);
   if (!parsed.ok) return parsed;
   if (parsed.value === null || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
     return { ok: false, reason: "shape" };
@@ -911,12 +921,36 @@ __register("src/runtime/decode.mjs", (() => {
  * refusal carries one closed safe reason token — never payload content.
  */
 const {WIRE_TOKEN, SUPPORTED_PROTOCOL_VERSIONS, LATEST_OPERATIONS, BOUNDS, ENUMS} = __module("src/generated/protocol.mjs");
+const {CAPABILITY_DEFINITIONS} = __module("src/generated/capabilities.mjs");
 const {JsonFloat, canonicalJson, readSingleObject} = __module("src/runtime/json.mjs");
 const {isPlanId, isRequestId, isSha256Digest} = __module("src/runtime/ids.mjs");
 const {isCapabilityId, isContractVersion, isLogicalPath, isSemanticId, isToken} = __module("src/runtime/paths.mjs");
 
 const SUPPORT_STATES = ENUMS.supportState;
 const TRANSPORTS = ENUMS.transport;
+const LINT_VERSION = "0.6.4";
+
+/** Whether a capability id is a member of the generated registry —
+ * production admission consults `capability::definition(id).is_some()`
+ * for every describe map key (issue #106 review r5 #1), so the generated
+ * per-SDK table is authoritative here, not just the grammar. */
+const isKnownCapabilityId = (id) => CAPABILITY_DEFINITIONS.some((entry) => entry.id === id);
+
+/** All-default struct members accepted from a positional JSON sequence
+ * (serde `visit_seq` parity, issue #106 review r5 #9): production
+ * deserializes every `#[serde(default)]` struct from a seq positionally,
+ * so `[]` (and any shorter prefix) decodes with the defaults filling
+ * the tail. The SDK maps the prefix onto the declared field order and
+ * refuses a longer seq exactly like serde's `invalid length` error. */
+function seqAsMembers(value, fields, reason = "shape") {
+  if (!Array.isArray(value)) return { ok: true, value };
+  if (value.length > fields.length) return failure(reason);
+  const members = {};
+  fields.forEach((field, index) => {
+    if (index < value.length) members[field] = value[index];
+  });
+  return { ok: true, value: members };
+}
 
 /** The closed safe reason tokens an SDK decoder refuses with. */
 const DECODE_REASONS = [
@@ -1003,7 +1037,11 @@ function decodeProfileCapabilities(value) {
   const absent = optional(value);
   if (absent) return absent;
   if (value === undefined) return { ok: true, value: undefined };
-  if (!Array.isArray(value) || value.length > BOUNDS.MAX_DECLARED_CAPABILITIES) return failure("bounds");
+  // Production requires a present, non-empty, strictly-sorted list
+  // (wire.rs profile_capabilities: `!capabilities.is_empty()` is part
+  // of the sorted_unique verdict) — an empty list is admission `bounds`,
+  // never an empty default (issue #106 review r5 #1).
+  if (!Array.isArray(value) || value.length === 0 || value.length > BOUNDS.MAX_DECLARED_CAPABILITIES) return failure("bounds");
   let previous = null;
   for (const capability of value) {
     const closed = closeObject(capability, ["id", "support"]);
@@ -1020,8 +1058,7 @@ function decodeContentRef(value) {
   const closed = closeObject(value, ["adapter", "digest", "revision"]);
   if (closed) return closed;
   if (!isSha256Digest(value.digest)) return failure("bounds");
-  // `revision` keeps its separate bounded-string contract (≤128), but
-  // the optional adapter identity carries the production adapter token
+  // Revision is an unbounded wire string; the optional adapter identity carries the production adapter token
   // grammar (issue #106 review r4 #2, core wire.rs validate:
   // `!scopes::is_token(adapter)` refuses `native-request`): a present,
   // non-token identity must never reach dispatch.
@@ -1031,19 +1068,30 @@ function decodeContentRef(value) {
   for (const member of ["revision"]) {
     const absent = optional(value[member]);
     if (absent) return absent;
-    if (value[member] !== undefined && (typeof value[member] !== "string" || value[member].length > 128)) return failure("bounds");
+    // Production types `revision` `Option<String>` with no bound beyond
+    // serde's own string admission (issue #106 review r5 #9): only the
+    // member type is checked, never a length the wire does not declare.
+    if (value[member] !== undefined && typeof value[member] !== "string") return failure("shape");
   }
   return { ok: true, value };
 }
 
-function decodeNativeChanges(value) {
+function decodeNativeChanges(rawValue) {
+  // All-default struct: accepted from `{}` and from a positional seq
+  // (`[]` decodes with both lists defaulted) exactly like production's
+  // serde struct-from-seq (issue #106 review r5 #9).
+  const seq = seqAsMembers(rawValue, ["files", "symbols"]);
+  if (!seq.ok) return seq;
+  const value = seq.value;
   const closed = closeObject(value, ["files", "symbols"]);
   if (closed) return closed;
   const files = value.files === undefined ? [] : value.files;
   const symbols = value.symbols === undefined ? [] : value.symbols;
   if (!Array.isArray(files) || files.length > 1024) return failure("bounds");
   if (!Array.isArray(symbols) || symbols.length > 1024) return failure("bounds");
-  let previous = null;
+  // Production validates the changed files without any ordering rule
+  // (wire.rs native-request: member checks only) — the SDK's old
+  // ascending-path requirement refused legal documents (review r5 #9).
   for (const change of files) {
     const inner = closeObject(change, ["after_digest", "before_digest", "change", "path"]);
     if (inner) return inner;
@@ -1054,11 +1102,11 @@ function decodeNativeChanges(value) {
       if (absent) return absent;
       if (change[member] !== undefined && !isSha256Digest(change[member])) return failure("bounds");
     }
-    if (previous !== null && change.path <= previous) return failure("bounds");
-    previous = change.path;
   }
+  // Symbols carry no per-item bound on the wire (only the count is
+  // bounded) — empty and long strings are both legal (review r5 #9).
   for (const symbol of symbols) {
-    if (typeof symbol !== "string" || symbol === "" || symbol.length > BOUNDS.ERROR_DETAIL_MAX) return failure("bounds");
+    if (typeof symbol !== "string") return failure("shape");
   }
   return { ok: true, value: { files, symbols } };
 }
@@ -1120,7 +1168,12 @@ function decodeLintBinding(value) {
 function decodeLintRequest(value) {
   const closed = closeObject(value, ["bindings", "files", "pins", "scope"]);
   if (closed) return closed;
-  for (const member of ["scope", "files", "bindings"]) {
+  // Every lint member is required on the wire (production's LintRequest
+  // has no serde defaults): a missing member is `shape` exactly like
+  // serde's missing-field error — only a null gets its own token
+  // (issue #106 review r5 #8).
+  for (const member of ["scope", "files", "bindings", "pins"]) {
+    if (value[member] === undefined) return failure("shape");
     const absent = optional(value[member]);
     if (absent) return absent;
   }
@@ -1216,8 +1269,7 @@ function decodeRequest(text, maxBytes = BOUNDS.MAX_REQUEST_BYTES) {
   if (value.lint_request !== undefined) {
     const lint = decodeLintRequest(value.lint_request);
     if (!lint.ok) return lint;
-  }
-  return { ok: true, value };
+  }  return { ok: true, value };
 }
 
 function decodeWriteEntry(value) {
@@ -1225,13 +1277,23 @@ function decodeWriteEntry(value) {
   if (closed) return closed;
   if (!isLogicalPath(value.path)) return failure("bounds");
   if (!ENUMS.writeAction.includes(value.action)) return failure("shape");
+  // `sha256` is a free-form `Option<String>` on the wire (production
+  // has no digest grammar here — the action/digest pairing is the
+  // client's semantic layer): any string is admissible, only the type
+  // and the explicit-null refusal remain (issue #106 review r5 #9).
   const absent = optional(value.sha256);
   if (absent) return absent;
-  if (value.sha256 !== undefined && !isSha256Digest(value.sha256)) return failure("bounds");
+  if (value.sha256 !== undefined && typeof value.sha256 !== "string") return failure("shape");
   return { ok: true, value };
 }
 
-function decodeResult(value) {
+function decodeResult(rawValue) {
+  // All-default operation result: production deserializes it from a
+  // positional seq too (`result:[]` is the all-default value), exactly
+  // like serde struct-from-seq (issue #106 review r5 #9).
+  const seq = seqAsMembers(rawValue, ["ok", "truncated", "entries", "findings", "bindings", "native_plan", "lint_evidence"]);
+  if (!seq.ok) return seq;
+  const value = seq.value;
   const closed = closeObject(value, ["bindings", "entries", "findings", "lint_evidence", "native_plan", "ok", "truncated"]);
   if (closed) return closed;
   for (const member of ["ok", "truncated"]) {
@@ -1359,15 +1421,18 @@ const lintSource = (value) => {
 const lintSpan = (value) => {
   const closed = closeObject(value, ["column", "end", "endColumn", "endLine", "id", "line", "source", "start"]);
   if (closed) return false;
-  const bounded = (member, min) => isInt(value[member]) && value[member] >= min && value[member] <= BOUNDS.MAX_REQUEST_BYTES;
+  // Every span member is an unbounded `u64` in production (0 is a legal
+  // line/column; the SDK's old min-1 refused legal evidence — review
+  // r5 #9).
+  const bounded = (member) => isInt(value[member]) && value[member] <= BOUNDS.MAX_REQUEST_BYTES;
   return lintBounded256(value.id)
     && lintBounded256(value.source)
-    && bounded("start", 0)
-    && bounded("end", 0)
-    && bounded("line", 1)
-    && bounded("column", 1)
-    && bounded("endLine", 1)
-    && bounded("endColumn", 1);
+    && bounded("start")
+    && bounded("end")
+    && bounded("line")
+    && bounded("column")
+    && bounded("endLine")
+    && bounded("endColumn");
 };
 
 const lintCoverage = (value) => {
@@ -1481,12 +1546,21 @@ function decodeScanEntry(value) {
   const absentEvidence = optional(value.evidence);
   if (absentEvidence) return absentEvidence;
   if (value.evidence !== undefined) {
-    const inner = closeObject(value.evidence, ["references", "signature"]);
+    // All-default evidence: `{}` and the positional `[]` both decode
+    // (signature/references default) exactly like production's serde
+    // struct-from-seq (issue #106 review r5 #9).
+    const seq = seqAsMembers(value.evidence, ["signature", "references"]);
+    if (!seq.ok) return seq;
+    const evidence = seq.value;
+    const inner = closeObject(evidence, ["references", "signature"]);
     if (inner) return inner;
-    const absentSignature = optional(value.evidence.signature);
+    const absentSignature = optional(evidence.signature);
     if (absentSignature) return absentSignature;
-    if (value.evidence.signature !== undefined && !isSha256Digest(value.evidence.signature)) return failure("bounds");
-    const references = value.evidence.references === undefined ? [] : value.evidence.references;
+    if (evidence.signature !== undefined && !isSha256Digest(evidence.signature)) return failure("bounds");
+    // `references` is a `#[serde(default)] Vec`: absent defaults empty;
+    // an explicit null is a typed refusal, never an empty default.
+    if (evidence.references === null) return failure("explicit-null");
+    const references = evidence.references === undefined ? [] : evidence.references;
     if (!Array.isArray(references) || references.length > BOUNDS.REFERENCES_MAX) return failure("bounds");
     for (const reference of references) {
       const refClosed = closeObject(reference, ["confidence", "role", "target"]);
@@ -1499,6 +1573,7 @@ function decodeScanEntry(value) {
       if (!ENUMS.scanEntryReferenceRole.includes(reference.role)) return failure("shape");
       if (!ENUMS.scanEntryConfidence.includes(reference.confidence)) return failure("shape");
     }
+    value = { ...value, evidence };
   }
   return { ok: true, value };
 }
@@ -1569,7 +1644,7 @@ function decodeError(value) {
   return { ok: true, value };
 }
 
-function decodeCapabilities(value) {
+function decodeCapabilities(value, protocolVersion) {
   const closed = closeObject(value, [
     "adapter", "capabilities", "constraints", "ir_versions", "operations",
     "profiles", "progress", "protocol_versions", "read_scopes", "targets",
@@ -1578,9 +1653,10 @@ function decodeCapabilities(value) {
   if (closed) return closed;
   const identity = decodeIdentity(value.adapter);
   if (!identity.ok) return identity;
-  // Required with a non-empty closed bound on the wire (core: unique).
+  // Required with a non-empty closed bound on the wire (core: unique(…, 1,
+  // …) — min-1 is part of admission, issue #106 review r5 #1).
   const requiredList = (member, max, check) => {
-    if (!Array.isArray(value[member]) || value[member].length > max) return false;
+    if (!Array.isArray(value[member]) || value[member].length === 0 || value[member].length > max) return false;
     const unique = new Set(value[member]);
     if (unique.size !== value[member].length) return false;
     return value[member].every((entry) => check(entry));
@@ -1595,15 +1671,24 @@ function decodeCapabilities(value) {
     if (unique.size !== value[member].length) return false;
     return value[member].every((entry) => check(entry));
   };
+  // Operation set gating mirrors production validate_bounds exactly
+  // (issue #106 review r5 #1): `lint` is legal only on a 0.6.4 describe,
+  // and the closed operation ceiling is 10 there, 9 on every other
+  // version.
+  const operationsMax = protocolVersion === LINT_VERSION ? BOUNDS.OPERATIONS_MAX_LINT : BOUNDS.OPERATIONS_MAX_BASE;
+  const isOperation = (op) => LATEST_OPERATIONS.includes(op) && (protocolVersion === LINT_VERSION || op !== "lint");
   if (!requiredList("protocol_versions", BOUNDS.PROTOCOL_VERSIONS_MAX, isContractVersion)) return failure("bounds");
-  if (!requiredList("operations", BOUNDS.OPERATIONS_MAX_LINT, (op) => LATEST_OPERATIONS.includes(op))) return failure("bounds");
+  if (!requiredList("operations", operationsMax, isOperation)) return failure("bounds");
   if (!requiredList("transports", BOUNDS.TRANSPORTS_MAX, (t) => TRANSPORTS.includes(t))) return failure("bounds");
   if (!optionalList("targets", BOUNDS.TARGETS_MAX, isToken)) return failure("bounds");
   if (!optionalList("profiles", BOUNDS.PROFILES_MAX, isToken)) return failure("bounds");
   if (!optionalList("read_scopes", BOUNDS.MAX_SCOPES, (s) => typeof s === "string" && s.length > 0 && s.length <= BOUNDS.PATH_MAX)) return failure("bounds");
   if (!optionalList("write_scopes", BOUNDS.MAX_SCOPES, (s) => typeof s === "string" && s.length > 0 && s.length <= BOUNDS.PATH_MAX)) return failure("bounds");
   if (!optionalList("ir_versions", BOUNDS.MAX_IR_VERSIONS, isContractVersion)) return failure("bounds");
-  if (typeof value.progress !== "boolean") return failure("shape");
+  // `progress` is a `#[serde(default)] bool` in production: absent is
+  // legal (defaults false); a present non-boolean is a typed refusal
+  // (review r5 #9).
+  if (value.progress !== undefined && typeof value.progress !== "boolean") return failure("shape");
   if (value.capabilities !== undefined) {
     const absentMap = optional(value.capabilities);
     if (absentMap) return absentMap;
@@ -1612,18 +1697,26 @@ function decodeCapabilities(value) {
     if (ids.length > BOUNDS.MAX_DECLARED_CAPABILITIES) return failure("bounds");
     for (const id of ids) {
       if (!isCapabilityId(id)) return failure("bounds");
+      // Registry membership is part of admission (production consults
+      // `capability::definition(id)`), not a discovery-time nicety
+      // (issue #106 review r5 #1).
+      if (!isKnownCapabilityId(id)) return failure("bounds");
       if (!SUPPORT_STATES.includes(value.capabilities[id])) return failure("shape");
     }
   }
-  if (value.constraints !== undefined) {
-    const absent = optional(value.constraints);
-    if (absent) return absent;
-    const inner = closeObject(value.constraints, ["max_entries", "max_writes"]);
+  // `constraints` is a plain `Option` in production: absent and explicit
+  // null are both legal, the members are `1..=MAX` when present, and the
+  // all-default struct deserializes from `{}` or a positional `[]`
+  // (issue #106 review r5 #1/#9).
+  if (value.constraints !== undefined && value.constraints !== null) {
+    const seq = seqAsMembers(value.constraints, ["max_entries", "max_writes"]);
+    if (!seq.ok) return seq;
+    const constraints = seq.value;
+    const inner = closeObject(constraints, ["max_entries", "max_writes"]);
     if (inner) return inner;
     for (const member of ["max_entries", "max_writes"]) {
-      const absentValue = optional(value.constraints[member]);
-      if (absentValue) return absentValue;
-      if (value.constraints[member] !== undefined && (!isInt(value.constraints[member]) || value.constraints[member] > BOUNDS.MAX_CONSTRAINT_VALUE)) return failure("bounds");
+      if (constraints[member] === null || constraints[member] === undefined) continue;
+      if (!isInt(constraints[member]) || constraints[member] < 1 || constraints[member] > BOUNDS.MAX_CONSTRAINT_VALUE) return failure("bounds");
     }
   }
   return { ok: true, value };
@@ -1632,9 +1725,13 @@ function decodeCapabilities(value) {
 /**
  * Decode one strict response envelope from raw text (the conformance
  * client and the validate-before-write path both use this admission).
+ * Duplicate keys are refused everywhere except map-typed member
+ * positions: production's `capabilities.capabilities` is a serde
+ * `BTreeMap` whose duplicates take last-wins (issue #106 review r5 #9).
  */
 function decodeResponse(text, maxBytes = BOUNDS.DEFAULT_MAX_OUTPUT_BYTES) {
-  const document = readSingleObject(text, maxBytes);
+  const document = readSingleObject(text, maxBytes, (path, previous, next) =>
+    path.join(".") === "capabilities.capabilities" && ENUMS.supportState.includes(previous) && ENUMS.supportState.includes(next));
   if (!document.ok) return document;
   const value = document.value;
   const closed = closeObject(value, [
@@ -1656,7 +1753,7 @@ function decodeResponse(text, maxBytes = BOUNDS.DEFAULT_MAX_OUTPUT_BYTES) {
   const absentCapabilities = optional(value.capabilities);
   if (absentCapabilities) return absentCapabilities;
   if (value.capabilities !== undefined) {
-    const capabilities = decodeCapabilities(value.capabilities);
+    const capabilities = decodeCapabilities(value.capabilities, value.protocol_version);
     if (!capabilities.ok) return capabilities;
   }
   const absentResult = optional(value.result);
@@ -1664,6 +1761,12 @@ function decodeResponse(text, maxBytes = BOUNDS.DEFAULT_MAX_OUTPUT_BYTES) {
   if (value.result !== undefined) {
     const result = decodeResult(value.result);
     if (!result.ok) return result;
+    // Lint evidence is version-gated exactly like production
+    // validate_bounds (issue #106 review r5 #1): the member is legal
+    // only on a 0.6.4 `lint` response.
+    if (result.value.lint_evidence !== undefined && (value.protocol_version !== LINT_VERSION || value.operation !== "lint")) {
+      return failure("shape");
+    }
   }
   if (value.writes !== undefined) {
     const absent = optional(value.writes);
@@ -1703,6 +1806,7 @@ __register("src/runtime/validate.mjs", (() => {
 const {BASE_OPERATIONS, ENUMS, IR_VERSIONS, LATEST_OPERATIONS, SUPPORTED_PROTOCOL_VERSIONS, WIRE_TOKEN} = __module("src/generated/protocol.mjs");
 const {isLogicalPath, isWireToken} = __module("src/runtime/paths.mjs");
 const {isPlanId, isSha256Digest} = __module("src/runtime/ids.mjs");
+const {canonicalJson} = __module("src/runtime/json.mjs");
 
 /** The closed semantic refusal tokens (distinct from decode reasons). */
 const VALIDATE_REASONS = [
@@ -1790,13 +1894,22 @@ function validateRequest(request) {
 /**
  * Validate response identity echo against the exact negotiated session.
  * Protocol deviations are version/token refusals; echo deviations are
- * malformed responses.
+ * malformed responses. The describe handshake additionally binds the
+ * evidence identity to the declared capabilities identity exactly like
+ * the production client (`evidence.adapter != capabilities.adapter` →
+ * `Evidence` invalidity, issue #106 review r5 #10) — an SDK consumer
+ * must never accept a response a host session would refuse.
  */
 function validateResponseIdentity(response, expected) {
   if (response.protocol !== WIRE_TOKEN) return invalid("version");
   if (response.protocol_version !== expected.protocolVersion) return invalid("echo-version");
   if (response.operation !== expected.operation) return invalid("echo-operation");
   if (response.request_id !== expected.requestId) return invalid("echo-request-id");
+  if (response.capabilities !== undefined) {
+    const evidence = response.evidence?.adapter;
+    const declared = response.capabilities.adapter;
+    if (canonicalJson(evidence) !== canonicalJson(declared)) return invalid("identity");
+  }
   return { ok: true };
 }
 
@@ -1809,6 +1922,12 @@ function validateResponseIdentity(response, expected) {
 function validateResponsePayload(request, response) {
   if (response.capabilities !== undefined && request.operation !== "describe") return invalid("member");
   if (request.operation === "describe" && response.status === "ok" && response.capabilities === undefined) return invalid("member");
+  if (request.operation === "describe" && response.capabilities !== undefined) {
+    const caps = response.capabilities;
+    if (canonicalJson(response.evidence.adapter) !== canonicalJson(caps.adapter)) return invalid("identity");
+    if (!caps.operations.includes("describe") || !caps.protocol_versions.includes(request.protocol_version)) return invalid("member");
+    if (response.progress !== undefined) return invalid("member");
+  }
   const apply = request.operation === "clean" || (request.operation === "generate" && request.dry_run === false);
   if (apply && response.evidence.plan_id !== request.plan_id) return invalid("plan-id");
   if (response.status === "error") {
@@ -1836,7 +1955,7 @@ function validateResponsePayload(request, response) {
     for (const entry of response.writes) {
       if (entry.action === "delete") {
         if (entry.sha256 !== undefined) return invalid("write-digest");
-      } else if (entry.sha256 === undefined) return invalid("write-digest");
+      } else if (!isSha256Digest(entry.sha256)) return invalid("write-digest");
     }
   } else if (response.writes !== undefined) {
     return invalid("member");
@@ -1887,6 +2006,7 @@ __register("src/runtime/build.mjs", (() => {
  * bounded safe stderr line and exits nonzero — never a fabricated success.
  */
 const {BOUNDS, ENUMS, WIRE_TOKEN} = __module("src/generated/protocol.mjs");
+const {CAPABILITY_DEFINITIONS} = __module("src/generated/capabilities.mjs");
 const {canonicalJson} = __module("src/runtime/json.mjs");
 const {decodeResponse} = __module("src/runtime/decode.mjs");
 const {isContractVersion, isToken} = __module("src/runtime/paths.mjs");
@@ -1924,13 +2044,13 @@ function buildCapabilities({ adapter, constraints, capabilities, irVersions, ope
     capabilities: sortedCapabilityMap(capabilities),
     constraints: constraints ?? undefined,
     ir_versions: boundedUnique(irVersions ?? [], BOUNDS.MAX_IR_VERSIONS, isContractVersion, "ir_versions"),
-    operations: boundedUnique(operations, BOUNDS.OPERATIONS_MAX_LINT, (op) => typeof op === "string", "operations"),
+    operations: boundedUnique(operations, BOUNDS.OPERATIONS_MAX_LINT, (op) => typeof op === "string", "operations", 1),
     profiles: boundedUnique(profiles ?? [], BOUNDS.PROFILES_MAX, isToken, "profiles"),
     progress: progress === true,
-    protocol_versions: boundedUnique(protocolVersions, BOUNDS.PROTOCOL_VERSIONS_MAX, isContractVersion, "protocol_versions"),
+    protocol_versions: boundedUnique(protocolVersions, BOUNDS.PROTOCOL_VERSIONS_MAX, isContractVersion, "protocol_versions", 1),
     read_scopes: boundedUnique(readScopes ?? [], BOUNDS.MAX_SCOPES, (scope) => typeof scope === "string" && scope.length > 0, "read_scopes"),
     targets: boundedUnique(targets ?? [], BOUNDS.TARGETS_MAX, isToken, "targets"),
-    transports: boundedUnique(transports, BOUNDS.TRANSPORTS_MAX, (t) => ENUMS.transport.includes(t), "transports"),
+    transports: boundedUnique(transports, BOUNDS.TRANSPORTS_MAX, (t) => ENUMS.transport.includes(t), "transports", 1),
     write_scopes: boundedUnique(writeScopes ?? [], BOUNDS.MAX_SCOPES, (scope) => typeof scope === "string" && scope.length > 0, "write_scopes"),
   };
   for (const key of Object.keys(declared)) {
@@ -1950,13 +2070,23 @@ function sortedCapabilityMap(capabilities) {
   const sorted = {};
   for (const key of Object.keys(capabilities).sort()) {
     if (!ENUMS.supportState.includes(capabilities[key])) throw new SdkBuildError("capabilities", key);
+    // The declared ids must be registry members — production admission
+    // consults `capability::definition(id)` for every describe key
+    // (issue #106 review r5 #1), so a hostile callback cannot mint an
+    // unknown capability even as `unknown`.
+    if (!CAPABILITY_DEFINITIONS.some((entry) => entry.id === key)) throw new SdkBuildError("capabilities", key);
     sorted[key] = capabilities[key];
   }
   return sorted;
 }
 
-function boundedUnique(values, max, check, label) {
-  if (!Array.isArray(values) || values.length > max) throw new SdkBuildError("bounds", label);
+function boundedUnique(values, max, check, label, min = 0) {
+  // `min = 1` for the required declared lists (protocol versions,
+  // operations, transports): production's `unique(…, 1, …)` bounds
+  // make an empty declaration an admission refusal, so a hostile
+  // describe callback cannot build an empty-capability envelope
+  // (issue #106 review r5 #1).
+  if (!Array.isArray(values) || values.length < min || values.length > max) throw new SdkBuildError("bounds", label);
   const unique = [...new Set(values)].sort();
   for (const value of unique) {
     if (!check(value)) throw new SdkBuildError("bounds", label);
@@ -1980,6 +2110,15 @@ function buildSuccess({ adapter, capabilities, payload, planId, progress, reques
   };
   if (request.operation === "describe") {
     envelope.capabilities = capabilities;
+    // The handshake identity is the configured adapter identity — a
+    // describe callback that declares a different adapter block would
+    // emit a document the production client refuses at the handshake
+    // (evidence equality, issue #106 review r5 #10); the builder
+    // refuses before a single stdout byte.
+    const declared = capabilities?.adapter;
+    if (declared !== undefined && canonicalJson(declared) !== canonicalJson(adapter)) {
+      throw new SdkBuildError("identity", "capabilities.adapter");
+    }
   }
   if (payload !== undefined) {
     envelope.result = payload;
@@ -2361,9 +2500,9 @@ const WRITE_ROOT = ".lekalo/generated";
 // adapter must fail its recipe exactly like the control does. A run
 // without --lekalo-fault is fully cooperative.
 //
-// In-serve knobs (issue #106 review r4 #7): callback-crash throws inside
-// the real handler (the SDK serve loop must answer with a closed error
-// envelope, never a crash), callback-hang stalls inside the handler past
+// In-serve knobs: callback-error deliberately returns a closed error;
+// handler-crash actually throws (TS recovers to a closed error envelope).
+// callback-hang stalls inside the handler past
 // every deadline (host termination while the SDK serve loop is live),
 // and log-verbose floods the bounded SDK logger from inside the handler
 // (a verbose run must still pass). The pre-serve knobs remain for the
@@ -2371,8 +2510,10 @@ const WRITE_ROOT = ".lekalo/generated";
 const FAULT_ARG = process.argv.indexOf("--lekalo-fault");
 const FAULT = FAULT_ARG !== -1 && process.argv[FAULT_ARG + 1] ? process.argv[FAULT_ARG + 1] : "";
 const fault = (name) => FAULT.split(",").includes(name);
-const CALLBACK_CRASH = () => {
-  if (fault("callback-crash")) throw new Error("callback exploded inside the SDK serve loop");
+const CALLBACK_FAILURE = () => {
+  if (fault("handler-crash")) throw new Error("callback exploded inside the SDK serve loop");
+  if (fault("callback-error")) return { error: { errorClass: "infrastructure", errorCode: "callback-error", message: "the handler deliberately refused" } };
+  return null;
 };
 const AWAIT_CALLBACK_HANG = async () => {
   if (fault("callback-hang")) await new Promise((resolve) => setTimeout(resolve, 60_000));
@@ -2403,6 +2544,22 @@ const CAPABILITIES = {
   "scan.symbols": "full",
   "verify.scenarios": "full",
 };
+
+// Mutate completed callback output, not the runtime: emission negatives
+// must exercise the real validate-before-write boundary in serve().
+function mutateCapabilities(caps) {
+  for (const member of ["operations", "protocol_versions", "transports"]) {
+    if (fault(`invalid-${member}`)) caps[member] = [];
+  }
+  for (const member of ["max_entries", "max_writes"]) {
+    if (fault(`invalid-${member}`)) caps.constraints = { [member]: 0 };
+  }
+  if (fault("invalid-capability")) caps.capabilities = { "not.a.real.capability": "full" };
+  if (fault("invalid-identity")) caps.adapter = { ...caps.adapter, id: "foreign-adapter" };
+  if (fault("invalid-negotiation")) caps.protocol_versions = ["9.9.9"];
+  if (fault("invalid-describe")) caps.operations = ["scan"];
+  return caps;
+}
 
 function deterministicWrites(request) {
   const target = request.target ?? "sdk-reference";
@@ -2445,8 +2602,9 @@ process.exitCode = await serve({
     async describe({ log }) {
       LOG_VERBOSE(log);
       await AWAIT_CALLBACK_HANG();
-      CALLBACK_CRASH();
-      return buildCapabilities({
+      const failed = CALLBACK_FAILURE();
+      if (failed) return failed;
+      const caps = buildCapabilities({
         adapter: IDENTITY,
         capabilities: CAPABILITIES,
         irVersions: ["0.2.16"],
@@ -2458,11 +2616,13 @@ process.exitCode = await serve({
         transports: ["stdin", "file"],
         writeScopes: WRITE_SCOPES,
       });
+      return mutateCapabilities(caps);
     },
     async generate({ log, request }) {
       LOG_VERBOSE(log);
       await AWAIT_CALLBACK_HANG();
-      CALLBACK_CRASH();
+      const failed = CALLBACK_FAILURE();
+      if (failed) return failed;
       const { body, modelPath, writes } = deterministicWrites(request);
       assertWithinScopes(writes, WRITE_SCOPES);
       if (request.dry_run === false || fault("mutate-dry")) {
