@@ -204,8 +204,8 @@ impl DiagnosticRegistry {
         REGISTRY.as_ref().map_err(Clone::clone)
     }
 
-    /// The issue #136 union successor (the merged `format.*` + `adoption.*`
-    /// + `portability.*` + `worklog-changelog.*` registry since the
+    /// The issue #136 union successor (the merged `format.*`, `adoption.*`,
+    /// `portability.*`, and `worklog-changelog.*` registry since the
     /// milestone integration merges).
     pub fn adoption() -> Result<&'static Self, RegistryError> {
         static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =

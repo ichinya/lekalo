@@ -80,8 +80,14 @@ if (union.identity !== "dev.lekalo.diagnostic-registry@0.8.0") fail("registry-id
 if (union.registry_version !== "0.8.0") fail("registry-version", union.registry_version);
 const predecessorIds = new Set(predecessor.entries.map((entry) => entry.id));
 const unionIds = new Set(union.entries.map((entry) => entry.id));
-if (union.entries.length !== predecessor.entries.length + 9) {
-  fail("registry-size", `${union.entries.length} vs ${predecessor.entries.length} + 9`);
+// The 0.8.0 registry is the merged milestone union (format, adoption,
+// portability, worklog-changelog, change); this gate pins the portability
+// family and the predecessor's verbatim survival, not the union size.
+if (
+  union.entries.length !==
+  predecessor.entries.length + 11 + 9 + 9 + 7 + 12
+) {
+  fail("registry-size", `${union.entries.length} vs ${predecessor.entries.length} + 48`);
 }
 for (const entry of predecessor.entries) {
   if (!unionIds.has(entry.id)) fail("registry-dropped", entry.id);

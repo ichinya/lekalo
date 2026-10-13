@@ -87,7 +87,10 @@ const registry80 = read("contracts/diagnostic-registry.v0.8.0.json");
 const registrySchema80 = read("contracts/diagnostic-registry.schema.v0.8.0.json");
 const validateRegistry = ajv.compile(registrySchema80);
 if (!validateRegistry(registry80)) fail("registry-invalid", validateRegistry.errors);
-if (registry80.entries.length !== registry65.entries.length + 9) {
+// The 0.8.0 registry is the merged milestone union (format, adoption,
+// portability, worklog-changelog, change): 522 predecessor entries plus
+// the five closed families.
+if (registry80.entries.length !== registry65.entries.length + 11 + 9 + 9 + 7 + 12) {
   fail("registry-count", { v08: registry80.entries.length, v065: registry65.entries.length });
 }
 const ids65 = new Map(registry65.entries.map((entry) => [entry.id, entry]));

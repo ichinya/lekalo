@@ -10,9 +10,10 @@ use lekalo_core::change::{self, ChangeError, PrepareOptions, ReceiptState};
 use lekalo_core::DomainResult;
 use serde_json::Value as Json;
 /// The `change` subcommands: the P1 surface with the field, enum,
-/// definition, effect, and signature verticals implemented; cataloged
-/// operations without an executor refuse through the registered
-/// unsupported outcome.
+/// definition, effect, and signature verticals implemented; every
+/// implemented verb has first-class sugar that lowers to the same closed
+/// request DTO a JSON request file carries. Cataloged operations without
+/// an executor refuse through the registered unsupported outcome.
 #[derive(Debug, Subcommand)]
 pub(crate) enum ChangeCommands {
     /// Add one field to an entity or value-object.
@@ -27,6 +28,24 @@ pub(crate) enum ChangeCommands {
     /// Add one case to an enum definition.
     #[command(name = "enum-case:add")]
     EnumCaseAdd(AddCaseArgs),
+    /// Rename or redescribe one existing enum case.
+    #[command(name = "enum-case:change")]
+    EnumCaseChange(ChangeCaseArgs),
+    /// Add one command, query, event, policy, or scenario definition.
+    #[command(name = "definition:add")]
+    DefinitionAdd(AddDefinitionArgs),
+    /// Append one effect reference to a command.
+    #[command(name = "command-effect:add")]
+    CommandEffectAdd(CommandEffectArgs),
+    /// Remove one effect reference from a command.
+    #[command(name = "command-effect:remove")]
+    CommandEffectRemove(CommandEffectArgs),
+    /// Replace a command's input field list.
+    #[command(name = "operation-input:set")]
+    OperationInputSet(OperationInputArgs),
+    /// Replace a query's return type.
+    #[command(name = "operation-output:set")]
+    OperationOutputSet(OperationOutputArgs),
     /// Run the complete JSON request surface from a file.
     Request(RequestArgs),
     /// Print the committed receipt of one idempotency key.
@@ -153,6 +172,118 @@ pub(crate) struct AddCaseArgs {
     execution: ExecutionArgs,
 }
 
+/// `enum-case:change` sugar: rename and/or redescribe one case; the
+/// closed surface requires at least one member (the core refuses an
+/// empty change with the registered request-invalid rule).
+#[derive(Debug, Args)]
+pub(crate) struct ChangeCaseArgs {
+    /// The semantic id of the enum.
+    #[arg(long = "enum", value_name = "ID")]
+    enum_id: String,
+    /// The case name to change.
+    #[arg(long, value_name = "NAME")]
+    name: String,
+    /// The new case name.
+    #[arg(long, value_name = "NAME")]
+    rename: Option<String>,
+    /// The new bounded description text.
+    #[arg(long, value_name = "TEXT")]
+    description: Option<String>,
+    #[command(flatten)]
+    execution: ExecutionArgs,
+}
+
+/// `definition:add` sugar. The members the declared kind does not use
+/// are refused by resolution, so only inapplicable flags need omitting.
+#[derive(Debug, Args)]
+pub(crate) struct AddDefinitionArgs {
+    /// The definition kind: command, query, event, policy, or scenario.
+    #[arg(long, value_name = "KIND")]
+    kind: String,
+    /// The owning module name.
+    #[arg(long, value_name = "NAME")]
+    module: String,
+    /// The new definition name.
+    #[arg(long, value_name = "NAME")]
+    name: String,
+    /// Bounded description text.
+    #[arg(long, value_name = "TEXT")]
+    description: Option<String>,
+    /// Typed JSON array of input field declarations (command/query).
+    #[arg(long, value_name = "JSON")]
+    input_json: Option<String>,
+    /// Effect references the command appends (repeatable).
+    #[arg(long, value_name = "ID")]
+    effects: Vec<String>,
+    /// Read references the query appends (repeatable).
+    #[arg(long, value_name = "ID")]
+    reads: Vec<String>,
+    /// The return type sugar (`ref`, `list<ref>`, `ref?`) of a query.
+    #[arg(long, value_name = "TYPE")]
+    returns: Option<String>,
+    /// Typed JSON array of payload field declarations (event).
+    #[arg(long, value_name = "JSON")]
+    payload_json: Option<String>,
+    /// Subjects the policy applies to (repeatable).
+    #[arg(long, value_name = "ID")]
+    applies_to: Vec<String>,
+    /// The policy decision: allow or deny.
+    #[arg(long, value_name = "DECISION")]
+    decision: Option<String>,
+    /// Bounded scenario summary text.
+    #[arg(long, value_name = "TEXT")]
+    summary: Option<String>,
+    /// Requirements the scenario covers (repeatable).
+    #[arg(long, value_name = "ID")]
+    covers: Vec<String>,
+    #[command(flatten)]
+    execution: ExecutionArgs,
+}
+
+/// `command-effect:add`/`command-effect:remove` sugar: exactly one of
+/// the effect reference or the (deferred) emission surface.
+#[derive(Debug, Args)]
+pub(crate) struct CommandEffectArgs {
+    /// The semantic id of the command.
+    #[arg(long, value_name = "ID")]
+    command: String,
+    /// The effect reference to add or remove.
+    #[arg(long, value_name = "ID", conflicts_with = "emit")]
+    effect: Option<String>,
+    /// The emission surface to bind (deferred to the reviewed successor).
+    #[arg(long, value_name = "ID")]
+    emit: Option<String>,
+    #[command(flatten)]
+    execution: ExecutionArgs,
+}
+
+/// `operation-input:set` sugar: the complete replacement field list as
+/// one typed JSON array of field declarations.
+#[derive(Debug, Args)]
+pub(crate) struct OperationInputArgs {
+    /// The semantic id of the command whose input is replaced.
+    #[arg(long = "operation", value_name = "ID")]
+    operation_target: String,
+    /// Typed JSON array of the complete new input field declarations.
+    #[arg(long, value_name = "JSON")]
+    input_json: String,
+    #[command(flatten)]
+    execution: ExecutionArgs,
+}
+
+/// `operation-output:set` sugar.
+#[derive(Debug, Args)]
+pub(crate) struct OperationOutputArgs {
+    /// The semantic id of the query whose return type is replaced.
+    #[arg(long = "operation", value_name = "ID")]
+    operation_target: String,
+    /// The new return type sugar (`ref`, `list<ref>`, `ref?`).
+    #[arg(long, value_name = "TYPE")]
+    r#type: String,
+    #[command(flatten)]
+    execution: ExecutionArgs,
+}
+
 /// The complete JSON request surface.
 #[derive(Debug, Args)]
 pub(crate) struct RequestArgs {
@@ -249,6 +380,128 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
                 "case": case,
             })
         }
+        ChangeCommands::EnumCaseChange(args) => {
+            let mut definition = serde_json::Map::new();
+            if let Some(rename) = &args.rename {
+                definition.insert("rename".to_owned(), Json::String(rename.clone()));
+            }
+            if let Some(description) = &args.description {
+                definition.insert("description".to_owned(), Json::String(description.clone()));
+            }
+            serde_json::json!({
+                "operation": "enum-case:change",
+                "enum": args.enum_id,
+                "name": args.name,
+                "definition": definition,
+            })
+        }
+        ChangeCommands::DefinitionAdd(args) => {
+            let mut definition = serde_json::Map::new();
+            definition.insert("name".to_owned(), Json::String(args.name.clone()));
+            if let Some(description) = &args.description {
+                definition.insert("description".to_owned(), Json::String(description.clone()));
+            }
+            if let Some(input_json) = &args.input_json {
+                definition.insert(
+                    "input".to_owned(),
+                    change::parse_strict_json_literal(input_json)?,
+                );
+            }
+            if !args.effects.is_empty() {
+                definition.insert(
+                    "effects".to_owned(),
+                    Json::Array(
+                        args.effects
+                            .iter()
+                            .map(|id| Json::String(id.clone()))
+                            .collect(),
+                    ),
+                );
+            }
+            if !args.reads.is_empty() {
+                definition.insert(
+                    "reads".to_owned(),
+                    Json::Array(
+                        args.reads
+                            .iter()
+                            .map(|id| Json::String(id.clone()))
+                            .collect(),
+                    ),
+                );
+            }
+            if let Some(returns) = &args.returns {
+                definition.insert("returns".to_owned(), parse_type_spelling(returns)?);
+            }
+            if let Some(payload_json) = &args.payload_json {
+                definition.insert(
+                    "payload".to_owned(),
+                    change::parse_strict_json_literal(payload_json)?,
+                );
+            }
+            if !args.applies_to.is_empty() {
+                definition.insert(
+                    "appliesTo".to_owned(),
+                    Json::Array(
+                        args.applies_to
+                            .iter()
+                            .map(|id| Json::String(id.clone()))
+                            .collect(),
+                    ),
+                );
+            }
+            if let Some(decision) = &args.decision {
+                definition.insert("decision".to_owned(), Json::String(decision.clone()));
+            }
+            if let Some(summary) = &args.summary {
+                definition.insert("summary".to_owned(), Json::String(summary.clone()));
+            }
+            if !args.covers.is_empty() {
+                definition.insert(
+                    "covers".to_owned(),
+                    Json::Array(
+                        args.covers
+                            .iter()
+                            .map(|id| Json::String(id.clone()))
+                            .collect(),
+                    ),
+                );
+            }
+            serde_json::json!({
+                "operation": "definition:add",
+                "kind": args.kind,
+                "module": args.module,
+                "definition": definition,
+            })
+        }
+        ChangeCommands::CommandEffectAdd(args) | ChangeCommands::CommandEffectRemove(args) => {
+            let operation = match command {
+                ChangeCommands::CommandEffectAdd(_) => "command-effect:add",
+                _ => "command-effect:remove",
+            };
+            let mut effect = serde_json::json!({
+                "operation": operation,
+                "command": args.command,
+            });
+            if let Some(reference) = &args.effect {
+                effect["effect"] = Json::String(reference.clone());
+            }
+            if let Some(emit) = &args.emit {
+                effect["emit"] = Json::String(emit.clone());
+            }
+            effect
+        }
+        ChangeCommands::OperationInputSet(args) => serde_json::json!({
+            "operation": "operation-input:set",
+            "operationTarget": args.operation_target,
+            "definition": {
+                "input": change::parse_strict_json_literal(&args.input_json)?,
+            },
+        }),
+        ChangeCommands::OperationOutputSet(args) => serde_json::json!({
+            "operation": "operation-output:set",
+            "operationTarget": args.operation_target,
+            "type": parse_type_spelling(&args.r#type)?,
+        }),
         _ => unreachable!("lower() handles sugar commands only"),
     };
     let mut request = serde_json::json!({
@@ -260,6 +513,12 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
         ChangeCommands::EntityFieldRemove(args) => &args.execution,
         ChangeCommands::EntityFieldRename(args) => &args.execution,
         ChangeCommands::EnumCaseAdd(args) => &args.execution,
+        ChangeCommands::EnumCaseChange(args) => &args.execution,
+        ChangeCommands::DefinitionAdd(args) => &args.execution,
+        ChangeCommands::CommandEffectAdd(args) => &args.execution,
+        ChangeCommands::CommandEffectRemove(args) => &args.execution,
+        ChangeCommands::OperationInputSet(args) => &args.execution,
+        ChangeCommands::OperationOutputSet(args) => &args.execution,
         _ => unreachable!("lower() handles sugar commands only"),
     };
     if let Some(expect_model) = &execution.expect_model {
@@ -381,6 +640,12 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
                     ChangeCommands::EntityFieldRemove(args) => &args.execution,
                     ChangeCommands::EntityFieldRename(args) => &args.execution,
                     ChangeCommands::EnumCaseAdd(args) => &args.execution,
+                    ChangeCommands::EnumCaseChange(args) => &args.execution,
+                    ChangeCommands::DefinitionAdd(args) => &args.execution,
+                    ChangeCommands::CommandEffectAdd(args) => &args.execution,
+                    ChangeCommands::CommandEffectRemove(args) => &args.execution,
+                    ChangeCommands::OperationInputSet(args) => &args.execution,
+                    ChangeCommands::OperationOutputSet(args) => &args.execution,
                     _ => unreachable!("sugar arm"),
                 };
                 execute(execution, &bytes, None, "change operation")

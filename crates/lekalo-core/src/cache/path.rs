@@ -178,19 +178,31 @@ impl CacheHome {
     }
 
     /// Remove every cache entry except the migration home (issue #9
-    /// custody: journals and immutable backups stay) and the formatter
+    /// custody: journals and immutable backups stay), the formatter
     /// transaction home `.lekalo/cache/format` (issue #94 custody: the
     /// journal is the fail-closed reader signal; clearing it would
-    /// defeat recovery and unblock readers mid-transaction). Returns the
-    /// number of top-level entries removed.
+    /// defeat recovery and unblock readers mid-transaction), and the
+    /// change transaction home `.lekalo/cache/change` (issue #73
+    /// custody: the journals and verified backups are the only recovery
+    /// authority for a torn change). While any live change transaction
+    /// holds a journal, the clear refuses outright — the operator must
+    /// recover or abort it first — so the custody exemption is a second
+    /// line of defense, never the only one. Returns the number of
+    /// top-level entries removed.
     pub(crate) fn clear(&self) -> Result<usize, HomeFailure> {
+        if !crate::change::transaction::pending_transactions(&self.project_root).is_empty() {
+            return Err(Self::denied(
+                "change.recovery-required",
+                ".lekalo/cache/change",
+            ));
+        }
         let cache = self.physical(".lekalo/cache")?;
         let entries = std::fs::read_dir(&cache).map_err(|_| HomeFailure::Io)?;
         let mut removed = 0usize;
         for entry in entries.flatten() {
             let name = entry.file_name();
             let Some(name) = name.to_str() else { continue };
-            if name == "migrations" || name == "format" {
+            if name == "migrations" || name == "format" || name == "change" {
                 continue;
             }
             let metadata = match entry.metadata() {
@@ -242,7 +254,10 @@ impl CacheHome {
             let name = entry.file_name();
             // Custody homes are excluded from the disposable-bytes
             // projection exactly as they are from `clear`.
-            if name.to_str() == Some("migrations") || name.to_str() == Some("format") {
+            if name.to_str() == Some("migrations")
+                || name.to_str() == Some("format")
+                || name.to_str() == Some("change")
+            {
                 continue;
             }
             if metadata.is_dir() {
@@ -330,6 +345,67 @@ mod tests {
             std::fs::read(root.join(".lekalo/cache/migrations/journal/plan")).expect("kept"),
             b"keep"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn clear_refuses_while_a_change_transaction_is_live() {
+        // Regression (r5, finding 3): a live change journal plus its
+        // verified backups are the only recovery authority for a torn
+        // change; `cache clear` must refuse instead of destroying them.
+        let root = temp_root("clear-change-live");
+        let home = CacheHome::resolve(&root).expect("home resolves");
+        let tx = root.join(".lekalo/cache/change/tx-1");
+        std::fs::create_dir_all(tx.join("backups")).expect("transaction home");
+        std::fs::write(tx.join("journal.json"), b"{}// sealed journal").expect("journal");
+        std::fs::write(tx.join("backups/tasks.task.yaml"), b"original bytes").expect("backup");
+        std::fs::write(root.join(".lekalo/cache/cache.sqlite"), b"stale").expect("db");
+        let failure = home
+            .clear()
+            .expect_err("a live transaction refuses the clear");
+        match failure {
+            HomeFailure::Denied { code, logical } => {
+                assert_eq!(code, "change.recovery-required");
+                assert_eq!(logical, ".lekalo/cache/change");
+            }
+            HomeFailure::Io => panic!("custody refusal is a denial, not an I/O miss"),
+        }
+        // Nothing was removed: the store and the whole custody tree stay.
+        assert!(root.join(".lekalo/cache/cache.sqlite").exists());
+        assert!(tx.join("journal.json").exists());
+        assert!(tx.join("backups/tasks.task.yaml").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn clear_keeps_the_change_home_even_without_a_live_journal() {
+        // Stale transaction residue without a journal (a recovered
+        // transaction that kept its backups) is still custody material:
+        // the home is exempt from removal and from the disposable-bytes
+        // projection.
+        let root = temp_root("clear-change-idle");
+        let home = CacheHome::resolve(&root).expect("home resolves");
+        std::fs::create_dir_all(root.join(".lekalo/cache/change/tx-1/backups"))
+            .expect("change home");
+        std::fs::write(
+            root.join(".lekalo/cache/change/tx-1/backups/tasks.task.yaml"),
+            b"original bytes",
+        )
+        .expect("backup");
+        std::fs::write(root.join(".lekalo/cache/cache.sqlite"), b"stale").expect("db");
+        let removed = home.clear().expect("clear");
+        assert_eq!(removed, 1);
+        assert!(!root.join(".lekalo/cache/cache.sqlite").exists());
+        assert!(root
+            .join(".lekalo/cache/change/tx-1/backups/tasks.task.yaml")
+            .exists());
+        // The disposable-bytes projection ignores the custody tree too.
+        let bytes =
+            std::fs::metadata(root.join(".lekalo/cache/change/tx-1/backups/tasks.task.yaml"))
+                .expect("backup metadata")
+                .len();
+        let total = home.total_bytes().expect("bounded projection");
+        assert_eq!(total, 0, "custody bytes are not disposable: {bytes}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

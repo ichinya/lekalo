@@ -37,8 +37,12 @@ unsupported 4); the implemented increments are `entity-field:add`,
 `entity-field:remove`, `entity-field:rename`, `enum-case:add`,
 `enum-case:change`, `definition:add`, `command-effect:add`,
 `command-effect:remove`, `operation-input:set`, and
-`operation-output:set` — the remaining cataloged operations are staged
-refusals pending their sealed executors. Runtime decoding mirrors the
+`operation-output:set` — every implemented verb has first-class CLI
+sugar that lowers to the same closed request DTO a request file
+carries, so sugar and JSON requests are byte-identical at the core.
+The remaining cataloged operations are explicit staged refusals
+pending their sealed executors (the deferral matrix below). Runtime
+decoding mirrors the
 published request schema exactly: an
 optional member a schema variant admits (for example `symbol:move`'s
 `toName`) decodes and reaches the registered unsupported outcome —
@@ -47,14 +51,67 @@ wire values are decoded and refused explicitly at every
 field-consuming operation (`change.operation-unsupported`), never
 silently dropped from a committed declaration.
 
+### Deferral matrix (P1 coverage scope)
+
+Ten of the twenty cataloged operations are implemented and executable;
+the other ten are cataloged, decodable, and refuse
+`change.operation-unsupported` (exit 4). This is the explicit, tracked
+deferral of issue #73's P1 family list: each refusal is a designed
+fail-closed increment boundary, not an accidental gap, and each
+vertical lands as its own sealed increment with contract, executor,
+and gates:
+
+| Deferred operation | Follow-up increment |
+|---|---|
+| `operation-error:set` | error-binding signature vertical (research I4) |
+| `query-effect:add` / `query-effect:remove` | query effect-surface vertical (research I4) |
+| `binding:add` | canonical/observed binding DTO vertical (research I5) |
+| `ownership:set` | adoption-prerequisite ownership transition vertical (research I5) |
+| `requirement:link` / `requirement:unlink` | traceability `derived_from` mutation vertical (research I5) |
+| `symbol:move` / `module:move` | move semantics with rename history and reference rewrites (research I5) |
+| `migration:apply` | registered application-model recipe execution (research I5) |
+
+Until an increment lands, the deferred verbs are reachable only as
+JSON request documents through `change request --request <file>`, and
+they refuse with `change.operation-unsupported` before any mutation.
+The catalog status pins stay honest either way: an operation is
+`implemented` in `contracts/change-catalog.v0.8.0.json` exactly when a
+sealed executor exists.
+
 ```sh
 lekalo change entity-field:add --project sample --entity tasks.task \
   --name priority --type tasks.priority --dry-run --json
+lekalo change enum-case:change --project sample --enum tasks.priority \
+  --name low --description "Lowest tier" --dry-run --json
+lekalo change definition:add --project sample --kind command \
+  --module tasks --name complete \
+  --input-json '[{"name":"id","type":{"ref":"tasks.text"},"required":true}]' \
+  --dry-run --json
+lekalo change command-effect:add --project sample --command tasks.complete \
+  --effect tasks.events.completed --dry-run --json
+lekalo change operation-input:set --project sample --operation tasks.complete \
+  --input-json '[{"name":"id","type":{"ref":"tasks.text"},"required":true}]' \
+  --dry-run --json
+lekalo change operation-output:set --project sample --operation tasks.find_done \
+  --type 'list<tasks.task>' --dry-run --json
 lekalo change request --project sample --request change-request.json \
   --apply --idempotency-key task-priority-v1 --json
 lekalo change receipt --project sample --idempotency-key task-priority-v1 --json
 lekalo change recover --project sample --transaction change-ab12cd34-1 --json
 ```
+
+Every implemented verb shares the same execution flags
+(`--dry-run`/`--apply`/`--idempotency-key`/`--policy`/
+`--allow-breaking`/`--expect-model`). Field-list members that are
+themselves declarations (`--input-json`, `--payload-json`) take one
+typed JSON array parsed by the same duplicate-key-refusing parser as
+the request surface; type spellings (`--type`, `--returns`) take the
+Model sugar grammar (`ref`, `list<ref>`, `ref?`). The emission
+spelling `command-effect:add --emit <event>` decodes and refuses
+`change.operation-unsupported` with detail `emission-representation`
+pending the reviewed extended-effect successor — the refusal is the
+documented increment boundary, and the `--effect` reference spelling
+is the implemented path.
 
 `--apply` requires `--idempotency-key`; without it the invocation is a
 read-only preview (`--dry-run` is an explicit synonym and conflicts

@@ -61,8 +61,9 @@ implementation commit: `lekalo/change-{request,catalog,policy,plan,receipt,histo
 carry `0.8.0`, the change catalog data document pins its own `0.8.0` identity,
 and the diagnostic registry takes the additive union successor `0.8.0`
 (the merged milestone union — every `0.6.5` entry plus the closed
-`format.*` (issue #94) and `adoption.*` (issue #136) families — plus the
-twelve `change.*` rules `LEK-CHANGE-001..012` (554 entries);
+`format.*` (issue #94), `adoption.*` (issue #136), `portability.*`
+(issue #19), and `worklog-changelog.*` (issue #51) families — plus the
+twelve `change.*` rules `LEK-CHANGE-001..012` (570 entries);
 predecessor producers keep their exact pins, and registry selection is a
 three-step chain 0.6.4 → 0.6.5 → 0.8.0, never a version-string replacement).
 The canonical change history sidecar `lekalo/change-history.json` is admitted

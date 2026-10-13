@@ -482,6 +482,18 @@ writeFileSync(
 );
 const blocked = run(["load", "--project", ".", "--json"]);
 if (blocked.code !== 3) fail("flow-barrier-exit", blocked.json);
+// Round 6, finding 3: while the journal and its verified backup are the
+// only recovery authority, `cache clear --yes` must refuse outright and
+// remove nothing — the custody tree stays and the barrier stays.
+const clearDuringTx = run(["cache", "clear", "--yes", "--json"]);
+if (clearDuringTx.code !== 3) fail("clear-during-transaction-exit", clearDuringTx.json);
+if (!clearDuringTx.json?.reasonCodes?.includes("change.recovery-required")) {
+  fail("clear-during-transaction-rule", clearDuringTx.json?.reasonCodes);
+}
+if (!existsSync(join(interruptedDir, "journal.json"))) fail("clear-consumed-journal");
+if (!existsSync(join(interruptedDir, "backups/0"))) fail("clear-consumed-backup");
+const stillBlocked = run(["load", "--project", ".", "--json"]);
+if (stillBlocked.code !== 3) fail("clear-lifted-barrier", stillBlocked.json);
 // While the replacing journal is pending, the ledger is gated: a recorded
 // receipt must not read as committed (round 2 finding 9).
 const gatedReceipt = run([
@@ -521,6 +533,19 @@ if (!readFileSync(join(sandbox, "lekalo/modules/tasks/entities.yaml")).equals(en
 }
 const afterRecover = run(["load", "--project", ".", "--json"]);
 if (afterRecover.code !== 0) fail("recover-barrier-remains", afterRecover.json);
+// With no live transaction the clear succeeds again, and it still never
+// touches the change custody home (round 6, finding 3: exemption is the
+// second line of defense; recovery residue is not disposable cache).
+mkdirSync(join(sandbox, ".lekalo/cache/change/leftover-tx/backups"), { recursive: true });
+writeFileSync(
+  join(sandbox, ".lekalo/cache/change/leftover-tx/backups/0"),
+  "recovered-transaction residue\n",
+);
+const clearAfterRecover = run(["cache", "clear", "--yes", "--json"]);
+if (clearAfterRecover.code !== 0) fail("clear-after-recovery-exit", clearAfterRecover.json);
+if (!existsSync(join(sandbox, ".lekalo/cache/change/leftover-tx/backups/0"))) {
+  fail("clear-removed-change-home");
+}
 
 rmSync(sandbox, { recursive: true, force: true });
 process.stdout.write(`${JSON.stringify({
@@ -539,5 +564,6 @@ process.stdout.write(`${JSON.stringify({
     "dup-free-receipts",
     "pending-receipt-gated",
     "rollback-recovery-schema-valid",
+    "cache-clear-custody",
   ],
 }, null, 2)}\n`);

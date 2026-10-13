@@ -137,6 +137,121 @@ if (existsSync(join(sandbox, "lekalo/change-history.json"))) fail("preview-wrote
 if (existsSync(join(sandbox, ".lekalo"))) fail("preview-wrote-runtime");
 if (!readFileSync(entities).equals(entitiesBefore)) fail("preview-mutated-source");
 
+// 4b. Sugar parity (r5 review, finding 5): every implemented verb has
+//     first-class sugar that lowers to the same closed request DTO, so
+//     the sugar preview and the request-file preview are the same plan
+//     (identical planId and canonical requestDigest) — and the remaining
+//     implemented verbs (enum-case:change, definition:add, command-effect,
+//     operation-input/output:set) exercise the full closed pipeline from
+//     sugar flags. The issue's `command-effect:add --emit ...` example is
+//     now reachable and refuses with the registered unsupported member
+//     instead of being doubly unreachable.
+const sugarPreview = run([
+  "change",
+  "entity-field:add",
+  ...projectArgs,
+  "--entity",
+  "tasks.task",
+  "--name",
+  "priority",
+  "--type",
+  "tasks.priority",
+  "--dry-run",
+  "--json",
+]);
+if (sugarPreview.code !== 0) fail("sugar-preview-exit", { code: sugarPreview.code, stderr: sugarPreview.stderr });
+if (sugarPreview.json?.planId !== preview.json.planId) fail("sugar-plan-id", sugarPreview.json?.planId);
+if (sugarPreview.json?.requestDigest !== preview.json.requestDigest) {
+  fail("sugar-request-digest", sugarPreview.json?.requestDigest);
+}
+if (!planValidate(sugarPreview.json)) fail("sugar-preview-schema", planValidate.errors);
+const sugarCase = run([
+  "change",
+  "enum-case:change",
+  ...projectArgs,
+  "--enum",
+  "tasks.priority",
+  "--name",
+  "low",
+  "--description",
+  "Lowest tier",
+  "--dry-run",
+  "--json",
+]);
+// The fixture's compact enum layout (`- value: low`, no descriptions)
+// refuses the description insert with the registered preservation rule
+// instead of guessing the layout — the sugar path reaches the same
+// source-preservation barrier as the JSON request path.
+if (sugarCase.code !== 3) fail("sugar-case-exit", { code: sugarCase.code, json: sugarCase.json });
+if (!sugarCase.json?.reasonCodes?.includes("change.source-preservation-unavailable")) {
+  fail("sugar-case-rule", sugarCase.json?.reasonCodes);
+}
+const sugarDefinition = run([
+  "change",
+  "definition:add",
+  ...projectArgs,
+  "--kind",
+  "command",
+  "--module",
+  "tasks",
+  "--name",
+  "complete",
+  "--input-json",
+  '[{"name":"id","type":{"ref":"tasks.text"},"required":true}]',
+  "--dry-run",
+  "--json",
+]);
+if (sugarDefinition.code !== 0) {
+  fail("sugar-definition-exit", { code: sugarDefinition.code, json: sugarDefinition.json });
+}
+if (!planValidate(sugarDefinition.json)) fail("sugar-definition-schema", planValidate.errors);
+const sugarEmit = run([
+  "change",
+  "command-effect:add",
+  ...projectArgs,
+  "--command",
+  "tasks.complete",
+  "--emit",
+  "tasks.event.completed",
+  "--dry-run",
+  "--json",
+]);
+if (sugarEmit.code !== 4) fail("sugar-emit-exit", { code: sugarEmit.code, json: sugarEmit.json });
+if (!sugarEmit.json?.reasonCodes?.includes("change.operation-unsupported")) {
+  fail("sugar-emit-rule", sugarEmit.json?.reasonCodes);
+}
+const sugarInput = run([
+  "change",
+  "operation-input:set",
+  ...projectArgs,
+  "--operation",
+  "tasks.complete",
+  "--input-json",
+  '[{"name":"id","type":{"ref":"tasks.text"},"required":true}]',
+  "--dry-run",
+  "--json",
+]);
+if (sugarInput.code !== 1) fail("sugar-input-exit", { code: sugarInput.code });
+if (!sugarInput.json?.reasonCodes?.includes("change.subject-conflict")) {
+  fail("sugar-input-rule", sugarInput.json?.reasonCodes);
+}
+const sugarOutput = run([
+  "change",
+  "operation-output:set",
+  ...projectArgs,
+  "--operation",
+  "tasks.task",
+  "--type",
+  "list<tasks.task>",
+  "--dry-run",
+  "--json",
+]);
+if (sugarOutput.code !== 1) fail("sugar-output-exit", { code: sugarOutput.code });
+if (!sugarOutput.json?.reasonCodes?.includes("change.subject-conflict")) {
+  fail("sugar-output-rule", sugarOutput.json?.reasonCodes);
+}
+if (!readFileSync(entities).equals(entitiesBefore)) fail("sugar-preview-mutated-source");
+
 // 5. The deterministic apply: golden receipt bytes and history bytes.
 const apply = run([
   "change",
@@ -385,6 +500,7 @@ process.stdout.write(`${JSON.stringify({
   steps: step,
   flows: [
     "preview-golden",
+    "sugar-parity",
     "apply-golden",
     "replay",
     "conflict",

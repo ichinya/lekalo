@@ -36,7 +36,7 @@ export function discoverCommands(bin) {
     assert.equal(result.status, 0, `help failed: ${args.join(" ")}`);
     assert.equal(result.stderr, "");
     const help = result.stdout.replaceAll("lekalo.exe", "lekalo");
-    const children = [...(help.match(/Commands:\n([\s\S]*?)(?:\n\n|$)/)?.[1] ?? "").matchAll(/^  ([a-z][a-z-]*)\s{2,}/gm)].map(x => x[1]);
+    const children = [...(help.match(/Commands:\n([\s\S]*?)(?:\n\n|$)/)?.[1] ?? "").matchAll(/^  ([a-z][a-z0-9:-]*)\s{2,}/gm)].map(x => x[1]);
     if (args.length) rows.push({ id: `cli:${args.join(" ")}`, kind: "command", command: args.join(" "), usage: help.match(/^Usage: (.+)$/m)?.[1], helpDigest: sha(help), summary: help.split("\n")[0], leaf: children.length === 0 });
     children.forEach(child => visit([...args, child]));
   };

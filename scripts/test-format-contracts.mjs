@@ -88,8 +88,33 @@ if (registry.registry_version !== "0.8.0") fail("registry-version");
 if (registry.closed !== true) fail("registry-not-closed");
 const byId = new Map(predecessor.entries.map((entry) => [entry.id, entry]));
 const formatEntries = registry.entries.filter((entry) => entry.id.startsWith("format."));
-if (registry.entries.length !== predecessor.entries.length + formatEntries.length) {
+// The 0.8.0 registry is the merged milestone union: the 0.6.5
+// predecessor plus the closed format, adoption, portability,
+// worklog-changelog, and change families.
+const adoptionEntries = registry.entries.filter((entry) => entry.id.startsWith("adoption."));
+const portabilityEntries = registry.entries.filter((entry) => entry.id.startsWith("portability."));
+const worklogEntries = registry.entries.filter((entry) =>
+  entry.id.startsWith("worklog-changelog."),
+);
+const changeEntries = registry.entries.filter((entry) => entry.id.startsWith("change."));
+if (
+  registry.entries.length !==
+  predecessor.entries.length +
+    formatEntries.length +
+    adoptionEntries.length +
+    portabilityEntries.length +
+    worklogEntries.length +
+    changeEntries.length
+) {
   fail("registry-not-a-union");
+}
+if (adoptionEntries.length !== 9 || portabilityEntries.length !== 9 || worklogEntries.length !== 7 || changeEntries.length !== 12) {
+  fail("registry-merged-family-drift", {
+    adoption: adoptionEntries.length,
+    portability: portabilityEntries.length,
+    worklog: worklogEntries.length,
+    change: changeEntries.length,
+  });
 }
 for (const entry of registry.entries) {
   const previous = byId.get(entry.id);

@@ -360,4 +360,42 @@ mod tests {
             OperationStatus::Unsupported
         );
     }
+
+    #[test]
+    fn the_unsupported_set_is_exactly_the_documented_deferral_matrix() {
+        // Regression (r5 review, finding 4): P1 family coverage is
+        // explicitly scope-deferred — the ten unsupported operations are
+        // the documented deferral matrix of docs/change.md (increments I4
+        // and I5 of docs/m8/issue-73-research.md). The catalog stays
+        // honest by construction: an operation flips to `implemented`
+        // exactly when its sealed executor lands, and this pin refuses a
+        // silent drift in either direction (a new refusal without a
+        // documented deferral, or an executor landing without flipping
+        // its status).
+        let catalog = Catalog::embedded().expect("embedded catalog validates");
+        let deferred = [
+            // Research I4: signature and effect verticals.
+            "operation-error:set",
+            "query-effect:add",
+            "query-effect:remove",
+            // Research I5: bindings, requirements, moves, ownership,
+            // migration application.
+            "binding:add",
+            "ownership:set",
+            "requirement:link",
+            "requirement:unlink",
+            "symbol:move",
+            "module:move",
+            "migration:apply",
+        ];
+        let mut unsupported = catalog
+            .entries()
+            .filter(|entry| entry.status() == OperationStatus::Unsupported)
+            .map(|entry| entry.operation().to_owned())
+            .collect::<Vec<_>>();
+        unsupported.sort_unstable();
+        let mut expected = deferred.to_vec();
+        expected.sort_unstable();
+        assert_eq!(unsupported, expected);
+    }
 }

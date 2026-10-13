@@ -247,12 +247,21 @@ if (successor.identity !== `dev.lekalo.diagnostic-registry@${IDENTITY}`) {
 const predecessorIds = new Map(predecessor.entries.map((entry) => [entry.id, entry]));
 // The 0.8.0 successor is the MERGED milestone union: every 0.6.5 entry
 // plus the format.* family (11, issue #94), the adoption.* family (9,
-// issue #136), and the change.* family (12, issue #73).
+// issue #136), the portability.* family (9, issue #19), the
+// worklog-changelog.* family (7, issue #51), and the change.* family
+// (12, issue #73).
 const MERGED_FORMAT_CODES = 11;
 const MERGED_ADOPTION_CODES = 9;
+const MERGED_PORTABILITY_CODES = 9;
+const MERGED_WORKLOG_CODES = 7;
 if (
   successor.entries.length !==
-  predecessor.entries.length + MERGED_FORMAT_CODES + MERGED_ADOPTION_CODES + 12
+  predecessor.entries.length +
+    MERGED_FORMAT_CODES +
+    MERGED_ADOPTION_CODES +
+    MERGED_PORTABILITY_CODES +
+    MERGED_WORKLOG_CODES +
+    12
 ) {
   fail("registry-union-size", {
     predecessor: predecessor.entries.length,
@@ -273,12 +282,22 @@ for (const entry of successor.entries) {
 }
 const changeEntries = successor.entries.filter((entry) => entry.id.startsWith("change."));
 if (changeEntries.length !== 12) fail("registry-change-family-size", changeEntries.length);
-// The merged format.* and adoption.* families ride along verbatim.
+// The merged format.*, adoption.*, portability.*, and worklog-changelog.*
+// families ride along verbatim.
 if (successor.entries.filter((entry) => entry.code.startsWith("LEK-FORMAT-")).length !== MERGED_FORMAT_CODES) {
   fail("registry-format-family-size");
 }
 if (successor.entries.filter((entry) => entry.code.startsWith("LEK-ADOPT-")).length !== MERGED_ADOPTION_CODES) {
   fail("registry-adoption-family-size");
+}
+if (
+  successor.entries.filter((entry) => entry.code.startsWith("LEK-PORT-")).length !==
+  MERGED_PORTABILITY_CODES
+) {
+  fail("registry-portability-family-size");
+}
+if (successor.entries.filter((entry) => entry.code.startsWith("LEK-WC-")).length !== MERGED_WORKLOG_CODES) {
+  fail("registry-worklog-family-size");
 }
 const expectedChange = [
   ["change.commit-failed", "LEK-CHANGE-009"],
