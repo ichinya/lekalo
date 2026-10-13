@@ -112,6 +112,44 @@ fn read_history_bytes(root: &Path) -> Result<Option<Vec<u8>>, ChangeError> {
     }
 }
 
+/// Bind a valid ledger to the selected project's current semantic ID.
+/// This reads only the project owner document, so committed-journal receipt
+/// lookups retain their reader-barrier exception without loading partial
+/// Model homes. A self-consistent ledger copied from another project must
+/// never mint replay authority.
+pub(crate) fn verify_history_project(root: &Path, history: &History) -> Result<(), ChangeError> {
+    use crate::loader::project_docs::{self, DocKind, ModelVersion};
+    let invalid = || ChangeError::HistoryInvalid {
+        detail: "project-binding",
+    };
+    let fs = crate::project_fs::Fs::open(root).map_err(|_| invalid())?;
+    let bytes = fs
+        .read_file_opt(
+            "lekalo",
+            "project.yaml",
+            crate::loader::source::MAX_DOCUMENT_BYTES,
+        )
+        .map_err(|_| invalid())?
+        .ok_or_else(invalid)?;
+    let text = std::str::from_utf8(&bytes).map_err(|_| invalid())?;
+    let parsed = crate::loader::frontends::parse_document(
+        text,
+        &crate::loader::source::LineIndex::new(text),
+    )
+    .map_err(|_| invalid())?;
+    let document = project_docs::decode("lekalo/project.yaml", DocKind::Project, &parsed)
+        .map_err(|_| invalid())?;
+    let version = ModelVersion::parse_exact(&document.version).ok_or_else(invalid)?;
+    let project = document.definitions.first().ok_or_else(invalid)?;
+    if project.node.get("kind").and_then(Node::as_str) != Some("project")
+        || !version.module_id_valid(&project.id)
+        || project.id != history.project
+    {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
 /// Whether one candidate symbol id satisfies the semantic-id grammar the
 /// loader already enforces; request decoding refuses everything else.
 pub(crate) fn symbol_id_valid(id: &str) -> bool {
@@ -311,11 +349,9 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         };
         let decoded =
             crate::loader::decode_document_bytes(&path, crate::loader::DocKind::Symbol, &working)
-                .map_err(|diagnostics| {
-                ChangeError::LoadFailed(crate::loader::diagnostic::failure(
-                    crate::result::Status::Invalid,
-                    diagnostics,
-                ))
+                .map_err(|_| ChangeError::SourcePreservation {
+                subject: subject.clone(),
+                detail: "reparse-mismatch",
             })?;
         let tree_definition = decoded
             .definitions
@@ -368,11 +404,9 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
                     crate::loader::DocKind::Symbol,
                     bytes,
                 )
-                .map_err(|diagnostics| {
-                    ChangeError::LoadFailed(crate::loader::diagnostic::failure(
-                        crate::result::Status::Invalid,
-                        diagnostics,
-                    ))
+                .map_err(|_| ChangeError::SourcePreservation {
+                    subject: path.clone(),
+                    detail: "reparse-mismatch",
                 })?;
                 candidate_documents.push(LoadedDocument {
                     document: decoded,
@@ -387,17 +421,23 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         .iter()
         .map(|document| document.document.clone())
         .collect();
-    let byte_candidate =
-        crate::loader::build_normalized_model(load.model.model_version, byte_documents)
-            .map_err(ChangeError::LoadFailed)?;
     // A candidate that does not compile is request-controlled data: the
     // failure is a typed diagnostic (invalid), never a panic (issue review
     // finding 2 — every outcome is a DomainResult with a registered rule).
     let tree_compiled = ir::compile(&tree_candidate)
         .map_err(|failure| ChangeError::LoadFailed(failure.into_result()))?
         .project;
+    // The typed candidate is valid; a decode/compile failure in the byte
+    // rendering is a source-layout refusal, never invalid user intent.
+    let preservation = || ChangeError::SourcePreservation {
+        subject: "candidate".to_owned(),
+        detail: "reparse-mismatch",
+    };
+    let byte_candidate =
+        crate::loader::build_normalized_model(load.model.model_version, byte_documents)
+            .map_err(|_| preservation())?;
     let byte_compiled = ir::compile(&byte_candidate)
-        .map_err(|failure| ChangeError::LoadFailed(failure.into_result()))?
+        .map_err(|_| preservation())?
         .project;
     if tree_compiled.to_canonical_json() != byte_compiled.to_canonical_json() {
         return Err(ChangeError::SourcePreservation {
@@ -633,6 +673,7 @@ pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeErr
     // corruption and fails closed (round 2, finding 8).
     if let Some(history_bytes) = read_history_bytes(&root)? {
         let history = History::decode(&history_bytes)?;
+        verify_history_project(&root, &history)?;
         if let Some(record) = history.by_key(&key) {
             // The ledger binds canonical request bytes, so a repeated key
             // presented as pretty file JSON and as compact sugar bytes of
@@ -718,6 +759,7 @@ pub fn apply_prepared(
         },
         Some(bytes) => History::decode(bytes)?,
     };
+    verify_history_project(&root, &history)?;
     let key = receipt::key_digest(options.idempotency_key);
     if let Some(record) = history.by_key(&key) {
         if record.request_digest != prepared.request_digest() {
@@ -1030,6 +1072,9 @@ pub fn lookup_receipt(
             Some(bytes) => Some(History::decode(&bytes)?),
             None => None,
         };
+        if let Some(history) = &history {
+            verify_history_project(&root, history)?;
+        }
         for transaction in &pending {
             transaction::require_durably_committed(&root, transaction)?;
             let custody = history.as_ref().is_some_and(|history| {
@@ -1057,6 +1102,7 @@ pub fn lookup_receipt(
         None => return Ok(None),
     };
     let history = History::decode(&history_bytes)?;
+    verify_history_project(&root, &history)?;
     let key = receipt::key_digest(idempotency_key);
     history.by_key(&key).map(stored_receipt).transpose()
 }
@@ -2483,17 +2529,12 @@ fn plan_source_edits(
             definition: declaration,
         } => {
             // The block joins the kind's home document; its LAST
-            // definition's dash column anchors the synthesized block. A
-            // dash not two columns before the key is a layout this
-            // planner refuses.
+            // definition's dash column anchors the synthesized block —
+            // derived from the bytes through the one shared dash rule
+            // (round 5, finding 1), not per-shape column arithmetic.
             let anchor_column = document_definitions
                 .last()
-                .and_then(|candidate| {
-                    candidate
-                        .node
-                        .get_entry("id")
-                        .and_then(|entry| entry.key_span.start.column.checked_sub(3))
-                })
+                .and_then(|candidate| edit::item_anchor_column(bytes, &candidate.node))
                 .ok_or(ChangeError::SourcePreservation {
                     subject: module.clone(),
                     detail: "item-layout",
@@ -3120,8 +3161,11 @@ fn serde_yaml_strict(bytes: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(bytes).ok()?;
     let mut target: Option<String> = None;
     for line in text.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("target:") {
+        // Only a TOP-LEVEL `target:` (column 0) is the document's target
+        // identity; an indented/nested `target:` member belongs to its
+        // own parent and must never leak into the generation projection
+        // (round 5: the trimmed scan accepted nested members).
+        if let Some(rest) = line.strip_prefix("target:") {
             let value = rest.trim().trim_matches('"');
             if value.is_empty() {
                 return None;
@@ -3202,4 +3246,19 @@ fn refuse_while_recovery_pending(root: &Path) -> Result<(), ChangeError> {
 /// change journal exists under the project cache.
 pub(crate) fn recovery_barrier_code(fs: &crate::project_fs::Fs) -> Option<&'static str> {
     transaction::recovery_barrier_code(fs)
+}
+
+#[cfg(test)]
+mod target_document_tests {
+    use super::serde_yaml_strict;
+
+    #[test]
+    fn nested_target_cannot_become_generation_authority() {
+        assert_eq!(serde_yaml_strict(b"nested:\n  target: fake\n"), None);
+        assert_eq!(
+            serde_yaml_strict(b"target: real\nnested:\n  target: fake\n"),
+            Some("real".to_owned())
+        );
+        assert_eq!(serde_yaml_strict(b"target: first\ntarget: second\n"), None);
+    }
 }

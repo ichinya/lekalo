@@ -33,9 +33,13 @@ bounded: duplicate JSON keys, unknown members, unknown operations,
 over-limit batches, and malformed digests fail closed
 (`change.request-invalid`, invalid 1). A cataloged operation without a
 sealed executor refuses explicitly (`change.operation-unsupported`,
-unsupported 4); the first increments implement `entity-field:add`,
-`entity-field:remove`, `entity-field:rename`, and `enum-case:add`.
-Runtime decoding mirrors the published request schema exactly: an
+unsupported 4); the implemented increments are `entity-field:add`,
+`entity-field:remove`, `entity-field:rename`, `enum-case:add`,
+`enum-case:change`, `definition:add`, `command-effect:add`,
+`command-effect:remove`, `operation-input:set`, and
+`operation-output:set` — the remaining cataloged operations are staged
+refusals pending their sealed executors. Runtime decoding mirrors the
+published request schema exactly: an
 optional member a schema variant admits (for example `symbol:move`'s
 `toName`) decodes and reaches the registered unsupported outcome —
 never an unknown-member rejection. Declared field defaults and enum
@@ -102,10 +106,10 @@ when the lock actually locks it — invalid or absent locks, undecodable
 or unlocked targets, and the enumeration cap propagate as
 `complete: false`, never a complete-looking inventory over invalid
 evidence. The request digest
-pins the exact request bytes: differently formatted request files of
-the same operation batch legitimately carry different digests, and the
-sugar lowers to one canonical byte form, so CLI sugar and a request
-file written from the sugar stay byte-identical.
+pins the request's canonical JSON: pretty and compact presentations of
+the same operation batch canonicalize to one digest (the digest pins
+the intent, not its bytes), so CLI sugar and an equivalent request
+file produce the identical plan and idempotency binding.
 
 ## Application, idempotency, recovery
 
@@ -124,6 +128,22 @@ originals; a crash leaves a recoverable journal that blocks every
 project reader until explicit `lekalo change recover` succeeds
 (`change.recovery-required`, denied 3).
 
+Journal provenance (round 5): a journal is recovery material only when
+a durable pending record — written under `.lekalo/pending-transactions.json`
+BEFORE the journal exists and removed with it at completion — pins the
+exact same facts (transaction id, plan id, the whole file pin set, the
+history flag; the state may be at most one step behind the journal's,
+the crash window between the two publications). A fully self-consistent
+journal planted into `.lekalo/cache/change/` alone — by clone, checkout,
+or an archive preserving the tree — is refused with the barrier
+retained (`change.commit-failed`, `journal-provenance`); the whole
+`.lekalo/` runtime home is gitignored so neither the journal nor the
+registry propagates through version control. A durably committed
+recovery additionally requires the canonical history to name the
+transaction. This is tamper evidence, not authentication: an attacker
+with write access to the entire project tree can forge both files —
+equivalent to editing the canonical sources directly.
+
 Every journaled path is validated component-wise against the confined
 project root (no-follow, including Windows reparse points) AND against
 the canonical homes the structure owner admits before any recovery
@@ -131,7 +151,10 @@ write — an existing-file entry must be an admitted Model document home
 or the history sidecar, a creation entry must be the history sidecar or
 an admitted module kind home, and duplicate or aliased entries refuse —
 so a forged journal can never claim an unrelated project file
-(`change.write-boundary-denied`, denied 3). Every backup is
+(`change.write-boundary-denied`, denied 3). The pending registry,
+journal directory/file, and backup directory/files are also checked as
+no-follow regular files or directories; duplicate registry transaction
+IDs and duplicate journal JSON members refuse. Every backup is
 digest-verified against the `beforeDigest` pin written into the journal
 at staging time, and every target is preflighted against the states the
 transaction can explain (its pinned before bytes, its pinned after
@@ -153,9 +176,13 @@ The canonical history is a tamper-evident chain: each record carries a
 digest over the previous record's digest, the project identity, the
 record's exact execution-intent digest, and its own pinned fields plus
 the ENTIRE embedded receipt projection, recomputed and verified on
-every decode; the stored intent is additionally cross-checked against
+every decode; replay, lookup, and committed recovery additionally bind
+the ledger's project identity to the selected project's owner document.
+A valid ledger copied from a different project ID refuses rather than
+authorizing replay. The stored intent is additionally cross-checked against
 the receipt's own constituent facts (policy digest, expected plan,
-acknowledgement flag). Forged records, field tampering — including a
+acknowledgement flag); the policy-bytes digest also binds its allowed
+compatibility classes. Forged records, field tampering — including a
 lone `intentDigest` edit — insertion, deletion, reordering, and
 zero-byte ledger files all fail closed (`change.history-invalid`,
 invalid 1); replay never guesses from current source bytes. The chain

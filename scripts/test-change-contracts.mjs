@@ -245,7 +245,15 @@ if (successor.identity !== `dev.lekalo.diagnostic-registry@${IDENTITY}`) {
   fail("registry-identity");
 }
 const predecessorIds = new Map(predecessor.entries.map((entry) => [entry.id, entry]));
-if (successor.entries.length !== predecessor.entries.length + 12) {
+// The 0.8.0 successor is the MERGED milestone union: every 0.6.5 entry
+// plus the format.* family (11, issue #94), the adoption.* family (9,
+// issue #136), and the change.* family (12, issue #73).
+const MERGED_FORMAT_CODES = 11;
+const MERGED_ADOPTION_CODES = 9;
+if (
+  successor.entries.length !==
+  predecessor.entries.length + MERGED_FORMAT_CODES + MERGED_ADOPTION_CODES + 12
+) {
   fail("registry-union-size", {
     predecessor: predecessor.entries.length,
     successor: successor.entries.length,
@@ -264,6 +272,14 @@ for (const entry of successor.entries) {
   }
 }
 const changeEntries = successor.entries.filter((entry) => entry.id.startsWith("change."));
+if (changeEntries.length !== 12) fail("registry-change-family-size", changeEntries.length);
+// The merged format.* and adoption.* families ride along verbatim.
+if (successor.entries.filter((entry) => entry.code.startsWith("LEK-FORMAT-")).length !== MERGED_FORMAT_CODES) {
+  fail("registry-format-family-size");
+}
+if (successor.entries.filter((entry) => entry.code.startsWith("LEK-ADOPT-")).length !== MERGED_ADOPTION_CODES) {
+  fail("registry-adoption-family-size");
+}
 const expectedChange = [
   ["change.commit-failed", "LEK-CHANGE-009"],
   ["change.compatibility-denied", "LEK-CHANGE-004"],

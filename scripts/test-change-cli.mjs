@@ -338,14 +338,24 @@ if (versionRefused.code !== 5) fail("version-exit", { code: versionRefused.code 
 // 11. The recovery barrier blocks readers until explicit recovery.
 const journalDir = join(sandbox, ".lekalo/cache/change/change-gatecafe-1");
 mkdirSync(journalDir, { recursive: true });
+const gateJournal = {
+  schemaVersion: "lekalo/change-journal/1",
+  transaction: "change-gatecafe-1",
+  planId: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  state: "staging",
+  files: [],
+  history: false,
+};
+writeFileSync(join(journalDir, "journal.json"), `${JSON.stringify(gateJournal)}\n`);
+// Round 5: the durable provenance record a legitimate recovery verifies
+// the journal against (a journal without it is refused by design). The
+// record wire carries no per-record schemaVersion.
+const { schemaVersion: _journalVersion, ...gateRecord } = gateJournal;
 writeFileSync(
-  join(journalDir, "journal.json"),
+  join(sandbox, ".lekalo/pending-transactions.json"),
   `${JSON.stringify({
-    transaction: "change-gatecafe-1",
-    planId: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-    state: "staging",
-    files: [],
-    history: false,
+    schemaVersion: "lekalo/change-pending/1",
+    records: [gateRecord],
   })}\n`,
 );
 const blocked = run(["load", ...projectArgs, "--json"]);

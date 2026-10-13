@@ -282,6 +282,17 @@ mod tests {
     }
 
     #[test]
+    fn query_output_evidence_names_its_actual_domain() {
+        let catalog = Catalog::embedded().expect("catalog");
+        let evidence = catalog
+            .entry("operation-output:set")
+            .expect("output")
+            .required_evidence();
+        assert!(evidence.iter().any(|item| item == "query-return-review"));
+        assert!(!evidence.iter().any(|item| item == "command-return-review"));
+    }
+
+    #[test]
     fn the_issue_operations_are_cataloged_exactly_once() {
         let catalog = Catalog::embedded().expect("embedded catalog validates");
         for operation in [

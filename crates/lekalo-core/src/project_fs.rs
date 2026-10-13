@@ -739,6 +739,12 @@ const RUNTIME_ENTRIES: [&str; 6] = [
     "adapters",
 ];
 
+/// The closed runtime top-level FILES under `.lekalo/`: the durable
+/// change provenance registry (issue #73) anchors transaction journals
+/// OUTSIDE the transaction cache home, so a journal planted into
+/// `.lekalo/cache` alone can never mint recovery authority.
+const RUNTIME_FILES: [&str; 1] = ["pending-transactions.json"];
+
 /// The closed children of `.lekalo/adapters/` — the custody tree the
 /// adapter package model owns (docs/canonical-structure.md).
 const RUNTIME_ADAPTERS_CHILDREN: [&str; 5] = [
@@ -770,6 +776,10 @@ fn runtime_placement_failure(entry_type: EntryType, logical: &str) -> Option<Sca
     let runtime = logical.strip_prefix(".lekalo/")?;
     let segments: Vec<&str> = runtime.split('/').collect();
     let top = segments[0];
+    if segments.len() == 1 && RUNTIME_FILES.contains(&top) {
+        return (entry_type != EntryType::File)
+            .then(|| StructureReason::new("structure.runtime-unexpected-entry").at(logical));
+    }
     if !RUNTIME_ENTRIES.contains(&top) {
         return Some(StructureReason::new("structure.runtime-unexpected-entry").at(logical));
     }
@@ -1171,6 +1181,17 @@ mod tests {
     #[test]
     fn runtime_placement_mirrors_the_checker_containers() {
         assert!(runtime_placement_failure(EntryType::Directory, ".lekalo/import/notes").is_none());
+        // The change provenance registry: exactly a file at the top level.
+        assert!(
+            runtime_placement_failure(EntryType::File, ".lekalo/pending-transactions.json")
+                .is_none()
+        );
+        assert!(runtime_placement_failure(
+            EntryType::Directory,
+            ".lekalo/pending-transactions.json"
+        )
+        .is_some());
+        assert!(runtime_placement_failure(EntryType::File, ".lekalo/pending-other.json").is_some());
         assert!(
             runtime_placement_failure(EntryType::Directory, ".lekalo/consumer/model").is_none()
         );

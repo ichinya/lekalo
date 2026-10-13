@@ -51,6 +51,22 @@ use crate::project_fs::{EntryType, Fs, FsErrorKind};
 /// The journal file name inside one transaction directory.
 const JOURNAL_NAME: &str = "journal.json";
 
+/// The durable pending-registry file name under the `.lekalo` home (its
+/// integrity is anchored OUTSIDE the cache home, round 5, finding 1: a
+/// journal planted into `.lekalo/cache` alone can no longer mint
+/// recovery authority).
+const PENDING_NAME: &str = "pending-transactions.json";
+
+/// The closed wire identity of the journal and of the pending registry.
+const JOURNAL_SCHEMA_VERSION: &str = "lekalo/change-journal/1";
+const PENDING_SCHEMA_VERSION: &str = "lekalo/change-pending/1";
+
+/// Maximum pending-registry bytes accepted before decoding.
+const MAX_PENDING_BYTES: usize = 64 * 1024;
+
+/// Maximum records accepted in one pending registry.
+const MAX_PENDING_RECORDS: usize = 64;
+
 /// The writer lock file name inside the change cache.
 const LOCK_NAME: &str = "writer.lock";
 
@@ -258,18 +274,27 @@ pub(crate) fn recovery_barrier_code(fs: &crate::project_fs::Fs) -> Option<&'stat
 }
 
 /// The logical transaction ids currently awaiting recovery, sorted.
+/// Round 5, finding 4: the listing walks the cache home through the
+/// no-follow `Fs` entry types — the same reader the barrier uses — so a
+/// link-backed directory can never be listed as pending.
 pub(crate) fn pending_transactions(root: &Path) -> Vec<String> {
-    let home = root.join(super::version::TRANSACTION_CACHE_ROOT);
-    let Ok(entries) = std::fs::read_dir(&home) else {
+    let home = super::version::TRANSACTION_CACHE_ROOT;
+    let Ok(fs) = Fs::open(root) else {
+        return Vec::new();
+    };
+    let Ok(entries) = fs.entries(home) else {
         return Vec::new();
     };
     let mut pending = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() && path.join(JOURNAL_NAME).is_file() {
-            if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
-                pending.push(name.to_owned());
-            }
+    for (name, entry_type) in entries {
+        if entry_type != crate::project_fs::EntryType::Directory {
+            continue;
+        }
+        if matches!(
+            fs.entry_type(&format!("{home}/{name}"), JOURNAL_NAME),
+            Ok(crate::project_fs::EntryType::File)
+        ) {
+            pending.push(name);
         }
     }
     pending.sort();
@@ -277,11 +302,14 @@ pub(crate) fn pending_transactions(root: &Path) -> Vec<String> {
 }
 
 impl Transaction {
-    /// Begin one transaction: create the journal directory behind
-    /// validated cache-home components and write the durable journal —
+    /// Begin one transaction: durably record the pending provenance pin
+    /// before publishing a journal (round 5, finding 1), in a FRESH
+    /// directory (a pre-existing directory is planted material, never a
+    /// transaction resume point), then write the durable journal —
     /// state `staging`, before any source byte changes. The journal pins
     /// every replacement's before/after digests so recovery can verify the
-    /// backups it restores.
+    /// backups it restores, and every member is mirrored by the pending
+    /// record recovery verifies it against.
     pub(crate) fn begin(
         root: &Path,
         id: &str,
@@ -292,43 +320,77 @@ impl Transaction {
         std::fs::create_dir_all(&cache).map_err(|_| ChangeError::WriteBoundaryDenied)?;
         let journal_dir = cache.join(id);
         match std::fs::symlink_metadata(&journal_dir) {
-            Ok(metadata) if !metadata.is_dir() || path_is_link(&metadata) => {
-                return Err(ChangeError::WriteBoundaryDenied)
-            }
-            _ => {}
+            // A pre-existing entry at the transaction home — real
+            // directory, link, or file — is planted or leftover
+            // material: a fresh transaction only ever begins into a
+            // directory it creates itself (this also closes the
+            // pre-created `backups` sibling note: nothing pre-existing
+            // survives to be followed).
+            Ok(_) => return Err(ChangeError::WriteBoundaryDenied),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(ChangeError::WriteBoundaryDenied),
         }
-        std::fs::create_dir_all(journal_dir.join(BACKUPS_NAME)).map_err(|_| {
-            ChangeError::CommitFailed {
-                transaction: id.to_owned(),
-                detail: "journal-create",
-            }
-        })?;
-        let files: Vec<Json> = replacements
+        let files: Vec<JournalFile> = replacements
             .iter()
-            .map(|replacement| {
-                serde_json::json!({
-                    "path": replacement.logical,
-                    "beforeDigest": replacement.before_digest,
-                    "afterDigest": replacement.after_digest,
-                    "creation": replacement.creation,
-                })
+            .map(|replacement| JournalFile {
+                path: replacement.logical.clone(),
+                before_digest: replacement.before_digest.clone(),
+                after_digest: replacement.after_digest.clone(),
+                creation: replacement.creation,
             })
             .collect();
+        let history = replacements
+            .iter()
+            .any(|replacement| replacement.logical == super::version::HISTORY_LOGICAL_PATH);
+        // The durable provenance pin precedes the journal: a crash in
+        // between leaves at most a dangling record (not a reader barrier),
+        // never a journal without provenance. A
+        // record for this id can only be stale (its journal directory
+        // does not exist), so it is replaced.
+        let mut records = load_pending_registry(root)?;
+        records.retain(|record| record.transaction != id);
+        records.push(PendingRecord {
+            transaction: id.to_owned(),
+            plan_id: plan_id.to_owned(),
+            state: STATE_STAGING.to_owned(),
+            files: files.clone(),
+            history,
+        });
+        std::fs::create_dir(&journal_dir).map_err(|_| ChangeError::WriteBoundaryDenied)?;
+        if std::fs::create_dir(journal_dir.join(BACKUPS_NAME)).is_err() {
+            let _ = std::fs::remove_dir(&journal_dir);
+            return Err(ChangeError::CommitFailed {
+                transaction: id.to_owned(),
+                detail: "journal-create",
+            });
+        }
+        if let Err(error) = write_pending_registry(root, &records).map_err(bind_pending(id)) {
+            let _ = std::fs::remove_dir_all(&journal_dir);
+            return Err(error);
+        }
+        let files_wire: Vec<Json> = files.iter().map(journal_file_json).collect();
         let journal = serde_json::json!({
+            "schemaVersion": JOURNAL_SCHEMA_VERSION,
             "transaction": id,
             "planId": plan_id,
             "state": STATE_STAGING,
-            "files": files,
-            "history": replacements.iter().any(|replacement| replacement.logical == super::version::HISTORY_LOGICAL_PATH),
+            "files": files_wire,
+            "history": history,
         });
-        write_same_dir(
+        if write_same_dir(
             &journal_dir.join(JOURNAL_NAME),
             journal.to_string().as_bytes(),
         )
-        .map_err(|_| ChangeError::CommitFailed {
-            transaction: id.to_owned(),
-            detail: "journal-write",
-        })?;
+        .is_err()
+        {
+            if std::fs::remove_dir_all(&journal_dir).is_ok() {
+                remove_pending_record(root, id);
+            }
+            return Err(ChangeError::CommitFailed {
+                transaction: id.to_owned(),
+                detail: "journal-write",
+            });
+        }
         Ok(Self {
             root: root.to_path_buf(),
             id: id.to_owned(),
@@ -340,7 +402,10 @@ impl Transaction {
 
     /// Publish a durable journal state transition (`staging` ->
     /// `replacing` -> `committed`). Recovery keys every crash window off
-    /// these states (round 2, finding 4).
+    /// these states (round 2, finding 4). The journal is republished
+    /// before the pending record, so a crash in between leaves the
+    /// journal at most one step ahead — the only state divergence
+    /// provenance accepts (round 5, finding 1).
     pub(crate) fn mark_state(&mut self, state: &str) -> Result<(), ChangeError> {
         if let Some(map) = self.journal.as_object_mut() {
             map.insert("state".to_owned(), Json::String(state.to_owned()));
@@ -352,7 +417,25 @@ impl Transaction {
         .map_err(|_| ChangeError::CommitFailed {
             transaction: self.id.clone(),
             detail: "journal-state",
-        })
+        })?;
+        self.set_pending_state(state)?;
+        Ok(())
+    }
+
+    /// Mirror one state transition into the durable pending record.
+    fn set_pending_state(&self, state: &str) -> Result<(), ChangeError> {
+        let mut records = load_pending_registry(&self.root)?;
+        let Some(record) = records
+            .iter_mut()
+            .find(|record| record.transaction == self.id)
+        else {
+            return Err(ChangeError::CommitFailed {
+                transaction: self.id.clone(),
+                detail: "journal-provenance",
+            });
+        };
+        record.state = state.to_owned();
+        write_pending_registry(&self.root, &records).map_err(bind_pending(&self.id))
     }
 
     /// Stage one replacement: verify the before digest, back up the exact
@@ -392,6 +475,7 @@ impl Transaction {
         let backup = if plan.creation {
             None
         } else {
+            validate_backup(&self.root, &self.id, index, false)?;
             let path = self.journal_dir.join(BACKUPS_NAME).join(index.to_string());
             write_same_dir(&path, &current).map_err(|_| ChangeError::CommitFailed {
                 transaction: self.id.clone(),
@@ -504,14 +588,19 @@ impl Transaction {
                 transaction: self.id.clone(),
             });
         }
+        // The journal is gone: its provenance pin has nothing left to
+        // guard (a leftover record is inert — no journal can match it).
+        remove_pending_record(&self.root, &self.id);
         Ok(())
     }
 
     /// Abandon the transaction after full restoration or a staging abort:
-    /// remove the journal and every backup. Only ever called when no
-    /// restoration is outstanding.
+    /// remove the journal, every backup, and the provenance record. Only
+    /// ever called when no restoration is outstanding.
     pub(crate) fn cleanup_after_restore(&self) {
-        let _ = std::fs::remove_dir_all(&self.journal_dir);
+        if std::fs::remove_dir_all(&self.journal_dir).is_ok() {
+            remove_pending_record(&self.root, &self.id);
+        }
     }
 }
 
@@ -548,6 +637,8 @@ struct JournalFile {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Journal {
+    #[serde(rename = "schemaVersion")]
+    schema_version: String,
     transaction: String,
     #[serde(rename = "planId")]
     plan_id: String,
@@ -564,11 +655,26 @@ impl Journal {
                 detail: "journal-over-limit",
             });
         }
+        // Round 5, finding 4: the journal is forgeable material, so it
+        // decodes through the shared duplicate-key-refusing parser (a
+        // `{"state":"staging","state":"replacing"}` document must
+        // never silently collapse to its last member) and pins its wire
+        // identity with a `schemaVersion` const.
+        let value = super::request::unique_json(bytes).map_err(|_| ChangeError::CommitFailed {
+            transaction: String::new(),
+            detail: "journal-shape",
+        })?;
         let journal: Journal =
-            serde_json::from_slice(bytes).map_err(|_| ChangeError::CommitFailed {
+            serde_json::from_value(value).map_err(|_| ChangeError::CommitFailed {
                 transaction: String::new(),
                 detail: "journal-shape",
             })?;
+        if journal.schema_version != JOURNAL_SCHEMA_VERSION {
+            return Err(ChangeError::CommitFailed {
+                transaction: String::new(),
+                detail: "journal-schema-version",
+            });
+        }
         if !matches!(
             journal.state.as_str(),
             STATE_STAGING | STATE_REPLACING | STATE_COMMITTED
@@ -580,6 +686,263 @@ impl Journal {
         }
         Ok(journal)
     }
+}
+
+/// One durable pending-transaction record: the provenance pin a journal
+/// must exactly reproduce before recovery trusts any of its self-declared
+/// members (round 5, finding 1). The registry lives under `.lekalo` but
+/// outside the cache home, so material planted into `.lekalo/cache` alone
+/// — via clone, checkout, or any archive that preserves the tree — can
+/// never mint overwrite or deletion authority.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PendingRecord {
+    transaction: String,
+    #[serde(rename = "planId")]
+    plan_id: String,
+    state: String,
+    files: Vec<JournalFile>,
+    history: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PendingRegistry {
+    #[serde(rename = "schemaVersion")]
+    schema_version: String,
+    records: Vec<PendingRecord>,
+}
+
+/// The rank of one durable state in the fixed `staging` -> `replacing`
+/// -> `committed` progression.
+fn state_rank(state: &str) -> Option<u8> {
+    match state {
+        STATE_STAGING => Some(0),
+        STATE_REPLACING => Some(1),
+        STATE_COMMITTED => Some(2),
+        _ => None,
+    }
+}
+
+/// Load the durable pending registry; an absent file is an empty
+/// registry, and anything malformed fails closed.
+fn load_pending_registry(root: &Path) -> Result<Vec<PendingRecord>, ChangeError> {
+    let fs = Fs::open(root).map_err(|_| ChangeError::WriteBoundaryDenied)?;
+    match fs.entry_type("", ".lekalo") {
+        Ok(EntryType::Directory) => {}
+        Err(FsErrorKind::NotFound) => return Ok(Vec::new()),
+        _ => return Err(ChangeError::WriteBoundaryDenied),
+    }
+    match fs.entry_type(".lekalo", PENDING_NAME) {
+        Ok(EntryType::File) => {}
+        Err(FsErrorKind::NotFound) => return Ok(Vec::new()),
+        _ => return Err(ChangeError::WriteBoundaryDenied),
+    }
+    let bytes = match fs.read_file_opt(".lekalo", PENDING_NAME, MAX_PENDING_BYTES) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) | Err(FsErrorKind::NotFound) => return Ok(Vec::new()),
+        Err(_) => {
+            return Err(ChangeError::CommitFailed {
+                transaction: String::new(),
+                detail: "pending-registry-read",
+            })
+        }
+    };
+    if bytes.len() > MAX_PENDING_BYTES {
+        return Err(ChangeError::CommitFailed {
+            transaction: String::new(),
+            detail: "pending-registry-over-limit",
+        });
+    }
+    let value = super::request::unique_json(&bytes).map_err(|_| ChangeError::CommitFailed {
+        transaction: String::new(),
+        detail: "pending-registry-shape",
+    })?;
+    let registry: PendingRegistry =
+        serde_json::from_value(value).map_err(|_| ChangeError::CommitFailed {
+            transaction: String::new(),
+            detail: "pending-registry-shape",
+        })?;
+    if registry.schema_version != PENDING_SCHEMA_VERSION {
+        return Err(ChangeError::CommitFailed {
+            transaction: String::new(),
+            detail: "pending-registry-schema-version",
+        });
+    }
+    if registry.records.len() > MAX_PENDING_RECORDS {
+        return Err(ChangeError::CommitFailed {
+            transaction: String::new(),
+            detail: "pending-registry-over-limit",
+        });
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    for record in &registry.records {
+        if !seen.insert(&record.transaction) {
+            return Err(ChangeError::CommitFailed {
+                transaction: record.transaction.clone(),
+                detail: "pending-registry-duplicate",
+            });
+        }
+    }
+    Ok(registry.records)
+}
+
+/// Durably write the pending registry (validated no-follow `.lekalo`
+/// home, same-directory atomic replace). Every caller holds the writer
+/// lock, so read-modify-write stays serialized.
+fn write_pending_registry(root: &Path, records: &[PendingRecord]) -> Result<(), ChangeError> {
+    let fs = Fs::open(root).map_err(|_| ChangeError::WriteBoundaryDenied)?;
+    match fs.entry_type("", ".lekalo") {
+        Ok(EntryType::Directory) => {}
+        Ok(_) => return Err(ChangeError::WriteBoundaryDenied),
+        Err(FsErrorKind::NotFound) => {
+            std::fs::create_dir(root.join(".lekalo"))
+                .map_err(|_| ChangeError::WriteBoundaryDenied)?;
+        }
+        Err(_) => return Err(ChangeError::WriteBoundaryDenied),
+    }
+    match fs.entry_type(".lekalo", PENDING_NAME) {
+        Ok(EntryType::File) | Err(FsErrorKind::NotFound) => {}
+        _ => return Err(ChangeError::WriteBoundaryDenied),
+    }
+    let wire: Vec<Json> = records.iter().map(pending_record_json).collect();
+    let document = serde_json::json!({
+        "schemaVersion": PENDING_SCHEMA_VERSION,
+        "records": wire,
+    })
+    .to_string();
+    if records.len() > MAX_PENDING_RECORDS || document.len() > MAX_PENDING_BYTES {
+        return Err(ChangeError::CommitFailed {
+            transaction: String::new(),
+            detail: "pending-registry-over-limit",
+        });
+    }
+    write_same_dir(
+        &root.join(".lekalo").join(PENDING_NAME),
+        document.as_bytes(),
+    )
+    .map_err(|_| ChangeError::CommitFailed {
+        transaction: String::new(),
+        detail: "pending-registry-write",
+    })
+}
+
+/// The canonical JSON projection of one pending record.
+fn pending_record_json(record: &PendingRecord) -> Json {
+    serde_json::json!({
+        "transaction": record.transaction,
+        "planId": record.plan_id,
+        "state": record.state,
+        "files": record.files.iter().map(journal_file_json).collect::<Vec<Json>>(),
+        "history": record.history,
+    })
+}
+
+/// The canonical JSON projection of one journaled file pin.
+fn journal_file_json(file: &JournalFile) -> Json {
+    serde_json::json!({
+        "path": file.path,
+        "beforeDigest": file.before_digest,
+        "afterDigest": file.after_digest,
+        "creation": file.creation,
+    })
+}
+
+/// Best-effort removal of one transaction's pending record (the journal
+/// is gone: no reader is gated by a leftover record. Its immutable pins
+/// still cannot authorize bytes outside the original transaction).
+fn remove_pending_record(root: &Path, transaction: &str) {
+    let Ok(mut records) = load_pending_registry(root) else {
+        return;
+    };
+    let before = records.len();
+    records.retain(|record| record.transaction != transaction);
+    if records.len() != before {
+        let _ = write_pending_registry(root, &records);
+    }
+}
+
+/// Verify one journal against its durable pending record (round 5,
+/// finding 1): the transaction id, plan id, history flag, and the ENTIRE
+/// file pin set (path, before/after digests, creation flags, in order)
+/// must match exactly, and the journal's state may be at most one step
+/// ahead of the record's (the journal is republished before the record on
+/// every state transition; a journal claiming `committed` over a
+/// `staging` record — or over no record at all — is forged provenance and
+/// fails closed with the barrier retained).
+fn verify_journal_provenance(root: &Path, journal: &Journal) -> Result<(), ChangeError> {
+    let records = load_pending_registry(root)?;
+    let record = records
+        .iter()
+        .find(|record| record.transaction == journal.transaction)
+        .ok_or(ChangeError::CommitFailed {
+            transaction: journal.transaction.clone(),
+            detail: "journal-provenance",
+        })?;
+    let proven = record.plan_id == journal.plan_id
+        && record.history == journal.history
+        && record.files.len() == journal.files.len()
+        && record
+            .files
+            .iter()
+            .zip(journal.files.iter())
+            .all(|(pinned, claimed)| {
+                pinned.path == claimed.path
+                    && pinned.before_digest == claimed.before_digest
+                    && pinned.after_digest == claimed.after_digest
+                    && pinned.creation == claimed.creation
+            });
+    let states_explained = match (state_rank(&record.state), state_rank(&journal.state)) {
+        (Some(record_rank), Some(journal_rank)) => {
+            journal_rank == record_rank || journal_rank == record_rank + 1
+        }
+        _ => false,
+    };
+    if !proven || !states_explained {
+        return Err(ChangeError::CommitFailed {
+            transaction: journal.transaction.clone(),
+            detail: "journal-provenance",
+        });
+    }
+    Ok(())
+}
+
+/// Verify that the canonical history durably names one transaction as
+/// committed (round 5, finding 1): the receipt projection of some record
+/// carries the transaction's id with committed state. An absent,
+/// unreadable, or unverified ledger fails closed.
+fn verify_history_custody(root: &Path, transaction: &str) -> Result<(), ChangeError> {
+    let bytes = std::fs::read(
+        root.join(super::version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR)),
+    )
+    .map_err(|_| ChangeError::RecoveryRequired {
+        transaction: transaction.to_owned(),
+    })?;
+    let history =
+        super::receipt::History::decode(&bytes).map_err(|_| ChangeError::RecoveryRequired {
+            transaction: transaction.to_owned(),
+        })?;
+    super::verify_history_project(root, &history)?;
+    let named = history.records.iter().any(|record| {
+        record
+            .receipt
+            .get("transaction")
+            .and_then(|wire| wire.get("id"))
+            .and_then(Json::as_str)
+            == Some(transaction)
+            && record
+                .receipt
+                .get("transaction")
+                .and_then(|wire| wire.get("state"))
+                .and_then(Json::as_str)
+                == Some(STATE_COMMITTED)
+    });
+    if !named {
+        return Err(ChangeError::RecoveryRequired {
+            transaction: transaction.to_owned(),
+        });
+    }
+    Ok(())
 }
 
 /// Validate one journaled logical path component-wise against the confined
@@ -663,8 +1026,8 @@ pub(crate) fn recover(root: &Path, transaction: &str) -> Result<RecoveryResult, 
     let restorations = restorations_of(root, &journal_dir, &journal)?;
     match journal.state.as_str() {
         STATE_STAGING => recover_staging(root, transaction, &restorations),
-        STATE_REPLACING => recover_replacing(transaction, &journal_dir, &restorations),
-        STATE_COMMITTED => recover_committed(transaction, &journal_dir, &restorations),
+        STATE_REPLACING => recover_replacing(root, transaction, &journal_dir, &restorations),
+        STATE_COMMITTED => recover_committed(root, transaction, &journal_dir, &restorations),
         _ => Err(ChangeError::CommitFailed {
             transaction: transaction.to_owned(),
             detail: "journal-state",
@@ -695,6 +1058,28 @@ fn load_validated_journal(
     let journal_dir = root
         .join(super::version::TRANSACTION_CACHE_ROOT)
         .join(transaction);
+    // Round 5, finding 1: the journal directory and the journal file
+    // itself are validated no-follow through the same `Fs` reader the
+    // barrier uses — a link-backed transaction home or journal never
+    // becomes readable recovery material.
+    {
+        let fs = Fs::open(root).map_err(|_| ChangeError::WriteBoundaryDenied)?;
+        let home = super::version::TRANSACTION_CACHE_ROOT;
+        let missing = || ChangeError::PreconditionFailed {
+            subject: "transaction".to_owned(),
+            detail: "journal-missing",
+        };
+        match fs.entry_type(home, transaction) {
+            Ok(EntryType::Directory) => {}
+            Err(FsErrorKind::NotFound) => return Err(missing()),
+            _ => return Err(ChangeError::WriteBoundaryDenied),
+        }
+        match fs.entry_type(&format!("{home}/{transaction}"), JOURNAL_NAME) {
+            Ok(EntryType::File) => {}
+            Err(FsErrorKind::NotFound) => return Err(missing()),
+            _ => return Err(ChangeError::WriteBoundaryDenied),
+        }
+    }
     let journal_path = journal_dir.join(JOURNAL_NAME);
     let journal_bytes =
         std::fs::read(&journal_path).map_err(|_| ChangeError::PreconditionFailed {
@@ -740,6 +1125,13 @@ fn load_validated_journal(
             detail: "journal-history-flag",
         });
     }
+    // Round 5, finding 1: every self-declared journal member is now
+    // verified against the durable pending record anchored outside the
+    // cache home. A journal without provenance — planted via clone,
+    // checkout, or an archive that preserves the tree — has zero
+    // recovery authority, no matter how self-consistent its digests and
+    // backups are; the barrier stays up with the journal intact.
+    verify_journal_provenance(root, &journal)?;
     Ok((journal_dir, journal))
 }
 
@@ -807,6 +1199,30 @@ fn validate_journal_targets(root: &Path, journal: &Journal) -> Result<(), Change
     Ok(())
 }
 
+/// Validate backup components independently of the project-wide scan.
+/// Staging permits absence; replacing requires an existing regular file.
+fn validate_backup(
+    root: &Path,
+    transaction: &str,
+    index: usize,
+    required: bool,
+) -> Result<(), ChangeError> {
+    let fs = Fs::open(root).map_err(|_| ChangeError::WriteBoundaryDenied)?;
+    let home = format!("{}/{transaction}", super::version::TRANSACTION_CACHE_ROOT);
+    match fs.entry_type(&home, BACKUPS_NAME) {
+        Ok(EntryType::Directory) => {}
+        _ => return Err(ChangeError::WriteBoundaryDenied),
+    }
+    match fs.entry_type(&format!("{home}/{BACKUPS_NAME}"), &index.to_string()) {
+        Ok(EntryType::File) => Ok(()),
+        Err(FsErrorKind::NotFound) if !required => Ok(()),
+        Err(FsErrorKind::NotFound) => Err(ChangeError::RecoveryRequired {
+            transaction: transaction.to_owned(),
+        }),
+        _ => Err(ChangeError::WriteBoundaryDenied),
+    }
+}
+
 /// Build the validated restoration set of one journal: every target path
 /// is component-wise validated against the confined root (no-follow),
 /// creation destinations are restricted to the admitted history home or
@@ -852,6 +1268,9 @@ fn restorations_of(
             transaction: journal.transaction.clone(),
             detail: "journal-after-digest",
         })?;
+        if journal.state == STATE_REPLACING {
+            validate_backup(root, &journal.transaction, index, true)?;
+        }
         restorations.push(Restoration {
             path: file.path.clone(),
             target,
@@ -917,6 +1336,7 @@ fn recover_staging(
     std::fs::remove_dir_all(&journal_dir).map_err(|_| ChangeError::RecoveryRequired {
         transaction: transaction.to_owned(),
     })?;
+    remove_pending_record(root, transaction);
     Ok(RecoveryResult {
         committed: false,
         files: Vec::new(),
@@ -929,6 +1349,7 @@ fn recover_staging(
 /// (idempotent re-recovery); creations are removed only while the current
 /// bytes match exactly what this transaction created.
 fn recover_replacing(
+    root: &Path,
     transaction: &str,
     journal_dir: &Path,
     restorations: &[Restoration],
@@ -1033,6 +1454,7 @@ fn recover_replacing(
     std::fs::remove_dir_all(journal_dir).map_err(|_| ChangeError::RecoveryRequired {
         transaction: transaction.to_owned(),
     })?;
+    remove_pending_record(root, transaction);
     // The rollback receipt's file outcomes, journal order: a restoration
     // replaced the transaction's prospective bytes with the verified
     // originals; a creation removal replaced the created bytes with the
@@ -1062,6 +1484,7 @@ fn recover_replacing(
 /// THEN reports the transaction committed — never rolled back, and never
 /// a success while the journal still gates readers (round 3, finding 3).
 fn recover_committed(
+    root: &Path,
     transaction: &str,
     journal_dir: &Path,
     restorations: &[Restoration],
@@ -1081,6 +1504,12 @@ fn recover_committed(
             });
         }
     }
+    // Round 5, finding 1: a durably committed transaction is one the
+    // canonical history actually names — the ledger record with this
+    // transaction's identity and committed state. A journal claiming
+    // `committed` for a transaction that never ran (a forged cosmetic
+    // commit) has no record and fails closed with the barrier retained.
+    verify_history_custody(root, transaction)?;
     // The commit is durably verified: complete the cleanup BEFORE any
     // success is reported, so a subsequent ordinary read can never still
     // be gated by this journal and a repeat recovery cannot re-report
@@ -1088,6 +1517,7 @@ fn recover_committed(
     std::fs::remove_dir_all(journal_dir).map_err(|_| ChangeError::RecoveryRequired {
         transaction: transaction.to_owned(),
     })?;
+    remove_pending_record(root, transaction);
     let files = restorations
         .iter()
         .map(|restoration| super::receipt::FileOutcome {
@@ -1120,6 +1550,17 @@ impl ChangeError {
             },
             other => other,
         }
+    }
+}
+
+/// Bind a pending-registry failure to the transaction being begun.
+fn bind_pending(transaction: &str) -> impl Fn(ChangeError) -> ChangeError + '_ {
+    move |error| match error {
+        ChangeError::CommitFailed { detail, .. } => ChangeError::CommitFailed {
+            transaction: transaction.to_owned(),
+            detail,
+        },
+        other => other,
     }
 }
 
@@ -1277,14 +1718,293 @@ mod tests {
     /// The journal decoder refuses unknown states and malformed members.
     #[test]
     fn journal_decode_fails_closed() {
-        let valid = br#"{"transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}"#;
+        let valid = br#"{"schemaVersion":"lekalo/change-journal/1","transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}"#;
         assert!(Journal::decode(valid).is_ok());
-        let bad_state = br#"{"transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":" vanished","files":[],"history":false}"#;
+        let bad_state = br#"{"schemaVersion":"lekalo/change-journal/1","transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":" vanished","files":[],"history":false}"#;
         assert!(Journal::decode(bad_state).is_err());
-        let unknown_member = br#"{"transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false,"extra":1}"#;
+        let unknown_member = br#"{"schemaVersion":"lekalo/change-journal/1","transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false,"extra":1}"#;
         assert!(Journal::decode(unknown_member).is_err());
-        let missing_member = br#"{"transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[]}"#;
+        let missing_member = br#"{"schemaVersion":"lekalo/change-journal/1","transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[]}"#;
         assert!(Journal::decode(missing_member).is_err());
+        // Round 5, finding 4: duplicate keys never silently collapse, and
+        // the wire identity is pinned by a schemaVersion const.
+        let duplicate_state = br#"{"schemaVersion":"lekalo/change-journal/1","transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","state":"replacing","files":[],"history":false}"#;
+        assert!(Journal::decode(duplicate_state).is_err());
+        let wrong_version = br#"{"schemaVersion":"lekalo/change-journal/2","transaction":"change-abcdef01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}"#;
+        assert!(Journal::decode(wrong_version).is_err());
+    }
+
+    /// Round 5, finding 1: a fully self-consistent forged journal — real
+    /// backup bytes, pins matching the live project — is refused unless a
+    /// durable pending record outside the cache home pins the exact same
+    /// facts. The overwrite and the silent-delete exploits both die here.
+    #[test]
+    fn forged_journal_without_provenance_never_recovers() {
+        let root = std::env::temp_dir().join(format!("lekalo-tx-forge-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        // A structurally valid project (the admitted-target gate runs
+        // before provenance and needs the real home layout).
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/change/field-vertical");
+        fn copy_dir(from: &Path, to: &Path) {
+            std::fs::create_dir_all(to).expect("target dir");
+            for entry in std::fs::read_dir(from).expect("read source") {
+                let entry = entry.expect("entry");
+                let target = to.join(entry.file_name());
+                if entry.file_type().expect("type").is_dir() {
+                    copy_dir(&entry.path(), &target);
+                } else {
+                    std::fs::copy(entry.path(), target).expect("copy");
+                }
+            }
+        }
+        copy_dir(&fixture, &root);
+        let entities = root.join("lekalo/modules/tasks/entities.yaml");
+        let original = std::fs::read(&entities).expect("entities");
+        // change-forge002: `creation:false` + self-consistent backup pins
+        // would restore the attacker payload over the admitted file.
+        let attack = {
+            let mut attack = original.clone();
+            attack.extend_from_slice(b"# ATTACKER-CONTROLLED LINE\n");
+            attack
+        };
+        let digest = |bytes: &[u8]| format!("sha256:{}", crate::digest::sha256_hex(bytes));
+        let forge_replacing = serde_json::json!({
+            "schemaVersion": JOURNAL_SCHEMA_VERSION,
+            "transaction": "change-forge002",
+            "planId": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "state": "replacing",
+            "files": [{
+                "path": "lekalo/modules/tasks/entities.yaml",
+                "beforeDigest": digest(&attack),
+                "afterDigest": digest(&original),
+                "creation": false,
+            }],
+            "history": false,
+        });
+        let dir = root.join(".lekalo/cache/change/change-forge002");
+        std::fs::create_dir_all(dir.join("backups")).expect("forge home");
+        std::fs::write(dir.join("backups/0"), attack).expect("planted backup");
+        std::fs::write(dir.join(JOURNAL_NAME), forge_replacing.to_string()).expect("journal");
+        let refused = match recover(&root, "change-forge002") {
+            Err(error) => error,
+            Ok(_) => panic!("forged journal recovered"),
+        };
+        assert!(
+            matches!(
+                refused,
+                ChangeError::CommitFailed {
+                    detail: "journal-provenance",
+                    ..
+                }
+            ),
+            "got {refused:?}"
+        );
+        assert_eq!(std::fs::read(&entities).unwrap(), original.to_vec());
+        assert!(dir.join(JOURNAL_NAME).is_file(), "journal kept");
+        // change-forge003: `creation:true` + afterDigest of the real bytes
+        // would silently delete the admitted file — same refusal.
+        let forge_creation = serde_json::json!({
+            "schemaVersion": JOURNAL_SCHEMA_VERSION,
+            "transaction": "change-forge003",
+            "planId": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "state": "replacing",
+            "files": [{
+                "path": "lekalo/modules/tasks/entities.yaml",
+                "beforeDigest": digest(&[]),
+                "afterDigest": digest(&original),
+                "creation": true,
+            }],
+            "history": false,
+        });
+        let dir = root.join(".lekalo/cache/change/change-forge003");
+        std::fs::create_dir_all(&dir).expect("forge home");
+        std::fs::write(dir.join(JOURNAL_NAME), forge_creation.to_string()).expect("journal");
+        let refused = match recover(&root, "change-forge003") {
+            Err(error) => error,
+            Ok(_) => panic!("forged journal recovered"),
+        };
+        assert!(
+            matches!(
+                refused,
+                ChangeError::CommitFailed {
+                    detail: "journal-provenance",
+                    ..
+                }
+            ),
+            "got {refused:?}"
+        );
+        assert_eq!(std::fs::read(&entities).unwrap(), original.to_vec());
+        assert!(dir.join(JOURNAL_NAME).is_file(), "journal kept");
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    /// Round 5, finding 1: a journal whose pins diverge from its durable
+    /// record (even one byte of one digest) is forged provenance and
+    /// fails closed; a state at most one step ahead of the record is the
+    /// only accepted divergence (the crash window between the journal
+    /// and record publications).
+    #[test]
+    fn provenance_mismatch_refuses_and_one_step_ahead_is_explained() {
+        let root = std::env::temp_dir().join(format!("lekalo-tx-prov-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".lekalo")).expect("home");
+        let zeros = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+        let record = PendingRecord {
+            transaction: "change-prov0001".to_owned(),
+            plan_id: zeros.to_owned(),
+            state: STATE_STAGING.to_owned(),
+            files: vec![JournalFile {
+                path: "lekalo/modules/tasks/entities.yaml".to_owned(),
+                before_digest: zeros.to_owned(),
+                after_digest: zeros.to_owned(),
+                creation: false,
+            }],
+            history: false,
+        };
+        write_pending_registry(&root, std::slice::from_ref(&record)).expect("registry");
+        let journal_of = |state: &str, after: &str| Journal {
+            schema_version: JOURNAL_SCHEMA_VERSION.to_owned(),
+            transaction: "change-prov0001".to_owned(),
+            plan_id: zeros.to_owned(),
+            state: state.to_owned(),
+            files: vec![JournalFile {
+                path: "lekalo/modules/tasks/entities.yaml".to_owned(),
+                before_digest: zeros.to_owned(),
+                after_digest: after.to_owned(),
+                creation: false,
+            }],
+            history: false,
+        };
+        // Exact match: proven.
+        assert!(verify_journal_provenance(&root, &journal_of(STATE_STAGING, zeros)).is_ok());
+        // One step ahead (journal published, record not yet): explained.
+        assert!(verify_journal_provenance(&root, &journal_of(STATE_REPLACING, zeros)).is_ok());
+        // Two steps ahead (staging record, committed journal): forged.
+        let forged = verify_journal_provenance(&root, &journal_of(STATE_COMMITTED, zeros));
+        assert!(
+            matches!(
+                forged,
+                Err(ChangeError::CommitFailed {
+                    detail: "journal-provenance",
+                    ..
+                })
+            ),
+            "got {forged:?}"
+        );
+        // A diverging file pin (one digest byte): forged.
+        let ones = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+        let diverged = verify_journal_provenance(&root, &journal_of(STATE_STAGING, ones));
+        assert!(
+            matches!(
+                diverged,
+                Err(ChangeError::CommitFailed {
+                    detail: "journal-provenance",
+                    ..
+                })
+            ),
+            "got {diverged:?}"
+        );
+        // No record at all: forged.
+        let empty: Vec<PendingRecord> = Vec::new();
+        write_pending_registry(&root, &empty).expect("registry cleared");
+        let absent = verify_journal_provenance(&root, &journal_of(STATE_STAGING, zeros));
+        assert!(
+            matches!(
+                absent,
+                Err(ChangeError::CommitFailed {
+                    detail: "journal-provenance",
+                    ..
+                })
+            ),
+            "got {absent:?}"
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn pending_registry_duplicates_and_nonfile_entries_refuse() {
+        let root = std::env::temp_dir().join(format!("lekalo-tx-registry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".lekalo")).unwrap();
+        let record = PendingRecord {
+            transaction: "change-duplicate01".to_owned(),
+            plan_id: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+                .to_owned(),
+            state: STATE_STAGING.to_owned(),
+            files: vec![],
+            history: false,
+        };
+        write_pending_registry(&root, &[record.clone(), record]).unwrap();
+        assert!(matches!(
+            load_pending_registry(&root),
+            Err(ChangeError::CommitFailed {
+                detail: "pending-registry-duplicate",
+                ..
+            })
+        ));
+        std::fs::remove_file(root.join(".lekalo").join(PENDING_NAME)).unwrap();
+        std::fs::create_dir(root.join(".lekalo").join(PENDING_NAME)).unwrap();
+        assert!(matches!(
+            load_pending_registry(&root),
+            Err(ChangeError::WriteBoundaryDenied)
+        ));
+        assert!(matches!(
+            write_pending_registry(&root, &[]),
+            Err(ChangeError::WriteBoundaryDenied)
+        ));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn backup_validation_requires_regular_no_follow_components() {
+        let root = std::env::temp_dir().join(format!("lekalo-tx-backup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let home = root.join(".lekalo/cache/change/change-backup01");
+        std::fs::create_dir_all(home.join(BACKUPS_NAME)).unwrap();
+        assert!(validate_backup(&root, "change-backup01", 0, false).is_ok());
+        assert!(validate_backup(&root, "change-backup01", 0, true).is_err());
+        std::fs::create_dir(home.join(BACKUPS_NAME).join("0")).unwrap();
+        assert!(matches!(
+            validate_backup(&root, "change-backup01", 0, true),
+            Err(ChangeError::WriteBoundaryDenied)
+        ));
+        std::fs::remove_dir_all(home.join(BACKUPS_NAME)).unwrap();
+        std::fs::write(home.join(BACKUPS_NAME), b"not a directory").unwrap();
+        assert!(matches!(
+            validate_backup(&root, "change-backup01", 0, true),
+            Err(ChangeError::WriteBoundaryDenied)
+        ));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pending_registry_and_backup_links_are_not_followed() {
+        let root =
+            std::env::temp_dir().join(format!("lekalo-tx-read-links-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let home = root.join(".lekalo/cache/change/change-links01");
+        std::fs::create_dir_all(&home).unwrap();
+        std::os::unix::fs::symlink("/lekalo-elsewhere", root.join(".lekalo").join(PENDING_NAME))
+            .unwrap();
+        assert!(matches!(
+            load_pending_registry(&root),
+            Err(ChangeError::WriteBoundaryDenied)
+        ));
+        std::os::unix::fs::symlink("/lekalo-elsewhere", home.join(BACKUPS_NAME)).unwrap();
+        assert!(matches!(
+            validate_backup(&root, "change-links01", 0, true),
+            Err(ChangeError::WriteBoundaryDenied)
+        ));
+        std::fs::remove_file(home.join(BACKUPS_NAME)).unwrap();
+        std::fs::create_dir(home.join(BACKUPS_NAME)).unwrap();
+        std::os::unix::fs::symlink("/lekalo-elsewhere", home.join(BACKUPS_NAME).join("0")).unwrap();
+        assert!(matches!(
+            validate_backup(&root, "change-links01", 0, true),
+            Err(ChangeError::WriteBoundaryDenied)
+        ));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// Temp replacement files carry unpredictable names and exclusively

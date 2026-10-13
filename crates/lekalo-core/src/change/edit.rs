@@ -158,60 +158,81 @@ pub fn yaml_case_item(
 
 /// The anchor dash column and end offset of a sequence's last item. The
 /// YAML frontend reports zero-width event spans for block-mapping items,
-/// so the item range is derived from the first key's position (the dash
-/// sits two columns before it) and the last entry's value span.
-fn seq_anchor(items: &[Node]) -> Result<(usize, usize), ChangeError> {
+/// so the item range is derived from the first key's position and the
+/// last entry's value span; the dash column is derived from the exact
+/// bytes (the single dash-anchor rule every list edit shares, round 5,
+/// finding 1).
+fn seq_anchor(bytes: &[u8], items: &[Node]) -> Result<(usize, usize), ChangeError> {
     let Some(last) = items.last() else {
         return Err(ChangeError::SourcePreservation {
             subject: String::new(),
             detail: "sequence-empty",
         });
     };
-    let (dash_byte, end) = item_range(last).ok_or(ChangeError::SourcePreservation {
+    let end = item_end(last).ok_or(ChangeError::SourcePreservation {
         subject: String::new(),
         detail: "item-layout",
     })?;
-    let _ = dash_byte;
-    let anchor_column = item_anchor_column(last).ok_or(ChangeError::SourcePreservation {
+    let anchor_column = item_anchor_column(bytes, last).ok_or(ChangeError::SourcePreservation {
         subject: String::new(),
         detail: "item-layout",
     })?;
     Ok((anchor_column, end))
 }
 
-/// The 0-based dash column of one block-sequence item.
-fn item_anchor_column(item: &Node) -> Option<usize> {
+/// The byte offset of the `-` marker that introduces one sequence item
+/// on its line, derived from the bytes: walk back from the item's first
+/// token (its first key for mapping items, the scalar itself for scalar
+/// items) over the separating spaces to the dash, then require only
+/// spaces before the dash. Both item shapes share this ONE rule, so an
+/// ordinary `- item` line, an indented one, and a two-space-after-dash
+/// layout all derive the same anchor (round 5, finding 1: the previous
+/// per-shape column arithmetic anchored scalar items two columns too
+/// deep and corrupted every ordinary indented list edit).
+fn dash_byte(bytes: &[u8], item: &Node) -> Option<usize> {
+    let token = match &item.value {
+        Value::Map(entries) if !entries.is_empty() => entries.first()?.key_span.start.byte,
+        Value::Scalar(_) => item.span.start.byte,
+        _ => return None,
+    };
+    let mut cursor = token.min(bytes.len());
+    while cursor > 0 && bytes.get(cursor - 1) == Some(&b' ') {
+        cursor -= 1;
+    }
+    if cursor == 0 || bytes.get(cursor - 1) != Some(&b'-') {
+        return None;
+    }
+    let dash = cursor - 1;
+    let line_start = line_start_at(bytes, dash);
+    if bytes[line_start..dash].iter().any(|byte| *byte != b' ') {
+        return None;
+    }
+    Some(dash)
+}
+
+/// The 0-based dash column of one block-sequence item (its indentation).
+pub(crate) fn item_anchor_column(bytes: &[u8], item: &Node) -> Option<usize> {
+    let dash = dash_byte(bytes, item)?;
+    Some(dash - line_start_at(bytes, dash))
+}
+
+/// The exclusive end byte of one block-sequence item: the end of its
+/// last entry's value for mapping items, the scalar's own end otherwise.
+fn item_end(item: &Node) -> Option<usize> {
     match &item.value {
-        Value::Map(entries) if !entries.is_empty() => {
-            // The dash sits two 1-based columns before the key; the anchor
-            // is its 0-based indentation.
-            let column = entries.first()?.key_span.start.column.checked_sub(3)?;
-            Some(column)
-        }
-        Value::Scalar(_) => Some(item.span.start.column - 1),
+        Value::Map(entries) if !entries.is_empty() => item_end(&entries.last()?.value),
+        Value::Seq(items) if !items.is_empty() => item_end(items.last()?),
+        Value::Scalar(_) => Some(item.span.end.byte),
         _ => None,
     }
 }
 
-/// The exact byte range of one block-sequence item: the dash marker through
-/// the end of its last entry's value, plus the dash's 0-based column.
-fn item_range(item: &Node) -> Option<(usize, usize)> {
-    match &item.value {
-        Value::Map(entries) if !entries.is_empty() => {
-            let key_start = entries.first()?.key_span.start.byte;
-            let dash = key_start.checked_sub(2)?;
-            let last_end = entries.last()?.value.span.end.byte;
-            // The dash must sit at `dash` exactly (two columns before the
-            // key: `- `); anything else is a layout this planner refuses.
-            Some((dash, last_end))
-        }
-        Value::Scalar(_) => {
-            let start = item.span.start.byte;
-            let end = item.span.end.byte;
-            (end > start).then_some((start, end))
-        }
-        _ => None,
-    }
+/// The exact byte range of one block-sequence item: the dash marker
+/// through the end of its last value (the removal convention).
+fn item_range(bytes: &[u8], item: &Node) -> Option<(usize, usize)> {
+    let dash = dash_byte(bytes, item)?;
+    let end = item_end(item)?;
+    (end > dash).then_some((dash, end))
 }
 
 /// Locate the member sequence node of one spanned definition.
@@ -275,7 +296,7 @@ pub fn plan_seq_insert(
     item: &str,
 ) -> Result<ByteEdit, ChangeError> {
     let items = member_sequence(definition, member)?;
-    let (_, insert_at) = seq_anchor(items)?;
+    let (_, insert_at) = seq_anchor(bytes, items)?;
     // A comment line directly after the insertion point would lose its
     // ownership ambiguity: refusal preserves it instead of guessing.
     if next_content_is_comment(bytes, insert_at) {
@@ -303,7 +324,7 @@ pub fn field_item_block(
     description: Option<&str>,
 ) -> Result<String, ChangeError> {
     let items = member_sequence(definition, member)?;
-    let (anchor, _) = seq_anchor(items)?;
+    let (anchor, _) = seq_anchor(bytes, items)?;
     Ok(yaml_field_item(
         bytes,
         anchor,
@@ -324,7 +345,7 @@ pub fn case_item_block(
     description: Option<&str>,
 ) -> Result<String, ChangeError> {
     let items = member_sequence(definition, member)?;
-    let (anchor, _) = seq_anchor(items)?;
+    let (anchor, _) = seq_anchor(bytes, items)?;
     Ok(yaml_case_item(bytes, anchor, name, description))
 }
 
@@ -337,7 +358,7 @@ pub fn effect_item_block(
     effect_id: &str,
 ) -> Result<String, ChangeError> {
     let items = member_sequence(definition, member)?;
-    let (anchor, _) = seq_anchor(items)?;
+    let (anchor, _) = seq_anchor(bytes, items)?;
     let indent = " ".repeat(anchor);
     let newline = newline_before(bytes, bytes.len());
     Ok(format!("{newline}{indent}- {}", quote_yaml(effect_id)))
@@ -362,7 +383,7 @@ pub fn plan_seq_scalar_insert(
             detail: "member-duplicate",
         });
     }
-    let (_, insert_at) = seq_anchor(items)?;
+    let (_, insert_at) = seq_anchor(bytes, items)?;
     if next_content_is_comment(bytes, insert_at) {
         return Err(ChangeError::SourcePreservation {
             subject: String::new(),
@@ -391,10 +412,11 @@ pub fn plan_seq_scalar_remove(
             subject: value.to_owned(),
             detail: "member-missing",
         })?;
-    let (dash, item_end) = item_range(&items[position]).ok_or(ChangeError::SourcePreservation {
-        subject: value.to_owned(),
-        detail: "item-layout",
-    })?;
+    let (dash, item_end) =
+        item_range(bytes, &items[position]).ok_or(ChangeError::SourcePreservation {
+            subject: value.to_owned(),
+            detail: "item-layout",
+        })?;
     if next_content_is_comment(bytes, item_end) || previous_content_is_comment(bytes, dash) {
         return Err(ChangeError::SourcePreservation {
             subject: value.to_owned(),
@@ -421,8 +443,21 @@ pub fn plan_seq_scalar_remove(
 
 /// The 0-based anchor column and end offset of the document-level
 /// definitions sequence (the last definition's mapping range).
-pub fn definitions_anchor(definitions: &[Node]) -> Result<(usize, usize), ChangeError> {
-    seq_anchor(definitions)
+pub fn definitions_anchor(
+    bytes: &[u8],
+    definitions: &[Node],
+) -> Result<(usize, usize), ChangeError> {
+    seq_anchor(bytes, definitions)
+}
+
+/// Whether the line containing `offset` is a comment line (its first
+/// non-blank character is `#`).
+fn line_is_comment(bytes: &[u8], offset: usize) -> bool {
+    let anchor = offset.min(bytes.len().saturating_sub(1));
+    let line_start = line_start_at(bytes, anchor);
+    let line_end = line_start_after(bytes, line_start).min(bytes.len());
+    let text = std::str::from_utf8(&bytes[line_start..line_end]).unwrap_or("");
+    text.trim().starts_with('#')
 }
 
 /// Plan the append of one prebuilt definition block after the last
@@ -455,6 +490,17 @@ pub fn plan_document_definition_append(
         return Err(ChangeError::SourcePreservation {
             subject: String::new(),
             detail: "sequence-empty",
+        });
+    }
+    // Round 5, finding 3: a file whose last content line is a comment
+    // (a file-trailing note) would silently re-home the comment onto the
+    // appended definition — the insert point sits after it, so the note
+    // stops closing the file and starts annotating the previous
+    // definition. The bidirectional comment rule refuses instead.
+    if line_is_comment(bytes, end.saturating_sub(1)) {
+        return Err(ChangeError::SourcePreservation {
+            subject: String::new(),
+            detail: "comment-adjacent",
         });
     }
     if next_content_is_comment(bytes, end) {
@@ -538,6 +584,16 @@ fn member_block_range(
                 cursor = line_end;
             }
             Some(offset) if offset > key_indent => {
+                // Round 5, finding 2: a comment line inside the member
+                // block has ambiguous ownership — replacing the block
+                // would delete it, and keeping it would re-home it. The
+                // refusal matches the removal paths (LEK-CHANGE-007).
+                if text_is_comment(&bytes[cursor..trimmed_end]) {
+                    return Err(ChangeError::SourcePreservation {
+                        subject: member.to_owned(),
+                        detail: "comment-adjacent",
+                    });
+                }
                 end = trimmed_end;
                 content += 1;
                 cursor = line_end;
@@ -721,7 +777,7 @@ pub fn plan_member_sequence_replace(
         .filter(|(name, ..)| !existing.iter().any(|(other, ..)| other == name))
         .collect();
     if !new_fields.is_empty() {
-        let (anchor, _) = seq_anchor(items)?;
+        let (anchor, _) = seq_anchor(bytes, items)?;
         let mut block = String::new();
         for (name, field_type, required, description) in new_fields {
             block.push_str(&yaml_field_item(
@@ -812,7 +868,7 @@ fn append_item_member(
     member: &str,
     value: &str,
 ) -> Result<ByteEdit, ChangeError> {
-    let (_, item_end) = item_range(item).ok_or(ChangeError::SourcePreservation {
+    let item_end = item_end(item).ok_or(ChangeError::SourcePreservation {
         subject: member.to_owned(),
         detail: "member-layout",
     })?;
@@ -858,7 +914,13 @@ pub fn plan_returns_replace(
     Ok(ByteEdit {
         start,
         end,
-        replacement: block[1..].to_owned(),
+        replacement: block
+            .strip_prefix(newline_before(bytes, bytes.len()))
+            .ok_or(ChangeError::SourcePreservation {
+                subject: "returns".to_owned(),
+                detail: "member-layout",
+            })?
+            .to_owned(),
     })
 }
 
@@ -1016,10 +1078,11 @@ pub fn plan_seq_item_remove(
             subject: name.to_owned(),
             detail: "member-missing",
         })?;
-    let (dash, item_end) = item_range(&items[position]).ok_or(ChangeError::SourcePreservation {
-        subject: name.to_owned(),
-        detail: "item-layout",
-    })?;
+    let (dash, item_end) =
+        item_range(bytes, &items[position]).ok_or(ChangeError::SourcePreservation {
+            subject: name.to_owned(),
+            detail: "item-layout",
+        })?;
     // A comment line directly above or after the removed item refuses:
     // ownership is ambiguous and preservation wins over guessing.
     if next_content_is_comment(bytes, item_end) || previous_content_is_comment(bytes, dash) {
@@ -1123,10 +1186,7 @@ pub fn plan_scalar_item_rename(
             subject: value.to_owned(),
             detail: "member-missing",
         })?;
-    let (start, end) = item_range(item).ok_or(ChangeError::SourcePreservation {
-        subject: value.to_owned(),
-        detail: "item-layout",
-    })?;
+    let (start, end) = (item.span.start.byte, item.span.end.byte);
     let original = std::str::from_utf8(&bytes[start..end])
         .map_err(|_| ChangeError::SourcePreservation {
             subject: value.to_owned(),
@@ -1149,6 +1209,44 @@ pub fn plan_scalar_item_rename(
 /// Escape one value for a double-quoted YAML scalar body.
 fn escape_quoted(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Whether one already-trimmed line's text is a comment (starts with
+/// `#` after leading whitespace).
+fn text_is_comment(line: &[u8]) -> bool {
+    std::str::from_utf8(line)
+        .map(|text| text.trim_start().starts_with('#'))
+        .unwrap_or(false)
+}
+
+/// The end of the last member block of one spanned definition, derived
+/// textually: container value spans are zero-width in the closed YAML
+/// frontend, so the byte after which a sibling member may append is the
+/// end of the last content line of the definition (round 5, finding 1:
+/// the container span previously landed the insertion mid-token inside
+/// the last item of every sequence-valued member).
+fn definition_content_end(bytes: &[u8], definition: &Node) -> Result<usize, ChangeError> {
+    let entries = match &definition.value {
+        Value::Map(entries) if !entries.is_empty() => entries,
+        _ => {
+            return Err(ChangeError::SourcePreservation {
+                subject: String::new(),
+                detail: "item-layout",
+            })
+        }
+    };
+    let last = entries.last().ok_or(ChangeError::SourcePreservation {
+        subject: String::new(),
+        detail: "item-layout",
+    })?;
+    match member_block_range(bytes, definition, &last.key) {
+        Ok((_, end, _)) => Ok(end),
+        Err(ChangeError::SourcePreservation {
+            detail: "member-empty",
+            ..
+        }) => Ok(last.value.span.end.byte),
+        Err(other) => Err(other),
+    }
 }
 
 /// Plan the insertion of one missing member block (with its first item)
@@ -1179,7 +1277,7 @@ pub fn plan_member_append(
         subject: member.to_owned(),
         detail: "item-layout",
     })?;
-    let insert_at = last.value.span.end.byte;
+    let insert_at = definition_content_end(bytes, definition)?;
     if next_content_is_comment(bytes, insert_at) {
         return Err(ChangeError::SourcePreservation {
             subject: member.to_owned(),
@@ -1243,11 +1341,42 @@ mod tests {
     const DOC: &str = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.task\n    kind: entity\n    version: 1\n    fields:\n      - name: title\n        type: \"tasks.text\"\n        required: true\n      - name: done\n        type: \"tasks.bool\"\n    identity:\n      - title\n";
 
     #[test]
+    fn nested_collection_spans_do_not_truncate_the_last_sequence_item() {
+        let text = DOC.replace("type: \"tasks.bool\"", "type:\n          ref: tasks.bool");
+        let (root, bytes) = parse(&text);
+        let definition = definition_of(&root);
+        let item = yaml_field_item(&bytes, 6, "priority", "tasks.text", false, None);
+        let patch = plan_seq_insert(&bytes, definition, "fields", &item).expect("patch");
+        let after = patch.apply(&bytes);
+        let after = String::from_utf8(after).expect("UTF-8");
+        assert!(
+            after.contains("          ref: tasks.bool\n      - name: \"priority\""),
+            "{after}"
+        );
+        parse(&after);
+    }
+
+    #[test]
+    fn returns_replacement_preserves_crlf_without_a_stray_line_break() {
+        let text = "definitions:\r\n  - id: tasks.all\r\n    kind: query\r\n    version: 1\r\n    returns:\r\n      ref: tasks.text\r\n";
+        let (root, bytes) = parse(text);
+        let query = &root.get("definitions").unwrap().as_seq().unwrap()[0];
+        let patch = plan_returns_replace(&bytes, query, "tasks.text?").expect("patch");
+        let after = String::from_utf8(patch.apply(&bytes)).unwrap();
+        assert!(
+            after.contains("    version: 1\r\n    returns:\r\n      optional:"),
+            "{after:?}"
+        );
+        assert!(!after.replace("\r\n", "").contains('\n'));
+        parse(&after);
+    }
+
+    #[test]
     fn insert_appends_after_the_last_field_and_preserves_all_other_bytes() {
         let (root, bytes) = parse(DOC);
         let definition = definition_of(&root);
         let items = member_sequence(definition, "fields").expect("fields");
-        let (anchor_column, _) = seq_anchor(items).expect("anchor");
+        let (anchor_column, _) = seq_anchor(&bytes, items).expect("anchor");
         let item = yaml_field_item(
             &bytes,
             anchor_column,
@@ -1311,7 +1440,7 @@ mod tests {
         let (root, bytes) = parse(doc);
         let definition = definition_of(&root);
         let items = member_sequence(definition, "fields").expect("fields");
-        let (anchor_column, _) = seq_anchor(items).expect("anchor");
+        let (anchor_column, _) = seq_anchor(&bytes, items).expect("anchor");
         let item = yaml_field_item(
             &bytes,
             anchor_column,
@@ -1336,7 +1465,7 @@ mod tests {
         let (root, bytes) = parse(doc);
         let definition = definition_of(&root);
         let items = member_sequence(definition, "fields").expect("fields");
-        let (anchor_column, _) = seq_anchor(items).expect("anchor");
+        let (anchor_column, _) = seq_anchor(&bytes, items).expect("anchor");
         let item = yaml_field_item(
             &bytes,
             anchor_column,
@@ -1353,5 +1482,172 @@ mod tests {
         let edited = edit.apply(&bytes);
         let text = std::str::from_utf8(&edited).expect("utf8");
         assert!(!text.contains("\"\n"), "no bare LF after CRLF document");
+    }
+
+    /// Round 5, finding 1: appending to an existing QUOTED scalar list
+    /// (a command with non-empty `effects`) must anchor at the dash
+    /// column and re-parse cleanly — the previous column arithmetic
+    /// anchored scalar items two columns too deep and corrupted the file.
+    #[test]
+    fn scalar_list_append_after_quoted_items_reparses() {
+        let doc = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.archive\n    kind: command\n    version: 1\n    effects:\n      - \"tasks.archive.done\"\n    input:\n      - name: tasks\n        type: \"tasks.task\"\n";
+        let (root, bytes) = parse(doc);
+        let definitions = root.get("definitions").expect("definitions");
+        let Value::Seq(items) = &definitions.value else {
+            panic!("sequence")
+        };
+        let command = &items[0];
+        let block = effect_item_block(&bytes, command, "effects", "tasks.audit").expect("block");
+        assert_eq!(
+            block, "\n      - \"tasks.audit\"",
+            "anchored at the dash column"
+        );
+        let edit = plan_seq_scalar_insert(&bytes, command, "effects", "tasks.audit", &block)
+            .expect("edit");
+        let edited = String::from_utf8(edit.apply(&bytes)).expect("utf8");
+        assert!(
+            edited.contains("      - \"tasks.archive.done\"\n      - \"tasks.audit\"\n    input:"),
+            "{edited}"
+        );
+        // The edited bytes must re-parse (the reparse assert is the
+        // operation pipeline's corruption oracle).
+        let index = LineIndex::new(&edited);
+        let reparsed = parse_document(&edited, &index);
+        assert!(
+            matches!(reparsed, Ok(crate::loader::frontends::Parsed::Root(_))),
+            "{edited}"
+        );
+    }
+
+    /// Round 5, finding 1: the same for UNQUOTED scalar items — the
+    /// anchor rule must not depend on the scalar's quoting style.
+    #[test]
+    fn scalar_list_append_after_plain_items_reparses() {
+        let doc = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.archive\n    kind: command\n    version: 1\n    effects:\n      - tasks.archive.done\n      - tasks.archive.log\n";
+        let (root, bytes) = parse(doc);
+        let definitions = root.get("definitions").expect("definitions");
+        let Value::Seq(items) = &definitions.value else {
+            panic!("sequence")
+        };
+        let command = &items[0];
+        let block = effect_item_block(&bytes, command, "effects", "tasks.audit").expect("block");
+        assert_eq!(block, "\n      - \"tasks.audit\"");
+        let edit = plan_seq_scalar_insert(&bytes, command, "effects", "tasks.audit", &block)
+            .expect("edit");
+        let edited = String::from_utf8(edit.apply(&bytes)).expect("utf8");
+        assert!(
+            edited.contains("      - tasks.archive.log\n      - \"tasks.audit\""),
+            "{edited}"
+        );
+        let index = LineIndex::new(&edited);
+        assert!(matches!(
+            parse_document(&edited, &index),
+            Ok(crate::loader::frontends::Parsed::Root(_))
+        ));
+    }
+
+    /// Round 5, finding 1: a deeper-indented scalar list (dashes at
+    /// column 8) anchors at ITS OWN dash column, not the fixture's.
+    #[test]
+    fn scalar_list_append_follows_deeper_indentation() {
+        let doc = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.archive\n    kind: command\n    version: 1\n    effects:\n        - \"tasks.archive.done\"\n";
+        let (root, bytes) = parse(doc);
+        let definitions = root.get("definitions").expect("definitions");
+        let Value::Seq(items) = &definitions.value else {
+            panic!("sequence")
+        };
+        let command = &items[0];
+        let block = effect_item_block(&bytes, command, "effects", "tasks.audit").expect("block");
+        assert_eq!(block, "\n        - \"tasks.audit\"");
+        let edit = plan_seq_scalar_insert(&bytes, command, "effects", "tasks.audit", &block)
+            .expect("edit");
+        let edited = String::from_utf8(edit.apply(&bytes)).expect("utf8");
+        assert!(
+            edited.contains("        - \"tasks.archive.done\"\n        - \"tasks.audit\""),
+            "{edited}"
+        );
+        let index = LineIndex::new(&edited);
+        assert!(matches!(
+            parse_document(&edited, &index),
+            Ok(crate::loader::frontends::Parsed::Root(_))
+        ));
+    }
+
+    /// Round 5, finding 1: appending the whole `effects` member after a
+    /// sequence-valued member (`input:`) must insert after the block's
+    /// last content line — the zero-width container span previously
+    /// landed the insertion mid-token inside the last item.
+    #[test]
+    fn member_append_after_a_sequence_member_reparses() {
+        let doc = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.archive\n    kind: command\n    version: 1\n    input:\n      - name: tasks\n        type: \"tasks.task\"\n";
+        let (root, bytes) = parse(doc);
+        let definitions = root.get("definitions").expect("definitions");
+        let Value::Seq(items) = &definitions.value else {
+            panic!("sequence")
+        };
+        let command = &items[0];
+        let edit = plan_member_append(&bytes, command, "effects", "tasks.audit").expect("edit");
+        let edited = String::from_utf8(edit.apply(&bytes)).expect("utf8");
+        assert!(
+            edited.contains("        type: \"tasks.task\"\n    effects:\n      - \"tasks.audit\""),
+            "{edited}"
+        );
+        let index = LineIndex::new(&edited);
+        let reparsed = parse_document(&edited, &index);
+        assert!(
+            matches!(reparsed, Ok(crate::loader::frontends::Parsed::Root(_))),
+            "{edited}"
+        );
+    }
+
+    /// Round 5, finding 2: replacing a `returns` block that contains a
+    /// comment line refuses — the comment's ownership is ambiguous and
+    /// preservation wins over silent deletion.
+    #[test]
+    fn returns_replace_refuses_a_comment_inside_the_block() {
+        let doc = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.find_task\n    kind: query\n    version: 1\n    returns:\n      ref: \"tasks.text\"\n      # keep this explanation\n";
+        let (root, bytes) = parse(doc);
+        let definitions = root.get("definitions").expect("definitions");
+        let Value::Seq(items) = &definitions.value else {
+            panic!("sequence")
+        };
+        let query = &items[0];
+        let error = plan_returns_replace(&bytes, query, "tasks.text?").expect_err("refuses");
+        assert!(
+            matches!(
+                error,
+                ChangeError::SourcePreservation {
+                    detail: "comment-adjacent",
+                    ..
+                }
+            ),
+            "got {error:?}"
+        );
+    }
+
+    /// Round 5, finding 3: appending a definition under a file-trailing
+    /// comment refuses — the comment would silently re-home onto the
+    /// previous definition instead of closing the file.
+    #[test]
+    fn definition_append_refuses_a_file_trailing_comment() {
+        let doc = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.find_task\n    kind: query\n    version: 1\n    returns:\n      ref: \"tasks.text\"\n# list open work\n";
+        let (root, bytes) = parse(doc);
+        let definitions = root.get("definitions").expect("definitions");
+        let Value::Seq(items) = &definitions.value else {
+            panic!("sequence")
+        };
+        let nodes: Vec<&Node> = items.iter().collect();
+        let error =
+            plan_document_definition_append(&bytes, &nodes, "- id: x\n").expect_err("refuses");
+        assert!(
+            matches!(
+                error,
+                ChangeError::SourcePreservation {
+                    detail: "comment-adjacent",
+                    ..
+                }
+            ),
+            "got {error:?}"
+        );
     }
 }

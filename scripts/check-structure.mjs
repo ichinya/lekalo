@@ -29,6 +29,9 @@ const CANONICAL_ROOT_ENTRIES = new Set([
   "change-history.json"
 ]);
 const RUNTIME_ENTRIES = new Set(["import", "cache", "generated", "consumer", "privacy", "adapters"]);
+// The closed runtime top-level files: the issue #73 change provenance
+// registry (anchors transaction journals outside the transaction cache).
+const RUNTIME_FILES = new Set(["pending-transactions.json"]);
 // The governed issue #32 adapter store (docs/canonical-structure.md).
 const RUNTIME_ADAPTERS_CHILDREN = new Set([
   "packages", "quarantine", "staging", "evidence", "inventory.json"
@@ -180,6 +183,9 @@ function runtimePlacementFailure(entry, logicalPath) {
   const runtimePath = logicalPath.slice(".lekalo/".length);
   const segments = runtimePath.split("/");
   const top = segments[0];
+  if (segments.length === 1 && RUNTIME_FILES.has(top)) {
+    return entry.isFile() ? null : denied(["structure.runtime-unexpected-entry", logicalPath]);
+  }
   if (!RUNTIME_ENTRIES.has(top)) return denied(["structure.runtime-unexpected-entry", logicalPath]);
   if (segments.length === 1) return entry.isDirectory() ? null : denied(["structure.runtime-unexpected-entry", logicalPath]);
   if (["import", "cache", "generated"].includes(top)) return null;

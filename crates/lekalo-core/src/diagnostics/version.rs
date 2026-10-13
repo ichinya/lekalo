@@ -56,9 +56,19 @@ pub const REGISTRY_VERSION: &str = "0.6.4";
 /// Opt-in issue #84 union successor. Predecessor producers keep their exact pins.
 pub const SUCCESSOR_REGISTRY_VERSION: &str = "0.6.5";
 
-/// Issue #73 union successor: the exact 0.6.5 union plus the closed
-/// `change.*` family (`LEK-CHANGE-001..012`). Predecessor producers keep
+/// Issue #94 union successor: the 0.6.5 successor plus the closed
+/// `format.*` family (LEK-FORMAT-001..009). Predecessor producers keep
 /// their exact pins.
+pub const FORMAT_REGISTRY_VERSION: &str = "0.8.0";
+
+/// Issue #136 union successor: the merged `format.*` + `adoption.*`
+/// registry since the milestone integration merge. Predecessor producers
+/// keep their exact pins.
+pub const ADOPTION_REGISTRY_VERSION: &str = "0.8.0";
+
+/// Issue #73 union successor: the merged 0.8.0 format/adoption union
+/// plus the closed `change.*` family (`LEK-CHANGE-001..012`). Predecessor
+/// producers keep their exact pins.
 pub const CHANGE_REGISTRY_VERSION: &str = "0.8.0";
 
 /// The closed diagnostic schema version.

@@ -486,9 +486,17 @@ fn recovery_blocks_the_project_until_recover_runs() {
     std::fs::create_dir_all(&journal).expect("journal dir");
     std::fs::write(
         journal.join("journal.json"),
-        br#"{"transaction":"change-ab12cd34-1","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}"#,
+        br#"{"schemaVersion":"lekalo/change-journal/1","transaction":"change-ab12cd34-1","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}"#,
     )
     .expect("journal");
+    // Round 5: the durable provenance record a legitimate recovery
+    // verifies the journal against (a planted journal without it is
+    // refused by design).
+    std::fs::write(
+        sandbox.root.join(".lekalo/pending-transactions.json"),
+        br#"{"schemaVersion":"lekalo/change-pending/1","records":[{"transaction":"change-ab12cd34-1","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}]}"#,
+    )
+    .expect("pending registry");
     let selection = sandbox.selection();
     // Any reader fails closed while the journal exists. The registered
     // rule is admitted for the denied class (LEK-CHANGE-010, denied 3).

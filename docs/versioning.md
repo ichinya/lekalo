@@ -60,12 +60,16 @@ Issue #73 publishes the semantic change family at the product version of its
 implementation commit: `lekalo/change-{request,catalog,policy,plan,receipt,history}`
 carry `0.8.0`, the change catalog data document pins its own `0.8.0` identity,
 and the diagnostic registry takes the additive union successor `0.8.0`
-(exact `0.6.5` union plus the twelve `change.*` rules `LEK-CHANGE-001..012`;
+(the merged milestone union — every `0.6.5` entry plus the closed
+`format.*` (issue #94) and `adoption.*` (issue #136) families — plus the
+twelve `change.*` rules `LEK-CHANGE-001..012` (554 entries);
 predecessor producers keep their exact pins, and registry selection is a
 three-step chain 0.6.4 → 0.6.5 → 0.8.0, never a version-string replacement).
 The canonical change history sidecar `lekalo/change-history.json` is admitted
 as an optional canonical root entry, and `.lekalo/cache/change/<transaction-id>/`
-holds the journal and recovery material under the existing cache home. The
+holds the journal and recovery material under the existing cache home while
+the governed runtime file `.lekalo/pending-transactions.json` durably pins
+every pending transaction's provenance outside the cache home. The
 accepted Model stays `0.2.16`: declared field defaults and wire values decode
 in the closed request surface and refuse with the registered unsupported
 outcome until a reviewed Model successor lands, and unchanged contracts keep

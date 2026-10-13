@@ -2264,7 +2264,7 @@
       "id": "contract:contracts/change-catalog.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-catalog.v0.8.0.json",
-      "sourceDigest": "sha256:f6772bead434a180d374d219b58afdff207f766e98325c85cf3cf45da1d783de",
+      "sourceDigest": "sha256:c26af32560a12e1c930c9a9cb1895d922600662ea54cb88ce90bcdc934eb4b35",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2507,7 +2507,7 @@
       "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
-      "sourceDigest": "sha256:ab4c1d782b23838f2a955e5a119d33a1014042dbac2b91e29a12463cabfd22b4",
+      "sourceDigest": "sha256:5271715b8c80e62cdb369354ff03fdb8f53d599e54da99a745fc055a8483c492",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2552,7 +2552,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.8.0.json",
-      "sourceDigest": "sha256:c9f76a4f77a551adf4287301d2ee4d6921ce2ce15a39455f8215bc340c6078f3",
+      "sourceDigest": "sha256:f22dc37f184acd765131320a667b59fdff95959e67ec2498832c98d7dd925d47",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

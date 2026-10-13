@@ -484,9 +484,19 @@ fn recovery_barrier_blocks_readers_until_recover_succeeds() {
     std::fs::create_dir_all(&journal_dir).expect("journal dir");
     std::fs::write(
         journal_dir.join("journal.json"),
-        br#"{"transaction":"change-ab12cd34-1","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}"#,
+        br#"{"schemaVersion":"lekalo/change-journal/1","transaction":"change-ab12cd34-1","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}"#,
     )
     .expect("journal");
+    plant_pending(
+        &sandbox,
+        serde_json::json!([{
+            "transaction": "change-ab12cd34-1",
+            "planId": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "state": "staging",
+            "files": [],
+            "history": false,
+        }]),
+    );
     // Readers fail closed while the journal exists.
     let request = add_priority_request();
     let error = prepare(&sandbox, &request).expect_err("barrier");
@@ -504,6 +514,11 @@ fn recovery_barrier_blocks_readers_until_recover_succeeds() {
     assert!(change::pending_transactions(Some(&sandbox.selection_str()))
         .expect("pending")
         .is_empty());
+    // Round 5: the provenance record is consumed with the journal — no
+    // dangling pin survives a completed recovery.
+    let registry = std::fs::read_to_string(sandbox.root.join(".lekalo/pending-transactions.json"))
+        .unwrap_or_default();
+    assert!(!registry.contains("change-ab12cd34-1"), "{registry}");
     prepare(&sandbox, &request).expect("prepares after recovery");
 }
 
@@ -516,7 +531,7 @@ fn recovery_refuses_a_journal_path_that_escapes_the_project_root() {
     std::fs::create_dir_all(&journal_dir).expect("journal dir");
     std::fs::write(
         journal_dir.join("journal.json"),
-        br#"{"transaction":"change-escape01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"replacing","files":[{"path":"../le73-ESCAPE.txt","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false}],"history":false}"#,
+        br#"{"schemaVersion":"lekalo/change-journal/1","transaction":"change-escape01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"replacing","files":[{"path":"../le73-ESCAPE.txt","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false}],"history":false}"#,
     )
     .expect("journal");
     let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-escape01")
@@ -544,7 +559,7 @@ fn recovery_refuses_an_absolute_and_absolute_windows_journal_path() {
     std::fs::create_dir_all(&journal_dir).expect("journal dir");
     std::fs::write(
         journal_dir.join("journal.json"),
-        br#"{"transaction":"change-absol001","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"replacing","files":[{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false},{"path":"/etc/lekalo-pwn","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false}],"history":false}"#,
+        br#"{"schemaVersion":"lekalo/change-journal/1","transaction":"change-absol001","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"replacing","files":[{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false},{"path":"/etc/lekalo-pwn","beforeDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","afterDigest":"sha256:0000000000000000000000000000000000000000000000000000000000000000","creation":false}],"history":false}"#,
     )
     .expect("journal");
     let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-absol001")
@@ -570,9 +585,26 @@ fn recovery_refuses_a_corrupted_backup_and_keeps_the_barrier() {
     std::fs::write(journal_dir.join("backups/0"), &entities).expect("backup");
     let wrong_digest = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
     let journal = format!(
-        r#"{{"transaction":"change-corrupt01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"replacing","files":[{{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"{wrong_digest}","afterDigest":"sha256:2222222222222222222222222222222222222222222222222222222222222222","creation":false}}],"history":false}}"#
+        r#"{{"schemaVersion":"lekalo/change-journal/1","transaction":"change-corrupt01","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"replacing","files":[{{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"{wrong_digest}","afterDigest":"sha256:2222222222222222222222222222222222222222222222222222222222222222","creation":false}}],"history":false}}"#
     );
     std::fs::write(journal_dir.join("journal.json"), journal).expect("journal");
+    // The matching durable provenance record: the probe targets the
+    // backup verification, which runs past the provenance gate.
+    plant_pending(
+        &sandbox,
+        serde_json::json!([{
+            "transaction": "change-corrupt01",
+            "planId": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "state": "replacing",
+            "files": [{
+                "path": "lekalo/modules/tasks/entities.yaml",
+                "beforeDigest": wrong_digest,
+                "afterDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "creation": false,
+            }],
+            "history": false,
+        }]),
+    );
     let before = sandbox.entities_bytes();
     let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-corrupt01")
         .expect_err("corrupt backup refused");
@@ -612,11 +644,26 @@ fn recovery_restores_verified_backups_and_reports_the_rollback() {
     std::fs::write(journal_dir.join("backups/0"), &original).expect("backup");
     let digest = |bytes: &[u8]| format!("sha256:{}", lekalo_core::digest::sha256_hex(bytes));
     let journal = format!(
-        r#"{{"transaction":"change-restore01","planId":"sha256:3333333333333333333333333333333333333333333333333333333333333333","state":"replacing","files":[{{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"{0}","afterDigest":"{1}","creation":false}}],"history":false}}"#,
+        r#"{{"schemaVersion":"lekalo/change-journal/1","transaction":"change-restore01","planId":"sha256:3333333333333333333333333333333333333333333333333333333333333333","state":"replacing","files":[{{"path":"lekalo/modules/tasks/entities.yaml","beforeDigest":"{0}","afterDigest":"{1}","creation":false}}],"history":false}}"#,
         digest(&original),
         digest(&interrupted)
     );
     std::fs::write(journal_dir.join("journal.json"), journal).expect("journal");
+    plant_pending(
+        &sandbox,
+        serde_json::json!([{
+            "transaction": "change-restore01",
+            "planId": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "state": "replacing",
+            "files": [{
+                "path": "lekalo/modules/tasks/entities.yaml",
+                "beforeDigest": digest(&original),
+                "afterDigest": digest(&interrupted),
+                "creation": false,
+            }],
+            "history": false,
+        }]),
+    );
     let outcome = change::recover_transaction(Some(&sandbox.selection_str()), "change-restore01")
         .expect("recovers");
     assert_eq!(outcome.transaction, "change-restore01");
@@ -640,8 +687,18 @@ fn recovery_reclaims_a_stale_writer_lock_but_honors_a_live_one() {
     std::fs::create_dir_all(&cache).expect("cache");
     let journal_dir = cache.join("change-stale0001");
     std::fs::create_dir_all(&journal_dir).expect("journal dir");
-    const STALE_JOURNAL: &[u8] = br#"{"transaction":"change-stale0001","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}"#;
+    const STALE_JOURNAL: &[u8] = br#"{"schemaVersion":"lekalo/change-journal/1","transaction":"change-stale0001","planId":"sha256:0000000000000000000000000000000000000000000000000000000000000000","state":"staging","files":[],"history":false}"#;
     std::fs::write(journal_dir.join("journal.json"), STALE_JOURNAL).expect("journal");
+    plant_pending(
+        &sandbox,
+        serde_json::json!([{
+            "transaction": "change-stale0001",
+            "planId": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "state": "staging",
+            "files": [],
+            "history": false,
+        }]),
+    );
     // A stale lock artifact: no process holds it, so recovery takes over.
     std::fs::write(cache.join("writer.lock"), b"").expect("stale lock");
     change::recover_transaction(Some(&sandbox.selection_str()), "change-stale0001")
@@ -651,6 +708,16 @@ fn recovery_reclaims_a_stale_writer_lock_but_honors_a_live_one() {
     // A live writer (this process holds the OS-held lock) denies recovery.
     std::fs::create_dir_all(&journal_dir).expect("journal dir again");
     std::fs::write(journal_dir.join("journal.json"), STALE_JOURNAL).expect("journal again");
+    plant_pending(
+        &sandbox,
+        serde_json::json!([{
+            "transaction": "change-stale0001",
+            "planId": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "state": "staging",
+            "files": [],
+            "history": false,
+        }]),
+    );
     let holder = lekalo_core::change::test_only_acquire_writer_lock(Some(&sandbox.selection_str()))
         .expect("test holder");
     let error = change::recover_transaction(Some(&sandbox.selection_str()), "change-stale0001")
@@ -1274,6 +1341,204 @@ fn definition_add_and_command_effect_compose_sequentially() {
 }
 
 #[test]
+fn command_effect_add_appends_to_an_existing_quoted_effects_list() {
+    // Round 5, finding 1: an ordinary command shape — existing non-empty
+    // `effects:` with a QUOTED item, plus a following `input:` member —
+    // must commit cleanly. Previously every non-synthesized shape failed
+    // the reparse assert (the insertion anchored two columns too deep).
+    let sandbox = Sandbox::new("fx-quoted");
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/commands.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.archive\n    kind: effect\n    version: 1\n    operation: update\n    entity: \"tasks.task\"\n  - id: tasks.audit\n    kind: effect\n    version: 1\n    operation: update\n    entity: \"tasks.task\"\n  - id: tasks.archive_task\n    kind: command\n    version: 1\n    effects:\n      - \"tasks.archive\"\n    input:\n      - name: tasks\n        type: \"tasks.task\"\n        required: true\n",
+    )
+    .expect("commands written");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "command-effect:add",
+            "command": "tasks.archive_task",
+            "effect": "tasks.audit"
+        }]
+    }))
+    .expect("serializes");
+    let receipt = apply_request(&sandbox, &request, "fx-quoted-v1", false).expect("commits");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    let commands_path = sandbox.root.join("lekalo/modules/tasks/commands.yaml");
+    let commands =
+        String::from_utf8(std::fs::read(commands_path).expect("commands")).expect("utf8");
+    assert!(
+        commands.contains("      - \"tasks.archive\"\n      - \"tasks.audit\"\n    input:"),
+        "{commands}"
+    );
+    // The candidate recompiled: the project still loads with the new
+    // reference resolved against the effect table.
+    let model = lekalo_core::loader::normalize_model(&sandbox.selection()).expect("loads");
+    assert!(model
+        .definitions
+        .iter()
+        .any(|definition| definition.id == "tasks.audit"));
+}
+
+#[test]
+fn command_effect_add_appends_to_an_existing_plain_effects_list() {
+    // Round 5, finding 1: the same ordinary shape with UNQUOTED scalar
+    // items must commit — the anchor rule must not depend on the scalar's
+    // quoting style.
+    let sandbox = Sandbox::new("fx-plain");
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/commands.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.archive\n    kind: effect\n    version: 1\n    operation: update\n    entity: \"tasks.task\"\n  - id: tasks.purge\n    kind: effect\n    version: 1\n    operation: update\n    entity: \"tasks.task\"\n  - id: tasks.audit\n    kind: effect\n    version: 1\n    operation: update\n    entity: \"tasks.task\"\n  - id: tasks.archive_task\n    kind: command\n    version: 1\n    effects:\n      - tasks.archive\n      - tasks.purge\n",
+    )
+    .expect("commands written");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "command-effect:add",
+            "command": "tasks.archive_task",
+            "effect": "tasks.audit"
+        }]
+    }))
+    .expect("serializes");
+    let receipt = apply_request(&sandbox, &request, "fx-plain-v1", false).expect("commits");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    let commands_path = sandbox.root.join("lekalo/modules/tasks/commands.yaml");
+    let commands =
+        String::from_utf8(std::fs::read(commands_path).expect("commands")).expect("utf8");
+    assert!(
+        commands.contains("      - tasks.purge\n      - \"tasks.audit\""),
+        "{commands}"
+    );
+    let model = lekalo_core::loader::normalize_model(&sandbox.selection()).expect("loads");
+    assert!(model
+        .definitions
+        .iter()
+        .any(|definition| definition.id == "tasks.audit"));
+}
+
+#[test]
+fn command_effect_add_appends_the_member_after_a_sequence_member() {
+    // Round 5, finding 1: a command whose last member is a nested list
+    // (`input:`) and which carries no `effects` member yet must commit —
+    // the member append previously derived its offset from a zero-width
+    // container span and corrupted the last item.
+    let sandbox = Sandbox::new("fx-member");
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/commands.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.audit\n    kind: effect\n    version: 1\n    operation: update\n    entity: \"tasks.task\"\n  - id: tasks.archive_task\n    kind: command\n    version: 1\n    input:\n      - name: tasks\n        type: \"tasks.task\"\n        required: true\n",
+    )
+    .expect("commands written");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "command-effect:add",
+            "command": "tasks.archive_task",
+            "effect": "tasks.audit"
+        }]
+    }))
+    .expect("serializes");
+    let receipt = apply_request(&sandbox, &request, "fx-member-v1", false).expect("commits");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    let commands_path = sandbox.root.join("lekalo/modules/tasks/commands.yaml");
+    let commands =
+        String::from_utf8(std::fs::read(commands_path).expect("commands")).expect("utf8");
+    assert!(
+        commands.contains(
+            "        type: \"tasks.task\"\n        required: true\n    effects:\n      - \"tasks.audit\""
+        ),
+        "{commands}"
+    );
+    let model = lekalo_core::loader::normalize_model(&sandbox.selection()).expect("loads");
+    assert!(model
+        .definitions
+        .iter()
+        .any(|definition| definition.id == "tasks.audit"));
+}
+
+#[test]
+fn operation_output_set_refuses_a_comment_inside_the_returns_block() {
+    // Round 5, finding 2: a comment line inside the replaced `returns`
+    // block has ambiguous ownership — the replacement previously deleted
+    // it silently. The refusal matches the removal paths.
+    let sandbox = Sandbox::new("fx-out-cmt");
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/queries.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.find_task\n    kind: query\n    version: 1\n    reads:\n      - \"tasks.task\"\n    returns:\n      ref: \"tasks.text\"\n      # keep this explanation\n",
+    )
+    .expect("queries written");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "operation-output:set",
+            "operationTarget": "tasks.find_task",
+            "type": { "list": { "ref": "tasks.task" } }
+        }]
+    }))
+    .expect("serializes");
+    let error = prepare(&sandbox, &request).expect_err("refuses");
+    assert!(
+        matches!(
+            error,
+            ChangeError::SourcePreservation {
+                detail: "comment-adjacent",
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+    // Nothing was written and the comment stays byte-identical.
+    assert!(!sandbox.history_path().exists());
+    let queries = String::from_utf8(
+        std::fs::read(sandbox.root.join("lekalo/modules/tasks/queries.yaml")).expect("queries"),
+    )
+    .expect("utf8");
+    assert!(queries.contains("# keep this explanation"));
+}
+
+#[test]
+fn definition_add_refuses_under_a_file_trailing_comment() {
+    // Round 5, finding 3: appending under a file-trailing comment would
+    // silently re-home the comment onto the previous definition. The
+    // bidirectional comment rule refuses instead.
+    let sandbox = Sandbox::new("fx-def-cmt");
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/queries.yaml"),
+        "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.find_task\n    kind: query\n    version: 1\n    reads:\n      - \"tasks.task\"\n    returns:\n      ref: \"tasks.text\"\n# list open work\n",
+    )
+    .expect("queries written");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "definition:add",
+            "kind": "query",
+            "module": "tasks",
+            "definition": {
+                "name": "open_tasks",
+                "reads": ["tasks.task"],
+                "returns": { "ref": "tasks.task" }
+            }
+        }]
+    }))
+    .expect("serializes");
+    let error = prepare(&sandbox, &request).expect_err("refuses");
+    assert!(
+        matches!(
+            error,
+            ChangeError::SourcePreservation {
+                detail: "comment-adjacent",
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+    assert!(!sandbox.history_path().exists());
+    let queries = String::from_utf8(
+        std::fs::read(sandbox.root.join("lekalo/modules/tasks/queries.yaml")).expect("queries"),
+    )
+    .expect("utf8");
+    assert!(queries.trim_end().ends_with("# list open work"));
+}
+
+#[test]
 fn signature_sets_replace_command_input_and_query_output() {
     let sandbox = Sandbox::new("signatures");
     // A command with a non-empty input and a query with a return, each in
@@ -1486,7 +1751,10 @@ fn generation_plan_pins_targets_and_the_lock_with_explicit_unknowns() {
 }
 
 /// Write one forged/observed journal into a sandbox transaction home
-/// (round 3 probe helper).
+/// together with its matching durable provenance record (round 5: a
+/// planted journal WITHOUT provenance is refused before any of the
+/// deeper gates — probes that exercise a deeper layer plant the record
+/// so the refusal they assert is the one they mean).
 fn plant_journal(
     sandbox: &Sandbox,
     transaction: &str,
@@ -1497,6 +1765,7 @@ fn plant_journal(
     let journal_dir = sandbox.root.join(".lekalo/cache/change").join(transaction);
     std::fs::create_dir_all(journal_dir.join("backups")).expect("journal dir");
     let journal = serde_json::json!({
+        "schemaVersion": "lekalo/change-journal/1",
         "transaction": transaction,
         "planId": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
         "state": state,
@@ -1508,7 +1777,42 @@ fn plant_journal(
         serde_json::to_string(&journal).expect("journal json"),
     )
     .expect("journal");
+    plant_pending(
+        sandbox,
+        serde_json::json!([{
+            "transaction": transaction,
+            "planId": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "state": state,
+            "files": files,
+            "history": history,
+        }]),
+    );
     journal_dir
+}
+
+/// Write the durable pending-registry document into a sandbox (merging
+/// by transaction id, mirroring the writer's own read-modify-write).
+fn plant_pending(sandbox: &Sandbox, records: serde_json::Value) {
+    std::fs::create_dir_all(sandbox.root.join(".lekalo")).expect("lekalo home");
+    let path = sandbox.root.join(".lekalo/pending-transactions.json");
+    let mut merged: Vec<serde_json::Value> = std::fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|document| document["records"].as_array().cloned())
+        .unwrap_or_default();
+    for record in records.as_array().into_iter().flatten() {
+        merged.retain(|existing| existing["transaction"] != record["transaction"]);
+        merged.push(record.clone());
+    }
+    std::fs::write(
+        &path,
+        serde_json::to_string(&serde_json::json!({
+            "schemaVersion": "lekalo/change-pending/1",
+            "records": merged,
+        }))
+        .expect("registry json"),
+    )
+    .expect("registry");
 }
 
 fn sha256_of(bytes: &[u8]) -> String {
@@ -1983,6 +2287,77 @@ fn unchanged_input_signature_is_a_byte_identical_no_op() {
         !after.contains("name: \"title\""),
         "the member stays verbatim, not reformatted"
     );
+}
+
+#[test]
+fn a_valid_foreign_project_ledger_cannot_authorize_replay_or_lookup() {
+    let source = Sandbox::new("foreign-source");
+    let destination = Sandbox::new("foreign-destination");
+    let request = add_priority_request();
+    apply_request(&source, &request, "foreign-ledger-key", false).expect("source commits");
+    let project_path = destination.root.join("lekalo/project.yaml");
+    let project = std::fs::read_to_string(&project_path).unwrap();
+    std::fs::write(&project_path, project.replace("\"tasks\"", "\"other\"")).unwrap();
+    std::fs::write(
+        destination.history_path(),
+        std::fs::read(source.history_path()).unwrap(),
+    )
+    .unwrap();
+    let before = std::fs::read(destination.entities_path()).unwrap();
+    let error = apply_request(&destination, &request, "foreign-ledger-key", false)
+        .expect_err("foreign replay refused");
+    assert!(
+        matches!(
+            error,
+            ChangeError::HistoryInvalid {
+                detail: "project-binding"
+            }
+        ),
+        "{error:?}"
+    );
+    let error = change::lookup_receipt(Some(&destination.selection_str()), "foreign-ledger-key")
+        .expect_err("foreign lookup refused");
+    assert!(
+        matches!(
+            error,
+            ChangeError::HistoryInvalid {
+                detail: "project-binding"
+            }
+        ),
+        "{error:?}"
+    );
+    assert_eq!(std::fs::read(destination.entities_path()).unwrap(), before);
+}
+
+#[test]
+fn policy_class_changes_are_bound_into_durable_execution_intent() {
+    let sandbox = Sandbox::new("intent-classes");
+    let request = add_priority_request();
+    let policy = evidence_policy();
+    let project = sandbox.selection_str();
+    let options = ApplyRequestOptions {
+        project: Some(&project),
+        request: &request,
+        policy: Some(&policy),
+        allow_breaking: false,
+        idempotency_key: "class-intent-key",
+        expect_plan: None,
+    };
+    change::apply_request(&options).expect("commits");
+    let before = std::fs::read(sandbox.history_path()).unwrap();
+    let mut altered: serde_json::Value = serde_json::from_slice(&policy).unwrap();
+    altered["allowBreakingClasses"] = serde_json::json!(["source-breaking"]);
+    let altered = serde_json::to_vec(&altered).unwrap();
+    let error = change::apply_request(&ApplyRequestOptions {
+        policy: Some(&altered),
+        ..options
+    })
+    .expect_err("different classes conflict");
+    assert!(
+        matches!(error, ChangeError::IdempotencyConflict),
+        "{error:?}"
+    );
+    assert_eq!(std::fs::read(sandbox.history_path()).unwrap(), before);
 }
 
 #[test]

@@ -114,7 +114,7 @@
       "title": "Set the output surface of one operation",
       "mutationClass": "member-destructive",
       "requiredEvidence": [
-        "command-return-review"
+        "query-return-review"
       ]
     },
     {

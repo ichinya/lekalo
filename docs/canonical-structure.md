@@ -35,6 +35,7 @@ the checker.
       <target-id>.yaml
   lekalo.lock
   .lekalo/
+    pending-transactions.json
     import/
     cache/
       cache.sqlite
@@ -83,7 +84,11 @@ All other shown files and directories are optional legal homes. The leaf names b
 
 `lekalo/**` plus `lekalo.lock` is the committed Lekalo project input.
 `.lekalo/**` is regenerated or direct runtime evidence and is never the only
-copy of a canonical semantic decision. Canonical model files are never stored
+copy of a canonical semantic decision. The one governed top-level runtime
+file is `.lekalo/pending-transactions.json` (#73): the durable change
+transaction provenance registry that anchors recovery journals living under
+`.lekalo/cache/change/` — a journal planted into the cache alone has no
+recovery authority. Canonical model files are never stored
 in `.ai-factory/qa`, generated rules or OpenSpec changes.
 
 ### Authority 0.2.16 compatibility

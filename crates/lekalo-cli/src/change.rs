@@ -9,9 +9,10 @@ use clap::{Args, Subcommand};
 use lekalo_core::change::{self, ChangeError, PrepareOptions, ReceiptState};
 use lekalo_core::DomainResult;
 use serde_json::Value as Json;
-/// The `change` subcommands: the P1 surface with the field vertical
-/// implemented; cataloged operations without an executor refuse through
-/// the registered unsupported outcome.
+/// The `change` subcommands: the P1 surface with the field, enum,
+/// definition, effect, and signature verticals implemented; cataloged
+/// operations without an executor refuse through the registered
+/// unsupported outcome.
 #[derive(Debug, Subcommand)]
 pub(crate) enum ChangeCommands {
     /// Add one field to an entity or value-object.

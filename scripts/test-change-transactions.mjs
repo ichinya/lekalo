@@ -14,6 +14,7 @@
 
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -113,10 +114,11 @@ function run(args) {
   }
   return { code: result.status, stdout, stderr, json };
 }
-const writeJournal = (id, files, extras = {}) => {
+const writeJournal = (id, files, extras = {}, provenance = true) => {
   const journalDir = join(sandbox, ".lekalo/cache/change", id);
   mkdirSync(journalDir, { recursive: true });
   const journal = {
+    schemaVersion: "lekalo/change-journal/1",
     transaction: id,
     planId: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
     state: "replacing",
@@ -125,6 +127,23 @@ const writeJournal = (id, files, extras = {}) => {
     ...extras,
   };
   writeFileSync(join(journalDir, "journal.json"), `${JSON.stringify(journal)}\n`);
+  if (provenance) {
+    // Round 5: the durable provenance record (merged by transaction) a
+    // legitimate recovery verifies the journal against.
+    const { schemaVersion: _version, state, ...pins } = journal;
+    const registryPath = join(sandbox, ".lekalo/pending-transactions.json");
+    let records = [];
+    if (existsSync(registryPath)) {
+      const existing = JSON.parse(readFileSync(registryPath, "utf8"));
+      records = existing.records ?? [];
+    }
+    records = records.filter((record) => record.transaction !== id);
+    records.push({ ...pins, state });
+    writeFileSync(
+      registryPath,
+      `${JSON.stringify({ schemaVersion: "lekalo/change-pending/1", records })}\n`,
+    );
+  }
   return journalDir;
 };
 const zeros = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
@@ -260,6 +279,60 @@ if (!existsSync(join(sandbox, ".lekalo/cache/change/change-gateforg1/journal.jso
   fail("forged-creation-barrier-lifted");
 }
 
+// 4d. Round 5, finding 1: a fully self-consistent forged journal (real
+//     backup bytes, pins matching the live project) has ZERO recovery
+//     authority without the durable provenance record under `.lekalo` —
+//     the overwrite exploit restores nothing and the delete exploit
+//     removes nothing; both keep the barrier with the journal intact.
+//     A journal planted via clone/checkout of the cache tree alone can
+//     never mint authority.
+freshSandbox("provenance");
+const provEntities = join(sandbox, "lekalo/modules/tasks/entities.yaml");
+const provOriginal = readFileSync(provEntities);
+const provAttack = Buffer.concat([provOriginal, Buffer.from("# ATTACKER-CONTROLLED LINE\n")]);
+const provDigest = (bytes) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+const overwriteDir = writeJournal(
+  "change-gateprov1",
+  [
+    {
+      path: "lekalo/modules/tasks/entities.yaml",
+      beforeDigest: provDigest(provAttack),
+      afterDigest: provDigest(provOriginal),
+      creation: false,
+    },
+  ],
+  {},
+  false,
+);
+mkdirSync(join(overwriteDir, "backups"), { recursive: true });
+writeFileSync(join(overwriteDir, "backups/0"), provAttack);
+const overwrite = run(["change", "recover", "--project", ".", "--transaction", "change-gateprov1", "--json"]);
+if (overwrite.code === 0) fail("forged-overwrite-accepted", overwrite.json);
+if (!overwrite.json?.reasonCodes?.includes("change.commit-failed")) {
+  fail("forged-overwrite-rule", { code: overwrite.code, json: overwrite.json });
+}
+if (!readFileSync(provEntities).equals(provOriginal)) fail("forged-overwrite-mutated");
+if (!existsSync(join(overwriteDir, "journal.json"))) fail("forged-overwrite-barrier-lifted");
+const deleteDir = writeJournal(
+  "change-gateprov2",
+  [
+    {
+      path: "lekalo/modules/tasks/entities.yaml",
+      beforeDigest: zeros,
+      afterDigest: provDigest(provOriginal),
+      creation: true,
+    },
+  ],
+  {},
+  false,
+);
+const forgedDelete = run(["change", "recover", "--project", ".", "--transaction", "change-gateprov2", "--json"]);
+if (forgedDelete.code === 0) fail("forged-delete-accepted", forgedDelete.json);
+if (!existsSync(provEntities)) fail("forged-delete-removed-target");
+if (!existsSync(join(deleteDir, "journal.json"))) fail("forged-delete-barrier-lifted");
+const provBlocked = run(["load", "--project", ".", "--json"]);
+if (provBlocked.code !== 3) fail("provenance-barrier-not-blocking", provBlocked.json);
+
 // 5. A forged history record never mints a replayed receipt (finding 5);
 //    every emitted document is duplicate-key-free JSON (finding 8).
 freshSandbox("forged");
@@ -372,21 +445,39 @@ const interruptedDir = join(sandbox, ".lekalo/cache/change/change-gateflow1");
 mkdirSync(join(interruptedDir, "backups"), { recursive: true });
 const entitiesNow = readFileSync(join(sandbox, "lekalo/modules/tasks/entities.yaml"));
 writeFileSync(join(interruptedDir, "backups/0"), entitiesNow);
+const interruptedFiles = [
+  {
+    path: "lekalo/modules/tasks/entities.yaml",
+    beforeDigest: apply.json.files[0].afterDigest,
+    afterDigest: apply.json.files[0].beforeDigest,
+    creation: false,
+  },
+];
 writeFileSync(
   join(interruptedDir, "journal.json"),
   `${JSON.stringify({
+    schemaVersion: "lekalo/change-journal/1",
     transaction: "change-gateflow1",
     planId: apply.json.planId,
     state: "replacing",
-    files: [
+    files: interruptedFiles,
+    history: false,
+  })}\n`,
+);
+// Round 5: the matching durable provenance record.
+writeFileSync(
+  join(sandbox, ".lekalo/pending-transactions.json"),
+  `${JSON.stringify({
+    schemaVersion: "lekalo/change-pending/1",
+    records: [
       {
-        path: "lekalo/modules/tasks/entities.yaml",
-        beforeDigest: apply.json.files[0].afterDigest,
-        afterDigest: apply.json.files[0].beforeDigest,
-        creation: false,
+        transaction: "change-gateflow1",
+        planId: apply.json.planId,
+        state: "replacing",
+        files: interruptedFiles,
+        history: false,
       },
     ],
-    history: false,
   })}\n`,
 );
 const blocked = run(["load", "--project", ".", "--json"]);
@@ -443,6 +534,7 @@ process.stdout.write(`${JSON.stringify({
     "stale-lock-reclaimed",
     "staging-interrupt-aborts-cleanly",
     "forged-creation-refused-barrier-kept",
+    "forged-journal-provenance-refused",
     "forged-ledger-refused",
     "dup-free-receipts",
     "pending-receipt-gated",
