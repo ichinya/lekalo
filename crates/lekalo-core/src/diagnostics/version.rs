@@ -61,14 +61,30 @@ pub const SUCCESSOR_REGISTRY_VERSION: &str = "0.6.5";
 /// their exact pins.
 pub const FORMAT_REGISTRY_VERSION: &str = "0.8.0";
 
-/// Issue #136 union successor: the merged `format.*` + `adoption.*`
-/// registry since the milestone integration merge. Predecessor producers
-/// keep their exact pins.
+/// Opt-in issue #136 union successor: the brownfield adoption service's
+/// nine `adoption.*` rules join the full 0.6.5 union. Predecessor
+/// producer pins (the 0.6.4 default and the 0.6.5 architecture union)
+/// are preserved verbatim; the diagnostic item wire stays 0.2.16.
+///
+/// After the milestone integration merges, this is the same merged
+/// `format.*` + `adoption.*` + `portability.*` union registry as the
+/// other 0.8.0 family constants.
 pub const ADOPTION_REGISTRY_VERSION: &str = "0.8.0";
 
-/// Issue #73 union successor: the merged 0.8.0 format/adoption union
-/// plus the closed `change.*` family (`LEK-CHANGE-001..012`). Predecessor
-/// producers keep their exact pins.
+/// The issue #19 M8 union successor: the merged registry plus the nine
+/// `portability.*` diagnostics (LEK-PORT-001..009). The new producer
+/// explicitly selects this registry; frozen predecessor outputs retain
+/// their pinned registries.
+pub const M8_REGISTRY_VERSION: &str = "0.8.0";
+
+/// The issue #51 union successor: the pilot composition family
+/// (`worklog-changelog.*`, LEK-WC-001..007) on top of the merged union.
+/// Predecessor producers keep their exact pins.
+pub const PILOT_REGISTRY_VERSION: &str = "0.8.0";
+
+/// Issue #73 union successor: the merged 0.8.0 format/adoption/
+/// portability/worklog-changelog union plus the closed `change.*` family
+/// (`LEK-CHANGE-001..012`). Predecessor producers keep their exact pins.
 pub const CHANGE_REGISTRY_VERSION: &str = "0.8.0";
 
 /// The closed diagnostic schema version.

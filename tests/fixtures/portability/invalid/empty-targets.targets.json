@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "lekalo/portability-targets/v0.8.0",
+  "identity": "dev.lekalo.portability-targets@0.8.0",
+  "defaultSource": "node-typescript",
+  "defaultDestinations": [
+    "go-service",
+    "php-laravel"
+  ],
+  "targets": []
+}

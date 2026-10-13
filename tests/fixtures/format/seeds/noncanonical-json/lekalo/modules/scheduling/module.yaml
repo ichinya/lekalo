@@ -1,0 +1,6 @@
+"definitions":
+  - "description": "Slot scheduling module"
+    "id": "scheduling"
+    "kind": "module"
+    "version": 1
+"schema_version": "0.2.16"

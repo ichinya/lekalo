@@ -21,3 +21,7 @@ adapters/php-laravel/adapter.php -whitespace
 # Generated Go clients are byte-compared by the client-SDK drift gate:
 # gofmt requires LF, so CRLF checkout conversion would flag the fixture.
 *.go text eol=lf
+
+# Issue #94 formatter fixtures are byte-compared on every OS: the CRLF and
+# Unicode portability seeds must never re-encode on checkout or commit.
+tests/fixtures/format/** -text

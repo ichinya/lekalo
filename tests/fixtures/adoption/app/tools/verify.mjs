@@ -1,0 +1,38 @@
+// The single bounded runner of the issue #136 verification
+// specification: it really executes the pinned native test and the
+// independent behavior oracle as child processes and aggregates both
+// markers. A shallow happy-path pass alone can never print both.
+//
+// The consumed paths arrive through the specification's tool argv —
+// the runner script, the native test, and the behavior oracle are all
+// pinned by the verification manifest, so a swapped or trivialized
+// input refuses at apply time instead of serving an unmeasured run.
+import { spawnSync } from "node:child_process";
+import process from "node:process";
+
+const [testPath = "test/tasks.test.mjs", oraclePath = "tools/oracle.mjs"] =
+  process.argv.slice(2);
+
+let failed = false;
+
+const testRun = spawnSync(process.execPath, ["--test", testPath], {
+  encoding: "utf8",
+});
+if (testRun.status !== 0 || !testRun.stdout.includes("TASK-TEST-OK")) {
+  failed = true;
+  process.stdout.write("native-test-failed\n");
+} else {
+  process.stdout.write("TASK-TEST-OK\n");
+}
+
+const oracleRun = spawnSync(process.execPath, [oraclePath], {
+  encoding: "utf8",
+});
+if (oracleRun.status !== 0 || !oracleRun.stdout.includes("ORACLE-OK")) {
+  failed = true;
+  process.stdout.write("behavior-oracle-failed\n");
+} else {
+  process.stdout.write("ORACLE-OK\n");
+}
+
+process.exit(failed ? 1 : 0);

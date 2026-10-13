@@ -1,0 +1,9 @@
+{"schema_version":"0.2.16","definitions":[
+{"id":"changelog.endpoint_create_draft","kind":"endpoint","version":1,"description":"HTTP entry point for explicit draft creation","invokes":"changelog.create_draft","method":"POST","path":"/changelog/drafts"},
+{"id":"changelog.endpoint_edit_draft","kind":"endpoint","version":1,"description":"HTTP entry point for explicit draft edits","invokes":"changelog.edit_draft","method":"PATCH","path":"/changelog/drafts/{entry_id}"},
+{"id":"changelog.endpoint_preview_entry","kind":"endpoint","version":1,"description":"HTTP entry point producing the canonical public preview","invokes":"changelog.preview_entry","method":"POST","path":"/changelog/drafts/{entry_id}/preview"},
+{"id":"changelog.endpoint_approve_entry","kind":"endpoint","version":1,"description":"HTTP entry point recording the approval binding","invokes":"changelog.approve_entry","method":"POST","path":"/changelog/drafts/{entry_id}/approval"},
+{"id":"changelog.endpoint_publish_entry","kind":"endpoint","version":1,"description":"HTTP entry point for the gated publication","invokes":"changelog.publish_entry","method":"POST","path":"/changelog/drafts/{entry_id}/publication"},
+{"id":"changelog.endpoint_withdraw_entry","kind":"endpoint","version":1,"description":"HTTP entry point for authorized withdrawal","invokes":"changelog.withdraw_entry","method":"DELETE","path":"/changelog/{entry_id}"},
+{"id":"worklog.binding_shared_task_identity","kind":"target-binding","version":1,"description":"Bind the shared task identity to the maintained planning pilot target","target":"php-laravel"}
+]}

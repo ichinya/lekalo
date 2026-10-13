@@ -189,8 +189,10 @@ impl DataFieldType {
     }
 }
 
-/// One scalar data value.
+/// One scalar data value; serializes transparently as the scalar itself,
+/// never an externally tagged `{"Token": ...}` wrapper.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
 pub enum Scalar {
     /// Bounded token.
     Token(String),

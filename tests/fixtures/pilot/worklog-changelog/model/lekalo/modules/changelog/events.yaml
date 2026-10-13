@@ -1,0 +1,4 @@
+{"schema_version":"0.2.16","definitions":[
+{"id":"changelog.entry_published","kind":"event","version":1,"description":"One entry reached the published state; the snapshot payload is the only public projection","visibility":"project","portability":"portable","payload":[{"name":"entry_id","type":{"ref":"changelog.entry_id"},"required":true},{"name":"tenant_id","type":{"ref":"worklog.tenant_id"},"required":true},{"name":"revision","type":{"ref":"worklog.record_revision"},"required":true}]},
+{"id":"changelog.entry_withdrawn","kind":"event","version":1,"description":"One entry was withdrawn; immutable history survives under restricted access","visibility":"project","portability":"portable","payload":[{"name":"entry_id","type":{"ref":"changelog.entry_id"},"required":true},{"name":"tenant_id","type":{"ref":"worklog.tenant_id"},"required":true}]}
+]}

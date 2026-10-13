@@ -190,6 +190,15 @@ pub enum DomainResult {
     UnsupportedOperation {
         diagnostics: DiagnosticSet,
     },
+    /// An unsupported refusal that carries the derived evidence behind
+    /// it: the derived report JSON and the human summary ride the
+    /// diagnostics so an unsupported surface never hides the rows that
+    /// produced the verdict (mirror of [`DomainResult::DeniedWithEvidence`]).
+    UnsupportedWithEvidence {
+        diagnostics: DiagnosticSet,
+        json: String,
+        human: String,
+    },
     UnsupportedVersion {
         diagnostics: DiagnosticSet,
     },
@@ -325,6 +334,17 @@ impl DomainResult {
         Self::Unavailable { diagnostics }
     }
 
+    /// An unsupported refusal carrying the evidence behind it: the
+    /// derived payload JSON and the human summary ride the envelope so
+    /// the unsupported user sees the rows that produced the verdict.
+    pub fn unsupported_json(json: String, human: String, diagnostics: DiagnosticSet) -> Self {
+        Self::UnsupportedWithEvidence {
+            diagnostics,
+            json,
+            human,
+        }
+    }
+
     pub fn unsupported(capability: Capability) -> Self {
         Self::Unsupported {
             capability,
@@ -349,7 +369,9 @@ impl DomainResult {
             Self::Invalid { .. } => Status::Invalid,
             Self::Denied { .. } | Self::DeniedWithEvidence { .. } => Status::Denied,
             Self::Unavailable { .. } => Status::Unavailable,
-            Self::Unsupported { .. } | Self::UnsupportedOperation { .. } => Status::Unsupported,
+            Self::Unsupported { .. }
+            | Self::UnsupportedOperation { .. }
+            | Self::UnsupportedWithEvidence { .. } => Status::Unsupported,
             Self::UnsupportedVersion { .. } => Status::UnsupportedVersion,
         }
     }
@@ -379,6 +401,7 @@ impl DomainResult {
             | Self::DeniedWithEvidence { diagnostics, .. }
             | Self::Unavailable { diagnostics }
             | Self::UnsupportedOperation { diagnostics }
+            | Self::UnsupportedWithEvidence { diagnostics, .. }
             | Self::UnsupportedVersion { diagnostics } => diagnostics.as_slice(),
             Self::Unsupported { diagnostics, .. } => diagnostics.as_slice(),
         }
@@ -399,9 +422,10 @@ impl DomainResult {
     /// Project the exact JSON envelope bytes (without trailing newline).
     pub fn to_json_string(&self) -> String {
         match self {
-            Self::DeniedWithEvidence { .. } => {
+            Self::DeniedWithEvidence { .. } | Self::UnsupportedWithEvidence { .. } => {
                 // The failure envelope with the derived report embedded:
-                // status denied, the payload, and the mirrored findings.
+                // status denied/unsupported, the payload, and the
+                // mirrored findings.
                 #[derive(Serialize)]
                 struct EvidenceEnvelope<'a> {
                     status: &'a str,
@@ -413,6 +437,9 @@ impl DomainResult {
                 }
                 let (json, diagnostics) = match self {
                     Self::DeniedWithEvidence {
+                        json, diagnostics, ..
+                    }
+                    | Self::UnsupportedWithEvidence {
                         json, diagnostics, ..
                     } => (json, diagnostics),
                     _ => unreachable!("arm guarded above"),
@@ -491,10 +518,12 @@ impl DomainResult {
                     .iter()
                     .map(|diagnostic| diagnostic.id())
                     .collect();
-                // The denied-with-evidence variant embeds its derived
-                // payload JSON (a denial never hides its rows).
+                // The denied/unsupported-with-evidence variants embed
+                // their derived payload JSON (a refusal never hides its
+                // rows).
                 let payload = match self {
-                    Self::DeniedWithEvidence { json, .. } => {
+                    Self::DeniedWithEvidence { json, .. }
+                    | Self::UnsupportedWithEvidence { json, .. } => {
                         serde_json::from_str::<Json>(json).ok()
                     }
                     _ => None,
@@ -542,6 +571,13 @@ impl DomainResult {
                 let mut lines: Vec<String> = human.lines().map(|line| line.to_owned()).collect();
                 for diagnostic in self.diagnostics() {
                     lines.extend(diagnostic_lines("denied", diagnostic));
+                }
+                lines.join("\n")
+            }
+            Self::UnsupportedWithEvidence { human, .. } => {
+                let mut lines: Vec<String> = human.lines().map(|line| line.to_owned()).collect();
+                for diagnostic in self.diagnostics() {
+                    lines.extend(diagnostic_lines("unsupported", diagnostic));
                 }
                 lines.join("\n")
             }

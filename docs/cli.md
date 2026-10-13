@@ -1140,6 +1140,15 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo adapter test` | `lekalo adapter test [OPTIONS] [PROGRAM_ARGS]...` | [reference](adapter-conformance.md) |
 | `lekalo adapter trust` | `lekalo adapter trust [OPTIONS] --level <LEVEL> <ID>` | [reference](adapter-install.md) |
 | `lekalo adapter update` | `lekalo adapter update [OPTIONS] <ID>` | [reference](adapter-install.md) |
+| `lekalo adoption` | `lekalo adoption [OPTIONS] <COMMAND>` | [reference](adoption.md) |
+| `lekalo adoption analyze` | `lekalo adoption analyze [OPTIONS]` | [reference](adoption.md) |
+| `lekalo adoption apply` | `lekalo adoption apply [OPTIONS] --plan <FILE> --verification <FILE> --confirm <DIGEST>` | [reference](adoption.md) |
+| `lekalo adoption confirm` | `lekalo adoption confirm [OPTIONS]` | [reference](adoption.md) |
+| `lekalo adoption coverage` | `lekalo adoption coverage [OPTIONS]` | [reference](adoption.md) |
+| `lekalo adoption recovery` | `lekalo adoption recovery [OPTIONS]` | [reference](adoption.md) |
+| `lekalo adoption refactor` | `lekalo adoption refactor [OPTIONS] --verification <FILE>` | [reference](adoption.md) |
+| `lekalo adoption rollback` | `lekalo adoption rollback [OPTIONS] --receipt <FILE>` | [reference](adoption.md) |
+| `lekalo adoption verify` | `lekalo adoption verify [OPTIONS] --plan <FILE> --verification <FILE>` | [reference](adoption.md) |
 | `lekalo ai-lint` | `lekalo ai-lint [OPTIONS]` | [reference](ai-lint.md) |
 | `lekalo architecture-profile` | `lekalo architecture-profile [OPTIONS] <COMMAND>` | [reference](architecture-profile.md) |
 | `lekalo architecture-profile assess` | `lekalo architecture-profile assess [OPTIONS] <--module <MODULE>\|--all>` | [reference](architecture-profile.md) |
@@ -1189,6 +1198,7 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo expressions eval` | `lekalo expressions eval [OPTIONS] --vectors <FILE> <PATH>` | [reference](expressions.md) |
 | `lekalo expressions render` | `lekalo expressions render [OPTIONS] --target <TARGET> <PATH>` | [reference](expressions.md) |
 | `lekalo expressions validate` | `lekalo expressions validate [OPTIONS] <PATH>` | [reference](expressions.md) |
+| `lekalo format` | `lekalo format [OPTIONS] [PATH]` | [reference](format.md) |
 | `lekalo generate` | `lekalo generate [OPTIONS] [PROGRAM_ARGS]...` | [reference](orchestration.md) |
 | `lekalo graph` | `lekalo graph [OPTIONS] <COMMAND>` | [reference](graph.md) |
 | `lekalo graph callers` | `lekalo graph callers [OPTIONS] <SYMBOL>` | [reference](graph.md) |
@@ -1246,6 +1256,10 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo openapi diff` | `lekalo openapi diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](openapi.md) |
 | `lekalo openapi inspect` | `lekalo openapi inspect [OPTIONS] --endpoint <SYMBOL> <PATH>` | [reference](openapi.md) |
 | `lekalo openapi render` | `lekalo openapi render [OPTIONS] <PATH>` | [reference](openapi.md) |
+| `lekalo pilot` | `lekalo pilot [OPTIONS] <COMMAND>` | [reference](m8/issue-51-implementation.md) |
+| `lekalo pilot admit` | `lekalo pilot admit [OPTIONS] <PATH> <COMPOSITION>` | [reference](m8/issue-51-implementation.md) |
+| `lekalo pilot validate` | `lekalo pilot validate [OPTIONS] <PATH>` | [reference](m8/issue-51-implementation.md) |
+| `lekalo portability` | `lekalo portability [OPTIONS]` | [reference](portability.md) |
 | `lekalo privacy` | `lekalo privacy [OPTIONS] <COMMAND>` | [reference](privacy-runtime.md) |
 | `lekalo privacy evaluate` | `lekalo privacy evaluate [OPTIONS] --decision <FILE>` | [reference](privacy-runtime.md) |
 | `lekalo privacy export` | `lekalo privacy export [OPTIONS] --destination <SPEC> <ARTIFACT>` | [reference](privacy-runtime.md) |
