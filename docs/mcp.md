@@ -35,7 +35,7 @@ every preserved upstream contract keeps its frozen version.
 | `contracts/mcp-tool-<name>-output.schema.v0.8.0.json` | Seven closed result envelopes: `status: valid` carries the preserved core receipt, every other status a typed `failure` branch. |
 | `contracts/mcp-resource.schema.v0.8.0.json` | `dev.lekalo.mcp-resource@0.8.0`; the five resource families. |
 | `contracts/mcp-graph-query.schema.v0.8.0.json` | Describing schema for the frozen `graph show`/`callers`/`path` receipts. |
-| `contracts/diagnostic-registry.v0.8.0.json` | Union successor: the `mcp.*` family `LEK-MCP-001..011` plus every predecessor entry, byte-preserved. |
+| `contracts/diagnostic-registry.v0.8.0.json` | M8 grand union: the current M8 `format.*` and `adoption.*` families plus `mcp.*` (`LEK-MCP-001..011`) and every frozen predecessor entry; all three Rust accessors resolve this same 0.8.0 identity. |
 
 Tool output payloads stay byte-identical with the core contracts:
 inspect `0.2.16`, impact `0.2.16`, context `0.2.16`, graph `0.2.16`,
@@ -67,7 +67,10 @@ explicitly admits Git access (`git.changedMode`).
 `lekalo_trace_export` accepts only an opaque `manifestRef` granted in the
 catalog; the bytes are read through the bounded no-follow reader and
 re-checked after parse. Changed inputs answer `mcp.snapshot-stale`, never
-a stale success.
+a stale success. `lekalo_target_status` uses the status report for the
+lock selector and the real doctor-kind report for inventory, trust and
+profiles; it never fabricates an empty `ready` panel (every selected
+receipt retains at least one check, as the pinned output schema requires).
 
 ## Resources
 
@@ -86,7 +89,10 @@ roots are never resource content. `resources/list` pages through an
 opaque snapshot-bound cursor: a cursor from a different enumeration
 snapshot is refused on the method's own error channel (`-32602
 mcp.snapshot-stale`), never answered from a mixed snapshot and never
-wrapped in a tool envelope.
+wrapped in a tool envelope. `resources/read` refusals likewise use
+that method's own JSON-RPC error channel with a registered `mcp.*`
+token; a resource failure never claims to be a `lekalo_inspect` tool
+result or carries a foreign tool schema identity.
 
 ## Authorization, scope and privacy
 
@@ -103,7 +109,10 @@ module closure leaves the allow-list refuses before reading
 (`mcp.scope-denied`), and full-scope operations (project summaries,
 module lists, graph export, validate, target status, changed impact,
 trace export) refuse under a group instead of fabricating a narrowed
-result. `resources/subscribe` and `resources/unsubscribe` refuse
+result. The post-run closure checks the complete failure diagnostics
+and reason codes as well as successful payloads: a domain-invalid
+response cannot disclose an excluded module's identity by failing.
+`resources/subscribe` and `resources/unsubscribe` refuse
 (`-32601 subscriptions-not-implemented`): no watcher ships, so an inert
 registration — one the server could never honor — is never acknowledged,
 whatever the identity (review r2 F3/codex 13).
@@ -116,19 +125,27 @@ the final Unix open) plus a re-verified chain after the read (TOCTOU
 guard), and bounded reads — and hardlink aliases refuse on both
 platforms through the link count (Unix `nlink`; Windows
 `GetFileInformationByHandle`'s `nNumberOfLinks`), so an in-root second
-name of out-of-root bytes is never served. `lekalo_target_status` spawns
+name of out-of-root bytes is never served. The same alias policy also
+applies to the model loader (`project_fs::read_file_opt`) and the
+`lekalo.lock` snapshot leg, not only trace manifests; governed cache,
+bindings and artifact inputs are identity-pinned before/after a status
+projection. `lekalo_target_status` spawns
 `git` only when the catalog admits `git.changedMode`; without admission
 it serves the
 no-git projection with typed unavailable Git facts. Secret-shaped tool
 or resource output refuses with `mcp.sensitive-output` rather than
 redacting contract members silently: the screening pass is
-spelling-canonical — it folds ASCII case and admits `_`/`-` as pre-key
-separators before matching, so `PASSWORD`, `db_password`,
-`client_secret`, `aws_secret_access_key`, and `AUTHORIZATION:` are one
-spelling each — and matches only high-confidence shapes (private-key
-blocks, credential headers, assigned credential assignments), never
-prose, field names, or identifiers. The private-absolute-path needles
-are deliberately broader than a leading-slash match: the POSIX `/home/`,
+spelling-canonical — it folds ASCII case, removes `_`/`-` from both
+key names and scanned text while preserving original word boundaries,
+and recognizes plain, single and JSON-escaped quoted assignments. Thus
+`client_secret`, `client-secret`, `clientSecret`, `api-key`,
+`aws-secret-access-key`, `password='x'`, and embedded JSON assignments
+are one high-confidence credential class; `NotAPassword=x` remains
+benign. The pass also matches private-key blocks and credential
+headers. Private absolute paths match drive-letter shapes (`D:/...`)
+and boundary-rooted POSIX shapes carrying a private-signal segment
+(`/srv/private/...`); JSON pointers and relative project paths stay
+available. The established needles remain broader: the POSIX `/home/`,
 `/root/`, and `/users/` needles match any `home`/`root`/`users` path
 segment (so benign relative content like `app/home/page.tsx` also
 refuses), and the colon-less `/users/` needle is what catches the
@@ -143,8 +160,9 @@ refuses before allocating past the bound), response 1 MiB (ceiling
 response is substituted by the typed `mcp.output-limit` denial — never a
 partial frame), deadline 30 s (ceiling 120 s), four admitted concurrent
 calls (a timed-out worker keeps holding its slot until it finishes, so
-the bound counts real in-flight work; the sequential read loop is the
-queue), 128 semantic roots, page size 100 (ceiling 500), 256 watched
+the bound counts real in-flight work), **16 queued requests** (excess
+frames refuse with `mcp.request-limit` on their own ids while cancel and
+EOF retain priority), 128 semantic roots, page size 100 (ceiling 500), 256 watched
 identities, nesting depth 64. Caller parameters and catalog
 configuration may reduce a limit, never raise one. Deadlines answer the
 typed `mcp.timeout` tool error while the client is still waiting;
@@ -153,19 +171,25 @@ abandoned workers cannot deliver a late success.
 legacy `id` spelling is tolerated), suppresses the late result, and
 never gets a reply. A reader thread feeds the dispatcher, so a
 cancellation arriving while a call runs is observed live and its reply
-is suppressed; the registration covers only outstanding ids, so a
-reused id is never poisoned (review r2 F6), and a timed-out or
-cancelled worker keeps holding its slot until it finishes (the bound
-counts real in-flight work, F14). Cooperative mid-run interruption of a
-pure core traversal is deferred (see the deferral record below); the
-deadline and the concurrency bound cap the abandoned work.
+is suppressed; a queued call is cancellable too, before it executes.
+Only valid JSON-RPC 2.0 notification envelopes may mutate cancellation
+or handshake state; malformed cancellation frames refuse as invalid
+requests and never act. Unknown and completed ids are not registered,
+so a reused id is never poisoned. A timed-out/cancelled worker holds its
+slot until it finishes (the bound counts real in-flight work); its
+cooperative guard stops new admitted reads and Git child spawns after
+abandonment, and kills a bounded doctor Git child at its next poll.
+Pure core traversal mid-computation remains deferred (below).
 
 Duplicate JSON member names refuse the inbound frame before any map
 insertion (`mcp.duplicate-key`, last-key-wins is never an admission
 path), and a request other than `initialize`/`ping` before
 `notifications/initialized` is refused (`mcp.lifecycle-not-initialized`).
-`initialize` is single-shot: a second `initialize` after the handshake
-was answered is refused (`-32600 mcp.lifecycle-already-initialized`).
+`initialize` requires object params with a protocol version, capabilities
+object, and client name/version before it can advance the handshake;
+garbage or missing params refuse with `-32602`. It is single-shot: a
+second valid `initialize` after the handshake was answered is refused
+(`-32600 mcp.lifecycle-already-initialized`).
 Only implemented capabilities are advertised: the initialize answer
 reports `resources: {subscribe: false, listChanged: false}`.
 
@@ -182,6 +206,10 @@ reports `resources: {subscribe: false, listChanged: false}`.
   and its reply suppressed, but a pure core traversal is not interrupted
   mid-computation; the deadline and the concurrency bound cap the
   abandoned work (the timed-out worker keeps its slot until completion).
+  At CLI read/spawn checkpoints, cancelled or timed-out workers stop
+  starting new reads/processes; a child already spawned is polled and
+  killed by the doctor Git adapter. This is not full process isolation
+  or guaranteed interruption of arbitrary pure core traversal.
 
 ## Diagnostics
 
@@ -202,6 +230,7 @@ node scripts/test-mcp-host.mjs
 cargo test --locked -p lekalo-core --test mcp
 cargo test --locked -p lekalo-cli --test mcp
 cargo test --locked -p lekalo-cli --test mcp_review
+cargo test --locked -p lekalo-cli --test mcp_r5
 ```
 
 The stdio gate drives the real binary over a real pipe and validates

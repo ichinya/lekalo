@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:567dbc3b58f9000842ccc09bbc2f569c5fb5e40481a5ad5329960ce35ddc6d7e",
+  "cliSourceDigest": "sha256:fefa63fcfdbdbd0fabac96270b08bdf497030ed86879d2a647cbb8424ef909a2",
   "p0Pages": [
     {
       "page": "README.md",
@@ -2433,7 +2433,7 @@
       "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
-      "sourceDigest": "sha256:1d80b42a9f3639769ffc6b77f2ea0c4db43bc31e2581c5fa2a395de29c8ede23",
+      "sourceDigest": "sha256:fde8391d3885ebd67824d19b241007164d62866c95d9321f73cfbad0553148fb",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2478,7 +2478,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.8.0.json",
-      "sourceDigest": "sha256:08147016c91261ad5460fdbdcbbc529484d8464fa473908129050c7e928dc2ba",
+      "sourceDigest": "sha256:e7b7028b8eaf82dcee2107ffa6a44776586fab0e26f407a73320fa8b38eec1ec",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
