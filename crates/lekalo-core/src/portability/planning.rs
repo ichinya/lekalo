@@ -170,7 +170,12 @@ fn typed_id_for<'a>(selected: &'a [&'a Subject]) -> impl Fn(&String) -> String +
 
 /// Build the reconciled migration surface with the closed planning rows.
 /// Every clipped list is reported through the assessment sink so the
-/// report names its own clipping.
+/// report names its own clipping. `affected` is the **untruncated
+/// domain join** of this scope: the coverage-gap verdict, its
+/// collect-evidence rows, and the affected counts are derived from the
+/// full join, never from the emission-clipped lists — a gap beyond the
+/// emitted join prefix still marks the surface incomplete and denies
+/// the strict gate.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn migration_surface(
     input: &Assessment,
@@ -308,7 +313,9 @@ pub(super) fn migration_surface(
     // The gate-coverage gaps of this exact scope: every affected
     // scenario no gate record covers becomes explicit collect-evidence
     // planning work — the missing coverage never disappears from the
-    // surface, and it marks the surface incomplete.
+    // surface, and it marks the surface incomplete. The join is the
+    // untruncated domain set, so a gap the emission clip would drop
+    // still carries its row and flips the typed verdict.
     let covered: BTreeSet<&str> = evidence
         .map(|e| {
             e.gates

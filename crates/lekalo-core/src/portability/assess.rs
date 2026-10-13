@@ -474,6 +474,14 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
     }
 
     let summaries = summarize(destinations, &subject_rows);
+    // The typed verdict input: the migration surface derives its
+    // coverage-gap verdict from the untruncated domain join, so the
+    // clone is taken before any emission clipping below touches the
+    // lists. A gap beyond the first 10,000 affected scenarios — a
+    // legal model inside `maxSubjects` — still marks the surface
+    // incomplete and denies the strict gate; the emitted lists are
+    // capped presentation, never the verdict.
+    let domain = affected.clone();
     // The published affected-join bounds: every clipped list and every
     // dropped join is an explicit analysis-incomplete marker, never a
     // silent truncation.
@@ -523,7 +531,7 @@ pub fn assess(input: &Assessment) -> Result<Report, DiagnosticSet> {
         evidence,
         &selected,
         &subject_rows,
-        &affected,
+        &domain,
         bounds.exhausted,
         &mut sink,
     );
