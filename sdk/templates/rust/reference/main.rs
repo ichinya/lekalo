@@ -31,9 +31,9 @@ fn member_of(value: &Value, key: &str) -> Value {
     value.get(key).cloned().unwrap_or(Value::Null)
 }
 
-// In-serve fault helpers (issue #106 review r4 #7): callback-crash makes
-// the real handler fail (the SDK serve loop answers with a closed error
-// envelope — the callback-failure contract), callback-hang stalls inside
+// Honest callback-error and real handler-crash (panic) lanes are separate.
+// The former returns a closed error, the latter exits without success.
+// callback-hang stalls inside
 // the handler past every deadline (host termination while the serve
 // loop is live), and log-verbose floods the bounded SDK logger from
 // inside the handler (a verbose run must still pass).
@@ -49,11 +49,14 @@ fn callback_faults(operation: &str) -> Option<Output> {
     if fault("callback-hang") {
         std::thread::sleep(std::time::Duration::from_secs(60));
     }
-    if fault("callback-crash") {
+    if fault("handler-crash") {
+        panic!("callback exploded inside the SDK serve loop");
+    }
+    if fault("callback-error") {
         return Some(error_output(
             "infrastructure",
-            "callback-crashed",
-            "the callback failed inside the SDK serve loop".to_owned(),
+            "callback-error",
+            "the handler deliberately refused".to_owned(),
         ));
     }
     None
@@ -63,6 +66,35 @@ struct ReferenceAdapter {
     identity: Value,
     write_scopes: Vec<String>,
     write_scope_refs: Vec<&'static str>,
+}
+
+// Deliberately invalid completed callback output for serve-level probes.
+fn replace_member(value: &mut Value, key: &str, member: Value) {
+    if let Value::Object(members) = value {
+        members.retain(|(name, _)| name != key);
+        members.push((key.to_owned(), member));
+    }
+}
+fn mutate_capabilities(mut caps: Value) -> Value {
+    for member in ["operations", "protocol_versions", "transports"] {
+        if fault(&format!("invalid-{member}")) { replace_member(&mut caps, member, Value::Array(vec![])); }
+    }
+    for member in ["max_entries", "max_writes"] {
+        if fault(&format!("invalid-{member}")) {
+            replace_member(&mut caps, "constraints", Value::Object(vec![(member.to_owned(), Value::Int(0))]));
+        }
+    }
+    if fault("invalid-capability") {
+        replace_member(&mut caps, "capabilities", Value::Object(vec![("not.a.real.capability".to_owned(), Value::Str("full".to_owned()))]));
+    }
+    if fault("invalid-identity") {
+        let mut identity = member_of(&caps, "adapter");
+        replace_member(&mut identity, "id", Value::Str("foreign-adapter".to_owned()));
+        replace_member(&mut caps, "adapter", identity);
+    }
+    if fault("invalid-negotiation") { replace_member(&mut caps, "protocol_versions", Value::Array(vec![Value::Str("9.9.9".to_owned())])); }
+    if fault("invalid-describe") { replace_member(&mut caps, "operations", Value::Array(vec![Value::Str("scan".to_owned())])); }
+    caps
 }
 
 fn deterministic_writes(request: &Value) -> (String, String, Vec<Value>) {
@@ -157,7 +189,7 @@ impl Adapter for ReferenceAdapter {
                     None,
                 );
                 match capabilities {
-                    Ok(value) => Output { capabilities: Some(value), ..Output::default() },
+                    Ok(value) => Output { capabilities: Some(mutate_capabilities(value)), ..Output::default() },
                     Err(_) => refused(),
                 }
             }

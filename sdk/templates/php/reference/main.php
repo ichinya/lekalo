@@ -51,6 +51,21 @@ $capabilitiesMap = [
     'verify.scenarios' => 'full',
 ];
 
+// Deliberately invalid completed callback output for serve-level probes.
+function mutateCapabilities(array $caps): array {
+    foreach (['operations', 'protocol_versions', 'transports'] as $member) {
+        if (fault("invalid-{$member}")) $caps[$member] = [];
+    }
+    foreach (['max_entries', 'max_writes'] as $member) {
+        if (fault("invalid-{$member}")) $caps['constraints'] = [$member => 0];
+    }
+    if (fault('invalid-capability')) $caps['capabilities'] = ['not.a.real.capability' => 'full'];
+    if (fault('invalid-identity')) $caps['adapter']['id'] = 'foreign-adapter';
+    if (fault('invalid-negotiation')) $caps['protocol_versions'] = ['9.9.9'];
+    if (fault('invalid-describe')) $caps['operations'] = ['scan'];
+    return $caps;
+}
+
 function deterministicWrites(array $request): array {
     $target = $request['target'] ?? ADAPTER_ID;
     $profile = $request['profile'] ?? 'default';
@@ -65,9 +80,9 @@ function planIdOf(array $writes): string {
     return Canonical::canonicalPlanId($writes);
 }
 
-// In-serve fault knobs (issue #106 review r4 #7): callback-crash fails
-// the real handler (the SDK serve loop answers with a closed error
-// envelope — the callback-failure contract), callback-hang stalls inside
+// Honest error-return and real exception lanes exercise distinct outcomes.
+// callback-error returns a closed error; handler-crash throws inside the
+// real handler and the runtime refuses with nonzero exit. callback-hang stalls inside
 // the handler past every deadline (host termination while the serve loop
 // is live), and log-verbose floods the bounded SDK logger from inside
 // the handler (a verbose run must still pass).
@@ -80,8 +95,11 @@ function callbackFaults(string $operation): ?array {
     if (fault('callback-hang')) {
         sleep(60);
     }
-    if (fault('callback-crash')) {
-        return ['error' => ['errorClass' => 'infrastructure', 'errorCode' => 'callback-crashed', 'message' => 'the callback failed inside the SDK serve loop']];
+    if (fault('handler-crash')) {
+        throw new \RuntimeException('callback exploded inside the SDK serve loop');
+    }
+    if (fault('callback-error')) {
+        return ['error' => ['errorClass' => 'infrastructure', 'errorCode' => 'callback-error', 'message' => 'the handler deliberately refused']];
     }
     return null;
 }
@@ -105,7 +123,7 @@ $handlers = [
         if ($failed !== null) {
             return $failed;
         }
-        return Build::buildCapabilities(
+        $caps = Build::buildCapabilities(
             $identity,
             ['0.3.2'],
             ['bind', 'clean', 'describe', 'generate', 'plan-clean', 'plan-native', 'scan', 'validate', 'verify'],
@@ -118,6 +136,7 @@ $handlers = [
             true,
             $capabilitiesMap
         );
+        return mutateCapabilities($caps);
     },
     'generate' => function (array $request) use ($writeScopes) {
         $failed = callbackFaults('generate');

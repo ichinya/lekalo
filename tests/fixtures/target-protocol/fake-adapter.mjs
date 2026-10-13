@@ -264,12 +264,15 @@ const request = JSON.parse(readRequest());
 
 // In-serve fault knobs (issue #106 review r4 #7): the same closed
 // vocabulary as the SDK reference templates, so the lifecycle recipe
-// matrix stays uniform across lanes. callback-crash answers with a
+// matrix stays uniform across lanes. callback-error answers with a
 // closed error envelope (the callback-failure contract), callback-hang
 // stalls past every deadline, and log-verbose floods bounded stderr
 // without disturbing the run.
-if (fault("callback-crash")) {
-  fail(request, "infrastructure", "callback-crashed", "the callback failed inside the serve loop");
+if (fault("handler-crash")) {
+  throw new Error("callback exploded inside the control handler");
+}
+if (fault("callback-error")) {
+  fail(request, "infrastructure", "callback-error", "the handler deliberately refused");
   process.exit(0);
 }
 if (fault("log-verbose")) {

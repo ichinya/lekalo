@@ -51,6 +51,7 @@
  * failure report on stderr otherwise.
  */
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -100,9 +101,11 @@ const RUNNERS = {
   typescript: { command: process.execPath, args: ["test/vectors.mjs"], cwd: join(ROOT, "sdk/typescript"), label: "node test/vectors.mjs" },
 };
 
+const trace = (message) => { if (process.env.LEKALO_SDK_VECTOR_TRACE === "1") process.stderr.write(`[adapter-sdk-vectors] ${message}\n`); };
 const verdicts = {};
 const missing = [];
 for (const lang of languages) {
+  trace(`runner ${lang}`);
   const runner = RUNNERS[lang];
   if (!existsSync(join(ROOT, "sdk", lang))) {
     missing.push(lang);
@@ -332,12 +335,13 @@ for (const build of templateBuilds) {
  * the reference templates (null = none). A hostile recipe must never
  * report pass; a cooperative recipe must report pass. The in-serve
  * knobs (issue #106 review r4 #7) drive the real SDK paths inside the
- * serve loop: callback-crash fails the handler (closed error envelope),
+ * serve loop: callback-error returns an error, handler-crash throws/panics,
  * callback-hang stalls the handler past every deadline, and log-verbose
  * floods the bounded SDK logger from inside the handler. */
 const MODE_FAULTS = {
   cooperative: null,
-  "callback-crash": "callback-crash",
+  "callback-error": "callback-error",
+  "handler-crash": "handler-crash",
   "stdout-noise": "garbage",
   "stderr-verbose": "log-verbose", // bounded logging must not disturb a good run
   slow: "callback-hang", // deadline enforcement with the serve loop live
@@ -393,6 +397,7 @@ const assertTerminal = (lane, recipe, report, expect) => {
 for (const lang of lifecycleLanguages) {
   const adapterArgs = [...lifecycleAdapters[lang]];
   for (const name of lifecycleNames) {
+    trace(`lifecycle ${lang}/${name}`);
     const recipe = JSON.parse(readFileSync(join(lifecycleDir, name), "utf8"));
     // The file-exchange transport recipe drives the file-only fixture
     // exactly once per invocation (from the named control lane): the
@@ -416,7 +421,7 @@ for (const lang of lifecycleLanguages) {
     if (hostile) lifecycleAccounting.hostile += 1;
     else lifecycleAccounting.cooperative += 1;
     const report = runBattery(argv, "strict", recipe.adapterMode === "slow" ? 3000 : 10000);
-    assertTerminal(lang, recipe, report, recipe.expectedTerminal);
+    assertTerminal(lang, recipe, report, recipe.expectedByLane?.[lang] ?? recipe.expectedTerminal);
   }
 }
 // Every non-file recipe must have executed on EVERY lane, and the
@@ -464,6 +469,10 @@ lifecycleAccounting.negativeControls = 0;
   lifecycleAccounting.negativeControls += 1;
 }
 
+// Exact emitted bytes, retained for production replay below. Invalid
+// callback output must never become a stdout success or a refusal object.
+const emittedOracleRows = [];
+
 // Real per-SDK lifecycle lanes beyond the battery (issue #106 review r4
 // #7): a POSITIVE valid file exchange and an oversized-response refusal
 // through the real bounded serializer, one leg per SDK lane — the
@@ -471,19 +480,24 @@ lifecycleAccounting.negativeControls = 0;
 // the SDK stdout budget.
 lifecycleAccounting.fileValidLegs = 0;
 lifecycleAccounting.outputLimitLegs = 0;
+lifecycleAccounting.invalidBuilderLegs = 0;
+lifecycleAccounting.realCrashLegs = 0;
 {
   const fileExchangeDir = mkdtempSync(join(tmpdir(), "adapter-sdk-vectors-file-exchange-"));
   process.on("exit", () => {
     try { rmSync(fileExchangeDir, { recursive: true, force: true }); } catch { /* best effort */ }
   });
-  const validDescribe = JSON.stringify({
+  // This sorted projection is the exact deterministic request the public
+  // production TargetClient emits with these limits. C-mode's child verifies
+  // it, and never rewrites the response to make an echo match.
+  const describeContext = {
     limits: { max_output_bytes: 8388608, timeout_ms: 60000 },
     operation: "describe",
     project_root: ".",
     protocol: "lekalo.target/v1",
     protocol_version: "0.3.2",
-    request_id: `req-${"e".repeat(64)}`,
-  });
+  };
+  const validDescribe = JSON.stringify({ ...describeContext, request_id: `req-${createHash("sha256").update(JSON.stringify(describeContext)).digest("hex")}` });
   // A VALID request declaring max_output_bytes:1 (the wire minimum):
   // every legal envelope exceeds one byte, so the completed response
   // must refuse at the bounded serializer — nonzero exit, empty stdout,
@@ -524,6 +538,34 @@ lifecycleAccounting.outputLimitLegs = 0;
       fail("lifecycle-output-limit", `${lang}: the oversize refusal wrote stdout bytes`);
     }
     lifecycleAccounting.outputLimitLegs += 1;
+    for (const mutant of ["operations", "protocol_versions", "transports", "max_entries", "max_writes", "capability", "identity", "negotiation", "describe"]) {
+      trace(`emission ${lang}/${mutant}`);
+      const leg = run(adapterArgs[0], [...adapterArgs.slice(1), "--lekalo-fault", `invalid-${mutant}`], fileExchangeDir, { input: Buffer.from(validDescribe), encoding: null, timeout: 60000 });
+      const stdout = leg.stdout ?? Buffer.alloc(0);
+      const stderr = leg.stderr ?? Buffer.alloc(0);
+      if (leg.error || stderr.length > 8192) fail("emission-negative-process", `${lang}/${mutant}: unbounded or failed process`);
+      if (stdout.length === 0) {
+        if (leg.status === 0) fail("emission-negative-empty", `${lang}/${mutant}: silently succeeded without an envelope`);
+      } else {
+        let response;
+        try { response = JSON.parse(stdout.toString("utf8")); } catch { fail("emission-negative-json", `${lang}/${mutant}`); }
+        if (response.status !== "error") fail("emission-negative-success", `${lang}/${mutant}: invalid callback output reached stdout without a closed error envelope`);
+        emittedOracleRows.push({ relative: `emission/${lang}/${mutant}`, bytes: stdout, request: Buffer.from(validDescribe) });
+      }
+      lifecycleAccounting.invalidBuilderLegs += 1;
+    }
+    const crash = run(adapterArgs[0], [...adapterArgs.slice(1), "--lekalo-fault", "handler-crash"], fileExchangeDir, { input: Buffer.from(validDescribe), encoding: null, timeout: 60000, env: { ...process.env, RUST_BACKTRACE: "0" } });
+    const crashStdout = crash.stdout ?? Buffer.alloc(0);
+    if (crash.error || (crash.stderr ?? Buffer.alloc(0)).length > 8192) fail("real-crash-bounds", lang);
+    if (lang === "typescript") {
+      let response;
+      try { response = JSON.parse(crashStdout.toString("utf8")); } catch { fail("real-crash-recovery", lang); }
+      if (response.status !== "error") fail("real-crash-success", lang);
+      emittedOracleRows.push({ relative: `emission/${lang}/handler-crash`, bytes: crashStdout, request: Buffer.from(validDescribe) });
+    } else if (crash.status === 0 || crashStdout.length > 0) {
+      fail("real-crash-refusal", `${lang}: a real throw/panic must exit nonzero with no stdout`);
+    }
+    lifecycleAccounting.realCrashLegs += 1;
   }
   const expectedLegs = lifecycleLanguages.filter((lane) => ALL.includes(lane)).length;
   if (lifecycleAccounting.fileValidLegs !== expectedLegs) {
@@ -655,7 +697,8 @@ const transportAccounting = { invalidBytes: 0, straddle: 0 };
 // layer it exercises, exclusions are justified inline, and the executed
 // rows must equal the inventory exactly.
 const oracle = join(ROOT, "target", "debug", process.platform === "win32" ? "adapter-sdk-oracle.exe" : "adapter-sdk-oracle");
-if (!existsSync(oracle)) {
+{
+  // Never certify sources with a stale already-present oracle binary.
   const build = run("cargo", ["build", "--locked", "-p", "lekalo-cli", "--bin", "adapter-sdk-oracle"]);
   if (build.status !== 0) fail("oracle-missing", (build.stderr ?? "").slice(-400));
 }
@@ -667,6 +710,10 @@ const oracleInventory = new Map();
 const pushRow = (relative, bytes, mode, accept, reason, compareReason = false) => {
   if (oracleInventory.has(relative)) fail("oracle-inventory-duplicate", relative);
   oracleInventory.set(relative, { bytes, mode, accept, reason, compareReason });
+};
+const pushClientRow = (relative, request, response, expect) => {
+  pushRow(relative, request, "C", expect.accepted, expect.reason, true);
+  oracleInventory.get(relative).responseBytes = response;
 };
 const readCorpusBytes = (relative) => readFileSync(join(corpusRoot, relative));
 for (const name of corpusFiles("valid")) {
@@ -705,6 +752,7 @@ for (const name of corpusFiles("invalid")) {
   pushRow(`invalid/${name}`, bytes, "B", false, expect.reason);
 }
 const semanticWithResponse = [];
+const semanticWithClientContext = [];
 for (const name of corpusFiles("semantic")) {
   const vector = JSON.parse(readFileSync(join(corpusRoot, "semantic", name), "utf8"));
   // Request-bearing semantic rows: the runners replay
@@ -731,7 +779,13 @@ for (const name of corpusFiles("semantic")) {
     const accept = vector.productionResponseAccepts !== undefined
       ? vector.productionResponseAccepts === true
       : true;
-    pushRow(`semantic/${name}#response`, Buffer.from(JSON.stringify(vector.response), "utf8"), "V", accept, undefined);
+    const responseBytes = Buffer.from(JSON.stringify(vector.response), "utf8");
+    pushRow(`semantic/${name}#response`, responseBytes, "V", accept, undefined);
+    if (vector.productionClientExpect !== undefined) {
+      if (vector.request?.operation !== "describe") fail("oracle-client-context", `${name}: C mode qualifies real describe sessions only`);
+      semanticWithClientContext.push(name);
+      pushClientRow(`semantic/${name}#client`, Buffer.from(JSON.stringify(vector.request)), responseBytes, vector.productionClientExpect);
+    }
   }
 }
 for (const name of corpusFiles("upgrade")) {
@@ -743,21 +797,26 @@ for (const name of corpusFiles("upgrade")) {
     : Buffer.from(JSON.stringify(row.request), "utf8");
   pushRow(`upgrade/${name}`, bytes, "B", row.accept === true, row.reason, true);
 }
+for (const row of emittedOracleRows) {
+  pushRow(row.relative, row.bytes, "V", true);
+  pushClientRow(`${row.relative}#client`, row.request, row.bytes, { accepted: false, reason: "operation-failed" });
+}
 const oracleRows = [...oracleInventory.entries()].map(([relative, entry]) => ({
   relative,
   hex: entry.bytes.toString("hex"),
+  responseHex: entry.responseBytes?.toString("hex"),
   mode: entry.mode,
   accept: entry.accept,
   reason: entry.reason,
   compareReason: entry.compareReason,
 }));
-const oracleInput = oracleRows.map((row) => `${row.mode}\t${row.hex}`).join("\n") + "\n";
+const oracleInput = oracleRows.map((row) => `${row.mode}\t${row.hex}${row.mode === "C" ? `\t${row.responseHex}` : ""}`).join("\n") + "\n";
 const oracleRun = spawnSync(oracle, [], { input: oracleInput, encoding: "utf8", timeout: 300_000, shell: process.platform === "win32" });
 if (oracleRun.status !== 0) fail("oracle-failed", (oracleRun.stderr ?? "").slice(-300));
 const oracleVerdicts = (oracleRun.stdout ?? "").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 if (oracleVerdicts.length !== oracleRows.length) fail("oracle-row-count", `${oracleVerdicts.length} vs ${oracleRows.length}`);
 let oracleChecked = 0;
-const oracleAccounting = { requests: 0, responses: 0, semanticRequests: 0, semanticResponses: 0 };
+const oracleAccounting = { requests: 0, responses: 0, semanticRequests: 0, semanticResponses: 0, clientContexts: 0, semanticClientContexts: 0 };
 // The semantic-response gap stays pinned (issue #106 review r4 #8):
 // every semantic vector that embeds a response must produce exactly one
 // response oracle row — the r4 gate replayed zero of the fifteen.
@@ -767,7 +826,10 @@ if (semanticWithResponse.length === 0) {
 oracleRows.forEach((row, index) => {
   const verdict = oracleVerdicts[index];
   oracleChecked += 1;
-  if (row.mode === "V") {
+  if (row.mode === "C") {
+    oracleAccounting.clientContexts += 1;
+    if (row.relative.startsWith("semantic/")) oracleAccounting.semanticClientContexts += 1;
+  } else if (row.mode === "V") {
     oracleAccounting.responses += 1;
     if (row.relative.startsWith("semantic/")) oracleAccounting.semanticResponses += 1;
   } else if (row.relative.startsWith("semantic/")) {
@@ -788,6 +850,12 @@ oracleRows.forEach((row, index) => {
 });
 if (oracleAccounting.semanticResponses !== semanticWithResponse.length) {
   fail("oracle-semantic-responses", `replayed ${oracleAccounting.semanticResponses} semantic responses, the corpus embeds ${semanticWithResponse.length}`);
+}
+if (semanticWithClientContext.length === 0 || oracleAccounting.semanticClientContexts !== semanticWithClientContext.length) {
+  fail("oracle-client-context-accounting", "every annotated real-client semantic row must execute");
+}
+if (oracleAccounting.clientContexts !== semanticWithClientContext.length + emittedOracleRows.length) {
+  fail("oracle-emission-client-accounting", "every emitted error envelope must reach the actual client");
 }
 // Byte-preservation regression (issue #106 review r4 #8): the invalid
 // UTF-8 row's raw 0xFF must appear in the framed hex fed to production.

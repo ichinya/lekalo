@@ -27,7 +27,11 @@ const read = (name) => readFileSync(join(CORPUS, name), "utf8");
 const utf8Fatal = (name) => {
   const buffer = readFileSync(join(CORPUS, name));
   try {
-    return { text: new TextDecoder("utf-8", { fatal: true }).decode(buffer), invalidBytes: false };
+    // `ignoreBOM: true` keeps a leading U+FEFF in the decoded text (the
+    // default strips it), so the codec — not the runner — refuses BOM
+    // rows exactly like the other runtimes and the production decoder
+    // (issue #106 review r5 #12).
+    return { text: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(buffer), invalidBytes: false };
   } catch {
     return { text: "", invalidBytes: true };
   }

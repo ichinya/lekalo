@@ -1,5 +1,0 @@
-{
-  "adapterMode": "callback-crash",
-  "case": "callback-crash",
-  "expectedTerminal": "operation-error"
-}

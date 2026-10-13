@@ -26,9 +26,9 @@ const WRITE_ROOT = ".lekalo/generated";
 // adapter must fail its recipe exactly like the control does. A run
 // without --lekalo-fault is fully cooperative.
 //
-// In-serve knobs (issue #106 review r4 #7): callback-crash throws inside
-// the real handler (the SDK serve loop must answer with a closed error
-// envelope, never a crash), callback-hang stalls inside the handler past
+// In-serve knobs: callback-error deliberately returns a closed error;
+// handler-crash actually throws (TS recovers to a closed error envelope).
+// callback-hang stalls inside the handler past
 // every deadline (host termination while the SDK serve loop is live),
 // and log-verbose floods the bounded SDK logger from inside the handler
 // (a verbose run must still pass). The pre-serve knobs remain for the
@@ -36,8 +36,10 @@ const WRITE_ROOT = ".lekalo/generated";
 const FAULT_ARG = process.argv.indexOf("--lekalo-fault");
 const FAULT = FAULT_ARG !== -1 && process.argv[FAULT_ARG + 1] ? process.argv[FAULT_ARG + 1] : "";
 const fault = (name) => FAULT.split(",").includes(name);
-const CALLBACK_CRASH = () => {
-  if (fault("callback-crash")) throw new Error("callback exploded inside the SDK serve loop");
+const CALLBACK_FAILURE = () => {
+  if (fault("handler-crash")) throw new Error("callback exploded inside the SDK serve loop");
+  if (fault("callback-error")) return { error: { errorClass: "infrastructure", errorCode: "callback-error", message: "the handler deliberately refused" } };
+  return null;
 };
 const AWAIT_CALLBACK_HANG = async () => {
   if (fault("callback-hang")) await new Promise((resolve) => setTimeout(resolve, 60_000));
@@ -68,6 +70,22 @@ const CAPABILITIES = {
   "scan.symbols": "full",
   "verify.scenarios": "full",
 };
+
+// Mutate completed callback output, not the runtime: emission negatives
+// must exercise the real validate-before-write boundary in serve().
+function mutateCapabilities(caps) {
+  for (const member of ["operations", "protocol_versions", "transports"]) {
+    if (fault(`invalid-${member}`)) caps[member] = [];
+  }
+  for (const member of ["max_entries", "max_writes"]) {
+    if (fault(`invalid-${member}`)) caps.constraints = { [member]: 0 };
+  }
+  if (fault("invalid-capability")) caps.capabilities = { "not.a.real.capability": "full" };
+  if (fault("invalid-identity")) caps.adapter = { ...caps.adapter, id: "foreign-adapter" };
+  if (fault("invalid-negotiation")) caps.protocol_versions = ["9.9.9"];
+  if (fault("invalid-describe")) caps.operations = ["scan"];
+  return caps;
+}
 
 function deterministicWrites(request) {
   const target = request.target ?? "sdk-reference";
@@ -110,8 +128,9 @@ process.exitCode = await serve({
     async describe({ log }) {
       LOG_VERBOSE(log);
       await AWAIT_CALLBACK_HANG();
-      CALLBACK_CRASH();
-      return buildCapabilities({
+      const failed = CALLBACK_FAILURE();
+      if (failed) return failed;
+      const caps = buildCapabilities({
         adapter: IDENTITY,
         capabilities: CAPABILITIES,
         irVersions: ["0.2.16"],
@@ -123,11 +142,13 @@ process.exitCode = await serve({
         transports: ["stdin", "file"],
         writeScopes: WRITE_SCOPES,
       });
+      return mutateCapabilities(caps);
     },
     async generate({ log, request }) {
       LOG_VERBOSE(log);
       await AWAIT_CALLBACK_HANG();
-      CALLBACK_CRASH();
+      const failed = CALLBACK_FAILURE();
+      if (failed) return failed;
       const { body, modelPath, writes } = deterministicWrites(request);
       assertWithinScopes(writes, WRITE_SCOPES);
       if (request.dry_run === false || fault("mutate-dry")) {

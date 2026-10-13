@@ -176,12 +176,12 @@ try {
       check(!/^s*lekalo-cores*=/m.test(manifest), "core-coupling", "no lekalo-core dependency");
       // The crate must build WITH its tests (no --no-verify escape hatch:
       // a lib that fails its own test suite is not a release candidate).
-      const build = run("cargo", ["build", "--quiet"], root);
+      const build = run("cargo", ["build", "--quiet", "--offline"], root);
       check(build.status === 0, "cargo-build", (build.stderr ?? "").slice(-300));
-      const testRun = run("cargo", ["test", "--quiet"], root);
+      const testRun = run("cargo", ["test", "--quiet", "--offline"], root);
       check(testRun.status === 0, "cargo-test", (testRun.stderr ?? "").slice(-300));
       // Package WITH verification (the default; no --no-verify).
-      const pkgResult = run("cargo", ["package", "--allow-dirty", "--quiet"], root);
+      const pkgResult = run("cargo", ["package", "--allow-dirty", "--quiet", "--offline"], root);
       check(pkgResult.status === 0, "cargo-package", (pkgResult.stderr ?? "").slice(-300));
       const crateDir = join(root, "target", "package");
       const crates = existsSync(crateDir) ? readdirSync(crateDir).filter((name) => name.endsWith(".crate")) : [];
@@ -252,7 +252,7 @@ try {
           "}",
           "",
         ].join("\n"));
-        const consumerTest = run("cargo", ["test", "--quiet"], rustConsumer);
+        const consumerTest = run("cargo", ["test", "--quiet", "--offline"], rustConsumer);
         check(consumerTest.status === 0, "crate-consumer-build", (consumerTest.stderr ?? consumerTest.stdout ?? "").slice(-300));
       }
     }

@@ -32,12 +32,18 @@ are closed Draft 2020-12 artifacts under `contracts/`.
   shapes, rendered from the pinned canonical contracts
   (`scripts/generate-adapter-sdk.mjs`; `--check` in CI proves the
   committed outputs byte-match regeneration).
-- **Strict decoding** — one bounded request document; duplicate keys
-  (including escaped spellings), explicit nulls, unknown members, wrong
-  tokens, unsupported exact versions, and out-of-bounds values are
-  refused before any callback with closed safe reason tokens.
-- **Semantic validation** — the cross-member request rules and the
-  response identity/pairing rules the shapes cannot express.
+- **Strict decoding** — one bounded request document; struct-position
+  duplicate keys (including escaped spellings), forbidden nulls, unknown
+  members, wrong types/tokens, unsupported exact versions, and
+  out-of-bounds values are refused before callbacks with safe reason
+  tokens. Admission follows the production decoder's defaults and plain
+  `Option` nullability. The response `capabilities.capabilities` map alone
+  permits duplicate keys with last-wins semantics; constraints may be
+  absent/null, while non-null values must be in `1..=1073741824`.
+- **Semantic validation** — cross-member request rules and response
+  echo/identity/pairing rules, including equality of describe evidence
+  and declared adapter identities, `describe` support, and the negotiated
+  version's presence in the declaration.
 - **Honest builders with validate-before-write** — success is
   operation-specific; a builder output that violates the closed
   contract is refused before a single stdout byte, and an undecodable
@@ -116,9 +122,15 @@ feature rows asserted individually.
 - **No hidden behavior.** No telemetry, no network calls, no ambient
   reads, no handshake caches. Logs are bounded, redacted, single-line
   stderr; stdout carries exactly one canonical response.
-- **Errors are classified, never swallowed.** A refused builder output
-  becomes a valid closed error envelope for a known request, or a
-  bounded stderr line and a nonzero exit for an undecodable one.
+- **Errors are classified, never swallowed.** Refused builder output
+  becomes a valid closed error envelope when possible, otherwise bounded
+  stderr and nonzero exit; a builder refusal object is never stdout.
+  Deliberate callback error returns are tested separately from actual
+  exceptions/panics. TypeScript recovers thrown handler exceptions to a
+  closed error envelope; Go/PHP refuse with nonzero exit and no stdout,
+  and Rust handler panics terminate the process. The host classifies real
+  crashes and owns cleanup/publication; the SDK does not promise Rust
+  panic recovery.
 - **Exact compatibility.** Unknown and future protocol versions fail
   before IR disclosure or callback execution; new operations under an
   old version fail; the generated matrix re-runs on every protocol
@@ -144,10 +156,18 @@ feature rows asserted individually.
 
 ```sh
 node scripts/test-adapter-sdk-contracts.mjs      # schemas + digests + matrix + determinism
-node scripts/test-adapter-sdk-vectors.mjs --language all   # 141 shared vectors x 4 codecs
+node scripts/test-adapter-sdk-vectors.mjs --language all   # corpus-derived shared vectors x 4 codecs
 node scripts/test-adapter-sdk-conformance.mjs --language all  # real confined battery + control parity
 node scripts/test-adapter-sdk-packages.mjs --verify           # packed integrity + detached consumer
 ```
+
+The vector gate replays the full wire corpus byte-for-byte. Annotated
+`productionClientExpect` describe rows and emitted error envelopes also
+run through the real `TargetClient::describe` using a disposable replay
+process: the child verifies the actual request and emits the original
+response bytes unchanged. This qualifies base-session echo, identity,
+negotiation and describe semantics, not filesystem apply authorization;
+the confined host battery remains the authority for planning/publication.
 
 CI runs the schema/generator gate in the contracts job, builds the
 templates in the same job that runs the conformance wrappers, and

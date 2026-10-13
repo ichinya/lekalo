@@ -45,6 +45,39 @@ type referenceAdapter struct {
 	writeScopes []string
 }
 
+// Deliberately invalid completed callback output for serve-level probes.
+func mutateCapabilities(value sdk.Value) sdk.Value {
+	caps := value.(map[string]any)
+	for _, member := range []string{"operations", "protocol_versions", "transports"} {
+		if fault("invalid-" + member) {
+			caps[member] = []any{}
+		}
+	}
+	for _, member := range []string{"max_entries", "max_writes"} {
+		if fault("invalid-" + member) {
+			caps["constraints"] = map[string]any{member: int64(0)}
+		}
+	}
+	if fault("invalid-capability") {
+		caps["capabilities"] = map[string]any{"not.a.real.capability": "full"}
+	}
+	if fault("invalid-identity") {
+		identity := map[string]any{}
+		for key, member := range caps["adapter"].(map[string]any) {
+			identity[key] = member
+		}
+		identity["id"] = "foreign-adapter"
+		caps["adapter"] = identity
+	}
+	if fault("invalid-negotiation") {
+		caps["protocol_versions"] = []any{"9.9.9"}
+	}
+	if fault("invalid-describe") {
+		caps["operations"] = []any{"scan"}
+	}
+	return caps
+}
+
 func deterministicWrites(request sdk.Value) (string, string, []any) {
 	target := sdk.GetString(request, "target")
 	if target == "" {
@@ -77,9 +110,9 @@ func (a *referenceAdapter) Identity() sdk.Value {
 }
 
 func (a *referenceAdapter) Handle(operation string, request sdk.Value) sdk.Output {
-	// In-serve fault knobs (issue #106 review r4 #7): callback-crash
-	// fails the real handler (the SDK serve loop answers with a closed
-	// error envelope — the callback-failure contract), callback-hang
+	// Honest callback-error and real handler-crash (panic) are separate.
+	// The runtime recovers the panic to a nonzero, empty-stdout refusal.
+	// callback-hang
 	// stalls inside the handler past every deadline (host termination
 	// while the serve loop is live), and log-verbose floods the bounded
 	// SDK logger from inside the handler (a verbose run must still pass).
@@ -91,8 +124,11 @@ func (a *referenceAdapter) Handle(operation string, request sdk.Value) sdk.Outpu
 	if fault("callback-hang") {
 		time.Sleep(60 * time.Second)
 	}
-	if fault("callback-crash") {
-		return sdk.Output{Error: [3]string{"infrastructure", "callback-crashed", "the callback failed inside the SDK serve loop"}, HasError: true}
+	if fault("handler-crash") {
+		panic("callback exploded inside the SDK serve loop")
+	}
+	if fault("callback-error") {
+		return sdk.Output{Error: [3]string{"infrastructure", "callback-error", "the handler deliberately refused"}, HasError: true}
 	}
 	switch operation {
 	case "bind":
@@ -142,7 +178,7 @@ func (a *referenceAdapter) Handle(operation string, request sdk.Value) sdk.Outpu
 		if err != nil {
 			return refused()
 		}
-		return sdk.Output{Capabilities: capabilities}
+		return sdk.Output{Capabilities: mutateCapabilities(capabilities)}
 	case "generate":
 		body, modelPath, writes := deterministicWrites(request)
 		for _, entry := range writes {

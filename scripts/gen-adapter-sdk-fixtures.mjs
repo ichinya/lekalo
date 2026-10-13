@@ -1046,14 +1046,15 @@ const lifecycleRecipes = [
   // paths INSIDE the serve loop, and each recipe's terminal binds to the
   // battery's specific failing check (id + detail) — an unrelated setup
   // failure qualifies no hostile class.
-  //   callback-crash: the handler itself fails; the SDK answers with a
+  //   callback-error: the handler deliberately returns an error;
   //     closed error envelope (feature/operation-failed on the handshake)
   //     — a process crash would be the old pre-serve knob's class.
   //   callback-hang (slow): the handler stalls past every deadline with
   //     the serve loop live; the host's deadline enforcement terminates.
   //   log-verbose (stderr-verbose): the bounded SDK logger floods from
   //     inside the handler; a verbose run must still pass.
-  { adapterMode: "callback-crash", case: "callback-crash", expectedTerminal: "operation-error" },
+  { adapterMode: "callback-error", case: "callback-error", expectedTerminal: "operation-error" },
+  { adapterMode: "handler-crash", case: "handler-crash", expectedTerminal: "process-failure", expectedByLane: { typescript: "operation-error" } },
   { adapterMode: "stdout-noise", case: "stdout-pollution", expectedTerminal: "response-invalid" },
   { adapterMode: "stderr-verbose", case: "bounded-stderr-logging", expectedTerminal: "ok" },
   { adapterMode: "slow", case: "deadline-termination", expectedTerminal: "timeout" },
@@ -1140,4 +1141,141 @@ for (const row of upgradeRows) {
   writeDoc("upgrade", row.name, { ...row, request: envelope });
 }
 
+// Round-5 differential regressions: each codec case is replayed by all
+// four SDKs AND the production raw-byte oracle. Semantic and callback
+// emission cases additionally bind the real production client boundary.
+const r5Valid = (name, base, mutate) => {
+  const doc = structuredClone(base); mutate(doc); writeWire('valid', `r5-${name}`, doc);
+};
+const r5Invalid = (name, base, mutate, reason = 'bounds') => {
+  const doc = structuredClone(base); mutate(doc); writeWire('invalid', `r5-${name}`, doc);
+  writeExpect(`r5-${name}`, { stage: 'decode', reason });
+};
+r5Invalid('profile-capabilities-empty', generateProfileRequest, d => d.profile_capabilities = []);
+r5Invalid('profile-capabilities-object', generateProfileRequest, d => d.profile_capabilities = {});
+r5Invalid('profile-capability-id-number', generateProfileRequest, d => d.profile_capabilities = [{ id: 5, support: 'full' }]);
+for (const [baseName, base] of Object.entries({ describe: describeRequest, scan: scanRequest, lint: lintRequest, generate: generateDryRequest, native: planNativeRequest })) {
+  for (const [type, value] of Object.entries({ number: 5, array: [1], object: {}, bool: true })) {
+    r5Invalid(`request-id-${baseName}-${type}`, base, d => d.request_id = value, 'request-id');
+  }
+}
+for (const member of ['scope', 'files', 'bindings', 'pins']) {
+  r5Invalid(`lint-missing-${member}`, lintRequest, d => delete d.lint_request[member], 'shape');
+}
+for (const [type, value] of Object.entries({ number: 5, float: 1.5, bool: true, array: [], object: {} })) {
+  r5Invalid(`lint-file-${type}`, lintRequest, d => d.lint_request.files = [value]);
+  r5Invalid(`lint-binding-path-${type}`, lintRequest, d => d.lint_request.bindings[0].path = value);
+  r5Invalid(`write-path-${type}`, generateResponseApply, d => d.writes[0].path = value);
+  r5Invalid(`scan-path-${type}`, scanResponse, d => d.result.entries[0].path = value);
+  r5Invalid(`native-path-${type}`, planNativeRequest, d => d.native_request.changes.files[0].path = value);
+}
+r5Invalid('target-array', generateDryRequest, d => d.target = [], 'grammar');
+r5Invalid('ir-path-object', validateRequest, d => d.ir_path = {}, 'grammar');
+r5Invalid('profile-digest-array', generateProfileRequest, d => d.profile_digest = []);
+r5Invalid('plan-id-array', cleanRequest, d => d.plan_id = []);
+for (const member of ['protocol_versions', 'operations', 'transports']) {
+  r5Invalid(`describe-empty-${member}`, describeResponse, d => d.capabilities[member] = []);
+}
+r5Invalid('describe-lint-on-base', describeResponse, d => d.capabilities.operations.push('lint'));
+for (const member of ['max_entries', 'max_writes']) {
+  r5Invalid(`constraint-zero-${member}`, describeResponse, d => d.capabilities.constraints = { [member]: 0 });
+  r5Invalid(`constraint-over-${member}`, describeResponse, d => d.capabilities.constraints = { [member]: 1073741825 });
+  r5Valid(`constraint-null-${member}`, describeResponseConstraints, d => d.capabilities.constraints[member] = null);
+}
+for (const id of ['not.a.real.capability', '5x', 'Bad.Key']) {
+  r5Invalid(`capability-key-${id.replaceAll('.', '-')}`, describeResponse, d => d.capabilities.capabilities[id] = 'full');
+}
+r5Invalid('lint-evidence-on-scan', scanResponse, d => d.result.lint_evidence = structuredClone(lintResponse.result.lint_evidence), 'shape');
+r5Invalid('lint-evidence-on-base', lintResponse, d => d.protocol_version = '0.3.2', 'shape');
+r5Invalid('lint-evidence-sequence-on-base', scanResponse, d => d.result = [true, false, [], [], [], structuredClone(planNativeResponse.result.native_plan), structuredClone(lintResponse.result.lint_evidence)], 'shape');
+r5Invalid('scan-references-null', scanResponseEvidence, d => d.result.entries[0].evidence.references = null, 'explicit-null');
+for (const member of ['guards', 'locations']) {
+  r5Invalid(`activation-${member}-object`, lintResponse, d => d.result.lint_evidence.records[0].activation[0][member] = {});
+  r5Invalid(`record-${member}-object`, lintResponse, d => d.result.lint_evidence.records[0][member] = {});
+}
+for (const [type, empty] of Object.entries({ object: {}, list: [] })) {
+  r5Valid(`changes-empty-${type}`, planNativeRequest, d => d.native_request.changes = empty);
+  r5Valid(`result-empty-${type}`, scanResponse, d => d.result = empty);
+  r5Valid(`evidence-empty-${type}`, scanResponseEvidence, d => d.result.entries[0].evidence = empty);
+  r5Valid(`constraints-empty-${type}`, describeResponse, d => d.capabilities.constraints = empty);
+}
+r5Valid('changes-sequence-prefix', planNativeRequest, d => d.native_request.changes = [d.native_request.changes.files]);
+r5Valid('result-sequence-prefix', validateResponseFindings, d => d.result = [true]);
+r5Valid('evidence-sequence-prefix', scanResponseEvidence, d => d.result.entries[0].evidence = [D('signature')]);
+r5Valid('constraints-sequence-prefix', describeResponse, d => d.capabilities.constraints = [1]);
+for (const [name, text] of Object.entries({ long: 's'.repeat(300), empty: '', astral: '😀'.repeat(100) })) {
+  r5Valid(`native-symbol-${name}`, planNativeRequest, d => d.native_request.changes.symbols = [text]);
+  r5Valid(`native-revision-${name}`, planNativeRequest, d => d.native_request.scan_ref.revision = text);
+}
+r5Valid('native-files-unordered', planNativeRequest, d => d.native_request.changes.files.reverse());
+r5Valid('describe-no-progress', describeResponse, d => delete d.capabilities.progress);
+r5Valid('constraints-null', describeResponse, d => d.capabilities.constraints = null);
+r5Valid('capability-map-empty', describeResponse, d => d.capabilities.capabilities = {});
+for (const value of ['', 'not-a-digest']) {
+  const name = `write-sha256-${value === '' ? 'empty' : 'plain'}`;
+  r5Valid(name, generateResponseApply, d => d.writes[0].sha256 = value);
+  // The wire is Option<String>; the production client's validate_writes
+  // still requires digest grammar. Moving this rule must not weaken emission.
+  const response = structuredClone(generateResponseApply);
+  response.writes[0].sha256 = value;
+  writeDoc('semantic', `r5-${name}`, {
+    kind: 'validate-before-write', request: generateApplyRequest, response,
+    expect: 'reject:write-digest', productionResponseAccepts: true,
+  });
+  writeDoc('semantic', `r5-build-${name}`, {
+    kind: 'build-success', request: generateApplyRequest,
+    builder: { identity: ADAPTER, fragments: { writes: response.writes, planId: generateApplyRequest.plan_id } },
+    expect: 'reject:writes',
+  });
+}
+for (const member of ['line', 'column', 'endLine', 'endColumn']) r5Valid(`span-${member}-zero`, lintResponse, d => d.result.lint_evidence.locations[0][member] = 0);
+{
+  const text = canonicalJson(describeResponse);
+  const marker = '"capabilities":{"generate.zod":';
+  const index = text.indexOf(marker) + '"capabilities":{'.length;
+  writeWire('valid', 'r5-capability-map-duplicate-last-wins', text.slice(0, index) + '"generate.zod":"unsupported",' + text.slice(index));
+  for (const [type, value] of Object.entries({ unknown: 'not-a-support-state', number: 5, object: {} })) {
+    writeWire('invalid', `r5-capability-map-overwritten-${type}`, text.slice(0, index) + `"generate.zod":${canonicalJson(value)},` + text.slice(index));
+    writeExpect(`r5-capability-map-overwritten-${type}`, { stage: 'decode', reason: 'duplicate-key' });
+  }
+  emitBytes('invalid/r5-response-bom.json', Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text)]));
+  writeExpect('r5-response-bom', { stage: 'decode', reason: 'not-json' });
+}
+const r5ContextRequest = { ...describeRequest, request_id: requestIdOf(describeRequest) };
+for (const mode of ['matching', 'permuted', 'foreign', 'negotiation', 'missing-describe', 'progress']) {
+  const response = structuredClone(describeResponse);
+  response.request_id = r5ContextRequest.request_id;
+  if (mode === 'permuted') response.capabilities.adapter = { version: ADAPTER.version, id: ADAPTER.id, digest: ADAPTER.digest };
+  if (mode === 'foreign') response.capabilities.adapter = { ...response.capabilities.adapter, id: 'foreign-adapter' };
+  if (mode === 'negotiation') response.capabilities.protocol_versions = ['9.9.9'];
+  if (mode === 'missing-describe') response.capabilities.operations = ['scan'];
+  if (mode === 'progress') response.progress = [];
+  const reason = mode === 'foreign' ? 'identity' : 'member';
+  const accepted = mode === 'matching' || mode === 'permuted';
+  const productionReason = mode === 'foreign' ? 'evidence' : mode === 'negotiation' ? 'negotiation' : mode === 'missing-describe' ? 'describe' : 'member';
+  writeDoc('semantic', `r5-describe-${mode}`, {
+    kind: 'validate-before-write', name: `r5-describe-${mode}`, request: r5ContextRequest, response,
+    expect: accepted ? 'accept' : `reject:${reason}`,
+    productionClientExpect: { accepted, ...(accepted ? {} : { reason: productionReason }) },
+  });
+  writeDoc('semantic', `r5-build-describe-${mode}`, {
+    kind: 'build-success', name: `r5-build-describe-${mode}`, request: r5ContextRequest,
+    builder: { identity: ADAPTER, capabilities: response.capabilities, fragments: mode === 'progress' ? { progress: [] } : {} },
+    expect: accepted ? 'accept' : `reject:${reason}`,
+  });
+}
+for (const [member, sdkReason, clientReason, value] of [
+  ['request_id', 'echo-request-id', 'request-id', `req-${'0'.repeat(64)}`],
+  ['protocol_version', 'echo-version', 'version', '0.6.4'],
+  ['operation', 'echo-operation', 'operation', 'scan'],
+]) {
+  const response = structuredClone(describeResponse);
+  response.request_id = r5ContextRequest.request_id;
+  response[member] = value;
+  writeDoc('semantic', `r5-describe-echo-${member}`, {
+    kind: 'validate-before-write', request: r5ContextRequest, response,
+    expect: `reject:${sdkReason}`,
+    productionClientExpect: { accepted: false, reason: clientReason },
+  });
+}
 process.stdout.write(`${JSON.stringify({ ok: true, gate: "adapter-sdk-fixtures", written: written.length })}\n`);
