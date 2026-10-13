@@ -347,10 +347,16 @@ pub fn boundary_verdict(
     evidence.extend(public_cycle_evidence);
     // Filter owned diagnostics when --module scopes the report; mandatory
     // cross-module errors (cycles, writes with foreign producers) stay.
+    // Boundary-reference findings match either party (r6 review finding
+    // devin F4): `--module <producer>` keeps the consumers violating
+    // that producer's exported boundary — the producer-side reviewer
+    // sees who crosses its boundary — symmetric with the exposure rules,
+    // which already match `producer == scope`.
     if let Some(scope) = module_filter {
         evidence.retain(|finding| match finding.rule {
             "module-api.symbol-not-exported" | "module-api.import-undeclared" => {
                 finding.consumer.as_deref() == Some(scope)
+                    || finding.producer.as_deref() == Some(scope)
             }
             "module-api.public-private-exposure" | "module-api.public-target-exposure" => {
                 finding.producer.as_deref() == Some(scope)

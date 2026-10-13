@@ -70,6 +70,35 @@ fn visibility_module_filter_scopes_owned_findings() {
         .evidence
         .iter()
         .all(|e| e.producer.as_deref() != Some("planner")));
+    // r6 review finding (devin F4): scoping to the producer keeps the
+    // consumer-side violations of that producer's boundary — the
+    // producer-side reviewer sees who crosses it — instead of hiding
+    // them behind a consumer-owns-the-fix convention.
+    assert!(
+        scoped.evidence.iter().any(|e| {
+            e.rule == "module-api.symbol-not-exported"
+                && e.consumer.as_deref() == Some("planner")
+                && e.producer.as_deref() == Some("tasks")
+        }),
+        "producer scope retains consumer-side violations: {:?}",
+        scoped.evidence
+    );
+    // Scoping to the violating consumer keeps its own findings too.
+    let consumer_scoped = check(
+        &attachment(visibility),
+        &compilation,
+        false,
+        Some("planner"),
+    )
+    .expect("consumer-scoped check runs");
+    assert!(consumer_scoped.evidence.iter().any(|e| {
+        e.rule == "module-api.symbol-not-exported"
+            && e.consumer.as_deref() == Some("planner")
+            && e.producer.as_deref() == Some("tasks")
+    }));
+    // An unrelated scope is refused, never a silent empty pass
+    // (finding 14).
+    assert!(check(&attachment(visibility), &compilation, false, Some("other")).is_err());
 }
 
 #[test]
@@ -1822,6 +1851,211 @@ fn every_public_field_flip_is_visible_to_the_diff() {
 }
 
 #[test]
+fn r6_required_additions_on_non_command_kinds_are_never_additive() {
+    // r6 review finding (devin F2): a required field added to a
+    // value-object is a real break regardless of anchor — source-breaking
+    // when consumers construct the shape in input position (a command
+    // input member references it), wire-breaking when the shape is
+    // output-only — and must never be classified bare `additive`, which
+    // would exclude it from the hard-impact export set and under-claim
+    // the required bump.
+    let base = serde_json::json!({
+        "schemaVersion": "lekalo/module-public-contract/v0.8.0",
+        "identity": "dev.lekalo.module-public-contract@0.8.0",
+        "producer": { "project": "flow", "module": "tasks" },
+        "apiVersion": "2.0.0",
+        "digest": "",
+        "pins": {
+            "modelVersion": "0.2.16",
+            "irDigest": format!("sha256:{}", "a".repeat(64)),
+            "sourceRevision": { "state": "unknown" }
+        },
+        "exports": [
+            { "export": "tasks.key", "kind": "scalar", "version": 0,
+              "base": "uuid" },
+            { "export": "tasks.input_vo", "kind": "value-object", "version": 0,
+              "fields": [{ "name": "key", "required": true,
+                           "type": { "ref": "tasks.key" } }] },
+            { "export": "tasks.output_vo", "kind": "value-object", "version": 0,
+              "fields": [{ "name": "key", "required": true,
+                           "type": { "ref": "tasks.key" } }] },
+            { "export": "tasks.run", "kind": "command", "version": 0,
+              "input": [{ "name": "payload", "required": true,
+                          "type": { "ref": "tasks.input_vo" } }],
+              "effects": [],
+              "errors": [] },
+            { "export": "tasks.read", "kind": "query", "version": 0,
+              "reads": [],
+              "returns": { "ref": "tasks.output_vo" },
+              "errors": [],
+              "cardinality": "one", "consistency": "strong",
+              "pagination": "none" }
+        ],
+        "publicDependencies": [],
+        "ports": [{ "port": "tasks.api",
+                    "operations": ["tasks.run", "tasks.read"] }],
+        "capabilities": [{ "capability": "http", "obligation": "required",
+                           "owner": null, "version": null }],
+        "deprecations": []
+    });
+    let mut base_sealed = base.clone();
+    seal_bundle(&mut base_sealed);
+    let base_bytes = serde_json::to_vec(&base_sealed).expect("serializes");
+    let diff = |mutate: &dyn Fn(&mut serde_json::Value)| {
+        let mut after = base.clone();
+        mutate(&mut after);
+        seal_bundle(&mut after);
+        let (report, _) = lekalo_core::module_api::compare_public(
+            &base_bytes,
+            &serde_json::to_vec(&after).expect("serializes"),
+            None,
+            None,
+        )
+        .expect("diff runs");
+        report
+    };
+    let member = |report: &lekalo_core::module_api::DiffReport| {
+        report
+            .changes
+            .iter()
+            .find(|change| change.member.as_deref() == Some("extra"))
+            .expect("required addition is a reported change")
+            .clone()
+    };
+    // Input-anchored: the command constructs tasks.input_vo, so the
+    // required addition is a source break for constructing consumers.
+    let report = diff(&|value| {
+        value["exports"][1]["fields"]
+            .as_array_mut()
+            .expect("input vo fields")
+            .push(serde_json::json!({ "name": "extra", "required": true,
+                                       "type": { "ref": "tasks.key" } }));
+    });
+    let change = member(&report);
+    assert_eq!(change.class, "source-breaking", "{change:?}");
+    assert_eq!(change.reason, "required-input-added", "{change:?}");
+    assert_eq!(report.verdict, "breaking");
+    assert_eq!(report.version_policy.expected.as_deref(), Some("major"));
+    // Output-only: never constructed, so the required addition is a
+    // wire-visible, policy-dependent break — never bare additive.
+    let report = diff(&|value| {
+        value["exports"][2]["fields"]
+            .as_array_mut()
+            .expect("output vo fields")
+            .push(serde_json::json!({ "name": "extra", "required": true,
+                                       "type": { "ref": "tasks.key" } }));
+    });
+    let change = member(&report);
+    assert_eq!(change.class, "wire-breaking", "{change:?}");
+    assert_eq!(change.reason, "required-field-added", "{change:?}");
+    assert_eq!(report.verdict, "breaking");
+    assert_eq!(report.version_policy.expected.as_deref(), Some("major"));
+    // Control: an optional addition on the same output-only shape stays
+    // additive surface.
+    let report = diff(&|value| {
+        value["exports"][2]["fields"]
+            .as_array_mut()
+            .expect("output vo fields")
+            .push(serde_json::json!({ "name": "extra", "required": false,
+                                       "type": { "ref": "tasks.key" } }));
+    });
+    let change = member(&report);
+    assert_eq!(change.class, "additive", "{change:?}");
+    assert_eq!(change.reason, "field-added", "{change:?}");
+}
+
+#[test]
+fn r6_lock_admission_enforces_the_published_schema() {
+    // r6 review finding (omp F2): the published lock schema is the exact
+    // admission grammar in both directions. A schema-invalid lock is
+    // refused input-invalid before any staleness comparison, and a
+    // duplicate `moduleId` pin can never mask a stale dependency through
+    // last-wins folding in `check_lock`'s supplied-deps map.
+    use lekalo_core::module_api::{check_lock, parse_lock, ConsumerLock};
+    let lock = serde_json::json!({
+        "schemaVersion": "lekalo/module-api-lock/v0.8.0",
+        "identity": "dev.lekalo.module-api-lock@0.8.0",
+        "consumer": "watcher",
+        "producer": { "project": "flow", "module": "tasks" },
+        "apiVersion": "1.0.0",
+        "digest": format!("sha256:{}", "a".repeat(64)),
+        "policy": { "type": "version-range", "lower": "1.0.0",
+                    "lowerInclusive": true, "upper": "2.0.0",
+                    "upperInclusive": false },
+        "publicDependencies": [
+            { "moduleId": "shared",
+              "digest": format!("sha256:{}", "b".repeat(64)),
+              "apiVersion": null,
+              "exports": ["shared.task_id"] }
+        ],
+        "selected": ["tasks.read"]
+    });
+    let refuses = |value: &serde_json::Value, detail: &str| {
+        let error = parse_lock(&serde_json::to_vec(value).expect("serializes"))
+            .expect_err("schema-invalid lock refuses");
+        assert!(
+            error.as_slice().iter().any(|diagnostic| {
+                diagnostic.id() == "module-api.input-invalid"
+                    && matches!(
+                        diagnostic.data().get("detail"),
+                        Some(lekalo_core::diagnostics::DataValue::Token(found))
+                            if found == detail
+                    )
+            }),
+            "expected refusal {detail}: {:?}",
+            error.as_slice()
+        );
+    };
+    // Control: the well-formed lock parses and is fresh against itself.
+    let current: ConsumerLock = serde_json::from_value(lock.clone()).expect("lock shape");
+    assert!(parse_lock(&serde_json::to_vec(&lock).expect("serializes")).is_ok());
+    assert!(check_lock(&current, &current).is_empty());
+    // L1: duplicate dependency exports.
+    let mut mutated = lock.clone();
+    mutated["publicDependencies"][0]["exports"] =
+        serde_json::json!(["shared.task_id", "shared.task_id"]);
+    refuses(&mutated, "lock-dependency-exports");
+    // L2: empty dependency exports.
+    let mut mutated = lock.clone();
+    mutated["publicDependencies"][0]["exports"] = serde_json::json!([]);
+    refuses(&mutated, "lock-dependency-exports");
+    // L5: dependency apiVersion outside the SemVer pattern.
+    let mut mutated = lock.clone();
+    mutated["publicDependencies"][0]["apiVersion"] = "1.x".into();
+    refuses(&mutated, "lock-dependency-api-version");
+    // L8: an export id beyond the 192-byte bound.
+    let mut mutated = lock.clone();
+    mutated["publicDependencies"][0]["exports"] =
+        serde_json::json!([format!("shared.{}", "x".repeat(400))]);
+    refuses(&mutated, "lock-dependency-exports");
+    // L9: duplicate moduleId pins. The stale-first ordering used to fold
+    // into the fresh pin and report a fresh lock (exit 0); admission now
+    // refuses the document before comparison.
+    let mut masked = lock.clone();
+    masked["publicDependencies"] = serde_json::json!([
+        { "moduleId": "shared",
+          "digest": format!("sha256:{}", "c".repeat(64)),
+          "apiVersion": null,
+          "exports": ["shared.task_id"] },
+        { "moduleId": "shared",
+          "digest": format!("sha256:{}", "b".repeat(64)),
+          "apiVersion": null,
+          "exports": ["shared.task_id"] }
+    ]);
+    refuses(&masked, "duplicate-lock-dependency");
+    // The masking refusal is admission, not comparison: a single fresh
+    // pin still compares fresh, and a single drifted pin still reports
+    // the dependency-digest staleness (controls for the control).
+    let current: ConsumerLock = serde_json::from_value(lock.clone()).expect("lock shape");
+    let mut stale_pin = lock.clone();
+    stale_pin["publicDependencies"][0]["digest"] = format!("sha256:{}", "d".repeat(64)).into();
+    let stale: ConsumerLock = serde_json::from_value(stale_pin).expect("lock shape");
+    assert!(check_lock(&current, &stale)
+        .iter()
+        .any(|finding| finding.detail == "lock-dependency-digest"));
+}
+
+#[test]
 fn locks_flag_policy_api_version_and_extra_pins() {
     // Finding 15: one freshness comparison — policy, selection, api
     // version, and symmetric dependency pins.
@@ -3088,6 +3322,100 @@ fn r5_populated_public_dependency_fixture_preserves_exact_pins() {
         serde_json::from_slice(&std::fs::read(format!("{PROJECT}/golden-context.json")).unwrap())
             .unwrap();
     assert_eq!(serde_json::to_value(capsule).unwrap(), golden_context);
+}
+
+#[test]
+fn r6_context_closure_bound_exhaustion_is_unavailable_not_invalid() {
+    // r6 review finding (devin F3): a derived closure exceeding the
+    // published fact-row bound is capacity exhaustion over admitted
+    // input, not malformed input — it refuses with the typed
+    // evidence-incomplete gap (unavailable/exit 4 through the CLI
+    // failure router) so callers can distinguish "reduce scope and
+    // retry" from "fix your input". The selection-size bound stays
+    // input-invalid.
+    let mut exports = vec![serde_json::json!({
+        "export": "tasks.carrier", "kind": "value-object", "version": 0,
+        "fields": [
+            { "name": "left", "required": true, "type": { "ref": "tasks.s126" } },
+            { "name": "right", "required": true, "type": { "ref": "tasks.s127" } }
+        ]
+    })];
+    for index in 0..128u32 {
+        exports.push(serde_json::json!({
+            "export": format!("tasks.s{index:03}"), "kind": "scalar", "version": 0,
+            "base": "uuid"
+        }));
+    }
+    // Select 126 scalars plus the carrier (127 uses, within the
+    // selection bound); the carrier pulls its two unselected scalar
+    // leaves in, so the closure is 129 > MAX_CONTEXT_ROOTS (128).
+    let mut uses: Vec<String> = (0..126u32)
+        .map(|index| format!("tasks.s{index:03}"))
+        .collect();
+    uses.push("tasks.carrier".to_owned());
+    let bundle = serde_json::json!({
+        "schemaVersion": "lekalo/module-public-contract/v0.8.0",
+        "identity": "dev.lekalo.module-public-contract@0.8.0",
+        "producer": { "project": "flow", "module": "tasks" },
+        "apiVersion": "2.0.0",
+        "digest": "",
+        "pins": {
+            "modelVersion": "0.2.16",
+            "irDigest": format!("sha256:{}", "a".repeat(64)),
+            "sourceRevision": { "state": "unknown" }
+        },
+        "exports": exports,
+        "publicDependencies": [],
+        "ports": [],
+        "capabilities": [{ "capability": "http", "obligation": "required",
+                           "owner": null, "version": null }],
+        "deprecations": []
+    });
+    let mut sealed = bundle.clone();
+    seal_bundle(&mut sealed);
+    let bytes = serde_json::to_vec(&sealed).expect("serializes");
+    let error = plan_consumer_context(&bytes, "planner", &uses, 1_000_000)
+        .expect_err("closure beyond the bound refuses");
+    assert!(
+        error.as_slice().iter().any(|diagnostic| {
+            diagnostic.id() == "module-api.evidence-incomplete"
+                && matches!(
+                    diagnostic.data().get("detail"),
+                    Some(lekalo_core::diagnostics::DataValue::Token(detail))
+                        if detail == "closure-bound-exhausted"
+                )
+        }),
+        "exhaustion is the typed evidence gap: {:?}",
+        error.as_slice()
+    );
+    assert!(
+        !error
+            .as_slice()
+            .iter()
+            .any(|diagnostic| diagnostic.id() == "module-api.input-invalid"),
+        "exhaustion is not malformed input: {:?}",
+        error.as_slice()
+    );
+    // Control: selecting more roots than the bound stays malformed
+    // input (the caller wrote an out-of-grammar selection).
+    let oversized: Vec<String> = (0..=128u32)
+        .map(|index| format!("tasks.s{index:03}"))
+        .take(129)
+        .collect();
+    let error = plan_consumer_context(&bytes, "planner", &oversized, 1_000_000)
+        .expect_err("oversized selection refuses");
+    assert!(
+        error.as_slice().iter().any(|diagnostic| {
+            diagnostic.id() == "module-api.input-invalid"
+                && matches!(
+                    diagnostic.data().get("detail"),
+                    Some(lekalo_core::diagnostics::DataValue::Token(detail))
+                        if detail == "selection-bound"
+                )
+        }),
+        "selection size is input-invalid: {:?}",
+        error.as_slice()
+    );
 }
 
 #[test]

@@ -85,6 +85,13 @@ pub fn parse_lock(bytes: &[u8]) -> Result<ConsumerLock, DiagnosticSet> {
     if let Some(policy) = &lock.policy {
         super::resolve::validate_policy(policy)?;
     }
+    // The typed closed-grammar admission (r6 review finding omp F2): the
+    // published lock schema is the admission grammar in both directions,
+    // like bundles, attachments, and snapshots — a schema-invalid lock is
+    // refused input-invalid before any staleness comparison, and a
+    // duplicate `moduleId` pin can never mask a stale dependency through
+    // last-wins folding.
+    super::admission::admit_lock(&lock)?;
     Ok(lock)
 }
 

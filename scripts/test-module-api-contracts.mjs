@@ -757,4 +757,38 @@ const reseal = (document, domain) => {
   checked.push('r5-populated-public-dependencies');
 }
 
+// 21. r6 omp F2: the published lock schema is the exact admission
+// grammar — schema-invalid locks refuse live, and a duplicate moduleId
+// pin never masks a stale dependency through last-wins folding.
+{
+  const dependencies = `${fixture}/public-dependencies`;
+  const project = scratchProject(dependencies, 'lock-admission-r6');
+  const lockArgs = ['module', 'api', 'lock', '--project', project, '--api', 'module-api.json', '--module', 'tasks', '--consumer', 'planner'];
+  const lock = payload(run(lockArgs, { cwd: probeRoot }).document, 'moduleApiLock');
+  for (const [name, mutate, detail] of [
+    ['duplicate-pin-exports', (l) => { l.publicDependencies[0].exports = ['shared.task_id', 'shared.task_id']; }, 'lock-dependency-exports'],
+    ['empty-pin-exports', (l) => { l.publicDependencies[0].exports = []; }, 'lock-dependency-exports'],
+    ['bad-pin-api-version', (l) => { l.publicDependencies[0].apiVersion = '1.x'; }, 'lock-dependency-api-version'],
+    ['oversized-pin-export', (l) => { l.publicDependencies[0].exports = [`shared.${'x'.repeat(400)}`]; }, 'lock-dependency-exports'],
+  ]) {
+    const hostile = structuredClone(lock);
+    mutate(hostile);
+    assert.equal(validators.get('module-api-lock')(hostile), false, `${name} is schema-invalid`);
+    const refused = run([...lockArgs, '--check', '--lock', tempAttachment(project, `${name}.json`, hostile)], { exit: 1, cwd: probeRoot });
+    assert.ok(refused.document.diagnostics.some((d) => d.code === 'LEK-MODULE-001' && d.data.detail === detail), `${name} refuses with the typed admission detail`);
+  }
+  // The masking case: a stale pin followed by a fresh duplicate is
+  // schema-valid (the schema's uniqueItems only rejects fully identical
+  // items) but folds last-wins into a fresh verdict; the typed decoder
+  // admission refuses the document before comparison.
+  const masked = structuredClone(lock);
+  const fresh = structuredClone(lock.publicDependencies[0]);
+  masked.publicDependencies[0] = { ...structuredClone(lock.publicDependencies[0]), digest: `sha256:${'0'.repeat(64)}` };
+  masked.publicDependencies.push(fresh);
+  assert.equal(validators.get('module-api-lock')(masked), true, 'the schema alone cannot see cross-item moduleId duplicates');
+  const refused = run([...lockArgs, '--check', '--lock', tempAttachment(project, 'duplicate-moduleid.json', masked)], { exit: 1, cwd: probeRoot });
+  assert.ok(refused.document.diagnostics.some((d) => d.code === 'LEK-MODULE-001' && d.data.detail === 'duplicate-lock-dependency'), 'duplicate moduleId pins refuse at admission');
+  checked.push('r6-lock-admission-grammar');
+}
+
 process.stdout.write(JSON.stringify({ ok: true, gate: 'module-api-contracts', ajv: '8.17.1', schemas: families.length, checks: checked.length, checked }) + '\n');

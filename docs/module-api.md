@@ -51,6 +51,11 @@ lekalo --json validate --project DIR --strict --module-api PATH [--module-api-lo
 - Declared import cycles fail at load with the existing `LEK-LOAD-008` rule
   before any graph exists; the boundary SCC projection (`LEK-MODULE-008`)
   covers projected public dependency cycles.
+- `--module ID` scopes owned findings to that module on either side of the
+  boundary: a scope keeps its own violations and the violations other
+  modules commit against it, so a producer-side reviewer sees exactly who
+  crosses its exported boundary (cycles and cross-module writes always
+  stay).
 
 Status policy: malformed input is invalid (exit 1); unknown family versions
 are unsupported-version (exit 5, stderr); exact strict boundary violations
@@ -73,8 +78,9 @@ from its own domain). The same digest backs the consumer snapshot
 public-only context capsule (`module-consumer-context`), so an in-process
 consumer and an extracted-service port conform to the identical portable
 contract. Admission is symmetric in both directions: the published schemas
-are the exact grammar of attachments, standalone bundles, and consumer
-snapshots (ids, vocabularies, versions, bounds), a recomputed checksum never
+are the exact grammar of attachments, standalone bundles, consumer
+snapshots, and consumer locks (ids, vocabularies, versions, bounds), a
+recomputed checksum never
 admits a schema-invalid document, and every exported command and query
 carries its public error union — an explicitly empty array is a known-empty
 union — plus its query owner facts (cardinality, consistency, pagination).
@@ -84,7 +90,11 @@ wire-breaking, policy) with exact reasons, joins the union before/after
 consumer inventory, partitions affected/compatible/unaffected consumers, and
 evaluates the independent version policy: stable majors need a major bump for
 breaking changes, pre-1.0 modules pin minor-breaking behavior explicitly, and
-digest-only modules never claim SemVer compatibility. Backwards movement is
+digest-only modules never claim SemVer compatibility. A required member
+added to a shape is never additive surface: on a command input, or on any
+shape consumers construct in input position (transitively referenced by a
+command input), it is source-breaking; on an output-only shape it is
+wire-breaking and policy-dependent. Backwards movement is
 rejected independently of the classification — a downgrade is always a
 version-policy violation — and the required segment must strictly increase.
 An operation that leaves the callable surface (present on at least one
@@ -101,7 +111,11 @@ provider checkout may be absent. Required facts (inputs, results, errors,
 effect obligations, capability/version/deprecation obligations) are protected
 against budget drops: an over-budget capsule keeps `fits:false`, the minimum
 required cost, and the omission reasons, with the pinned offline estimator
-(`module-context-estimator`, `public-facts-chars4/1`). The capsule closes the
+(`module-context-estimator`, `public-facts-chars4/1`). A closure beyond the
+published fact-row bound is capacity exhaustion, not malformed input: it
+refuses with the typed evidence gap `closure-bound-exhausted`
+(`LEK-MODULE-012`, exit 4) so callers reduce scope instead of repairing
+input; only the selection bound itself is input-invalid. The capsule closes the
 declared public error unions of the selected operations — a reachable public
 error export carries its own code, retryability, and payload shape — and its
 effect facts preserve the emitted event ids and full capability obligations
@@ -109,7 +123,12 @@ effect facts preserve the emitted event ids and full capability obligations
 
 Foreign public dependency pins retain the provider module, API version,
 public digest, and selected export IDs through bundles, consumer locks, and
-capsules. If the standalone bundle does not materialize a foreign signature,
+capsules. A supplied lock is admitted against the same published grammar
+before any staleness comparison: per-pin module ids, digests, dependency
+API versions, nonempty unique bounded export pins, and unique `moduleId`s
+— a duplicate pin is refused rather than folded last-wins, so a stale
+dependency can never hide behind a fresh duplicate. If the standalone
+bundle does not materialize a foreign signature,
 the capsule retains its pin and reports `foreign-signature-not-materialized`
 with the omitted symbol; `fits:true` describes the budget, not completeness.
 The synthetic `public-dependencies` fixture exercises a nested Task view over

@@ -851,6 +851,73 @@ pub(crate) fn admit_snapshot_presence(raw: &serde_json::Value) -> Result<(), Dia
     Ok(())
 }
 
+/// The typed closed-grammar admission of one decoded consumer lock
+/// (r6 review finding omp F2): the published lock schema is the exact
+/// admission grammar — per-pin module ids, digests, dependency API
+/// versions, nonempty/unique/bounded semantic export pins, unique
+/// `moduleId`s (a duplicate pin can otherwise mask a stale dependency
+/// through last-wins folding), the selected ids, and every recorded
+/// bound are enforced before the lock enters staleness comparison.
+pub(crate) fn admit_lock(lock: &super::wire::ConsumerLock) -> Result<(), DiagnosticSet> {
+    if !is_module_id(&lock.consumer) {
+        return Err(invalid("lock-consumer"));
+    }
+    if !is_project_id(&lock.producer.project) || !is_module_id(&lock.producer.module) {
+        return Err(invalid("lock-producer"));
+    }
+    if let Some(version) = &lock.api_version {
+        if super::version::ApiVersion::parse(version).is_none() {
+            return Err(invalid("lock-api-version"));
+        }
+    }
+    if lock.public_dependencies.len() > 256 || lock.selected.len() > 4096 {
+        return Err(invalid("lock-bound"));
+    }
+    let mut dependency_ids: Vec<&str> = Vec::new();
+    for dependency in &lock.public_dependencies {
+        if !is_module_id(&dependency.module_id) {
+            return Err(invalid("lock-dependency-module"));
+        }
+        if !super::version::is_digest(&dependency.digest) {
+            return Err(invalid("lock-dependency-digest"));
+        }
+        if let Some(version) = &dependency.api_version {
+            if super::version::ApiVersion::parse(version).is_none() {
+                return Err(invalid("lock-dependency-api-version"));
+            }
+        }
+        if dependency.exports.is_empty()
+            || dependency.exports.len() > wire::MAX_EXPORTS_PER_MODULE
+            || !is_unique(&dependency.exports)
+            || dependency
+                .exports
+                .iter()
+                .any(|symbol| !is_semantic_id(symbol))
+        {
+            return Err(invalid("lock-dependency-exports"));
+        }
+        dependency_ids.push(dependency.module_id.as_str());
+    }
+    // Cross-item uniqueness: two pins for one `moduleId` fold to the
+    // last entry downstream, silently discarding the stale pin that is
+    // literally present in the checked document.
+    if !is_unique(
+        &dependency_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>(),
+    ) {
+        return Err(invalid("duplicate-lock-dependency"));
+    }
+    if lock.selected.is_empty()
+        || lock.selected.iter().any(|symbol| !is_semantic_id(symbol))
+        || !is_unique(&lock.selected)
+    {
+        return Err(invalid("lock-selected"));
+    }
+    Ok(())
+}
+
 /// The structural admission of one consumer lock's raw JSON.
 pub(crate) fn admit_lock_presence(raw: &serde_json::Value) -> Result<(), DiagnosticSet> {
     require(

@@ -95,6 +95,13 @@ pub fn compare_public(
     let mut changes: Vec<DiffChange> = Vec::new();
     let mut breaking = false;
     let mut additive = false;
+    // r6 review finding (devin F2): the exports consumers construct in
+    // input position, computed over BOTH sides so a shape that moved
+    // between anchors is judged by the union of the two surfaces. A
+    // required member added to a constructed shape is a source break;
+    // the same addition on an output-only shape is wire-breaking — never
+    // bare additive.
+    let input_constructed = input_constructed_exports(&before_map, &after_map);
     // Removed exports: a break for every old consumer.
     for (export, removed) in &before_map {
         if !after_map.contains_key(export) {
@@ -130,8 +137,11 @@ pub fn compare_public(
         let Some(before_export) = before_map.get(export) else {
             continue;
         };
-        let (export_changes, export_breaking, export_additive) =
-            compare_exports(before_export, after_export);
+        let (export_changes, export_breaking, export_additive) = compare_exports(
+            before_export,
+            after_export,
+            input_constructed.contains(*export),
+        );
         breaking |= export_breaking;
         additive |= export_additive;
         for (member, class, reason, before_text, after_text) in export_changes {
@@ -705,11 +715,14 @@ fn fields_of(export: &super::wire::PublicExport) -> &Vec<super::wire::PublicFiel
 /// Field-level comparison of one export pair: exact classes and reasons.
 /// The return carries the member-level break and additive bits so the
 /// version policy sees the complete final change set (r3 review findings
-/// 4 and 9/codex).
+/// 4 and 9/codex). `consumer_constructed` says whether the compared
+/// shape is constructed by consumers in input position (r6 review
+/// finding devin F2).
 #[allow(clippy::type_complexity)]
 fn compare_exports(
     before: &super::wire::PublicExport,
     after: &super::wire::PublicExport,
+    consumer_constructed: bool,
 ) -> (
     Vec<(
         Option<String>,
@@ -760,12 +773,25 @@ fn compare_exports(
         if !before_map.contains_key(name) {
             // A required input addition breaks source consumers; an
             // optional output field addition is policy-dependent and can
-            // never be universally assumed safe.
-            if added.required && before.kind == "command" {
+            // never be universally assumed safe. r6 review finding (devin
+            // F2): the same holds for non-command kinds — a required
+            // member on a shape consumers construct is a source break
+            // (they must supply it), and on an output-only shape it is
+            // wire-visible and policy-dependent, never bare additive.
+            if added.required && (before.kind == "command" || consumer_constructed) {
                 changes.push((
                     Some((*name).to_owned()),
                     "source-breaking".to_owned(),
                     "required-input-added".to_owned(),
+                    None,
+                    Some(field_text(added)),
+                ));
+                breaking = true;
+            } else if added.required {
+                changes.push((
+                    Some((*name).to_owned()),
+                    "wire-breaking".to_owned(),
+                    "required-field-added".to_owned(),
                     None,
                     Some(field_text(added)),
                 ));
@@ -1331,6 +1357,52 @@ fn policy_kind_text(policy: &super::wire::VersionPolicyWire) -> String {
         super::wire::VersionPolicyWire::ExactVersion { .. } => "exact-version".to_owned(),
         super::wire::VersionPolicyWire::VersionRange { .. } => "version-range".to_owned(),
     }
+}
+
+/// The exports consumers construct in input position (r6 review finding
+/// devin F2): command inputs are the positions a consumer builds and
+/// sends (the closed grammar admits no query parameters), and every
+/// shape transitively referenced by a constructed shape's compared
+/// field set is constructed with it. The walk runs over BOTH sides of
+/// the comparison so an export that changed anchors is judged by the
+/// union surface. Commands terminate the walk: their input closure is
+/// seeded as roots, and a required input addition on a command is
+/// already classified by the kind check.
+fn input_constructed_exports(
+    before_map: &std::collections::BTreeMap<&str, &super::wire::PublicExport>,
+    after_map: &std::collections::BTreeMap<&str, &super::wire::PublicExport>,
+) -> std::collections::BTreeSet<String> {
+    let mut constructed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut stack: Vec<String> = Vec::new();
+    for map in [before_map, after_map] {
+        for definition in map.values() {
+            if definition.kind == "command" {
+                stack.extend(
+                    definition
+                        .input
+                        .iter()
+                        .map(|field| field.r#type.leaf().to_owned()),
+                );
+            }
+        }
+    }
+    while let Some(node) = stack.pop() {
+        if !constructed.insert(node.clone()) {
+            continue;
+        }
+        for map in [before_map, after_map] {
+            if let Some(definition) = map.get(node.as_str()) {
+                if definition.kind != "command" {
+                    stack.extend(
+                        fields_of(definition)
+                            .iter()
+                            .map(|field| field.r#type.leaf().to_owned()),
+                    );
+                }
+            }
+        }
+    }
+    constructed
 }
 
 /// The memoized transitive local reference closure per export of one

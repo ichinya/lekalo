@@ -115,10 +115,27 @@ pub fn plan_consumer_context(
     }
     closure.sort_by(|left, right| left.export.cmp(&right.export));
     // The published capsule bounds its fact rows; a closure beyond the
-    // bound can never drop required facts to fit, so it refuses with the
-    // explicit bound instead of emitting a schema-invalid capsule.
+    // bound can never drop required facts to fit, so it refuses. This is
+    // derived-closure exhaustion over admitted inputs — capacity, not
+    // malformed input — so it maps to the typed evidence-incomplete gap
+    // at `unavailable` (r6 review finding devin F3), letting callers
+    // distinguish "reduce scope and retry" from "fix your input". The
+    // selection-size bound above stays input-invalid: selecting more
+    // roots than the bound is malformed input.
     if closure.len() > MAX_CONTEXT_ROOTS {
-        return Err(invalid("closure-bound"));
+        let mut exhaustion = super::diagnostic::Evidence::new(
+            "module-api.evidence-incomplete",
+            consumer,
+            "closure-bound-exhausted",
+        );
+        exhaustion.gaps = vec![
+            format!("closure:{}", closure.len()),
+            format!("bound:{MAX_CONTEXT_ROOTS}"),
+        ];
+        return Err(super::diagnostic::set(
+            &[exhaustion],
+            crate::result::Status::Unavailable,
+        )?);
     }
     // Required public dependencies of the closure: the transitive
     // reference set (shapes and identity obligations) decides which
