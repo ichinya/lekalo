@@ -11873,6 +11873,228 @@
       ],
       "allowed_fix_ids": [],
       "lifecycle": "active"
+    },
+    {
+      "id": "portability.analysis-incomplete",
+      "code": "LEK-PORT-008",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "portability.analysis-incomplete",
+      "default_message": "The portability analysis hit a deterministic bound or an unimplemented requirement extraction.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.behavior-loss",
+      "code": "LEK-PORT-007",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "portability.behavior-loss",
+      "default_message": "A required semantic policy maps lossily onto the destination target.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.capability-unsupported",
+      "code": "LEK-PORT-005",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "portability.capability-unsupported",
+      "default_message": "A required capability is explicitly unsupported for the destination target.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.check-denied",
+      "code": "LEK-PORT-009",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "portability.check-denied",
+      "default_message": "The strict portability check refused unresolved required obligations.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.evidence-incomplete",
+      "code": "LEK-PORT-003",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "portability.evidence-incomplete",
+      "default_message": "Qualified portability evidence is missing, stale, or untrusted for a required obligation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.implementation-required",
+      "code": "LEK-PORT-006",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "portability.implementation-required",
+      "default_message": "The complete implementation inventory proves a missing or unsupported destination hook.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.input-invalid",
+      "code": "LEK-PORT-001",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "portability.input-invalid",
+      "default_message": "The portability request, configuration, or evidence input is malformed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.mapping-partial",
+      "code": "LEK-PORT-004",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "portability.mapping-partial",
+      "default_message": "A qualified semantic mapping covers only part of a required obligation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "portability.version-unsupported",
+      "code": "LEK-PORT-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "portability.version-unsupported",
+      "default_message": "A portability contract version is outside the accepted registry.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
     }
   ]
 }

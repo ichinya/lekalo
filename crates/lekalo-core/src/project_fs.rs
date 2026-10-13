@@ -152,6 +152,38 @@ pub fn path_violation(path: &str) -> Option<&'static str> {
     None
 }
 
+/// The closed `artifactRef` grammar of the portability contracts
+/// (`portability-evidence/v0.8.0` and `portability-targets/v0.8.0`):
+/// a bounded project-relative reference whose every segment starts and
+/// ends with `[a-z0-9]`, carries only `[a-z0-9._-]`, spans at most 64
+/// characters, and is never a DOS-device stem (device name with any
+/// extension). This mirrors the published Draft 2020-12 pattern exactly
+/// — decoder/schema parity in both directions — and it is strictly
+/// narrower than [`path_violation`], which stays the grammar of the
+/// filesystem layer regardless: every reference this grammar admits is
+/// also a portable project path, so the confined reads never loosen.
+pub fn artifact_ref_violation(reference: &str) -> Option<&'static str> {
+    if reference.is_empty() || reference.len() > 256 {
+        return Some("structure.artifact-ref-length");
+    }
+    let alnum = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
+    let portable = |c: char| alnum(c) || matches!(c, '.' | '_' | '-');
+    for segment in reference.split('/') {
+        if segment.is_empty() || segment.len() > 64 {
+            return Some("structure.artifact-ref-length");
+        }
+        if is_dos_device(segment) {
+            return Some("structure.artifact-ref-device");
+        }
+        let first = segment.chars().next().expect("non-empty segment");
+        let last = segment.chars().next_back().expect("non-empty segment");
+        if !alnum(first) || !alnum(last) || !segment.chars().all(portable) {
+            return Some("structure.artifact-ref-segment");
+        }
+    }
+    None
+}
+
 /// Ports `checkSelectionGrammar`: the invocation-relative root selector
 /// grammar.
 pub fn selection_violation(selector: &str) -> Option<&'static str> {
@@ -396,6 +428,14 @@ mod imp {
             if !FileType::from_raw_mode(before.st_mode).is_file() {
                 return Err(FsErrorKind::Io);
             }
+            // A multiply-linked file is refused outright: a checked-in
+            // hardlink to bytes outside the root reads foreign content
+            // under an in-root path, defeating byte custody while every
+            // path containment check still passes. Regular checkouts
+            // never carry hardlinks, so this fails closed conservatively.
+            if before.st_nlink > 1 {
+                return Err(FsErrorKind::Io);
+            }
             let file = openat(
                 &dir,
                 name,
@@ -404,9 +444,11 @@ mod imp {
             )
             .map_err(error_of)?;
             let after = rustix::fs::fstat(&file).map_err(error_of)?;
-            // Close the preflight/read window: same device, inode, and type.
+            // Close the preflight/read window: same device, inode, type,
+            // and link identity.
             if after.st_dev != before.st_dev
                 || after.st_ino != before.st_ino
+                || after.st_nlink != before.st_nlink
                 || !FileType::from_raw_mode(after.st_mode).is_file()
             {
                 return Err(FsErrorKind::Io);
@@ -545,11 +587,30 @@ mod imp {
                 return Err(FsErrorKind::Io);
             }
             let file = fs::File::open(&component_path).map_err(|error| error_of(&error))?;
-            let after = file.metadata().map_err(|error| error_of(&error))?;
-            // Close the preflight/read window as far as the platform permits:
-            // same reparse-free regular-file classification and same length.
-            if classify(&after) != EntryType::File || after.len() != before.len() {
-                return Err(FsErrorKind::Io);
+            // Close the preflight/read window as far as the platform
+            // permits, riding the handle information: same reparse-free
+            // regular-file classification, same length, and a single
+            // link. A checked-in NTFS hardlink to bytes outside the root
+            // reads foreign content under an in-root path, defeating byte
+            // custody while every path containment check still passes;
+            // regular checkouts never carry hardlinks, so this fails
+            // closed conservatively.
+            {
+                use std::os::windows::io::AsRawHandle;
+                use windows_sys::Win32::Storage::FileSystem::{
+                    GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+                };
+                let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+                if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0
+                    || info.dwFileAttributes & 0x400 != 0
+                    || info.nNumberOfLinks != 1
+                {
+                    return Err(FsErrorKind::Io);
+                }
+                let after_len = ((info.nFileSizeHigh as u64) << 32) | info.nFileSizeLow as u64;
+                if after_len != before.len() {
+                    return Err(FsErrorKind::Io);
+                }
             }
             let mut buffer = Vec::new();
             file.take((max as u64) + 1)
@@ -1329,6 +1390,92 @@ mod grammar_tests {
         assert!(is_dos_device("CONIN$"));
         assert!(!is_dos_device("constants"));
         assert!(!is_dos_device("console"));
+    }
+
+    /// Regression (fix round 5, findings 3/4): the `artifactRef`
+    /// grammar mirrors the published contract pattern exactly — every
+    /// segment starts and ends `[a-z0-9]` and is never a DOS-device
+    /// stem — and storage-profile references additionally respect the
+    /// 252-character emit-composition bound.
+    #[test]
+    fn artifact_ref_grammar_mirrors_the_published_pattern_exactly() {
+        // Admitted: exactly the schema-pattern space.
+        for reference in [
+            "reports/receipts/focus-flow.json",
+            "reports/implementation.json",
+            "config/profiles/node.json",
+            "a.b/c_d-e.f9",
+            "a..b",
+            "x",
+            "reports/lpt9z/r.json",
+            "reports/con1/r.json",
+            "reports/com12/r.json",
+        ] {
+            assert_eq!(artifact_ref_violation(reference), None, "{reference}");
+        }
+        // Refused: schema-invalid spellings the closed project path
+        // grammar alone used to admit (decoder/schema parity gap).
+        for reference in [
+            "reports/x-/r.json",
+            "reports/x_/r.json",
+            "-x/r.json",
+            "x./r.json",
+            "a//b",
+            "a/b/",
+            "",
+        ] {
+            assert!(
+                artifact_ref_violation(reference).is_some(),
+                "{reference} must refuse"
+            );
+        }
+        // Refused: DOS-device stems the published pattern now also
+        // excludes (both directions of the parity boundary).
+        for reference in [
+            "reports/nul/r.json",
+            "reports/con.json",
+            "reports/com1.d/r.json",
+            "reports/prn",
+            "reports/aux.x.y",
+            "reports/conin$/r.json",
+        ] {
+            assert_eq!(
+                artifact_ref_violation(reference),
+                Some("structure.artifact-ref-device"),
+                "{reference} must refuse as a device stem"
+            );
+        }
+        // The published bounds: 64 characters per segment, 256 total.
+        // The published bounds: 64 characters per segment, 256 total.
+        assert_eq!(artifact_ref_violation(&"a".repeat(64)), None);
+        assert_eq!(
+            artifact_ref_violation(&"a".repeat(65)),
+            Some("structure.artifact-ref-length")
+        );
+        let at_bound = format!(
+            "{}/{}/{}/{}",
+            "a".repeat(64),
+            "b".repeat(64),
+            "c".repeat(64),
+            "d".repeat(61)
+        );
+        assert_eq!(at_bound.len(), 256);
+        assert_eq!(artifact_ref_violation(&at_bound), None);
+        let over_bound = format!("{at_bound}x");
+        assert_eq!(
+            artifact_ref_violation(&over_bound),
+            Some("structure.artifact-ref-length")
+        );
+        // Every admitted reference stays a portable project path: the
+        // artifact grammar is strictly narrower than the filesystem
+        // grammar, which never loosens.
+        for reference in [
+            "reports/receipts/focus-flow.json",
+            "a.b/c_d-e.f9",
+            "reports/com12/r.json",
+        ] {
+            assert_eq!(path_violation(reference), None, "{reference}");
+        }
     }
 
     #[test]

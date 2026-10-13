@@ -160,15 +160,23 @@ pub(crate) fn decode_document_bytes(
     decode(path, kind, &parsed)
 }
 
-/// Run phases 1-8 to completion and return the normalized aggregate, or the
+/// Terminal outcome of a loader phase: the normalized aggregate, or the
 /// terminal failure. No rendering happens here; `run` owns the envelope.
 pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, DomainResult> {
     load_with_snapshot(selection).map(|loaded| loaded.model)
 }
 
-/// Phase 1 only: resolve the selection to an absolute project root
-/// without reading model documents. The migration service uses this to
-/// recover a crashed transaction before the loader's fail-closed gate.
+/// Public phase-1 seam: resolve the selection to the absolute,
+/// alias-free project root without reading model documents. Commands
+/// that read project-relative artifacts after loading must bind those
+/// reads to this exact root — never to the raw invocation-relative
+/// selector, which resolves differently from another working directory.
+/// (The migration service keeps the `pub(crate)` spelling for its
+/// crash-recovery use.)
+pub fn resolve_selection_root(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
+    root_for_selection(selection)
+}
+
 pub(crate) fn root_for_selection(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
     let failure =
         |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
@@ -220,37 +228,6 @@ pub(crate) fn load_with_snapshot_and_overlay(
 ) -> Result<ProjectLoad, DomainResult> {
     let root = resolve_selection_root(selection)?;
     load_validated_root_opt_with_overlay(root, false, Some((overlay_path, overlay_bytes)))
-}
-
-/// The shared phase-1 root resolution of [`load_with_snapshot`].
-fn resolve_selection_root(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
-    let failure =
-        |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
-    match &selection.project {
-        Some(selector) => {
-            if let Some(code) = crate::project_fs::selection_violation(selector) {
-                return failure(Status::Invalid, vec![Diagnostic::new(code)]);
-            }
-            crate::project_fs::Fs::check_selection(selector, "structure.project-not-directory")
-                .map_err(structure_failure)
-        }
-        None => {
-            let cwd = std::env::current_dir().map_err(|_| {
-                diagnostic::failure(
-                    Status::Invalid,
-                    vec![Diagnostic::new("structure.root-unreadable")],
-                )
-            })?;
-            match crate::project_fs::Fs::find_root(&cwd) {
-                Ok(Some(path)) => Ok(path),
-                Ok(None) => failure(
-                    Status::Invalid,
-                    vec![Diagnostic::new("structure.root-not-found")],
-                ),
-                Err(outcome) => Err(structure_failure(outcome)),
-            }
-        }
-    }
 }
 
 /// Load an already-selected absolute root through phases 2-8 (the migration

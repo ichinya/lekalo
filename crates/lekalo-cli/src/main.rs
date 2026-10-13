@@ -32,6 +32,7 @@ mod evaluation;
 mod format;
 mod git_input;
 mod metrics_export;
+mod portability;
 mod report_git;
 pub(crate) mod report_output;
 mod waivers;
@@ -306,6 +307,37 @@ enum Commands {
     Evaluation {
         #[command(subcommand)]
         command: evaluation::Commands,
+    },
+    /// Assess the capability-based portability of the project's typed
+    /// symbols across exact target/profile pins and qualified recorded
+    /// evidence (issue #19). Read-only: consumes recorded evidence by
+    /// default and launches no adapter, generator, or provider.
+    Portability {
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+        /// The source target identifier (defaults below).
+        #[arg(long, value_name = "TARGET")]
+        from: Option<String>,
+        /// One destination target identifier; repeatable.
+        #[arg(long = "to", value_name = "TARGET")]
+        to: Vec<String>,
+        /// The closed target-binding configuration (default
+        /// `config/portability-targets.json`).
+        #[arg(long, value_name = "PATH")]
+        targets: Option<String>,
+        /// Qualified recorded evidence manifest.
+        #[arg(long, value_name = "PATH")]
+        evidence: Option<String>,
+        /// Scope the assessment to one symbol.
+        #[arg(long, value_name = "ID", conflicts_with = "module")]
+        symbol: Option<String>,
+        /// Scope the assessment to one module.
+        #[arg(long, value_name = "ID")]
+        module: Option<String>,
+        /// Strict gate: unresolved required obligations deny.
+        #[arg(long)]
+        check: bool,
     },
     /// Report the context-budget and local-understandability metrics of
     /// one symbol, one module, or the whole project (issue #75): the
@@ -2504,6 +2536,25 @@ fn runtime() -> u8 {
             Commands::Coupling { args } => coupling::run(args),
             Commands::ArchitectureProfile { command } => architecture_profile::run(command),
             Commands::Evaluation { command } => evaluation::run(command),
+            Commands::Portability {
+                project,
+                from,
+                to,
+                targets,
+                evidence,
+                symbol,
+                module,
+                check,
+            } => portability::run(portability::Args {
+                project,
+                from,
+                to,
+                targets,
+                evidence,
+                symbol,
+                module,
+                check,
+            }),
             Commands::ContextBudget { args } => {
                 let ContextBudgetArgs {
                     symbol,

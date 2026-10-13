@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/portability-targets.schema.v0.8.0.json",
+  "title": "Portability targets 0.8.0",
+  "description": "Issue #19 closed target-binding configuration: unambiguous source/destination defaults and exact target/profile bindings without executable commands. References pin exact profile identities and digests; they never name commands, scripts, or environment-selected executables.",
+  "$ref": "#/$defs/document",
+  "$defs": {
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/portability-targets/v0.8.0"
+        },
+        "identity": {
+          "const": "dev.lekalo.portability-targets@0.8.0"
+        },
+        "defaultSource": {
+          "$ref": "#/$defs/targetId"
+        },
+        "defaultDestinations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/targetId"
+          },
+          "description": "Optional destination defaults; when present at least one entry is required, and an empty list is schema-invalid."
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/binding"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "targets"
+      ],
+      "unevaluatedProperties": false
+    },
+    "targetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "artifactRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\.[a-z0-9._-]*)?(?:/|$))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?(?:/(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\.[a-z0-9._-]*)?(?:/|$))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?)*$",
+      "description": "Bounded project-relative artifact reference; never an absolute path, glob, traversal segment, empty or dot segment, a segment with a leading or trailing dot/dash/underscore, or command. Every segment starts and ends with a lowercase alphanumeric, spans at most 64 portable characters, and is never a DOS-device stem (device name with any extension) — exactly the closed grammar the decoder enforces."
+    },
+    "storageRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 252,
+      "pattern": "^(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\.[a-z0-9._-]*)?(?:/|$))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?(?:/(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\\.[a-z0-9._-]*)?(?:/|$))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?)*$",
+      "description": "A storage-profile artifact reference. The report composes `<ref>#sha256:<digest>` (72 more characters) into `destinations[].storageProfileRefs` (published at most 324 characters), so the maximum legal input reference is exactly 252 characters — the bound that keeps every emitted member inside its schema by construction."
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "profileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sourceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "resolvedDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "sourceDigest",
+        "resolvedDigest"
+      ],
+      "unevaluatedProperties": false
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "targetId": {
+          "$ref": "#/$defs/targetId"
+        },
+        "profileDocumentRef": {
+          "$ref": "#/$defs/artifactRef"
+        },
+        "profileRef": {
+          "$ref": "#/$defs/profileRef"
+        },
+        "adapterEvidenceRef": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/artifactRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "storageProfileRefs": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/storageRef"
+          }
+        }
+      },
+      "required": [
+        "targetId",
+        "profileDocumentRef",
+        "profileRef",
+        "adapterEvidenceRef",
+        "storageProfileRefs"
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

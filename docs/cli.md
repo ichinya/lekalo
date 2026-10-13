@@ -1252,6 +1252,7 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo openapi diff` | `lekalo openapi diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](openapi.md) |
 | `lekalo openapi inspect` | `lekalo openapi inspect [OPTIONS] --endpoint <SYMBOL> <PATH>` | [reference](openapi.md) |
 | `lekalo openapi render` | `lekalo openapi render [OPTIONS] <PATH>` | [reference](openapi.md) |
+| `lekalo portability` | `lekalo portability [OPTIONS]` | [reference](portability.md) |
 | `lekalo privacy` | `lekalo privacy [OPTIONS] <COMMAND>` | [reference](privacy-runtime.md) |
 | `lekalo privacy evaluate` | `lekalo privacy evaluate [OPTIONS] --decision <FILE>` | [reference](privacy-runtime.md) |
 | `lekalo privacy export` | `lekalo privacy export [OPTIONS] --destination <SPEC> <ARTIFACT>` | [reference](privacy-runtime.md) |
