@@ -4,14 +4,24 @@
 //! The MCP surface claims sensitive-output refusal, so an envelope that
 //! would disclose a secret-shaped token refuses with the registered
 //! `mcp.sensitive-output` diagnostic (`LEK-MCP-003`) instead of shipping
-//! the bytes. The sweep is spelling-canonical (review r3 F1): every
-//! matcher runs over one ASCII-case-folded copy of the envelope, and the
-//! assignment scan admits `_` and `-` as pre-key separators, so
-//! `PASSWORD`, `Password:`, `db_password`, `client_secret`, and
-//! `aws_secret_access_key` are one spelling each — only alphanumeric
-//! adjacency suppresses a key match (`NotAPassword=x` stays safe). The
+//! the bytes. The sweep is spelling-canonical (review r3 F1, r4 F1):
+//! every matcher runs over one ASCII-case-folded copy of the envelope,
+//! and the assignment scan runs over one separator-canonical form of
+//! that copy — `_` and `-` deleted from BOTH the key vocabulary and the
+//! scanned text, with a parallel record of which canonical bytes were
+//! contiguously alphanumeric in the original — so `PASSWORD`,
+//! `client_secret`, `client-secret`, and `clientSecret` are ONE
+//! spelling (`NotAPassword=x` stays safe: contiguous alphanumeric
+//! adjacency still suppresses a key match, whatever separators the
+//! original carried). Quote spellings are canonical too (r4 F1):
+//! `"`, `'`, and `\"` are quote equivalents around a value, so
+//! `password="x"`, `password='x'`, and an embedded `{"password":"x"}`
+//! all parse as assignments. Private absolute paths are matched by
+//! SHAPE, not by an enumerated segment list (r4 F1): any drive-letter
+//! path (`D:/...`, `c:\\...`) and any boundary-rooted POSIX path
+//! (`/srv/private/...`) refuses. The
 //! pass is otherwise deliberately conservative in both directions:
-//! only closed high-confidence secret spellings match (assigned
+//! only closed high-confidence secret shapes match (assigned
 //! credential assignments, PEM private-key blocks, bearer schemes), and
 //! diagnostics are never truncated into nonsense — a match refuses the
 //! whole output, it never redacts contract members silently. No
@@ -37,43 +47,87 @@ const NEEDLES: [(&str, &str); 7] = [
     ("set-cookie:", "credential-header"),
 ];
 
-/// The minimum length of an assigned-token value in an assignment
-/// spelling (`password=<value>`, `token: <value>`, `secret = <value>`).
-/// Review r2 F15: a minimum length is not authorization to disclose a
-/// credential — any non-empty assigned value refuses, so short live
-/// credentials (`password=short`) and spaced config spellings
-/// (`password = 0123...`) are refused exactly like long ones. An empty
-/// assignment (`password=` with no value) is not a disclosure and ships.
-const ASSIGNED_TOKEN_MIN: usize = 1;
-
 /// Absolute private-path spellings whose presence in an outgoing envelope
 /// is a disclosure of the host filesystem layout (review r2 F15: a
 /// description carrying `C:/Users/PrivateReview/private.txt` shipped
-/// unscreened). The needles are byte-local, closed, lowercase (the sweep
-/// matches the folded envelope, so `C:/USERS/` and `c:\Users\` are one
-/// spelling), and cover the Windows drive and user-profile spellings
-/// plus the POSIX home roots; the JSON transport escapes a backslash as
-/// `\\`, which the raw envelope scan still matches through the
-/// single- and doubled-separator needles, and the colon-less POSIX
-/// users-root needle catches the macOS absolute profile spelling
-/// (`/Users/alice/...`) that carries no drive colon. The POSIX needles
-/// `/home/`, `/root/`, and `/users/` deliberately match ANY matching
-/// path segment, not
-/// only a leading absolute one (review r3 F9): `app/home/page.tsx`
-/// refuses too. That availability collateral is the accepted trade-off —
-/// the screen fails closed, and a relative segment spelling can never
-/// be proven harmless from bytes alone.
-const PRIVATE_PATH_NEEDLES: [&str; 6] = [
-    ":\\users\\",
-    ":/users/",
-    "/home/",
-    "/root/",
-    "/users/",
-    // The JSON-escaped backslash spelling (`C:\\Users\\alice` on the
-    // wire) carries doubled separators; the raw envelope scan matches it
-    // through this doubled-separator needle.
-    ":\\\\users\\\\",
-];
+/// unscreened). The remaining segment needles are byte-local, closed,
+/// lowercase (the sweep matches the folded envelope), and deliberately
+/// match ANY path segment, not only a leading absolute one (review r3
+/// F9): `app/home/page.tsx` refuses too. That availability collateral is
+/// the accepted trade-off — the screen fails closed, and a relative
+/// segment spelling can never be proven harmless from bytes alone. The
+/// drive and user-profile spellings moved to the two SHAPE matchers
+/// below (`contains_drive_letter_path`, `contains_posix_root_path`,
+/// r4 F1), which the segment list could never cover.
+const PRIVATE_PATH_NEEDLES: [&str; 3] = ["/home/", "/root/", "/users/"];
+
+/// Whether one folded envelope position starts a drive-letter absolute
+/// path: a single `a-z` letter, a colon, and a `/` or `\` separator,
+/// where the letter is not itself preceded by an alphanumeric byte
+/// (so `https://` and `127.0.0.1:8080/` never match, while `D:/x`,
+/// `c:\users\x`, and the JSON-doubled `d:\\x` do). Review r4 F1:
+/// private absolute paths are matched by SHAPE, not by an enumerated
+/// user-root segment list — `D:/PrivateReview/finance.txt` ships under
+/// any list that only knows `users|home|root`.
+fn contains_drive_letter_path(folded: &[u8]) -> bool {
+    for index in 0..folded.len() {
+        let byte = folded[index];
+        if !byte.is_ascii_lowercase() {
+            continue;
+        }
+        if folded.get(index + 1) != Some(&b':') {
+            continue;
+        }
+        if !matches!(folded.get(index + 2), Some(&b'/') | Some(&b'\\')) {
+            continue;
+        }
+        let preceded_alphanumeric = index > 0 && folded[index - 1].is_ascii_alphanumeric();
+        if !preceded_alphanumeric {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether one folded envelope position starts a boundary-rooted POSIX
+/// absolute path: a `/` at the start of the envelope, after whitespace,
+/// or after a quote, followed by one non-empty segment and a second `/`
+/// — the `/srv/private/finance.txt` shape (r4 F1). Relative project
+/// paths (`lekalo/modules/...`), URIs (`lekalo://p/summary`), and prose
+/// fractions (`1/2`, `and/or`) never sit at such a boundary and ship.
+fn contains_posix_root_path(folded: &[u8]) -> bool {
+    for index in 0..folded.len() {
+        if folded[index] != b'/' {
+            continue;
+        }
+        let at_boundary = index == 0
+            || folded[index - 1].is_ascii_whitespace()
+            || folded[index - 1] == b'"'
+            || folded[index - 1] == b'\'';
+        if !at_boundary {
+            continue;
+        }
+        // One path segment (no whitespace, no quote) and then a second
+        // separator: a rooted directory spelling.
+        let mut cursor = index + 1;
+        let mut segment = 0;
+        while cursor < folded.len() {
+            let byte = folded[cursor];
+            if byte == b'/' {
+                if segment > 0 {
+                    return true;
+                }
+                break;
+            }
+            if byte.is_ascii_whitespace() || byte == b'"' || byte == b'\'' {
+                break;
+            }
+            segment += 1;
+            cursor += 1;
+        }
+    }
+    false
+}
 
 /// Screen one outgoing envelope. `Ok(())` ships; `Err(reason)` refuses
 /// the whole output with `mcp.sensitive-output`. The screen is total:
@@ -111,6 +165,11 @@ fn screen_bytes(bytes: &[u8]) -> Result<(), &'static str> {
             return Err("private-absolute-path");
         }
     }
+    // r4 F1: private absolute paths are matched by shape too — every
+    // drive-letter path and every boundary-rooted POSIX path refuses.
+    if contains_drive_letter_path(&folded) || contains_posix_root_path(&folded) {
+        return Err("private-absolute-path");
+    }
     if contains_assigned_token(&folded) {
         return Err("assigned-credential");
     }
@@ -126,111 +185,151 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
         .any(|window| window == needle)
 }
 
-/// The assignment spellings whose non-empty value of at least
-/// [`ASSIGNED_TOKEN_MIN`] characters counts as an assigned credential.
-/// Spelled in lowercase: the scan runs over the folded envelope (r3 F1).
-/// The compound forms are listed explicitly where the separator does
-/// not directly follow the suffix key (`aws_secret_access_key`'s
-/// `secret` is followed by `_access_key`), and matched anyway through
-/// suffix keys where it does (`db_password`, `client_secret`,
-/// `api_token`) because `_` and `-` are admitted pre-key separators —
-/// only alphanumeric adjacency suppresses a match.
-const ASSIGNMENT_KEYS: [&str; 20] = [
+/// The assignment spellings whose non-empty value counts as an assigned
+/// credential (r2 F15: a minimum length is not authorization to disclose
+/// — any non-empty token refuses, and an empty assignment is not a
+/// disclosure and ships),
+/// spelled in their SEPARATOR-CANONICAL form (r4 F1): `_` and `-`
+/// deleted, ASCII-folded — `client_secret`, `client-secret`, and
+/// `clientSecret` are one spelling here, exactly as they are one
+/// spelling in the canonical scan text. The compound forms are listed
+/// explicitly so their whole key matches at a word boundary even where
+/// a suffix key alone would be suppressed (`dbpassword`,
+/// `awssecretaccesskey`), and the suffix keys still match any compound
+/// the explicit list cannot foresee (`root_password`, `x-api-token`)
+/// because a deleted separator leaves a non-alphanumeric boundary at
+/// the suffix start.
+const ASSIGNMENT_KEYS: [&str; 18] = [
     "password",
     "passwd",
     "passphrase",
     "secret",
-    "secret_key",
+    "secretkey",
     "token",
-    "api_key",
     "apikey",
-    "api_token",
-    "access_token",
-    "refresh_token",
-    "id_token",
-    "session_token",
-    "private_key",
+    "apitoken",
+    "accesstoken",
+    "refreshtoken",
+    "idtoken",
+    "sessiontoken",
     "privatekey",
     "credentials",
-    "access_key",
-    "client_secret",
-    "db_password",
-    "aws_secret_access_key",
+    "accesskey",
+    "clientsecret",
+    "dbpassword",
+    "awssecretaccesskey",
 ];
 
+/// The canonical scan text of one folded envelope (r4 F1): `_` and `-`
+/// deleted, with a parallel record per canonical byte of whether it was
+/// preceded CONTIGUOUSLY by an alphanumeric byte of the original text.
+/// A deleted separator clears the record, so the `p` of `password` in
+/// `root_password` and `x-api-token` carries a word boundary, while the
+/// `p` of `NotAPassword` does not — camelCase, kebab-case, and
+/// snake_case keys are one spelling, and only true alphanumeric
+/// adjacency suppresses a match.
+struct Canonical {
+    text: Vec<u8>,
+    preceded_alphanumeric: Vec<bool>,
+}
+
+impl Canonical {
+    fn of(folded: &[u8]) -> Self {
+        let mut text = Vec::with_capacity(folded.len());
+        let mut preceded_alphanumeric = Vec::with_capacity(folded.len());
+        let mut contiguous = false;
+        for byte in folded {
+            if *byte == b'_' || *byte == b'-' {
+                contiguous = false;
+                continue;
+            }
+            text.push(*byte);
+            preceded_alphanumeric.push(contiguous);
+            contiguous = byte.is_ascii_alphanumeric();
+        }
+        Self {
+            text,
+            preceded_alphanumeric,
+        }
+    }
+}
+
+/// Whether the canonical text at `index` opens a quote-equivalent
+/// spelling (r4 F1): `\"` (the JSON-escaped quote), `"`, or `'`. The
+/// width of the opening spelling is returned; a lone `\` is not one.
+fn quote_equivalent(text: &[u8], index: usize) -> Option<usize> {
+    match text.get(index) {
+        Some(b'\\') if text.get(index + 1) == Some(&b'"') => Some(2),
+        Some(b'"') => Some(1),
+        Some(b'\'') => Some(1),
+        _ => None,
+    }
+}
+
+/// Whether a value span (already whitespace-trimmed) carries a
+/// non-empty assigned token: a quote-equivalent-wrapped value closes
+/// with any later quote equivalent (`password="x"`, `password='x'`,
+/// `{"password":"x"}` — the escaped spellings serialize as `\"` and
+/// a lone backslash no longer breaks the scan, r4 F1); an unwrapped
+/// value needs at least one leading token character. A value that
+/// never closes before the frame ends carries no token at all —
+/// structural fragments are not assignments.
+fn carries_token(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if let Some(width) = quote_equivalent(bytes, 0) {
+        let mut cursor = width;
+        let mut span = 0;
+        while cursor < bytes.len() {
+            if quote_equivalent(bytes, cursor).is_some() {
+                return span > 0;
+            }
+            span += 1;
+            cursor += 1;
+        }
+        return false;
+    }
+    bytes
+        .first()
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
+}
+
 fn contains_assigned_token(folded: &[u8]) -> bool {
-    let text = match std::str::from_utf8(folded) {
+    let canonical = Canonical::of(folded);
+    let text = match std::str::from_utf8(&canonical.text) {
         Ok(text) => text,
         Err(_) => return false,
     };
+    let boundary = &canonical.preceded_alphanumeric;
     for key in ASSIGNMENT_KEYS {
         let mut from = 0;
         while let Some(position) = text[from..].find(key) {
             let key_start = from + position;
             let mut cursor = key_start + key.len();
             from = cursor;
-            // The match must start at a key boundary (r3 F1): only
-            // alphanumeric adjacency suppresses the match — `_` and `-`
-            // are admitted pre-key separators, so `db_password`,
-            // `client_secret`, and `x-password` all match their key,
-            // while `NotAPasswordValue` never matches (`A` is
-            // alphanumeric). In the JSON spelling the byte before the
-            // key is the opening quote, which is not alphanumeric and
-            // therefore admits the match.
-            if key_start > 0 {
-                let before = text.as_bytes()[key_start - 1];
-                if before.is_ascii_alphanumeric() {
-                    continue;
-                }
+            // The match must start at a key boundary (r3 F1/r4 F1): only
+            // CONTIGUOUS alphanumeric adjacency suppresses the match.
+            // In the JSON spelling the byte before the key is the
+            // opening quote; in the canonical spelling a deleted `_` or
+            // `-` is a boundary exactly like that quote.
+            if boundary.get(key_start).copied().unwrap_or(false) {
+                continue;
             }
-            // JSON spelling: the key closes with a quote, then optional
-            // whitespace, then the colon. Config spelling: the key is
-            // followed by `=` or `:`. Review r2 F15: the separator may carry
+            // JSON spelling: the key closes with a quote equivalent
+            // (`\"` for the embedded-JSON spelling, r4 F1), then
+            // optional whitespace, then the separator. Config spelling:
+            // the key is followed by `=` or `:`. The separator may carry
             // optional whitespace on BOTH sides in either spelling
-            // (`password = <token>`), so whitespace is skipped between the
-            // key (or its closing quote) and the separator.
-            if text.as_bytes().get(cursor) == Some(&b'"') {
-                cursor += 1;
+            // (`password = <token>`, `"secret" : "<token>"`).
+            if let Some(width) = quote_equivalent(text.as_bytes(), cursor) {
+                cursor += width;
             }
             cursor += text[cursor..].len() - text[cursor..].trim_start().len();
             let separator_at = match text.as_bytes().get(cursor) {
                 Some(&b':') | Some(&b'=') => cursor,
                 _ => continue,
             };
-            let mut value = &text[separator_at + 1..];
-            value = &value[value.len() - value.trim_start().len()..];
-            // A JSON-quoted value: the closing quote ends it, and a quote
-            // that closes immediately (or never closes before the frame
-            // ends) carries no token at all — structural fragments like
-            // the `"}` tail of `"password="}` are not assignments.
-            let quoted = value.starts_with('"');
-            let token = if quoted {
-                let mut span = String::new();
-                let mut closed = false;
-                for character in value.chars().skip(1) {
-                    if character == '"' {
-                        closed = true;
-                        break;
-                    }
-                    if character == '\\' {
-                        break;
-                    }
-                    span.push(character);
-                }
-                if !closed || span.is_empty() {
-                    continue;
-                }
-                span
-            } else {
-                value
-                    .chars()
-                    .take_while(|character| {
-                        character.is_ascii_alphanumeric()
-                            || matches!(*character, '_' | '-' | '+' | '/' | '=')
-                    })
-                    .collect()
-            };
-            if token.chars().count() >= ASSIGNED_TOKEN_MIN {
+            let value = &text[separator_at + 1..];
+            if carries_token(value.trim_start()) {
                 return true;
             }
         }
@@ -327,7 +426,8 @@ mod tests {
             screen_envelope("{\"note\":\"see C:/Users/PrivateReview/private.txt\"}"),
             Err("private-absolute-path")
         );
-        // The JSON-escaped backslash spelling still matches the raw scan.
+        // The JSON-escaped backslash spelling still matches the shape
+        // scan.
         assert_eq!(
             screen_envelope("{\"note\":\"C:\\\\Users\\\\PrivateReview\\\\f.txt\"}"),
             Err("private-absolute-path")
@@ -336,22 +436,51 @@ mod tests {
             screen_envelope("{\"note\":\"/home/alice/notes.txt\"}"),
             Err("private-absolute-path")
         );
-        // r3 F1: the private-path needles fold case, so the uppercase
-        // Windows profile spellings are one spelling with the lowercase
-        // ones.
+        // r3 F1: the shape matchers fold case — every casing of the
+        // Windows profile spellings is one spelling.
         assert_eq!(
             screen_envelope("{\"note\":\"C:/USERS/PrivateReview/private.txt\"}"),
             Err("private-absolute-path")
         );
-        // Relative project paths and prose never match.
+        // r4 F1: private absolute paths refuse by SHAPE — any drive
+        // letter and any boundary-rooted POSIX path, not only the
+        // enumerated user roots the r2/r3 needles covered.
+        assert_eq!(
+            screen_envelope("{\"note\":\"D:/PrivateReview/finance.txt\"}"),
+            Err("private-absolute-path")
+        );
+        assert_eq!(
+            screen_envelope("{\"note\":\"/srv/private/finance.txt\"}"),
+            Err("private-absolute-path")
+        );
+        assert_eq!(
+            screen_envelope("{\"note\":\"/etc/passwd is readable\"}"),
+            Err("private-absolute-path")
+        );
+        assert_eq!(
+            screen_envelope("{\"env\":\"e:\\\\secret\\\\k.json\"}"),
+            Err("private-absolute-path")
+        );
+        // Relative project paths, URIs, and prose never match: the
+        // boundary rules keep them out of the rooted-path shapes.
         assert_eq!(
             screen_envelope("{\"path\":\"lekalo/modules/planner/commands.yaml\"}"),
+            Ok(())
+        );
+        assert_eq!(
+            screen_envelope("{\"uri\":\"lekalo://planner/symbol/planner.focus_task\"}"),
             Ok(())
         );
         assert_eq!(
             screen_envelope("{\"note\":\"the Users table holds profiles\"}"),
             Ok(())
         );
+        assert_eq!(
+            screen_envelope("{\"url\":\"https://example.com/a/b\"}"),
+            Ok(())
+        );
+        assert_eq!(screen_envelope("{\"host\":\"127.0.0.1:8080/x\"}"), Ok(()));
+        assert_eq!(screen_envelope("{\"ratio\":\"and/or either\"}"), Ok(()));
     }
 
     #[test]
@@ -394,6 +523,7 @@ mod tests {
             "{\"CLIENT_SECRET\":\"topsecretvalue\"}",
             "{\"db_password\":\"hunter2hunter2\"}",
             "x-api-token: tok_live_12345",
+            "root_password=hunter2hunter2",
         ] {
             assert_eq!(
                 screen_envelope(envelope),
@@ -401,8 +531,8 @@ mod tests {
                 "the credential spelling must refuse: {envelope}"
             );
         }
-        // The safe adjacency class stays safe: alphanumeric adjacency
-        // still suppresses the key match, whatever the casing.
+        // The safe adjacency class stays safe: contiguous alphanumeric
+        // adjacency still suppresses the key match, whatever the casing.
         assert_eq!(screen_envelope("NotAPassword=x"), Ok(()));
         assert_eq!(screen_envelope("NOTAPASSWORD=x"), Ok(()));
         assert_eq!(screen_envelope("{\"field\":\"NOTAPASSWORDVALUE\"}"), Ok(()));
@@ -410,6 +540,64 @@ mod tests {
             screen_envelope("{\"field\":\"the Password field\"}"),
             Ok(())
         );
+    }
+
+    #[test]
+    fn camelcase_and_kebab_credential_keys_refuse() {
+        // r4 F1: the separator-canonical scan folds `_`, `-`, and case
+        // on BOTH sides, so the camelCase and kebab-case spellings —
+        // the dominant forms of the JSON/JavaScript ecosystem — are the
+        // same key as their snake_case spelling, and the alphanumeric
+        // characters INSIDE a camelCase key no longer suppress the
+        // suffix match (only contiguous adjacency does, and a deleted
+        // separator is a boundary).
+        for envelope in [
+            "clientSecret=synthcamelsecret1",
+            "accessToken=eyJhbGciOi.example",
+            "dbPassword=hunter2hunter2",
+            "api-key=synthapikey4",
+            "aws-secret-access-key=AKIAIOSFODNN7EXAMPLE",
+            "api-Key=synthapikey5",
+            "ClientSecret=synthcamel2",
+            "{\"clientSecret\":\"synthcamel3\"}",
+            "x-api-key: synthapikey6",
+            "refresh-token=synthrefresh7",
+        ] {
+            assert_eq!(
+                screen_envelope(envelope),
+                Err("assigned-credential"),
+                "the credential spelling must refuse: {envelope}"
+            );
+        }
+        // Prose that merely contains the words is not an assignment.
+        assert_eq!(screen_envelope("the client secret is rotated"), Ok(()));
+        assert_eq!(screen_envelope("client-secret-name field"), Ok(()));
+    }
+
+    #[test]
+    fn quoted_and_embedded_json_assignment_spellings_refuse() {
+        // r4 F1: quote equivalents — `"`, `'`, and the JSON-escaped
+        // `\"` — wrap values in every combination, and an embedded JSON
+        // object serializes with escaped quotes that no longer hide the
+        // assignment. Each row is the exact on-the-wire spelling the
+        // round-4 probes leaked.
+        for envelope in [
+            "password=\"synthetic-secret-q6\"",
+            "password='synthetic-secret-q7'",
+            "{\"description\":\"password=\\\"synthetic-secret-q6\\\"\"}",
+            "{\"description\":\"password='synthetic-secret-q7'\"}",
+            "{\"note\":\"{\\\"password\\\":\\\"synthetic-secret-json8\\\"}\"}",
+            "secret : 'topsecretvalue'",
+        ] {
+            assert_eq!(
+                screen_envelope(envelope),
+                Err("assigned-credential"),
+                "the quoted assignment must refuse: {envelope}"
+            );
+        }
+        // The empty assignment and structural fragments still ship.
+        assert_eq!(screen_envelope("{\"schema\":\"password=\"}"), Ok(()));
+        assert_eq!(screen_envelope("password=\"\""), Ok(()));
     }
 
     #[test]
