@@ -10,6 +10,7 @@
 // gate. No private material may become a public fixture.
 
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -85,8 +86,36 @@ for (const family of manifest.families) {
   }
 }
 
+// Binary fixtures must survive Git's clean filter byte-for-byte (issue #41
+// r7 devin F4). Check every tracked NUL-bearing fixture, not just one SQLite
+// example, and append a CRLF canary to exercise normalization even if a
+// fixture's current bytes happen not to contain any CRLF. The check is
+// defined over TRACKED files, so a working copy without repository
+// metadata (the docs-examples replay copy) simply has nothing to check.
+let tracked;
+try {
+  tracked = execFileSync("git", ["ls-files", "-z", "--", "tests/fixtures"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
+} catch {
+  tracked = [];
+}
+let binaryFixtures = 0;
+for (const path of tracked) {
+  const bytes = await readFile(join(root, path));
+  if (!bytes.includes(0) && !path.endsWith('.sqlite')) continue;
+  binaryFixtures += 1;
+  const attributes = execFileSync("git", ["check-attr", "-z", "text", "eol", "--", path], { cwd: root, encoding: "utf8" }).split("\0");
+  assert.equal(attributes[2], "unset", `${path}: binary fixture must be -text`);
+  assert.equal(attributes[5], "unspecified", `${path}: binary fixture must not set eol`);
+  const canary = Buffer.concat([bytes, Buffer.from("\r\nclean-filter-canary\r\n")]);
+  const clean = execFileSync("git", ["hash-object", "--stdin", `--path=${path}`], { cwd: root, input: canary, encoding: "utf8" });
+  const raw = execFileSync("git", ["hash-object", "--stdin", "--no-filters"], { cwd: root, input: canary, encoding: "utf8" });
+  assert.equal(clean, raw, `${path}: clean filtering rewrites binary fixture bytes`);
+}
+assert.ok(tracked.length === 0 || binaryFixtures > 0, "binary fixture filter regression must exercise real fixtures");
+
 console.log(JSON.stringify({
   ok: true,
+  binaryFixtures,
   families: onDisk.length,
   synthetic,
   evidenceBacked,

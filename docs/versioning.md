@@ -62,8 +62,9 @@ carry `0.8.0`, the change catalog data document pins its own `0.8.0` identity,
 and the diagnostic registry takes the additive union successor `0.8.0`
 (the merged milestone union — every `0.6.5` entry plus the closed
 `format.*` (issue #94), `adoption.*` (issue #136), `portability.*`
-(issue #19), and `worklog-changelog.*` (issue #51) families — plus the
-twelve `change.*` rules `LEK-CHANGE-001..012` (570 entries);
+(issue #19), `worklog-changelog.*` (issue #51), and `managed.*`
+(issue #41) families — plus the twelve `change.*` rules
+`LEK-CHANGE-001..012` (582 entries);
 predecessor producers keep their exact pins, and registry selection is a
 three-step chain 0.6.4 → 0.6.5 → 0.8.0, never a version-string replacement).
 The canonical change history sidecar `lekalo/change-history.json` is admitted
@@ -75,3 +76,5 @@ accepted Model stays `0.2.16`: declared field defaults and wire values decode
 in the closed request surface and refuse with the registered unsupported
 outcome until a reviewed Model successor lands, and unchanged contracts keep
 their exact accepted versions.
+
+Issue #41 adds the managed ownership family group — `managed-ownership`, `managed-coverage`, `managed-generation-plan`, `managed-generation-record`, `managed-transaction`, `managed-rollback-plan` and `managed-equivalence` — at the product version `0.8.0`, together with the `diagnostic-registry` union successor `0.8.0`: the exact 522-entry `0.6.5` predecessor plus the closed `managed.*` family `LEK-MGD-001..012`. The embedded ordinary registry `0.6.4` and the opt-in `0.6.5` successor keep their exact bytes, and predecessor producer pins are unchanged; managed producers pin the union successor through the same closed entry grammar, and wire diagnostics remain `lekalo/diagnostic/v0.2.16`. Frozen families whose bytes this issue does not change — including `lock`, `target-protocol`, `artifact-manifest`, the orchestration receipts and the validation profiles — keep their accepted versions; a managed integration that actually changes one of them publishes its successor in the implementing commit per the rule above.

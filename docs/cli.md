@@ -1236,6 +1236,16 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo inspect` | `lekalo inspect [OPTIONS] <SYMBOL>` | [reference](inspect.md) |
 | `lekalo load` | `lekalo load [OPTIONS]` | [reference](loader.md) |
 | `lekalo lock` | `lekalo lock [OPTIONS] [PROGRAM_ARGS]...` | [reference](lockfile.md) |
+| `lekalo managed` | `lekalo managed [OPTIONS] <COMMAND>` | [reference](managed-mode.md) |
+| `lekalo managed apply` | `lekalo managed apply [OPTIONS] --plan <FILE> --coverage <FILE> --ownership <FILE>` | [reference](managed-mode.md) |
+| `lekalo managed authority` | `lekalo managed authority [OPTIONS] --module <MODULE>` | [reference](managed-mode.md) |
+| `lekalo managed check` | `lekalo managed check [OPTIONS] --ownership <FILE>` | [reference](managed-mode.md) |
+| `lekalo managed equivalence` | `lekalo managed equivalence [OPTIONS] --evidence <FILE>` | [reference](managed-mode.md) |
+| `lekalo managed plan` | `lekalo managed plan [OPTIONS] --to <MODE> --ownership <FILE> --coverage <FILE> --module <MODULE> --target <TARGET>` | [reference](managed-mode.md) |
+| `lekalo managed recover` | `lekalo managed recover [OPTIONS]` | [reference](managed-mode.md) |
+| `lekalo managed resolve` | `lekalo managed resolve [OPTIONS] --path <PATH>` | [reference](managed-mode.md) |
+| `lekalo managed rollback` | `lekalo managed rollback [OPTIONS] --to <DIGEST>` | [reference](managed-mode.md) |
+| `lekalo managed upgrade-plan` | `lekalo managed upgrade-plan [OPTIONS] --module <MODULE> --target <TARGET> --ownership <FILE> --base <FILE> --candidate <FILE>` | [reference](managed-mode.md) |
 | `lekalo metrics` | `lekalo metrics [OPTIONS] <COMMAND>` | [reference](metrics-export.md) |
 | `lekalo metrics export` | `lekalo metrics export [OPTIONS] --evaluation <FILE> --scope <TOKEN>` | [reference](metrics-export.md) |
 | `lekalo metrics status` | `lekalo metrics status [OPTIONS] --scope <TOKEN> <EXPORT_ID>` | [reference](metrics-export.md) |

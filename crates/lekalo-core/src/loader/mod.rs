@@ -914,6 +914,21 @@ fn render_load_output(model: &NormalizedModel, spans_requested: bool) -> DomainR
     DomainResult::model(json, human)
 }
 
+/// The exact load-envelope success payload of one normalized aggregate
+/// without a source map — byte-identical to what `run` renders into its
+/// success envelope for a spans-free load. Authority derivations consume
+/// this so a single-snapshot derivation (r6, codex F11 / devin F8: one
+/// filesystem read produces the Model payload, the typed Model, and the
+/// source pins) pins the exact same digest the two-read derivation did.
+pub fn model_envelope_payload(model: &NormalizedModel) -> String {
+    let mut json = String::from("{\"status\":\"valid\",\"modelVersion\":");
+    json.push_str(&Canonical::Str(model.model_version.as_str().to_owned()).to_json());
+    json.push_str(",\"model\":");
+    json.push_str(&canonical_model_bytes(model));
+    json.push('}');
+    json
+}
+
 /// The exact canonical Model bytes of one normalized aggregate: compact
 /// JSON with byte-sorted keys and semantic-ID-ordered collections — the
 /// same bytes the load envelope renders (phase 9) and the same digest

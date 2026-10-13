@@ -97,6 +97,7 @@ const worklogEntries = registry.entries.filter((entry) =>
   entry.id.startsWith("worklog-changelog."),
 );
 const changeEntries = registry.entries.filter((entry) => entry.id.startsWith("change."));
+const managedEntries = registry.entries.filter((entry) => entry.id.startsWith("managed."));
 if (
   registry.entries.length !==
   predecessor.entries.length +
@@ -104,15 +105,23 @@ if (
     adoptionEntries.length +
     portabilityEntries.length +
     worklogEntries.length +
+    managedEntries.length +
     changeEntries.length
 ) {
   fail("registry-not-a-union");
 }
-if (adoptionEntries.length !== 9 || portabilityEntries.length !== 9 || worklogEntries.length !== 7 || changeEntries.length !== 12) {
+if (
+  adoptionEntries.length !== 9 ||
+  portabilityEntries.length !== 9 ||
+  worklogEntries.length !== 7 ||
+  managedEntries.length !== 12 ||
+  changeEntries.length !== 12
+) {
   fail("registry-merged-family-drift", {
     adoption: adoptionEntries.length,
     portability: portabilityEntries.length,
     worklog: worklogEntries.length,
+    managed: managedEntries.length,
     change: changeEntries.length,
   });
 }

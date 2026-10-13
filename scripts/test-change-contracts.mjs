@@ -248,12 +248,13 @@ const predecessorIds = new Map(predecessor.entries.map((entry) => [entry.id, ent
 // The 0.8.0 successor is the MERGED milestone union: every 0.6.5 entry
 // plus the format.* family (11, issue #94), the adoption.* family (9,
 // issue #136), the portability.* family (9, issue #19), the
-// worklog-changelog.* family (7, issue #51), and the change.* family
-// (12, issue #73).
+// worklog-changelog.* family (7, issue #51), the managed.* family (12,
+// issue #41), and the change.* family (12, issue #73).
 const MERGED_FORMAT_CODES = 11;
 const MERGED_ADOPTION_CODES = 9;
 const MERGED_PORTABILITY_CODES = 9;
 const MERGED_WORKLOG_CODES = 7;
+const MERGED_MANAGED_CODES = 12;
 if (
   successor.entries.length !==
   predecessor.entries.length +
@@ -261,6 +262,7 @@ if (
     MERGED_ADOPTION_CODES +
     MERGED_PORTABILITY_CODES +
     MERGED_WORKLOG_CODES +
+    MERGED_MANAGED_CODES +
     12
 ) {
   fail("registry-union-size", {

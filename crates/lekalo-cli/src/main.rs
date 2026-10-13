@@ -33,6 +33,7 @@ mod doctor_git;
 mod evaluation;
 mod format;
 mod git_input;
+mod managed;
 mod metrics_export;
 mod pilot_battery;
 mod portability;
@@ -379,6 +380,11 @@ enum Commands {
         /// an existing lock as stale.
         #[arg(trailing_var_arg = true)]
         program_args: Vec<String>,
+    },
+    /// Explicit managed ownership, planning, and custody (issue #41).
+    Managed {
+        #[command(subcommand)]
+        command: managed::ManagedCommands,
     },
     /// Preview a deterministic lock update, or apply one exact plan.
     Update {
@@ -2503,6 +2509,7 @@ fn runtime() -> u8 {
                 offline: _,
                 program_args,
             } => run_lock(project, check, program_args),
+            Commands::Managed { command } => managed::run(command),
             Commands::Update {
                 project,
                 dry_run,

@@ -85,9 +85,9 @@ const unionIds = new Set(union.entries.map((entry) => entry.id));
 // family and the predecessor's verbatim survival, not the union size.
 if (
   union.entries.length !==
-  predecessor.entries.length + 11 + 9 + 9 + 7 + 12
+  predecessor.entries.length + 11 + 9 + 9 + 7 + 12 + 12
 ) {
-  fail("registry-size", `${union.entries.length} vs ${predecessor.entries.length} + 48`);
+  fail("registry-size", `${union.entries.length} vs ${predecessor.entries.length} + 60`);
 }
 for (const entry of predecessor.entries) {
   if (!unionIds.has(entry.id)) fail("registry-dropped", entry.id);

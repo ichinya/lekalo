@@ -90,7 +90,7 @@ if (!validateRegistry(registry80)) fail("registry-invalid", validateRegistry.err
 // The 0.8.0 registry is the merged milestone union (format, adoption,
 // portability, worklog-changelog, change): 522 predecessor entries plus
 // the five closed families.
-if (registry80.entries.length !== registry65.entries.length + 11 + 9 + 9 + 7 + 12) {
+if (registry80.entries.length !== registry65.entries.length + 11 + 9 + 9 + 7 + 12 + 12) {
   fail("registry-count", { v08: registry80.entries.length, v065: registry65.entries.length });
 }
 const ids65 = new Map(registry65.entries.map((entry) => [entry.id, entry]));
