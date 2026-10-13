@@ -2214,3 +2214,123 @@ mod round5_semantics {
         }
     }
 }
+
+/// Round-6 semantics: the coverage-gap verdict of the migration
+/// surface is computed from the untruncated domain join, never from
+/// the emission-clipped affected lists — a legal model whose affected
+/// closure exceeds the 10,000-join emission bound cannot green the
+/// strict gate through a gap the clip would drop.
+mod round6_semantics {
+    use super::*;
+    use lekalo_core::portability::planning;
+
+    /// The clipped-join probe: 9,999 covered crowd scenarios that sort
+    /// first, the fixture's two covered planner scenarios, and one
+    /// probe scenario that sorts last — past the 10,000-join emission
+    /// bound. `uncovered` decides whether the probe scenario joins the
+    /// gate-covered set or stays a coverage gap.
+    fn clipped_join_assessment(
+        uncovered: bool,
+    ) -> Result<(lekalo_core::ir::Compilation, wire::Report), DiagnosticSet> {
+        let crowd: Vec<String> = (0..9_999).map(|i| format!("aaa.crowd{i:05}")).collect();
+        let probe = "zzz.uncovered".to_owned();
+        let covered_crowd = crowd.clone();
+        let covered_probe = probe.clone();
+        fixture_assessment_with(
+            Some(&mut move |value: &mut serde_json::Value| {
+                let mut gates = value["gates"].as_array().cloned().unwrap_or_default();
+                let mut covered = covered_crowd.clone();
+                if !uncovered {
+                    covered.push(covered_probe.clone());
+                }
+                for (index, chunk) in covered.chunks(250).enumerate() {
+                    gates.push(serde_json::json!({
+                        "gate": format!("planner.crowd-gate-{index:04}"),
+                        "scenarios": chunk,
+                        "state": "declared",
+                        "targetId": null,
+                        "receiptRef": null,
+                        "receiptDigest": null,
+                    }));
+                }
+                value["gates"] = serde_json::json!(gates);
+            }),
+            None,
+            BTreeMap::new(),
+            Some(&mut move |subjects: &mut Subjects| {
+                let mut affected = crowd.clone();
+                affected.push(probe.clone());
+                for scenario in affected {
+                    subjects
+                        .covered_by
+                        .insert(scenario, vec!["planner.focus_task".to_owned()]);
+                }
+            }),
+        )
+    }
+
+    #[test]
+    fn a_gap_beyond_the_affected_join_clip_still_denies() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // 10,002 affected scenarios with exactly one uncovered scenario
+        // sorting past the emitted 10,000-join prefix: the emitted join
+        // loses the gap, the pinned diagnostic keeps it, and the typed
+        // verdict must deny on the untruncated domain join — the
+        // strict gate never greens on a surface it marks complete only
+        // because the clip hid the gap.
+        let (_, report) =
+            clipped_join_assessment(true).expect("the clipped-join assessment succeeds");
+        assert_eq!(
+            report.affected_scenarios.len(),
+            10_000,
+            "the emitted join holds its published bound"
+        );
+        assert!(
+            report
+                .affected_scenarios
+                .iter()
+                .all(|scenario| scenario.scenario != "zzz.uncovered"),
+            "the uncovered scenario sorts past the emitted prefix"
+        );
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.detail == "affected-joins-clipped"));
+        assert!(report.diagnostics.iter().any(|d| {
+            d.detail == "gate-coverage-unknown" && d.subject.as_deref() == Some("zzz.uncovered")
+        }));
+        assert_eq!(
+            report.migration_surface.affected_scenarios, 10_002,
+            "the typed count describes the untruncated domain join"
+        );
+        assert!(
+            !report.migration_surface.complete,
+            "a clipped-away gap must mark the surface incomplete"
+        );
+        assert!(
+            report.migration_surface.rows.iter().any(|row| {
+                row.subject == "scenario:zzz.uncovered"
+                    && row.reason == "gate-coverage-unknown"
+                    && row.action == wire::Action::CollectEvidence
+            }),
+            "the clipped-away gap keeps its collect-evidence planning row"
+        );
+        assert!(planning::denial(&report));
+    }
+
+    #[test]
+    fn a_fully_covered_clipped_join_stays_complete() {
+        let _guard = CWD_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // The control: the same 10,002-scenario clipped join with every
+        // scenario covered stays complete — the clip alone is honest
+        // presentation, and only a real gap flips the typed verdict.
+        let (_, report) = clipped_join_assessment(false).expect("the covered control assesses");
+        assert_eq!(report.affected_scenarios.len(), 10_000);
+        assert_eq!(report.migration_surface.affected_scenarios, 10_002);
+        assert!(report.migration_surface.complete);
+        assert!(report
+            .diagnostics
+            .iter()
+            .all(|d| d.detail != "gate-coverage-unknown"));
+    }
+}

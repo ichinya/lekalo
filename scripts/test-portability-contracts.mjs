@@ -12,7 +12,7 @@
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -1853,6 +1853,120 @@ const withEvidence = (temp, mutate) => {
     } finally {
       rmSync(temp, { recursive: true, force: true });
     }
+  }
+}
+
+// 10f. Round-6 fix probe: the coverage-gap verdict of the migration
+//      surface is computed from the untruncated domain join, so a legal
+//      model with more than 10,000 affected scenarios cannot green the
+//      strict gate through a gap the emission clip drops.
+{
+  // R6-1 — 10,003 affected scenarios for the symbol scope, all covered
+  // by declared gates except one uncovered scenario that sorts past the
+  // 10,000-join emission bound. The fully covered variant greens --check
+  // (control); the clipped-away gap must deny (exit 3) with its pinned
+  // indication and its collect-evidence planning row — never a false
+  // green on a surface the report itself marks complete only because
+  // the clip hid the gap.
+  const temp = mkdtempSync(join(tmpdir(), "lekalo-portability-"));
+  try {
+    cpSync(project, temp, { recursive: true });
+    const big = (args) => {
+      try {
+        return { code: 0, stdout: execFileSync(binary, args, { cwd: temp, encoding: "utf8", maxBuffer: 500e6, stdio: ["ignore", "pipe", "pipe"] }) };
+      } catch (error) {
+        return { code: error.status ?? 1, stdout: String(error.stdout ?? ""), stderr: String(error.stderr ?? "") };
+      }
+    };
+    // Crowd scenarios split across two module documents (the loader's
+    // per-document node bound): 5,000 in planner, 5,000 in a new crowd
+    // module importing planner; every one covers planner.focus_task.
+    const def = (id) => `  - id: ${id}\n    kind: scenario\n    version: 1\n    description: "Crowd coverage"\n    summary: "Crowd scenario covering planner.focus_task."\n    covers:\n      - "planner.focus_task"\n`;
+    let plannerYaml = "";
+    for (let i = 0; i < 5000; i += 1) plannerYaml += def(`planner.crowdp${String(i).padStart(5, "0")}`);
+    appendFileSync(join(temp, "lekalo/modules/planner/scenarios.yaml"), plannerYaml);
+    mkdirSync(join(temp, "lekalo/modules/crowd"), { recursive: true });
+    writeFileSync(join(temp, "lekalo/modules/crowd/module.yaml"), "schema_version: \"0.2.16\"\ndefinitions:\n  - id: crowd\n    kind: module\n    version: 1\n    description: \"Crowd flood module\"\n    imports:\n      - planner\n");
+    let crowdYaml = "schema_version: \"0.2.16\"\ndefinitions:\n";
+    for (let i = 0; i < 5000; i += 1) crowdYaml += def(`crowd.crowdn${String(i).padStart(5, "0")}`);
+    writeFileSync(join(temp, "lekalo/modules/crowd/scenarios.yaml"), crowdYaml);
+    // The live Model/IR pins of the mutated model, derived through the
+    // production loader — the same canonical bytes the custody pins
+    // bind — then re-pinned into the evidence manifest, the receipts,
+    // and the implementation family artifact.
+    const repin = () => {
+      const member = (out, key) => {
+        let sub = out.slice(out.indexOf(`"${key}":`) + key.length + 3).trimEnd();
+        if (sub.endsWith("}")) sub = sub.slice(0, -1);
+        return sub;
+      };
+      const modelDigest = `sha256:${sha256(Buffer.from(member(big(["--no-cache", "--json", "load"]).stdout, "model"), "utf8"))}`;
+      const irDigest = `sha256:${sha256(Buffer.from(member(big(["--no-cache", "--json", "load", "--ir"]).stdout, "ir"), "utf8"))}`;
+      const evidencePath = join(temp, "reports/portability-evidence.json");
+      const evidence = JSON.parse(readFileSync(evidencePath, "utf8"));
+      evidence.projectRef.irDigest = irDigest;
+      const implPath = join(temp, "reports/implementation.json");
+      const impl = JSON.parse(readFileSync(implPath, "utf8"));
+      if (impl.projectRef) impl.projectRef.irDigest = irDigest;
+      impl.modelRef.digest = modelDigest;
+      impl.irRef.digest = irDigest;
+      writeFileSync(implPath, Buffer.from(JSON.stringify(impl, null, 2) + "\n", "utf8"));
+      for (const record of evidence.scenarios) {
+        if (!record.receiptRef) continue;
+        const receiptPath = join(temp, record.receiptRef);
+        const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+        receipt.projectRef.irDigest = irDigest;
+        const bytes = Buffer.from(JSON.stringify(receipt, null, 2) + "\n", "utf8");
+        writeFileSync(receiptPath, bytes);
+        record.receiptDigest = `sha256:${sha256(bytes)}`;
+      }
+      const family = evidence.families.find((f) => f.family === "implementation");
+      family.digest = `sha256:${sha256(readFileSync(implPath))}`;
+      return evidence;
+    };
+    const coveredNames = [];
+    for (let i = 0; i < 5000; i += 1) coveredNames.push(`crowd.crowdn${String(i).padStart(5, "0")}`);
+    for (let i = 0; i < 5000; i += 1) coveredNames.push(`planner.crowdp${String(i).padStart(5, "0")}`);
+    const args = ["--no-cache", "--json", "portability", "--evidence", "reports/portability-evidence.json", "--symbol", "planner.focus_task", "--to", "php-laravel", "--check"];
+
+    // The control: every affected scenario covered — the clipped join is
+    // honest presentation and the strict gate greens.
+    let evidence = repin();
+    evidence.gates.push(...coveredNames.reduce((gates, _, index) => {
+      if (index % 250 === 0) {
+        gates.push({ gate: `planner.crowd-gate-${String(index / 250).padStart(2, "0")}`, scenarios: coveredNames.slice(index, index + 250), state: "declared", targetId: null, receiptRef: null, receiptDigest: null });
+      }
+      return gates;
+    }, []));
+    writeFileSync(join(temp, "reports/portability-evidence.json"), Buffer.from(JSON.stringify(evidence, null, 2) + "\n", "utf8"));
+    const control = big(args);
+    if (control.code !== 0) fail("r6-1-control-exit", `${control.code}: ${control.stderr.slice(0, 300)}`);
+    const controlReport = JSON.parse(control.stdout).portability;
+    if (!validate.report(controlReport)) fail("r6-1-control-schema", validate.report.errors);
+    if (!controlReport.migrationSurface.complete) fail("r6-1-control-complete", "a fully covered clipped join stays complete");
+
+    // The probe: one uncovered scenario sorts past the emitted bound —
+    // the covering gates stay exactly as the control wrote them.
+    appendFileSync(join(temp, "lekalo/modules/planner/scenarios.yaml"), def("planner.zzzuncovered"));
+    evidence = repin();
+    writeFileSync(join(temp, "reports/portability-evidence.json"), Buffer.from(JSON.stringify(evidence, null, 2) + "\n", "utf8"));
+    const denied = big(args);
+    if (denied.code !== 3) fail("r6-1-clipped-green", `a clipped-away gap must deny --check, got ${denied.code}`);
+    const envelope = JSON.parse(denied.stdout);
+    const report = envelope.payload.portability;
+    if (!validate.report(report)) fail("r6-1-denied-schema", validate.report.errors);
+    if (report.migrationSurface.complete) fail("r6-1-complete", "the clipped-away gap must mark the surface incomplete");
+    if (report.affectedScenarios.length !== 10000) fail("r6-1-emit-bound", String(report.affectedScenarios.length));
+    if (report.migrationSurface.affectedScenarios !== 10002) fail("r6-1-domain-count", String(report.migrationSurface.affectedScenarios));
+    if (report.affectedScenarios.some((s) => s.scenario === "planner.zzzuncovered")) fail("r6-1-emitted-gap", "the uncovered scenario must sort past the emitted prefix");
+    if (!report.diagnostics.some((d) => d.detail === "affected-joins-clipped")) fail("r6-1-clip-marker", "missing");
+    if (!report.diagnostics.some((d) => d.detail === "gate-coverage-unknown" && d.subject === "planner.zzzuncovered")) fail("r6-1-pin", "the gap stays pinned");
+    const collect = report.migrationSurface.rows.find((row) => row.subject === "scenario:planner.zzzuncovered");
+    if (!collect || collect.reason !== "gate-coverage-unknown" || collect.action !== "collect-evidence") {
+      fail("r6-1-collect-row", JSON.stringify(collect).slice(0, 200));
+    }
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
   }
 }
 
