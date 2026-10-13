@@ -1,6 +1,6 @@
 # CLI reference
 
-Status: **Implemented** handlers at product `0.6.5`. Owner: CLI maintainers. The checked [command index](#command-index) below inventories recursive live help, including groups and nested leaves. Earlier issue-specific sections are historical examples; exact live usage and each specialist owner govern current syntax. Native production execution remains **Planned**; a handler returning unsupported is not target qualification. Model/IR stay `0.2.16`; [diagnostics](diagnostics.md) owns exits and streams.
+Status: **Implemented** handlers at product `0.8.0` (watch remains experimental; see below). Owner: CLI maintainers. The checked [command index](#command-index) below inventories recursive live help, including groups and nested leaves. Earlier issue-specific sections are historical examples; exact live usage and each specialist owner govern current syntax. Native production execution remains **Planned**; a handler returning unsupported is not target qualification. Model/IR stay `0.2.16`; [diagnostics](diagnostics.md) owns exits and streams.
 
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
@@ -106,6 +106,39 @@ and impact engines resolve them through the kind-qualified node identity.
 `--json` is global and may appear before or after a subcommand. Both
 `lekalo --json --version` and `lekalo --version --json` select JSON output.
 Root and per-command help remain clap help text rather than a domain failure.
+
+### `lekalo watch` (experimental, issue #95)
+
+The current implementation is a read-only incremental developer loop; issue #95
+is **not yet complete**. Bare `lekalo watch` selects validation. Explicit
+`--validate`, `--impact`, and `--generate-check` select those stages; `--strict`,
+`--module`, `--locked`, and the invocation-relative `--project` selector retain
+their command policies. Use `--json-lines` for the separate versioned stream;
+global `--json` is refused. Human output projects the same replacement results.
+
+`--backend auto|native|poll` defaults to native with an observable auto-only poll
+fallback. `--debounce-ms`/`--max-wait-ms` default to 150/1000; polling and independent
+reconciliation use content inventories, not event ordering or timestamps. Runs
+consume immutable captured inputs outside the project. No source, generated,
+lock, observed-index, history or SQLite cache writes are authorized. Generated
+files are drift inputs only when `--generate-check` is selected; watch never
+calls generation, formatting, cleanup, installation or native production gates.
+
+Global `--no-cache` bypasses session-only document, IR, graph and validation
+reuse. `pipelineCounts` distinguishes decoded/reused documents and definitions,
+emitted/reused graph source units, and the mandatory global graph assembly and
+cycle obligations. Selection uses old/new dependency closures; successful
+settled revisions replace the complete effective diagnostic set. Cancelled
+runs cannot commit. The closed event/result schemas are
+`dev.lekalo.watch-event@0.8.0` and `dev.lekalo.watch-result@0.8.0`.
+
+Outstanding required work includes snapshot-bound ephemeral target scan and
+validation (`--target` currently reports unavailable), complete component pins,
+resource/teardown guarantees, and the full clean-command equivalence matrix.
+Windows native/poll probes currently cover burst edits, atomic replacement,
+parent-directory rename and deletion; CI is wired for Linux/macOS/Windows but
+wiring is not evidence of a hosted pass. The research acceptance authority is
+[issue-95-research.md](m8/issue-95-research.md), not this checkpoint description.
 
 ### `lekalo init`
 
@@ -1308,3 +1341,4 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo waivers add` | `lekalo waivers add [OPTIONS] --id <ID> --target <TARGET> --owner <OWNER> --approver <APPROVER> --approval-ref <APPROVAL_REF> --reason <REASON> <SELECTOR>` | [reference](waivers.md) |
 | `lekalo waivers audit` | `lekalo waivers audit [OPTIONS]` | [reference](waivers.md) |
 | `lekalo waivers list` | `lekalo waivers list [OPTIONS]` | [reference](waivers.md) |
+| `lekalo watch` | `lekalo watch [OPTIONS]` | [reference](cli.md) |

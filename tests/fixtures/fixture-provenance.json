@@ -379,6 +379,11 @@
       "family": "waiver-input",
       "origin": "synthetic",
       "note": "Issue 88 scoped governance live CLI fixtures."
+    },
+    {
+      "family": "watch",
+      "origin": "synthetic",
+      "note": "Issue #95: authored planner/unrelated Model documents for selective validation, immutable capture, graph reuse and filesystem lifecycle probes; no private application inputs."
     }
   ]
 }

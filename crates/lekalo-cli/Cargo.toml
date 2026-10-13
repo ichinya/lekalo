@@ -16,7 +16,6 @@ path = "src/main.rs"
 rustix = { workspace = true, features = ["process"] }
 
 [dev-dependencies]
-tempfile.workspace = true
 serde_json.workspace = true
 lekalo-core.workspace = true
 
@@ -24,3 +23,5 @@ lekalo-core.workspace = true
 clap.workspace = true
 lekalo-core.workspace = true
 serde_json.workspace = true
+notify.workspace = true
+tempfile.workspace = true

@@ -9,7 +9,7 @@
 //! the `writes`/`implements`/`verifies` relations whose typed owners have
 //! not contributed evidence yet.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::cycle;
 use super::diagnostic::{self, InputViolation};
@@ -37,7 +37,77 @@ pub fn build_with_registry(
     project: &CompiledProject,
     registry: &GraphRegistry,
 ) -> Result<DependencyGraph, DiagnosticSet> {
+    build_internal(project, registry, None).map(|(graph, _)| graph)
+}
+
+/// Session-only outgoing-edge fragments, keyed by kind-qualified source.
+/// Reuse never skips endpoint integrity, canonical indexes, caps or cycles.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct GraphReuse {
+    units: HashMap<NodeId, SourceUnit>,
+    edges: HashMap<NodeId, Vec<PendingEdge>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum SourceUnit {
+    Project(crate::ir::Project),
+    Module(crate::ir::Module),
+    Definition(Definition),
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct GraphWork {
+    pub emitted_units: usize,
+    pub reused_units: usize,
+}
+
+pub(crate) fn build_reusing(
+    project: &CompiledProject,
+    previous: &GraphReuse,
+) -> Result<(DependencyGraph, GraphReuse, GraphWork), DiagnosticSet> {
+    let (graph, work) = build_internal(project, &GraphRegistry::core(), Some(previous))?;
+    let mut next = GraphReuse::default();
+    if let Some(root) = &project.project {
+        if let Some(id) = NodeId::new(NodeKindId::PROJECT, root.id.as_str()) {
+            next.units.insert(id, SourceUnit::Project(root.clone()));
+        }
+    }
+    for module in &project.modules {
+        if let Some(id) = NodeId::new(NodeKindId::MODULE, module.id.as_str()) {
+            next.units.insert(id, SourceUnit::Module(module.clone()));
+        }
+    }
+    for definition in &project.definitions {
+        let (kind, _) = definition_node_kind(definition.kind());
+        if let Some(id) = NodeId::new(kind, definition.id().as_str()) {
+            next.units
+                .insert(id, SourceUnit::Definition(definition.clone()));
+        }
+    }
+    for edge in graph.edges() {
+        next.edges
+            .entry(edge.key().from().clone())
+            .or_default()
+            .push(PendingEdge {
+                from: edge.key().from().clone(),
+                to: edge.key().to().clone(),
+                relation: edge.key().relation(),
+                occurrence: edge.key().occurrence(),
+                provenance: edge.provenance().clone(),
+            });
+    }
+    Ok((graph, next, work))
+}
+
+fn build_internal(
+    project: &CompiledProject,
+    registry: &GraphRegistry,
+    previous: Option<&GraphReuse>,
+) -> Result<(DependencyGraph, GraphWork), DiagnosticSet> {
     let mut builder = Builder {
+        previous,
+        reused_sources: HashSet::new(),
+        work: GraphWork::default(),
         registry,
         project,
         nodes: Vec::new(),
@@ -71,15 +141,17 @@ pub fn build_with_registry(
     if !builder.violations.is_empty() {
         return Err(diagnostic::input_invalid_set(builder.violations));
     }
+    let work = builder.work.clone();
     let graph = builder.finish()?;
     if let Some(set) = cycle::forbidden_cycle_set(&graph) {
         return Err(set);
     }
-    Ok(graph)
+    Ok((graph, work))
 }
 
 /// One pending edge record: endpoints as identities, resolved after all
 /// nodes exist.
+#[derive(Clone, Debug)]
 struct PendingEdge {
     from: NodeId,
     to: NodeId,
@@ -90,6 +162,9 @@ struct PendingEdge {
 
 /// The single-pass construction state.
 struct Builder<'a> {
+    previous: Option<&'a GraphReuse>,
+    reused_sources: HashSet<NodeId>,
+    work: GraphWork,
     registry: &'a GraphRegistry,
     project: &'a CompiledProject,
     nodes: Vec<GraphNode>,
@@ -285,6 +360,14 @@ impl<'a> Builder<'a> {
 
     fn emit_module_imports(&mut self) {
         for module in &self.project.modules {
+            let id = NodeId::new(NodeKindId::MODULE, module.id.as_str())
+                .expect("module id is node-safe");
+            if self.reuse_source(
+                &id,
+                |old| matches!(old, SourceUnit::Module(previous) if previous == module),
+            ) {
+                continue;
+            }
             for (ordinal, import) in module.imports.iter().enumerate() {
                 let Some(to) = self.qualified_module(import.as_str()) else {
                     self.violations.push(InputViolation::UnresolvedTarget {
@@ -316,6 +399,14 @@ impl<'a> Builder<'a> {
     fn emit_definition_edges(&mut self) {
         for definition in &self.project.definitions {
             let symbol = definition.id().as_str();
+            let (kind, _) = definition_node_kind(definition.kind());
+            let id = NodeId::new(kind, symbol).expect("definition id is node-safe");
+            if self.reuse_source(
+                &id,
+                |old| matches!(old, SourceUnit::Definition(previous) if previous == definition),
+            ) {
+                continue;
+            }
             match definition {
                 Definition::Scalar(_) | Definition::Enum(_) => {}
                 Definition::ValueObject(value_object) => {
@@ -437,16 +528,60 @@ impl<'a> Builder<'a> {
     fn emit_requirement_edges(&mut self) {
         if let Some(project) = &self.project.project {
             let symbol = project.id.as_str();
-            for (ordinal, requirement) in project.common.derived_from.iter().enumerate() {
-                self.emit_requirement_edge(symbol, requirement.as_str(), ordinal);
+            let id = NodeId::new(NodeKindId::PROJECT, symbol).expect("project id is node-safe");
+            if !self.reuse_source(
+                &id,
+                |old| matches!(old, SourceUnit::Project(previous) if previous == project),
+            ) {
+                for (ordinal, requirement) in project.common.derived_from.iter().enumerate() {
+                    self.emit_requirement_edge(symbol, requirement.as_str(), ordinal);
+                }
             }
         }
         for definition in &self.project.definitions {
             let symbol = definition.id().as_str();
+            let (kind, _) = definition_node_kind(definition.kind());
+            let id = NodeId::new(kind, symbol).expect("definition id is node-safe");
+            if self.reused_sources.contains(&id) {
+                continue;
+            }
             for (ordinal, requirement) in definition.common().derived_from.iter().enumerate() {
                 self.emit_requirement_edge(symbol, requirement.as_str(), ordinal);
             }
         }
+    }
+
+    /// Reuse only an identical typed source whose endpoints still resolve
+    /// to exactly the same kind-qualified identities. Deletion or kind
+    /// changes re-emit the source to obtain the clean builder's diagnostics.
+    fn reuse_source(&mut self, id: &NodeId, unchanged: impl FnOnce(&SourceUnit) -> bool) -> bool {
+        let cached = self
+            .previous
+            .filter(|old| old.units.get(id).is_some_and(unchanged));
+        if let Some(old) = cached {
+            let edges = old.edges.get(id).map(Vec::as_slice).unwrap_or(&[]);
+            let intact = edges.iter().all(|edge| {
+                let Some(&position) = self.index.get(&edge.to) else {
+                    return false;
+                };
+                let kind = self.nodes[position as usize].kind();
+                kind == NodeKindId::REQUIREMENT
+                    || kind == NodeKindId::PROJECT
+                    || if kind == NodeKindId::MODULE {
+                        self.qualified_module(edge.to.semantic_id()).as_ref() == Some(&edge.to)
+                    } else {
+                        self.qualified_probe(edge.to.semantic_id()).as_ref() == Some(&edge.to)
+                    }
+            });
+            if intact {
+                self.edges.extend_from_slice(edges);
+                self.reused_sources.insert(id.clone());
+                self.work.reused_units += 1;
+                return true;
+            }
+        }
+        self.work.emitted_units += 1;
+        false
     }
 
     /// One `derived_from` edge from a definition or the project itself.

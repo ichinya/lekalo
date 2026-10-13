@@ -35,6 +35,7 @@ mod metrics_export;
 mod report_git;
 pub(crate) mod report_output;
 mod waivers;
+mod watch;
 
 const PROGRAM_NAME: &str = "lekalo";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -169,6 +170,11 @@ struct ContextBudgetArgs {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Read-only incremental validation and drift checks on source saves.
+    Watch {
+        #[command(flatten)]
+        args: watch::WatchArgs,
+    },
     /// Privacy-safe public metrics from versioned local run history.
     Metrics {
         #[command(subcommand)]
@@ -2449,6 +2455,12 @@ fn runtime() -> u8 {
 
     let result = match Cli::try_parse() {
         Ok(cli) => match cli.command {
+            Commands::Watch { args } => {
+                return match watch::run(args, json_requested, cli.no_cache) {
+                    Ok(code) => code,
+                    Err(result) => emit(result, json_requested),
+                }
+            }
             Commands::Lock {
                 project,
                 check,

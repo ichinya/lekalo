@@ -68,6 +68,43 @@ impl Prepared {
         })
     }
 
+    /// Captured-input seam: the caller already loaded this private,
+    /// governed scratch root. Bind the exact supplied Model/IR rather
+    /// than resolving a user selector or rereading any live source.
+    pub(crate) fn prepare_captured(
+        root: &std::path::Path,
+        model: &NormalizedModel,
+        compilation: &crate::ir::Compilation,
+    ) -> Result<Self, ArtifactFailure> {
+        let fs = Fs::open(root).map_err(|_| ArtifactFailure::Structure {
+            code: "structure.root-unreadable",
+            denied: false,
+        })?;
+        let inputs = Inputs {
+            model: ContractPin::new(
+                SemVer::parse(model.model_version.as_str())
+                    .map_err(|_| ArtifactFailure::ManifestInvalid)?,
+                hash(loader::canonical_model_bytes(model).as_bytes()),
+            ),
+            ir: ContractPin::new(
+                SemVer::parse(crate::ir::VERSION).map_err(|_| ArtifactFailure::ManifestInvalid)?,
+                hash(compilation.project.to_canonical_json().as_bytes()),
+            ),
+        };
+        let lock = match LockService::read_state_at(root)? {
+            LockState::Present(lock) => lock,
+            LockState::Absent => return Err(ArtifactFailure::Lock(LockFailure::Missing)),
+        };
+        let manifest = read_manifest(&fs)?;
+        Ok(Self {
+            root: root.to_owned(),
+            fs,
+            lock: *lock,
+            inputs,
+            manifest,
+        })
+    }
+
     pub(crate) fn fs(&self) -> &Fs {
         &self.fs
     }

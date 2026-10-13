@@ -67,6 +67,32 @@ pub fn validate_scoped(
     run(compilation, profile, Some(module_scope))
 }
 
+/// Internal watch seam: selected subjects execute against the complete
+/// immutable IR, while the explicit global recursion obligation is
+/// separately fingerprinted by the caller. Existing full/scoped command
+/// semantics are unchanged.
+pub(crate) struct UnitValidation {
+    pub diagnostics: Vec<crate::diagnostics::Diagnostic>,
+    pub visited_symbols: std::collections::BTreeSet<String>,
+}
+pub(crate) fn validate_selected(
+    compilation: &Compilation,
+    profile: &ValidationProfile,
+    modules: std::collections::BTreeSet<String>,
+    check_recursion: bool,
+) -> UnitValidation {
+    let mut context = context::Context::new(&compilation.project, compilation.source_map.entries());
+    context.select(modules, check_recursion);
+    rules::resolution_phase(&mut context, profile);
+    rules::semantic_phase(&mut context, profile);
+    rules::portability_phase(&mut context, profile);
+    let visited_symbols = context.visited();
+    UnitValidation {
+        diagnostics: context.finish(),
+        visited_symbols,
+    }
+}
+
 fn run(
     compilation: &Compilation,
     profile: &ValidationProfile,

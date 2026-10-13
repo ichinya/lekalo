@@ -1,8 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:35edb040ef4b64853a2ecd923eaa06c843118eeda09c86a89b7fc3b76b689d03",
-  "cliSourceDigest": "sha256:0b43d52f1bd5df151289dee7346b23f0cb36d01a91ff5dc1b53ea1984287ace2",
+  "cliSourceDigest": "sha256:eb55404e8d52604ba7e19788ed87f3978407060dec75bed0e06f0252560e8987",
   "p0Pages": [
     {
       "page": "README.md",
@@ -2061,6 +2060,17 @@
       "status": "implemented"
     },
     {
+      "id": "cli:watch",
+      "kind": "command",
+      "command": "watch",
+      "usage": "lekalo watch [OPTIONS]",
+      "helpDigest": "sha256:b79d437b1f8a8275374702bfd0d7015e913bde25501154048f348bde5f963824",
+      "summary": "Read-only incremental validation and drift checks on source saves",
+      "leaf": true,
+      "owner": "docs/cli.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:--help",
       "kind": "global",
       "owner": "docs/cli.md",
@@ -2601,8 +2611,7 @@
       "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
-      "sourceDigest": "sha256:825ad37b829f38264e265e551e706609a9598dbe41a295ebe6071b4446b07979",
-      "sourceDigest": "sha256:6b6b7b7f6f6fea0efceb5de717be66b3d5ec1a96d0280b187e2ed8c45b29d811",
+      "sourceDigest": "sha256:0690ba33f770f6b12365327df7898cfb0010d1bdef9b834453fa2645fd1d7d77",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2647,8 +2656,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.8.0.json",
-      "sourceDigest": "sha256:01337ff7b3156edc81c8d50cee3233ef655c06b7639371ab93c9a7ca9214f0cd",
-      "sourceDigest": "sha256:0c300ecb05e59b6b0db2f261967b9542121a5216b3513bea16e7b9a4f22687c3",
+      "sourceDigest": "sha256:dc39f44445af78a2715f5f90a707c7d4f663eb502b1ae0a580e0513b091df9fe",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3559,6 +3567,24 @@
       "source": "contracts/waiver-input.schema.v0.6.5.json",
       "sourceDigest": "sha256:061d6713a74da631ac2c812efb23c19e30acb6c7a064fb1a4fd011bfce3ae176",
       "owner": "docs/waivers.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/watch-event.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/watch-event.schema.v0.8.0.json",
+      "sourceDigest": "sha256:28819d418a978abc1379a0ab5dacf0d6ccdf40aaada4a1ad08db67ea85598444",
+      "owner": "docs/cli.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/watch-result.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/watch-result.schema.v0.8.0.json",
+      "sourceDigest": "sha256:4eb56ba46646f3ef14cdbca7106994848a7ee01f66e9802bee27e3bb6edc08f9",
+      "owner": "docs/cli.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

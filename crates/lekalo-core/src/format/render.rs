@@ -138,17 +138,17 @@ impl<'a> Renderer<'a> {
     /// spans carry only their start position, so the extent is derived
     /// recursively; blank lines inside an extent never split the
     /// surrounding container's groups.
-    fn extent(&self, node: &Node) -> usize {
+    fn extent(node: &Node) -> usize {
         match &node.value {
             Value::Scalar(_) => node.span.end.line.max(node.span.start.line),
             Value::Seq(items) => items
                 .iter()
-                .map(|item| self.extent(item))
+                .map(Self::extent)
                 .max()
                 .unwrap_or(node.span.start.line),
             Value::Map(entries) => entries
                 .iter()
-                .map(|entry| self.extent(&entry.value).max(entry.key_span.end.line))
+                .map(|entry| Self::extent(&entry.value).max(entry.key_span.end.line))
                 .max()
                 .unwrap_or(node.span.start.line),
         }
@@ -187,7 +187,7 @@ impl<'a> Renderer<'a> {
             .map(|entry| {
                 (
                     entry.key_span.start.line,
-                    self.extent(&entry.value).max(entry.key_span.end.line),
+                    Self::extent(&entry.value).max(entry.key_span.end.line),
                 )
             })
             .collect();
@@ -220,7 +220,7 @@ impl<'a> Renderer<'a> {
         };
         let members: Vec<(usize, usize)> = items
             .iter()
-            .map(|item| (item.span.start.line, self.extent(item)))
+            .map(|item| (item.span.start.line, Self::extent(item)))
             .collect();
         let groups = self.groups_of(&members);
         let mut ordered: Vec<Ordered> = groups

@@ -24,7 +24,7 @@ pub mod normalize;
 pub mod project_docs;
 pub mod source;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::result::{DomainResult, Status};
 use canonical::Canonical;
@@ -166,6 +166,14 @@ pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, Dom
     load_with_snapshot(selection).map(|loaded| loaded.model)
 }
 
+/// Load an already-resolved internal root through all accepted
+/// structure/encoding/version/normalization gates. This is for private
+/// captured roots; CLI selectors still use the invocation-relative
+/// policy and must not be translated to this seam before selection.
+pub fn normalize_captured_root(root: &Path) -> Result<NormalizedModel, DomainResult> {
+    load_validated_root(root.to_owned()).map(|loaded| loaded.model)
+}
+
 /// Phase 1 only: resolve the selection to an absolute project root
 /// without reading model documents. The migration service uses this to
 /// recover a crashed transaction before the loader's fail-closed gate.
@@ -283,6 +291,20 @@ pub(crate) fn load_validated_root_opt_with_overlay(
     root: PathBuf,
     ignore_format_journal: bool,
     document_overlay: Option<(&str, &[u8])>,
+) -> Result<ProjectLoad, DomainResult> {
+    load_validated_root_reusing(root, ignore_format_journal, document_overlay, None)
+}
+
+/// Read-only incremental frontend seam. Reuse is supplied only by an
+/// in-memory owner that checks exact bytes/path/kind against a previously
+/// accepted decode; all structure, limits, version and aggregate gates
+/// below still execute, and deleted/renamed inputs are re-enumerated.
+pub(crate) type DocumentReuse<'a> = dyn FnMut(&str, DocKind, &[u8]) -> Option<Document> + 'a;
+pub(crate) fn load_validated_root_reusing(
+    root: PathBuf,
+    ignore_format_journal: bool,
+    document_overlay: Option<(&str, &[u8])>,
+    mut reuse: Option<&mut DocumentReuse<'_>>,
 ) -> Result<ProjectLoad, DomainResult> {
     let failure =
         |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
@@ -427,9 +449,20 @@ pub(crate) fn load_validated_root_opt_with_overlay(
     }
 
     // Phase 3b: encoding gate, then Phase 4: parsing.
-    let mut parsed_documents: Vec<(Document, frontends::Parsed)> = Vec::new();
+    let mut parsed_documents: Vec<Document> = Vec::new();
     let mut parse_diagnostics: Vec<Diagnostic> = Vec::new();
     for source in &read_sources {
+        let kind = sources
+            .iter()
+            .find(|(logical, _)| *logical == source.logical_path)
+            .map(|(_, kind)| *kind)
+            .unwrap_or(DocKind::Symbol);
+        if let Some(reuse) = reuse.as_deref_mut() {
+            if let Some(document) = reuse(&source.logical_path, kind, &source.bytes) {
+                parsed_documents.push(document);
+                continue;
+            }
+        }
         let text = match Source::validate_encoding(&source.logical_path, &source.bytes) {
             Ok(text) => text,
             Err(diagnostic) => {
@@ -439,17 +472,10 @@ pub(crate) fn load_validated_root_opt_with_overlay(
         };
         let index = LineIndex::new(&text);
         match frontends::parse_document(&text, &index) {
-            Ok(parsed) => {
-                let kind = sources
-                    .iter()
-                    .find(|(logical, _)| *logical == source.logical_path)
-                    .map(|(_, kind)| *kind)
-                    .unwrap_or(DocKind::Symbol);
-                match decode(&source.logical_path, kind, &parsed) {
-                    Ok(document) => parsed_documents.push((document, parsed)),
-                    Err(errors) => parse_diagnostics.extend(errors),
-                }
-            }
+            Ok(parsed) => match decode(&source.logical_path, kind, &parsed) {
+                Ok(document) => parsed_documents.push(document),
+                Err(errors) => parse_diagnostics.extend(errors),
+            },
             Err(mut errors) => {
                 for diagnostic in errors.iter_mut() {
                     if diagnostic.path.is_none() {
@@ -467,7 +493,7 @@ pub(crate) fn load_validated_root_opt_with_overlay(
     // Phase 5/6: version gate across all documents.
     let mut unsupported: Vec<(String, String)> = Vec::new();
     let mut versions: Vec<(String, String)> = Vec::new();
-    for (document, _) in &parsed_documents {
+    for document in &parsed_documents {
         if ModelVersion::parse_exact(&document.version).is_none() {
             unsupported.push((document.path.clone(), document.version.clone()));
         }
@@ -522,7 +548,7 @@ pub(crate) fn load_validated_root_opt_with_overlay(
     // migration planner before the aggregate consumes them.
     let snapshot: Vec<LoadedDocument> = parsed_documents
         .iter()
-        .map(|(document, _)| LoadedDocument {
+        .map(|document| LoadedDocument {
             document: document.clone(),
             bytes: read_sources
                 .iter()
@@ -531,13 +557,7 @@ pub(crate) fn load_validated_root_opt_with_overlay(
                 .unwrap_or_default(),
         })
         .collect();
-    let model = build_normalized_model(
-        model_version,
-        parsed_documents
-            .into_iter()
-            .map(|(document, _)| document)
-            .collect(),
-    )?;
+    let model = build_normalized_model(model_version, parsed_documents)?;
     Ok(ProjectLoad {
         model,
         root,

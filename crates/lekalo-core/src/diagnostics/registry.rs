@@ -33,6 +33,12 @@ pub const FORMAT_REGISTRY_BYTES: &[u8] =
 pub const ADOPTION_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
 
+/// The issue #95 union successor: the merged registry plus the closed
+/// `watch.*` family. Same merged file as the format/adoption unions;
+/// each family appends, none clobbers a predecessor rule.
+pub const WATCH_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
 /// Why the embedded registry could not be trusted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RegistryError {

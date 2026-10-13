@@ -24,6 +24,8 @@ pub mod build;
 pub mod canonical;
 pub mod cycle;
 pub mod diagnostic;
+#[cfg(test)]
+mod incremental_tests;
 pub mod model;
 pub mod slice;
 pub mod traverse;

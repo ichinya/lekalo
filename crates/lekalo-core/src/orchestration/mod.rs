@@ -54,3 +54,13 @@ pub fn locked_check(selection: &LoadSelection) -> Result<(), crate::result::Doma
         .map_err(|failure| crate::result::DomainResult::from(&Failure::Artifact(failure)))?;
     generate::locked_preflight(&prepared)
 }
+
+pub(crate) fn locked_check_captured(
+    root: &std::path::Path,
+    model: &crate::loader::NormalizedModel,
+    compilation: &crate::ir::Compilation,
+) -> Result<(), crate::DomainResult> {
+    let prepared = crate::artifacts::check::Prepared::prepare_captured(root, model, compilation)
+        .map_err(|failure| crate::DomainResult::from(&Failure::Artifact(failure)))?;
+    generate::locked_preflight(&prepared)
+}

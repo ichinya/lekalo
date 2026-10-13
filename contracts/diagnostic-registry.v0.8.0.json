@@ -11873,6 +11873,160 @@
       ],
       "allowed_fix_ids": [],
       "lifecycle": "active"
+    },
+    {
+      "id": "watch.adapter-recovery",
+      "code": "LEK-WATCH-006",
+      "category": "adapter",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "unavailable",
+        "valid"
+      ],
+      "message_id": "watch.adapter-recovery",
+      "default_message": "A target cycle failed; recovery is scheduled on the next affected save and the session stays alive.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "target",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "watch.backend-unavailable",
+      "code": "LEK-WATCH-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable",
+        "valid"
+      ],
+      "message_id": "watch.backend-unavailable",
+      "default_message": "The requested watch backend cannot run in this environment.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "backend",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "watch.cancellation-incomplete",
+      "code": "LEK-WATCH-007",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "watch.cancellation-incomplete",
+      "default_message": "A stale run could not be proven terminated within its deadline; no overlapping replacement run starts.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "stage",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "watch.event-loss",
+      "code": "LEK-WATCH-002",
+      "category": "infrastructure",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "unavailable"
+      ],
+      "message_id": "watch.event-loss",
+      "default_message": "Filesystem events were lost or ambiguous; bounded inventory reconciliation recovered a complete snapshot.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "cause",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "watch.resource-limit",
+      "code": "LEK-WATCH-004",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "watch.resource-limit",
+      "default_message": "A watch resource limit prevents complete safe work.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "limit",
+          "type": "token"
+        },
+        {
+          "name": "count",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "watch.selective-unavailable",
+      "code": "LEK-WATCH-005",
+      "category": "infrastructure",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "unavailable",
+        "unsupported"
+      ],
+      "message_id": "watch.selective-unavailable",
+      "default_message": "Selective work fell back or is unavailable for the closed stage and reason; coverage says so explicitly.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "stage",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "watch.snapshot-unstable",
+      "code": "LEK-WATCH-003",
+      "category": "infrastructure",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "unavailable",
+        "valid"
+      ],
+      "message_id": "watch.snapshot-unstable",
+      "default_message": "Captured inputs kept changing inside the capture window; no torn snapshot is committed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "attempts",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
     }
   ]
 }

@@ -67,6 +67,7 @@ pub mod transport_http;
 pub mod validator;
 pub mod versioning;
 pub mod waivers;
+pub mod watch;
 
 pub use result::{Capability, DomainResult, ReasonCode, Status, CAPABILITY_UNAVAILABLE, CLI_USAGE};
 
