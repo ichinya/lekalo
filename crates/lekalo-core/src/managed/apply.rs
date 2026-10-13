@@ -220,6 +220,15 @@ pub fn apply(
         Ok(admission) => admission,
         Err(error) => return error,
     };
+    // Extension selection is admission truth, not a caller-editable switch
+    // in the saved plan. Refuse stripped, added, or retargeted rows even in
+    // previews, before any custody or publication write.
+    if plan.extensions != admission.extensions {
+        return stale("extensions", "selection");
+    }
+    if let Err(error) = super::plan::check_input_closure(root, &plan, ownership) {
+        return error;
+    }
     // The deterministic inventory derived here must match the reviewed plan
     // exactly: same paths, same actions, same after digests. The interface
     // types are Model-derived (r6, codex F9): the re-render types from the
@@ -244,7 +253,7 @@ pub fn apply(
     // expectations here, then retained in custody inside the transaction.
     // Previews stay free; only the commit is gated.
     let mut execution_retained: Option<Vec<u8>> = None;
-    if !dry_run && !plan.extensions.is_empty() {
+    if !dry_run && !admission.extensions.is_empty() {
         let bytes = match execution {
             Some(bytes) => bytes,
             None => return invalid("execution-evidence-missing"),
@@ -352,6 +361,7 @@ pub fn apply(
             }
             super::bindings::resolve(root, target, &coverage)?;
         }
+        super::plan::check_input_closure(root, &plan, ownership)?;
         let inputs = inputs_actual(root, &plan.input_closure)?;
         let before = before_state(root, Some(&plan))?;
         let roots = super::plan::generated_roots(ownership);
@@ -383,6 +393,45 @@ pub fn apply(
         }),
         Err(error) => error,
     }
+}
+
+/// The exact closure the custody writer mints: preserve non-authority base
+/// pins, overlay the policy-derived plan pins, then replace the reserved
+/// authority cohort. Recovery uses this same assembly, never just checking
+/// whether caller-minted extra pins happen to resolve against live files.
+pub(crate) fn record_closure(
+    plan: &GenerationPlan,
+    base: Option<&GenerationRecord>,
+    authority: Option<&super::authority::Authority>,
+) -> Vec<InputPin> {
+    let mut closure: BTreeMap<String, InputPin> = BTreeMap::new();
+    if let Some(record) = base {
+        for pin in &record.input_closure {
+            if !pin.path.starts_with(super::AUTHORITY_PIN_PREFIX) {
+                closure.insert(pin.path.clone(), pin.clone());
+            }
+        }
+    }
+    for pin in &plan.input_closure {
+        closure.insert(pin.path.clone(), pin.clone());
+    }
+    if let Some(authority) = authority {
+        for (name, digest) in [
+            ("model", &authority.model_digest),
+            ("ir", &authority.ir_digest),
+            ("lock", &authority.lock_digest),
+        ] {
+            let path = format!("{}{name}", super::AUTHORITY_PIN_PREFIX);
+            closure.insert(
+                path.clone(),
+                InputPin {
+                    path,
+                    digest: digest.clone(),
+                },
+            );
+        }
+    }
+    closure.into_values().collect()
 }
 
 /// The stable generation digest over the pinned input closure and the
@@ -519,34 +568,7 @@ fn staged_apply(
     // (finding 8): the exact canonical Model, typed IR, and lock revision
     // this generation was admitted under are custody evidence, so a
     // Model/IR/lock move always changes the committed closure.
-    let mut closure: BTreeMap<String, InputPin> = BTreeMap::new();
-    if let Some(record) = &previous_record {
-        for pin in &record.input_closure {
-            if pin.path.starts_with(super::AUTHORITY_PIN_PREFIX) {
-                continue;
-            }
-            closure.insert(pin.path.clone(), pin.clone());
-        }
-    }
-    for pin in &plan.input_closure {
-        closure.insert(pin.path.clone(), pin.clone());
-    }
-    if let Some(authority) = authority {
-        for (name, digest_value) in [
-            ("model", &authority.model_digest),
-            ("ir", &authority.ir_digest),
-            ("lock", &authority.lock_digest),
-        ] {
-            closure.insert(
-                format!("{}{name}", super::AUTHORITY_PIN_PREFIX),
-                InputPin {
-                    path: format!(".lekalo/managed-authority/{name}"),
-                    digest: digest_value.clone(),
-                },
-            );
-        }
-    }
-    let closure: Vec<InputPin> = closure.into_values().collect();
+    let closure = record_closure(plan, previous_record.as_ref(), authority);
     let transaction_id = history::transaction_id(root, &plan.plan_digest)?;
     // The exact pre-transaction public manifest, pinned before anything
     // moves (findings 10 and 11): its bytes are retained as a custody

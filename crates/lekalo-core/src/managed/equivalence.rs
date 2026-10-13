@@ -15,18 +15,17 @@
 //! phantom rows that bind nothing are refused instead of padding the
 //! receipt). The verdict *labels* are caller-authored and are never
 //! authority (r4 finding 2): every scenario must additionally carry an
-//! executed-outcome receipt — the digest of the observed output of
-//! executing its retained scenario — which the gate independently
-//! recomputes from the retained reviewed coverage, and the pinned
-//! expectation must equal that recomputed executed output, so a `match`
-//! verdict can never certify a generation whose own emitted test fails.
-//! The recomputation is honest about its scope (r6, codex F5 / devin F2):
-//! the deterministic handler *is* the pinned projection only while no
-//! custom binding participates; a bound coverage's handlers invoke a
-//! maintained hook the offline gate cannot execute, so those scenarios
-//! are incomplete evidence (`bound-execution`) until independently
-//! produced execution evidence exists — the gate stops claiming
-//! executed-outcome equivalence it cannot recompute. Any qualified
+//! outcome receipt. For unbound handlers the gate independently recomputes
+//! the pinned projection from reviewed coverage. For bound handlers it can
+//! only check the consistency of caller-supplied native-run attestations,
+//! not observe execution of maintained hooks (r7 devin F5 / codex F3).
+//! Retention binds that attestation to custody; it does not authenticate
+//! the producer or turn its assertion into machine-observed execution.
+//! Success receipts explicitly distinguish `projection-recomputed` from
+//! `caller-attested`; missing bound attestations are `bound-execution`.
+//! A fabricated but consistent attestation can conceal a throwing hook,
+//! so callers must independently run and review the exact native tests.
+//! Any qualified
 //! mismatch is a failed gate. Unsupported or missing coverage is an
 //! incomplete gate, and only a fully supported matching corpus passes.
 //! Timing metrics and raw sources are never part of it.
@@ -43,6 +42,9 @@ pub struct EquivalenceReceipt {
     pub module: String,
     pub target: String,
     pub verdict: String,
+    /// What supports `match`: offline projection recomputation or a
+    /// caller-supplied attestation, never an implicit native execution.
+    pub evidence_basis: &'static str,
     pub scenarios: usize,
     pub matched: usize,
     pub gaps: Vec<String>,
@@ -58,13 +60,12 @@ fn invalid(reason: &str) -> DomainResult {
 /// requirement's **exact generated test bytes** (the resolver supplies the
 /// staged inventory's digest — at apply time the rendered inventory, at
 /// consume time the committed record's outputs) and carry an
-/// executed-outcome receipt whose observed digest equals the reviewed
-/// sample expectation — the assertion the generated test itself makes, so
-/// a natively-failing artifact cannot honestly produce it. This defines
-/// and consumes the independently produced execution evidence the
-/// `bound-execution` refusal requires: publication of a bound generation
-/// is gated on it, and the equivalence gate accepts it when retained by
-/// the apply that committed the generation.
+/// caller-attested outcome whose digest equals the reviewed expectation.
+/// This verifies pins and internal consistency only: it does not launch a
+/// runtime, authenticate the producer, or prove that any test ran. A false
+/// but consistent attestation can pass even for a throwing maintained hook.
+/// Bound publication requires an explicit reviewed attestation, retained by
+/// apply and consumed as `caller-attested` evidence by equivalence.
 pub fn verify_execution_evidence(
     plan: &super::wire::GenerationPlan,
     coverage: &super::wire::Coverage,
@@ -131,9 +132,9 @@ pub fn verify_execution_evidence(
 /// object that parses as an equivalence document and passes
 /// [`verify_execution_evidence`] against the committed record's own
 /// generated test digests. Retention happened inside the confirmed
-/// transaction, so this is the machinery-bound record of native execution
-/// — the offline gate consumes it instead of refusing `bound-execution`
-/// forever.
+/// transaction, so this binds the caller's native-run attestation to the
+/// generated tests, not to an independently observed execution. The offline
+/// gate consumes it with the explicit `caller-attested` evidence basis.
 fn retained_execution_evidence(
     root: &std::path::Path,
     record: &super::wire::GenerationRecord,
@@ -344,10 +345,11 @@ pub fn adjudicate_for(root: &std::path::Path, bytes: &[u8]) -> DomainResult {
     // deterministic generated handler is exactly the pinned projection
     // applied to the pinned sample input — so a lying verdict over a
     // natively-failing artifact can never certify `match`.
-    if let Err(error) = verify_executed_outcomes(root, &record, &evidence) {
-        return error;
-    }
-    adjudicate_checked(evidence)
+    let evidence_basis = match verify_executed_outcomes(root, &record, &evidence) {
+        Ok(basis) => basis,
+        Err(error) => return error,
+    };
+    adjudicate_checked(evidence, evidence_basis)
 }
 
 /// The generated root the committed record rendered under, derived from
@@ -384,7 +386,7 @@ fn verify_executed_outcomes(
     root: &std::path::Path,
     record: &super::wire::GenerationRecord,
     evidence: &Equivalence,
-) -> Result<(), DomainResult> {
+) -> Result<&'static str, DomainResult> {
     let plan = super::history::plan(root, &record.plan_digest)
         .map_err(|_| diagnostic::failure(EQUIVALENCE_INCOMPLETE, &detail("corpus")))?;
     let coverage = super::history::coverage(root, &plan.coverage_digest)
@@ -430,7 +432,7 @@ fn verify_executed_outcomes(
                 &detail("bound-execution"),
             ));
         }
-        return Ok(());
+        return Ok("caller-attested");
     }
     for requirement in &coverage.requirements {
         if !requirement.kind.renders() {
@@ -488,11 +490,11 @@ fn verify_executed_outcomes(
             ));
         }
     }
-    Ok(())
+    Ok("projection-recomputed")
 }
 
 /// The pure adjudication over a pre-bound evidence document.
-fn adjudicate_checked(evidence: Equivalence) -> DomainResult {
+fn adjudicate_checked(evidence: Equivalence, evidence_basis: &'static str) -> DomainResult {
     let mismatched = evidence
         .scenarios
         .iter()
@@ -526,6 +528,7 @@ fn adjudicate_checked(evidence: Equivalence) -> DomainResult {
         module: evidence.module,
         target: evidence.target,
         verdict: "match".to_owned(),
+        evidence_basis,
         scenarios: evidence.scenarios.len(),
         matched,
         gaps: evidence.gaps,
@@ -539,5 +542,5 @@ pub fn adjudicate(bytes: &[u8]) -> DomainResult {
         Ok(evidence) => evidence,
         Err(error) => return error,
     };
-    adjudicate_checked(evidence)
+    adjudicate_checked(evidence, "caller-attested")
 }

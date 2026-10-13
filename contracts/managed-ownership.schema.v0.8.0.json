@@ -23,6 +23,18 @@
       },
       "maxItems": 64,
       "minItems": 1
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "maxItems": 4095,
+      "minItems": 0,
+      "uniqueItems": true
     }
   },
   "required": [

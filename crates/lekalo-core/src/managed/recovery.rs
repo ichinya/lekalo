@@ -43,9 +43,9 @@
 //!   authenticated `ownershipDigest` (so confinement derives from the
 //!   caller-declared generated roots, on first publication included —
 //!   the derived-prefix proxy that was vacuous on a virgin project is
-//!   gone), every closure pin resolves against live bytes, the record's
-//!   lock and reserved authority pins equal a fresh derivation from the
-//!   live project, and the plan's outputs are exactly the deterministic
+//!   gone), the plan closure equals the live policy-selected file-pin set,
+//!   the record closure equals the writer's exact base/plan/authority
+//!   assembly, and the plan's outputs are exactly the deterministic
 //!   inventory rendered from the retained coverage under that ownership
 //!   and authority — with the action/before-state classification the
 //!   apply machinery itself produces. A bound apply additionally
@@ -55,7 +55,7 @@
 //!   (devin F1c): `publishing` on a resolve journal, `restoring` on an
 //!   apply journal, and every other never-emitted state/pending shape is
 //!   refused — and a resolve journal pins its own self digest
-//!   (`planDigest = plan_digest(transaction)`, devin F1a), so a forged
+//!   (the prepared intent, excluding attempt id and phase), so a forged
 //!   plan digest never anchors; a resolve journal converges only
 //!   behaviorally (devin F1 / codex F3): the confirmed restore already
 //!   landed (live == committed) or it never did (live == the pinned
@@ -312,9 +312,9 @@ fn intent_bounds(intent: &Intent, path: &str) -> (Option<String>, Option<String>
 ///   as `staged_apply` assembles it (plan outputs verbatim; every other
 ///   record output preserved verbatim from the committed generation; every
 ///   delete committed-owned), every record output the committed generation
-///   does not own must be a plan **create inside a generated root the
-///   committed custody can derive** (the common directory of the committed
-///   outputs of the same owner), and the journal's pending set must be
+///   does not own must be a rendered create inside a generated root the
+///   closure-pinned ownership policy declares, both closure sets must equal
+///   the machinery's re-derived assembly, and the pending set must be
 ///   exactly the plan's output set — a fabricated direct successor whose
 ///   "creates" reach outside every generated root, or a truncated pending
 ///   set, never grants mutation authority (codex F1/F4).
@@ -325,11 +325,11 @@ fn intent_bounds(intent: &Intent, path: &str) -> (Option<String>, Option<String>
 ///   the rebuilt restore+delete set (codex F4: a subset journal can never
 ///   finalize a partial destination as `completed`).
 /// - **Resolve**: the generation pin must be exactly the committed
-///   generation, and — r6, codex F2 — the exact confirmed intent must be
-///   retained as a custody object: the resolve transaction document as the
-///   confirmed flow wrote it (state `prepared`). A bare journal whose
-///   caller-authored `beforeDigest` describes live drift is not reviewed
-///   evidence and never authorizes overwriting a manual edit.
+///   generation and the confirmation digest must rederive from the journal's
+///   prepared intent, excluding the attempt id and transient phase. No
+///   caller-held preview or retained audit object is needed. Recovery only
+///   observes whether restoration already landed or preserves pinned drift
+///   for a fresh confirmed retry; it never writes on a resolve journal's word.
 ///
 /// A journal whose pending set is empty moved nothing and abandons
 /// trivially without an anchor. Anything else is `recovery-unanchored`:
@@ -504,64 +504,37 @@ fn plan_closure_ownership(
         if module.mode != super::wire::Mode::Managed {
             return Err(unanchored());
         }
+        let derived = super::plan::input_closure(root, &document, Some(&pin.path))
+            .map_err(|_| unanchored())?;
+        if derived != plan.input_closure {
+            // A materialized extra file is not a policy-selected input.
+            // Both the retained plan's and the record's sets must be
+            // exactly what the machinery would mint (r7 devin F2 / codex F1).
+            return Err(unanchored());
+        }
         return Ok(target.clone());
     }
     Err(unanchored())
 }
 
-/// Every input pin of the retained plan must resolve against the live
-/// project bytes (apply's own preflight rule, r6-r7 codex F1): a closure
-/// pin naming absent or divergent bytes is a plan the live project never
-/// admitted — a forged extra pin (`zz-extra.yaml`) never rides an
-/// anchored lineage.
-fn closure_pins_resolve(
-    root: &std::path::Path,
-    plan: &super::wire::GenerationPlan,
-) -> Result<(), DomainResult> {
-    for pin in &plan.input_closure {
-        match fs::read_file(root, &pin.path) {
-            Ok(Some(bytes)) if super::digest(&bytes) == pin.digest => {}
-            _ => return Err(unanchored()),
-        }
-    }
-    Ok(())
-}
-
 /// The anchored record must carry exactly the live derived generation
-/// authority (r6-r7, codex F1): the lock pin and the three reserved
-/// authority pins of the input closure (`.lekalo/managed-authority/
-/// {model,ir,lock}`) equal the authority a recovery-time derivation
-/// produces from the live project. A forged closure pin or a record
+/// authority and full input set (r7 devin F2 / codex F1): the lock pin
+/// equals the live authority, and every closure member equals the writer's
+/// exact union of preserved base pins, policy-derived plan pins, and the
+/// reserved Model/IR/lock cohort. A resolving but undeclared extra pin is
+/// just as unanchorable as a missing one. A forged closure pin or a record
 /// minted against a superseded Model/lock never anchors — the caller
 /// cannot advance the lineage to custody the live authority does not
 /// derive.
-fn authority_pins_match(
+fn record_closure_matches(
     record: &super::wire::GenerationRecord,
+    plan: &super::wire::GenerationPlan,
+    base: Option<&super::wire::GenerationRecord>,
     authority: &super::authority::Authority,
 ) -> Result<(), DomainResult> {
-    if record.lock_pin.value() != Some(&authority.lock_digest) {
-        return Err(unanchored());
-    }
-    let mut derived = std::collections::BTreeMap::new();
-    for (name, digest) in [
-        ("model", &authority.model_digest),
-        ("ir", &authority.ir_digest),
-        ("lock", &authority.lock_digest),
-    ] {
-        derived.insert(
-            format!("{}{name}", super::AUTHORITY_PIN_PREFIX),
-            digest.clone(),
-        );
-    }
-    let mut pinned = std::collections::BTreeMap::new();
-    for pin in &record.input_closure {
-        let Some(name) = super::authority_pin_name(&pin.path) else {
-            continue;
-        };
-        pinned.insert(pin.path.clone(), pin.digest.clone());
-        let _ = name;
-    }
-    if pinned != derived {
+    if record.lock_pin.value() != Some(&authority.lock_digest)
+        || record.input_closure != super::apply::record_closure(plan, base, Some(authority))
+    {
         return Err(unanchored());
     }
     Ok(())
@@ -602,7 +575,11 @@ fn plan_rederives(
         mode: super::wire::Mode::Managed,
         targets: vec![assignment.clone()],
     };
-    let _ = super::coverage::admit(&module, assignment, coverage).map_err(|_| unanchored())?;
+    let admission =
+        super::coverage::admit(&module, assignment, coverage).map_err(|_| unanchored())?;
+    if plan.extensions != admission.extensions {
+        return Err(unanchored());
+    }
     let inventory = super::canonical::render_inventory(
         coverage,
         &assignment.generated_root,
@@ -776,9 +753,8 @@ fn anchor_journal(
             // self-consistent in the caller-writable store — cannot
             // satisfy any of this on a virgin or committed project.
             let assignment = plan_closure_ownership(root, &plan, &record)?;
-            closure_pins_resolve(root, &plan)?;
             let authority = derive_authority(&plan.modules[0]).map_err(|_| unanchored())?;
-            authority_pins_match(&record, &authority)?;
+            record_closure_matches(&record, &plan, base.as_ref(), &authority)?;
             let coverage =
                 history::coverage(root, &plan.coverage_digest).map_err(|_| unanchored())?;
             let inventory =
@@ -890,7 +866,8 @@ fn anchor_journal(
             }
             // The confirmation digest is the journal's own self digest
             // (r6-r7, devin F1a): `staged_resolve` pins
-            // `planDigest = plan_digest(transaction)`, so a forged
+            // `planDigest = resolve_digest(transaction)`, excluding the
+            // later-assigned attempt id and transient phase, so a forged
             // `planDigest` value — one the confirmed flow could never have
             // written — never anchors. The r6 retained-intent object check
             // is gone: its name was a deterministic function of this very
@@ -898,7 +875,7 @@ fn anchor_journal(
             // instead the resolve convergence below is behavioral and
             // never restores a byte on the journal's word.
             let pinned = transaction.plan_digest.value().ok_or_else(unanchored)?;
-            if *pinned != super::plan_digest(transaction) {
+            if *pinned != super::rollback::resolve_digest(transaction) {
                 return Err(unanchored());
             }
             Ok(Anchored::Resolve)
@@ -998,8 +975,17 @@ fn convergence_moves(
                         });
                     }
                 }
-                // Absent: the interrupted transaction already removed or
-                // never wrote the committed bytes; restoring is exact.
+                // Resolve recovery never writes on a journal's word, even
+                // when the reviewed drift was absence. Preserve that absence
+                // for a fresh confirmed retry; an unexpected disappearance
+                // after reviewing present drift is itself new drift.
+                None if matches!(anchored, Anchored::Resolve) => {
+                    if transaction.before_digest.value().is_some() {
+                        return Err(invalid("recovery-drift"));
+                    }
+                    moves.push(Move::Noop);
+                }
+                // Apply/rollback undo restores exact committed bytes.
                 None => moves.push(Move::RestoreCommitted {
                     path: pending.path.clone(),
                     bytes,

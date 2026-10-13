@@ -96,6 +96,14 @@ const badPin = read(`${wire}/planner/ownership.json`);
 badPin.modules[0].targets[0].profileRef.digest = 'sha256:zz';
 schemaRejected('managed-ownership', badPin);
 schemaRejected('managed-coverage', { ...read(`${wire}/planner/coverage.json`), complete: 'yes' });
+// Re-derivable supplemental-input policy (r7 devin F2 / codex F1).
+const noSupplemental = read(`${wire}/planner/ownership.json`);
+delete noSupplemental.inputs;
+schema('managed-ownership', noSupplemental);
+schema('managed-ownership', { ...noSupplemental, inputs: ['aa.yaml', 'zz.yaml'] });
+schemaRejected('managed-ownership', { ...noSupplemental, inputs: ['../outside'] });
+schemaRejected('managed-ownership', { ...noSupplemental, inputs: ['aa.yaml', 'aa.yaml'] });
+schemaRejected('managed-ownership', { ...noSupplemental, inputs: 'aa.yaml' });
 function schemaRejected(family, document) {
   assert.ok(!schemas.get(family)(document), `${family} must reject the hostile document`);
 }

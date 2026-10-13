@@ -84,15 +84,16 @@ const defs = {
   // One executed-outcome receipt (r4 finding 2): the digest of the
   // observed output of executing that scenario's retained executable
   // test. The verdict labels stay caller-authored; the receipts are what
-  // the gate independently recomputes from the retained reviewed
-  // coverage — without them a `match` verdict is unverifiable.
+  // unbound gate independently recomputes from retained coverage. Bound
+  // receipts are explicit caller-supplied native-run attestations: the
+  // offline verifier checks pins and consistency, not execution.
   scenarioExecution: obj({ scenario: token, observed: pin }),
 };
 
-const shape = (family, properties) => obj({ ...Object.fromEntries(Object.entries(header(family)).map(([k, v]) => [k, { const: v }])), ...properties });
+const shape = (family, properties) => objOpt({ ...Object.fromEntries(Object.entries(header(family)).map(([k, v]) => [k, { const: v }])), ...properties }, family === 'managed-ownership' ? ['inputs'] : []);
 
 export const shapes = {
-  'managed-ownership': { project: token, modules: arr(ref('assignment'), 64, 1) },
+  'managed-ownership': { project: token, modules: arr(ref('assignment'), 64, 1), inputs: { ...arr(relPath, 4095), uniqueItems: true } },
   'managed-coverage': { module: ref('moduleRef'), target: ref('targetRef'), recipe: ref('reference'), adapter: ref('adapter'), authority: state(obj({ model: pin, ir: pin, lock: pin })), requirements: arr(ref('requirement'), 4096), extensions: arr(ref('extensionCheck'), 64), complete: { type: 'boolean' } },
   'managed-generation-plan': {
     action: en('promotion', 'regeneration', 'upgrade'),

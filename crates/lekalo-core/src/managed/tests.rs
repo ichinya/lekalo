@@ -99,6 +99,7 @@ fn ownership_doc() -> Ownership {
         schema_version: header("managed-ownership").0,
         identity: header("managed-ownership").1,
         project: "demo".to_owned(),
+        inputs: vec!["model/planner.model.json".to_owned()],
         modules: vec![ModuleAssignment {
             module: "planner".to_owned(),
             mode: Mode::Managed,
@@ -2704,7 +2705,7 @@ fn interrupted_resolve_journal_preserves_the_confirmed_drift() {
         conflict: State::Absent,
         before_digest: State::known(digest(drift_bytes)),
     };
-    transaction.plan_digest = State::known(plan_digest(&transaction));
+    transaction.plan_digest = State::known(rollback::resolve_digest(&transaction));
     // The retained confirmed intent, exactly as `staged_resolve` writes
     // it: the same document in its `prepared` shape. Since r6-r7 this is
     // an audit object only — the anchor below must hold even when a
@@ -3630,7 +3631,7 @@ fn forged_resolve_journal_never_overwrites_unreviewed_drift() {
         conflict: State::Absent,
         before_digest: State::known(digest(drift)),
     };
-    transaction.plan_digest = State::known(plan_digest(&transaction));
+    transaction.plan_digest = State::known(rollback::resolve_digest(&transaction));
     // The caller-mintable "retained intent" object: byte-identical to the
     // genuine flow's audit object, planted exactly as the r6 exploit did
     // (its content address is a deterministic function of this journal).
@@ -4019,6 +4020,27 @@ fn equivalence_refuses_repinned_drift_phantom_rows_and_bound_coverage() {
         Some("managed.input-invalid"),
         "a bound generation never commits without execution evidence"
     );
+    // R7 devin F3 / codex F2: a self-consistent plan edit is still stale
+    // when it strips admission's extension selection. No evidence can
+    // legitimize it, and even a preview must refuse without writing.
+    let mut stripped = built.clone();
+    stripped.extensions.clear();
+    stripped.plan_digest = plan_digest(&stripped);
+    for dry_run in [false, true] {
+        let refused = apply::apply(
+            &bound_root,
+            &serde_json::to_vec(&stripped).expect("wire"),
+            &serde_json::to_vec(&coverage).expect("wire"),
+            &ownership,
+            Some(stripped.plan_digest.as_str()),
+            dry_run,
+            Some(&test_authority()),
+            None,
+        );
+        assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
+        assert_eq!(refused.reason_codes()[0].as_str(), "managed.plan-stale");
+        assert!(history::current(&bound_root).expect("custody").is_none());
+    }
     let execution_bytes = serde_json::to_vec(&bound_evidence_of(
         &plan_test_digest,
         PIN_A.to_owned(),
@@ -4080,6 +4102,9 @@ fn equivalence_refuses_repinned_drift_phantom_rows_and_bound_coverage() {
         &serde_json::to_vec(&matched).expect("wire"),
     );
     assert_eq!(accepted.status(), Status::Valid, "{accepted:?}");
+    let receipt: serde_json::Value =
+        serde_json::from_str(&accepted.to_json_string()).expect("receipt");
+    assert_eq!(receipt["managed"]["evidenceBasis"], "caller-attested");
     let mut lying = matched.clone();
     lying.execution[0].observed = PIN_B.to_owned();
     let refused =
@@ -4478,7 +4503,7 @@ fn resolve_journal_in_never_emitted_state_never_anchors() {
         conflict: State::Absent,
         before_digest: State::known(digest(drift)),
     };
-    transaction.plan_digest = State::known(plan_digest(&transaction));
+    transaction.plan_digest = State::known(rollback::resolve_digest(&transaction));
     history::write_transaction(&root, &transaction).expect("journal");
     let receipt = recovery::run(&root, &test_authority_of);
     assert_eq!(receipt.status(), Status::Invalid, "{receipt:?}");
@@ -4494,8 +4519,8 @@ fn resolve_journal_in_never_emitted_state_never_anchors() {
 }
 
 /// A resolve journal whose plan digest is not its own self digest never
-/// anchors (devin F1a): `staged_resolve` pins `planDigest =
-/// plan_digest(transaction)`, so a forged `sha256:99…` value is a shape the
+/// anchors (devin F1a): `staged_resolve` pins the prepared intent via
+/// `resolve_digest(transaction)`, so a forged `sha256:99…` value is a shape the
 /// confirmed flow could never write.
 #[test]
 fn forged_resolve_plan_digest_never_anchors() {
@@ -5027,4 +5052,245 @@ fn credential_shaped_caller_values_never_enter_receipts() {
     coverage.module = "ghu_ABC123def456GHI789jkl".to_owned();
     let refused = super::parse_coverage(&serde_json::to_vec(&coverage).expect("wire"));
     assert!(refused.is_err(), "a credential-shaped module id refuses");
+}
+
+/// R7 devin F2 / codex F1: all forged pins resolve against live bytes and
+/// all output classifications are genuine unchanged rows. Neither a record-
+/// only extra/missing pin nor a matching plan edit may enlarge/shrink custody.
+#[test]
+fn materialized_closure_forgeries_never_hijack_completion() {
+    for (index, (add, edit_plan)) in [(true, false), (true, true), (false, false), (false, true)]
+        .into_iter()
+        .enumerate()
+    {
+        let root = project_root(&format!("r8-closure-forge-{index}"));
+        apply_first_generation(&root);
+        let committed = history::current(&root)
+            .expect("custody")
+            .expect("generation");
+        let record = history::record(&root, &committed).expect("record");
+        let mut plan = history::plan(&root, &record.plan_digest).expect("plan");
+        plan.action = PlanAction::Regeneration;
+        plan.before_manifest = State::known(GenerationDigest {
+            generation_digest: committed.clone(),
+        });
+        for output in &mut plan.outputs {
+            output.action = OutputAction::Unchanged;
+            output.before_digest = output.after_digest.clone();
+        }
+        let extra = InputPin {
+            path: "zz-extra.yaml".to_owned(),
+            digest: digest(b"materialized forgery\n"),
+        };
+        write_input(&root, &extra.path, b"materialized forgery\n");
+        if edit_plan {
+            if add {
+                plan.input_closure.push(extra.clone());
+            } else {
+                plan.input_closure
+                    .retain(|pin| pin.path != "model/planner.model.json");
+            }
+            plan.input_closure.sort_by(|a, b| a.path.cmp(&b.path));
+        }
+        plan.plan_digest = plan_digest(&plan);
+        history::write_object(&root, &serde_json::to_vec_pretty(&plan).expect("wire"))
+            .expect("plan object");
+        let mut forged = record.clone();
+        forged.previous_generation = State::known(GenerationDigest {
+            generation_digest: committed.clone(),
+        });
+        forged.plan_digest = plan.plan_digest.clone();
+        if add {
+            forged.input_closure.push(extra);
+        } else {
+            forged
+                .input_closure
+                .retain(|pin| pin.path != "model/planner.model.json");
+        }
+        forged.input_closure.sort_by(|a, b| a.path.cmp(&b.path));
+        forged.generation_digest = generation_digest(&forged);
+        forged.record_digest = record_identity(&forged);
+        // Plant a fully self-consistent record and exact live manifest;
+        // no structural or byte-resolution defect masks the closure hole.
+        let hex = forged.generation_digest.trim_start_matches("sha256:");
+        write_input(
+            &root,
+            &history::custody_logical(&format!("objects/{hex}")),
+            &serde_json::to_vec(&forged).expect("wire"),
+        );
+        let manifest = std::fs::read(root.join(custody::MANIFEST_LOGICAL)).expect("manifest");
+        custody::retain_manifest(&root, &forged.generation_digest, &manifest)
+            .expect("forged manifest");
+        let mut pending: Vec<_> = plan
+            .outputs
+            .iter()
+            .map(|output| Pending {
+                path: output.path.clone(),
+                op: PendingOp::Publish,
+            })
+            .collect();
+        pending.push(Pending {
+            path: custody::MANIFEST_LOGICAL.to_owned(),
+            op: PendingOp::Publish,
+        });
+        pending.sort_by(|a, b| (&a.path, &a.op).cmp(&(&b.path, &b.op)));
+        let journal = Transaction {
+            schema_version: header("managed-transaction").0,
+            identity: header("managed-transaction").1,
+            transaction_id: format!("r8-closure-{index}"),
+            state: TransactionState::Publishing,
+            action: TransactionAction::Apply,
+            plan_digest: State::known(plan.plan_digest.clone()),
+            generation_digest: State::known(GenerationDigest {
+                generation_digest: forged.generation_digest.clone(),
+            }),
+            before_manifest_digest: State::known(digest(&manifest)),
+            after_manifest_digest: State::known(digest(&manifest)),
+            pending,
+            affected_files: plan
+                .outputs
+                .iter()
+                .map(|output| output.path.clone())
+                .collect(),
+            conflict: State::Absent,
+            before_digest: State::Absent,
+        };
+        history::write_transaction(&root, &journal).expect("journal");
+        let refused = recovery::run(&root, &test_authority_of);
+        assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
+        assert!(refused.to_json_string().contains("recovery-unanchored"));
+        assert_eq!(history::current(&root).expect("custody"), Some(committed));
+        assert_eq!(
+            std::fs::read(root.join(custody::MANIFEST_LOGICAL)).expect("manifest"),
+            manifest
+        );
+        assert_eq!(
+            std::fs::read(root.join("zz-extra.yaml")).expect("extra"),
+            b"materialized forgery\n"
+        );
+        assert_eq!(history::unresolved(&root).expect("journal").len(), 1);
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[test]
+fn inline_and_multiline_exports_resolve_at_statement_boundaries() {
+    for source in [
+        "function hook(x) { return x; } export { hook };",
+        "const hook = (x) => x; export { hook };",
+        "function local(x) { return x; }; export {\n local as hook\n};",
+        "void 0; export function hook(x) { return x; }",
+    ] {
+        assert!(
+            bindings::exports_symbol(source.as_bytes(), "hook"),
+            "{source}"
+        );
+    }
+    for source in [
+        "const hook = 7; export { hook };",
+        "export const other = 7; function hook(x) { return x; }",
+        "export default function hook(x) { return x; }",
+        "function outer() { function hook(x) { return x; } export { hook }; }",
+        "export const hook = functionValue;",
+        "function hook(x) { return x; }; export { hook } from 'outside';",
+    ] {
+        assert!(
+            !bindings::exports_symbol(source.as_bytes(), "hook"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn ownership_input_selection_is_closed_and_ordered() {
+    for inputs in [
+        vec!["../outside"],
+        vec!["zz.yaml", "aa.yaml"],
+        vec!["aa.yaml", "aa.yaml"],
+    ] {
+        let mut document = ownership_doc();
+        document.inputs = inputs.into_iter().map(str::to_owned).collect();
+        assert!(parse_ownership(&serde_json::to_vec(&document).expect("wire")).is_err());
+    }
+    let mut document = ownership_doc();
+    document.inputs.clear();
+    let bytes = serde_json::to_vec(&document).expect("wire");
+    assert!(!std::str::from_utf8(&bytes)
+        .expect("utf8")
+        .contains("\"inputs\""));
+    assert!(parse_ownership(&bytes)
+        .expect("closed policy")
+        .inputs
+        .is_empty());
+}
+
+/// R7 devin F1: exercise the actual confirmed writer, not a hand-built
+/// transaction with its id assigned before hashing. A blocked file stage
+/// interrupts after the genuine restoring journal has been written.
+#[test]
+fn real_resolve_writer_recovers_without_retained_intent() {
+    for missing in [false, true] {
+        let root = project_root(&format!("r8-real-resolve-{missing}"));
+        apply_first_generation(&root);
+        let path = "apps/planner/gen/src/focus-task.ts";
+        let exact = std::fs::read(root.join(path)).expect("generated");
+        if missing {
+            std::fs::remove_file(root.join(path)).expect("missing drift");
+        } else {
+            write_input(&root, path, b"reviewed drift\n");
+        }
+        let preview = rollback::resolve(&root, path, None, true);
+        assert_eq!(preview.status(), Status::Valid, "{preview:?}");
+        let confirmed = format!("sha256:{}", resolve_plan_digest(&preview));
+        let stage = root.join(format!("{path}.stage"));
+        std::fs::create_dir(&stage).expect("block stage");
+        let failed = rollback::resolve(&root, path, Some(&confirmed), false);
+        assert_eq!(failed.status(), Status::Invalid, "{failed:?}");
+        let journal = history::unresolved(&root).expect("journals").remove(0);
+        assert_eq!(journal.state, TransactionState::Restoring);
+        assert_eq!(journal.plan_digest.value(), Some(&confirmed));
+        assert_eq!(rollback::resolve_digest(&journal), confirmed);
+        // The audit object is optional, not a caller-held recovery anchor.
+        let mut audit = journal.clone();
+        audit.state = TransactionState::Prepared;
+        let audit_digest = digest(&serde_json::to_vec_pretty(&audit).expect("wire"));
+        std::fs::remove_file(root.join(history::custody_logical(&format!(
+            "objects/{}",
+            audit_digest.trim_start_matches("sha256:")
+        ))))
+        .expect("lose audit object");
+        std::fs::remove_dir(&stage).expect("unblock stage");
+        // Both phases share the confirmed intent; journal ids do not enter it.
+        for phase in [TransactionState::Prepared, TransactionState::Restoring] {
+            let mut interrupted = journal.clone();
+            interrupted.state = phase;
+            history::write_transaction(&root, &interrupted).expect("emitted phase");
+            let recovered = recovery::run(&root, &test_authority_of);
+            assert_eq!(recovered.status(), Status::Valid, "{recovered:?}");
+            assert!(history::unresolved(&root).expect("journals").is_empty());
+            if missing {
+                assert!(!root.join(path).exists(), "preserve reviewed absence");
+            } else {
+                assert_eq!(
+                    std::fs::read(root.join(path)).expect("drift"),
+                    b"reviewed drift\n"
+                );
+            }
+        }
+        let fresh = rollback::resolve(&root, path, None, true);
+        let restored = rollback::resolve(
+            &root,
+            path,
+            Some(&format!("sha256:{}", resolve_plan_digest(&fresh))),
+            false,
+        );
+        assert_eq!(restored.status(), Status::Valid, "{restored:?}");
+        assert_eq!(std::fs::read(root.join(path)).expect("restored"), exact);
+        // The restore landed but close did not: completion must also recover.
+        history::write_transaction(&root, &journal).expect("unclosed journal");
+        let completed = recovery::run(&root, &test_authority_of);
+        assert_eq!(completed.status(), Status::Valid, "{completed:?}");
+        assert!(completed.to_json_string().contains("completed"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

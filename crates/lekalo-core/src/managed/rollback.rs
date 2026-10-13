@@ -665,6 +665,18 @@ fn staged(
     }
 }
 
+/// The confirmed resolve intent, independent of journal transport metadata.
+/// The writer assigns the attempt id and advances the phase only after
+/// confirmation; recovery must rederive this same digest from either emitted
+/// phase without needing the caller's preview or the optional audit object.
+pub(crate) fn resolve_digest(transaction: &Transaction) -> String {
+    let mut intent = transaction.clone();
+    intent.transaction_id.clear();
+    intent.state = TransactionState::Prepared;
+    intent.conflict = State::Absent;
+    plan_digest(&intent)
+}
+
 /// Build and execute (or preview) the resolve of one drifted generated
 /// path: exact recorded bytes, same transaction checks, no new baseline.
 /// The previewed transaction pins the drifted before-state; only the
@@ -750,7 +762,7 @@ pub fn resolve(
         conflict: State::Absent,
         before_digest,
     };
-    transaction.plan_digest = State::known(plan_digest(&transaction));
+    transaction.plan_digest = State::known(resolve_digest(&transaction));
     let expected = transaction.plan_digest.value().expect("digest").clone();
     if !dry_run {
         if let Err(error) = require_confirmation(confirm, &expected) {

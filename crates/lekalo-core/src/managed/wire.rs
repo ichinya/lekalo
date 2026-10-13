@@ -227,7 +227,18 @@ dto!(TargetAssignment {
     extensions: Vec<Extension>
 });
 dto!(ModuleAssignment { module: String, mode: Mode, targets: Vec<TargetAssignment> });
-dto!(Ownership { schema_version: String, identity: String, project: String, modules: Vec<ModuleAssignment> });
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Ownership {
+    pub schema_version: String,
+    pub identity: String,
+    pub project: String,
+    pub modules: Vec<ModuleAssignment>,
+    /// Supplemental provenance inputs selected by live caller-owned policy,
+    /// not by a saved plan or recovery journal. Omission selects none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<String>,
+}
 
 /// Requirement: the optional `detail` note is skipped when absent so the
 /// canonical serialization matches the raw closed document byte for byte.

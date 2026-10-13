@@ -334,7 +334,7 @@ fn after_balanced_paren(init: &str) -> Option<&str> {
 /// cannot execute as one (r6, devin F2b / codex F7).
 fn callable_initializer(init: &str) -> bool {
     let init = init.trim_start();
-    if init.starts_with("function") {
+    if init.starts_with("function") && word_boundary_after(&init["function".len()..]) {
         return true;
     }
     if let Some(rest) = init.strip_prefix("async") {
@@ -434,7 +434,8 @@ fn declares_callable(text: &str, name: &str) -> bool {
         while let Some(found) = text[from..].find(keyword) {
             let at = from + found;
             from = at + keyword.len();
-            if !word_boundary_before(text, at) {
+            if !word_boundary_before(text, at) || !word_boundary_after(&text[at + keyword.len()..])
+            {
                 continue;
             }
             // Statement position only: expression contexts (a named
@@ -458,6 +459,9 @@ fn declares_callable(text: &str, name: &str) -> bool {
             let at = from + found;
             from = at + keyword.len();
             if !word_boundary_before(text, at) {
+                continue;
+            }
+            if !statement_position(text, at) || !word_boundary_after(&text[at + keyword.len()..]) {
                 continue;
             }
             let tail = text[at + keyword.len()..].trim_start();
@@ -499,48 +503,45 @@ pub(crate) fn exports_symbol(bytes: &[u8], symbol: &str) -> bool {
     let Some(surface) = scan_surface(bytes) else {
         return false;
     };
-    // Direct exported declaration forms: only lines that begin at
-    // top-level depth survive on the top-level surface.
-    for line in surface.top_level.lines() {
-        let trimmed = line.trim_start();
-        let Some(rest) = trimmed.strip_prefix("export ") else {
-            continue;
-        };
-        if rest.starts_with('{') {
-            continue;
-        }
-        if declares_callable(rest, symbol) {
-            return true;
-        }
-    }
-    // Named-export clauses: `export { local as symbol }` resolves the
-    // local name back to its top-level declaration in the same file and
-    // requires a callable form (r4 finding 3). A `from "…"` re-export
-    // names a binding this scan cannot verify and never qualifies.
-    for line in surface.code.lines() {
-        let trimmed = line.trim_start();
-        let Some(rest) = trimmed.strip_prefix("export ") else {
-            continue;
-        };
-        let Some(list) = rest.strip_prefix('{') else {
-            continue;
-        };
-        let Some(close) = list.find('}') else {
-            continue;
-        };
-        if list[close + 1..].trim_start().starts_with("from") {
+    // Export keywords are recognized at top-level statement boundaries,
+    // not line starts: `stmt(); export { hook }` and multiline clauses are
+    // valid module surfaces too. Nested/literal export text stays blank.
+    for (at, _) in surface.top_level.match_indices("export") {
+        if !word_boundary_before(&surface.top_level, at)
+            || !word_boundary_after(&surface.top_level[at + "export".len()..])
+            || !statement_position(&surface.top_level, at)
+        {
             continue;
         }
-        for clause in list[..close].split(',') {
-            let clause = clause.trim();
-            if clause.is_empty() {
+        let rest = surface.code[at + "export".len()..].trim_start();
+        if let Some(list) = rest.strip_prefix('{') {
+            let Some(close) = list.find('}') else {
+                continue;
+            };
+            // Re-exports do not resolve to a declaration in these bytes.
+            if list[close + 1..].trim_start().starts_with("from") {
                 continue;
             }
-            let (local, exported) = match clause.split_once(" as ") {
-                Some((local, exported)) => (local.trim(), exported.trim()),
-                None => (clause, clause),
-            };
-            if exported == symbol && declares_callable(&surface.top_level, local) {
+            for clause in list[..close].split(',') {
+                let words: Vec<_> = clause.split_whitespace().collect();
+                let (local, exported) = match words.as_slice() {
+                    [local] => (*local, *local),
+                    [local, "as", exported] => (*local, *exported),
+                    _ => continue,
+                };
+                if exported == symbol && declares_callable(&surface.top_level, local) {
+                    return true;
+                }
+            }
+        } else {
+            let top = surface.top_level[at + "export".len()..].trim_start();
+            // A default export is not a named import, and a later callable
+            // declaration must not accidentally qualify an earlier export.
+            if top.starts_with("default") {
+                continue;
+            }
+            let end = top.find([';', '}']).unwrap_or(top.len());
+            if declares_callable(&top[..end], symbol) {
                 return true;
             }
         }

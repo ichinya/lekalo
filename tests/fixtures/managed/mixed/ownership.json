@@ -2,6 +2,7 @@
   "schemaVersion": "lekalo/managed-ownership/v0.8.0",
   "identity": "dev.lekalo.managed-ownership@0.8.0",
   "project": "mixed-fixture",
+  "inputs": ["model/planner.model.json"],
   "modules": [
     {
       "module": "billing",

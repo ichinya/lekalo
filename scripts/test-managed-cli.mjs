@@ -224,6 +224,54 @@ const primaryGeneration = readFileSync(join(primary.project, '.lekalo/generated/
   assert.equal(readFileSync(join(primary.project, 'apps/planner/gen/src/complete-task.ts'), 'utf8'), ORACLE['apps/planner/gen/src/complete-task.ts']);
 }
 
+// ---- 4b. Real resolve-writer interruptions recover without caller artifacts.
+// A blocked stage fails after staged_resolve writes its genuine restoring
+// journal. Never mint the journal by hand: its id and digest must be those
+// the actual confirmed writer used (r7 devin F1).
+for (const missing of [false, true]) {
+  const { project } = sandbox(`resolve-interrupt-${missing}`);
+  plan(project);
+  apply(project, 'valid');
+  const path = 'apps/planner/gen/src/focus-task.ts';
+  const handler = join(project, path);
+  if (missing) rmSync(handler);
+  else writeFileSync(handler, '// reviewed interrupted drift\n');
+  const preview = invoke(project, ['resolve', '--path', path, '--restore', '--dry-run'], 'valid');
+  mkdirSync(`${handler}.stage`);
+  const failed = invoke(project, ['resolve', '--path', path, '--restore', '--confirm', preview.managed.planDigest], 'invalid');
+  assert.equal(failed.diagnostics[0].data.reason, 'restore-write');
+  const home = join(project, '.lekalo/generated/manifests/managed');
+  const unresolved = readdirSync(join(home, 'transactions')).map((name) => ({
+    name, journal: JSON.parse(readFileSync(join(home, 'transactions', name), 'utf8')),
+  })).filter(({ journal }) => journal.action === 'resolve' && journal.state === 'restoring');
+  assert.equal(unresolved.length, 1, 'the real writer leaves one unresolved journal');
+  assert.equal(unresolved[0].journal.planDigest.value, preview.managed.planDigest);
+  // Delete the optional audit/retained-intent object: recovery must rederive
+  // intent from its own journal and committed custody, not the caller copy.
+  for (const name of readdirSync(join(home, 'objects'))) {
+    let object;
+    try { object = JSON.parse(readFileSync(join(home, 'objects', name), 'utf8')); } catch { continue; }
+    if (object.action === 'resolve' && object.transactionId === unresolved[0].journal.transactionId) {
+      rmSync(join(home, 'objects', name));
+    }
+  }
+  rmSync(`${handler}.stage`, { recursive: true });
+  const recovered = invoke(project, ['recover'], 'valid');
+  assert.equal(recovered.managed.reconciled[0].outcome, 'abandoned');
+  if (missing) assert.ok(!existsSync(handler), 'recovery preserves reviewed absence');
+  else assert.equal(readFileSync(handler, 'utf8'), '// reviewed interrupted drift\n');
+  const fresh = invoke(project, ['resolve', '--path', path, '--restore', '--dry-run'], 'valid');
+  invoke(project, ['resolve', '--path', path, '--restore', '--confirm', fresh.managed.planDigest], 'valid');
+  assert.equal(readFileSync(handler, 'utf8'), ORACLE[path]);
+  // Restore already landed, only journal close interrupted: re-open the
+  // actual writer's committed document at its emitted restoring phase.
+  const journal = JSON.parse(readFileSync(join(home, 'transactions', unresolved[0].name), 'utf8'));
+  journal.state = 'restoring';
+  writeFileSync(join(home, 'transactions', unresolved[0].name), JSON.stringify(journal));
+  assert.equal(invoke(project, ['recover'], 'valid').managed.reconciled[0].outcome, 'completed');
+  rmSync(project, { recursive: true, force: true });
+}
+
 // ---- 5. Scoped cleanup deletes exactly the orphaned generated output. ------
 // Dropping a requirement is a Model change first: the coverage evidence is
 // re-pinned to the moved authority (the `managed authority` read-only view),
@@ -443,6 +491,7 @@ function rewriteModelCommands(project, keepIds) {
 {
   const pass = invoke(primary.project, ['equivalence', '--evidence', 'equivalence.json'], 'valid');
   assert.equal(pass.managed.verdict, 'match');
+  assert.equal(pass.managed.evidenceBasis, 'projection-recomputed');
   const evidence = JSON.parse(read(`${wire}/planner/equivalence.json`));
   const mismatch = { ...evidence, scenarios: [{ ...evidence.scenarios[0], verdict: 'mismatch' }, ...evidence.scenarios.slice(1)] };
   writeFileSync(join(primary.project, 'equivalence-mismatch.json'), JSON.stringify(mismatch, null, 2) + '\n');
@@ -682,6 +731,84 @@ function sha256(bytes) {
   rmSync(join(custody, 'blocked-7777.json'), { force: true });
 }
 
+// ---- 16b. Resolving a live extra pin never mints recovery lineage.
+// R7 devin F2 / codex F1: correct no-op output classifications, complete
+// pending sets, retained objects and the exact live manifest leave only the
+// plan/record closure-set deviation as the reason to refuse.
+for (const editPlan of [false, true]) {
+  const { project } = sandbox(`materialized-closure-${editPlan}`);
+  plan(project);
+  apply(project, 'valid');
+  const home = join(project, '.lekalo/generated/manifests/managed');
+  const committed = readFileSync(join(home, 'current'), 'utf8').trim();
+  const record = JSON.parse(readFileSync(join(home, 'objects', committed.slice(7)), 'utf8'));
+  const liveManifest = readFileSync(join(project, '.lekalo/generated/manifests/ownership.json'));
+  const minted = planReceipt(project);
+  const ordered = (v) => Array.isArray(v) ? v.map(ordered) : v && typeof v === 'object'
+    ? Object.fromEntries(Object.keys(v).sort().map((key) => [key, ordered(v[key])])) : v;
+  const hash = (v) => sha256(JSON.stringify(ordered(v)));
+  const extra = { path: 'zz-extra.yaml', digest: sha256('materialized attacker pin\n') };
+  writeFileSync(join(project, extra.path), 'materialized attacker pin\n');
+  if (editPlan) minted.inputClosure.push(extra);
+  delete minted.planDigest;
+  minted.planDigest = hash(minted);
+  const store = (value) => {
+    const bytes = JSON.stringify(ordered(value));
+    writeFileSync(join(home, 'objects', sha256(bytes).slice(7)), bytes);
+  };
+  store(minted);
+  const forged = structuredClone(record);
+  forged.previousGeneration = { state: 'known', value: { generationDigest: committed } };
+  forged.planDigest = minted.planDigest;
+  forged.inputClosure.push(extra);
+  forged.generationDigest = hash({ inputClosure: forged.inputClosure, outputs: forged.outputs.map(({ path, role, ownerModule, ownerTarget, digest }) => ({ path, role, ownerModule, ownerTarget, digest })) });
+  delete forged.recordDigest;
+  forged.recordDigest = hash(forged);
+  writeFileSync(join(home, 'objects', forged.generationDigest.slice(7)), JSON.stringify(ordered(forged)));
+  writeFileSync(join(home, 'manifests', forged.generationDigest.slice(7)), liveManifest);
+  const journal = {
+    schemaVersion: `lekalo/managed-transaction/v${version}`, identity: `dev.lekalo.managed-transaction@${version}`,
+    transactionId: 'materialized-forge-0001', state: 'publishing', action: 'apply',
+    planDigest: { state: 'known', value: minted.planDigest },
+    generationDigest: { state: 'known', value: { generationDigest: forged.generationDigest } },
+    beforeManifestDigest: { state: 'known', value: sha256(liveManifest) },
+    afterManifestDigest: { state: 'known', value: sha256(liveManifest) },
+    pending: [...minted.outputs.map((output) => ({ path: output.path, op: 'publish' })), { path: '.lekalo/generated/manifests/ownership.json', op: 'publish' }].sort((a, b) => a.path < b.path ? -1 : 1),
+    affectedFiles: minted.outputs.map((output) => output.path), conflict: { state: 'absent' }, beforeDigest: { state: 'absent' },
+  };
+  writeFileSync(join(home, 'transactions', `${journal.transactionId}.json`), JSON.stringify(journal));
+  const before = snapshot(project);
+  const refused = invoke(project, ['recover'], 'invalid');
+  assert.equal(refused.diagnostics[0].data.reason, 'recovery-unanchored');
+  assertSameTree(before, snapshot(project), 'materialized closure forgery has zero writes');
+  assert.equal(readFileSync(join(home, 'current'), 'utf8').trim(), committed);
+  rmSync(project, { recursive: true, force: true });
+}
+// Positive control: a deliberate live policy change can select a new input,
+// and a real interrupted writer remains recoverable with that expanded set.
+{
+  const { project } = sandbox('declared-input-recovery');
+  plan(project);
+  apply(project, 'valid');
+  const ownership = JSON.parse(readFileSync(join(project, 'ownership.json'), 'utf8'));
+  writeFileSync(join(project, 'zz-extra.yaml'), 'reviewed supplemental input\n');
+  const undeclared = invoke(project, ['plan', '--to', 'managed', '--ownership', 'ownership.json', '--coverage', 'coverage.json', '--module', 'planner', '--target', 'node-typescript', '--input', 'zz-extra.yaml'], 'invalid');
+  assert.equal(undeclared.diagnostics[0].data.reason, 'input-selection');
+  ownership.inputs.push('zz-extra.yaml');
+  writeFileSync(join(project, 'ownership.json'), JSON.stringify(ownership));
+  const built = plan(project);
+  assert.ok(built.inputClosure.some((pin) => pin.path === 'zz-extra.yaml'));
+  const stage = join(project, 'apps/planner/gen/src/complete-task.ts.stage');
+  mkdirSync(stage);
+  apply(project, 'invalid');
+  const recovered = invoke(project, ['recover'], 'valid');
+  assert.equal(recovered.managed.reconciled[0].outcome, 'abandoned');
+  rmSync(stage, { recursive: true });
+  plan(project);
+  apply(project, 'valid');
+  rmSync(project, { recursive: true, force: true });
+}
+
 // ---- 17. A resolved custom binding renders its invocation and stays owned
 //          by its maintainer across regeneration (K). ----------------------
 {
@@ -770,6 +897,22 @@ function sha256(bytes) {
   // The commit without evidence refuses.
   const ungated = invoke(project, ['apply', '--plan', 'plan-bound.json', '--coverage', 'coverage-bound.json', '--ownership', 'ownership.json', '--confirm', built.planDigest], 'invalid');
   assert.equal(ungated.diagnostics[0].data.reason, 'execution-evidence-missing', 'the bound generation never commits without execution evidence');
+  // Stripping a caller-editable plan field cannot disable the bound gate
+  // (r7 devin F3 / codex F2), with or without an attestation or dry-run.
+  const stripped = structuredClone(built);
+  stripped.extensions = [];
+  delete stripped.planDigest;
+  const ordered = (v) => Array.isArray(v) ? v.map(ordered) : v && typeof v === 'object'
+    ? Object.fromEntries(Object.keys(v).sort().map((key) => [key, ordered(v[key])])) : v;
+  stripped.planDigest = sha256(JSON.stringify(ordered(stripped)));
+  writeFileSync(join(project, 'plan-stripped.json'), JSON.stringify(stripped));
+  for (const extra of [[], ['--execution', 'execution-bound.json'], ['--dry-run']]) {
+    const before = snapshot(project);
+    const refused = invoke(project, ['apply', '--plan', 'plan-stripped.json', '--coverage', 'coverage-bound.json', '--ownership', 'ownership.json', '--confirm', stripped.planDigest, ...extra], 'invalid');
+    assert.equal(refused.diagnostics[0].id, 'managed.plan-stale');
+    assert.equal(refused.diagnostics[0].data.path, 'extensions');
+    assertSameTree(before, snapshot(project), 'stripped bound plan has zero writes');
+  }
   // The evidence with a lying observed outcome refuses too.
   const lying = JSON.parse(JSON.stringify(executionEvidence));
   lying.execution[0].observed = sha256('never observed');
@@ -792,6 +935,56 @@ function sha256(bytes) {
   writeFileSync(join(project, 'execution-rebound.json'), JSON.stringify(reboundEvidence, null, 2) + '\n');
   apply(project, 'valid', 'plan-rebound.json', 'coverage-bound.json', 'execution-rebound.json');
   assert.equal(readFileSync(join(project, 'src/extensions/legacy_hook.ts'), 'utf8'), bindingBytes, 'custom source is preserved');
+  rmSync(project, { recursive: true, force: true });
+}
+
+// ---- 17b. Bound match is explicitly caller-attested, not machine-observed.
+// R7 devin F5 / codex F3: a fabricated but consistent native-run document
+// can conceal a throwing hook. Keep this trust limit visible in the receipt
+// and prove that independent native execution still catches the lie.
+{
+  const { project } = sandbox('attestation-boundary');
+  const binding = 'export function legacyHook(input) { throw new Error("attestation-canary"); }\n';
+  mkdirSync(join(project, 'src/extensions'), { recursive: true });
+  writeFileSync(join(project, 'src/extensions/legacy_hook.ts'), binding);
+  const extension = { symbol: 'legacy_hook', binding: 'src/extensions/legacy_hook.ts', contractDigest: sha256(binding) };
+  const ownership = JSON.parse(read(`${wire}/planner/ownership.json`));
+  ownership.modules[0].targets[0].extensions = [extension];
+  const coverage = JSON.parse(read(`${wire}/planner/coverage.json`));
+  coverage.extensions = [{ ...extension, validated: true }];
+  writeFileSync(join(project, 'ownership.json'), JSON.stringify(ownership));
+  writeFileSync(join(project, 'coverage.json'), JSON.stringify(coverage));
+  const built = plan(project);
+  const ordered = (v) => Array.isArray(v) ? v.map(ordered) : v && typeof v === 'object'
+    ? Object.fromEntries(Object.keys(v).sort().map((key) => [key, ordered(v[key])])) : v;
+  const evidence = {
+    schemaVersion: `lekalo/managed-equivalence/v${version}`,
+    identity: `dev.lekalo.managed-equivalence@${version}`,
+    module: 'planner', target: 'node-typescript', implementationDigest: sha256('caller attestation'),
+    referenceDigest: { state: 'absent' }, verdict: 'match', gaps: [],
+    scenarios: coverage.requirements.map((requirement) => ({
+      scenario: requirement.id, verdict: 'match',
+      digest: built.outputs.find((output) => output.path.endsWith(`/${requirement.id.replace('planner.', '').replaceAll('_', '-')}.test.ts`)).afterDigest.value,
+    })),
+    execution: coverage.requirements.map((requirement) => ({ scenario: requirement.id, observed: sha256(JSON.stringify(ordered(requirement.sample.value.output))) })),
+  };
+  writeFileSync(join(project, 'execution.json'), JSON.stringify(evidence));
+  apply(project, 'valid', 'plan.json', 'coverage.json', 'execution.json');
+  const native = spawnSync(process.execPath, [join(project, 'apps/planner/gen/test/focus-task.test.ts')], { cwd: project, encoding: 'utf8', timeout: 60000 });
+  assert.equal(native.status, 1, 'independent native run exposes the false attestation');
+  assert.match(native.stderr, /attestation-canary/);
+  const home = join(project, '.lekalo/generated/manifests/managed');
+  const generation = readFileSync(join(home, 'current'), 'utf8').trim();
+  const record = JSON.parse(readFileSync(join(home, 'objects', generation.slice(7)), 'utf8'));
+  evidence.implementationDigest = sha256(record.outputs.filter((o) => ['implementation', 'test'].includes(o.role)).flatMap((o) => [o.path, sha256(readFileSync(join(project, o.path)))]).join('\n'));
+  evidence.referenceDigest = record.outputs[0].afterRef;
+  writeFileSync(join(project, 'equivalence-attested.json'), JSON.stringify(evidence));
+  const receipt = invoke(project, ['equivalence', '--evidence', 'equivalence-attested.json'], 'valid');
+  assert.equal(receipt.managed.verdict, 'match');
+  assert.equal(receipt.managed.evidenceBasis, 'caller-attested', 'never certify this as machine-observed');
+  const doc = read('docs/managed-mode.md');
+  assert.match(doc, /caller-supplied native-run/);
+  assert.match(doc, /does\s+\*\*not\*\* launch the tests/);
   rmSync(project, { recursive: true, force: true });
 }
 

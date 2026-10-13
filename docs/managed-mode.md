@@ -32,7 +32,12 @@ document. It assigns each exact module one of the modes `observed`,
 profile and implementation attachments, and the explicit extension
 selections. Wildcards, prefix matches, overlapping generated roots, and
 duplicate assignments are refused (`LEK-MGD-001`); roots may not nest, so one
-file never has two owners.
+file never has two owners. Its optional, sorted, unique `inputs` array selects
+supplemental provenance coordinates; omission selects none. Planning pins
+exactly these live files plus the ownership document itself. `--input FILE`
+may assert a declared selection but cannot add an undeclared coordinate to
+the closure. To add an input, review the ownership policy change first; no
+caller-held plan or journal can silently enlarge the provenance set.
 
 ```text
 lekalo --json managed check --ownership config/lekalo-ownership.json --project .
@@ -55,6 +60,15 @@ Admission refuses anything less than qualified full support
 ambiguous, unvalidated, or stale (`LEK-MGD-001`). Unsupported or unknown
 coverage never lowers the denominator; there is no handwritten fallback and
 no scaffold-as-managed mode.
+
+The offline adapter-entry check is a **lexical surface qualification**, not a
+runtime protocol-conformance test. It accepts call-shaped lifecycle symbols
+or an `operations: [...]` protocol declaration and checks the negotiation
+surface. An inert but correctly shaped protocol document can pass; this does
+not prove it dispatches requests. Native protocol execution remains the
+adapter/CI owner's gate. Binding resolution similarly checks top-level
+callable exports (including inline and multiline export clauses), not the
+behavior of their bodies.
 
 ## Deterministic planning and the reviewed plan
 
@@ -99,11 +113,18 @@ shapes the machinery itself writes ever anchor (`prepared`/`publishing` on
 apply with their exact pending sets, `restoring` on rollback, `prepared`/
 `restoring` with exactly one restore on resolve); an apply journal's
 retained plan must re-derive from the closure-pinned ownership document,
-resolving closure pins, the live derived authority, and the deterministic
-render from the retained coverage; a resolve journal pins its own self
-digest and converges behaviorally — recovery never restores a byte on a
-resolve journal's word, so a caller-planted "retained intent" object
-anchors nothing.
+the exact policy-selected file-pin set, the live derived authority, and the
+deterministic render from retained coverage. Its record closure must equal
+the writer's exact assembly of preserved base pins, that derived plan set,
+and the current reserved authority cohort — resolving an extra live file
+never grants a new lineage identity; a resolve journal's confirmation digest
+covers its prepared intent (generation, path, and exact drift), not its
+attempt id or transient phase. Recovery rederives that intent from the
+journal and converges behaviorally without a caller-saved preview or audit
+object: it closes an already-landed restore as completed, or abandons an
+unlanded restore preserving the reviewed drift (including absence) for a
+fresh confirmed retry. Recovery never restores a byte on a resolve journal's
+word, so a caller-planted "retained intent" object anchors nothing.
 
 ## Cleanup, upgrade diff, rollback, resolve
 
@@ -124,6 +145,27 @@ exact recorded bytes — never a rebased baseline, never `--force`.
 is `LEK-MGD-008` (invalid); unsupported or missing required coverage is
 `LEK-MGD-009` (unsupported); only a fully supported matching corpus passes.
 Timing metrics and raw sources are never part of the evidence.
+
+### Native-run attestation boundary
+
+For an **unbound** generation the offline core recomputes the deterministic
+projection from pinned coverage; a `match` receipt reports
+`evidenceBasis: "projection-recomputed"`. This is not a native runtime run.
+For a **bound** generation, `--execution` is a **caller-supplied native-run
+attestation**: the core verifies exact generated-test pins, complete scenario
+coverage, and outcome digests against the reviewed expectations. It does
+**not** launch the tests, authenticate their producer, or observe hook
+execution. Retaining the document in custody does not strengthen that trust
+boundary: the bound `match` receipt reports `evidenceBasis: "caller-attested"`.
+Detached evidence adjudication is likewise caller-attested.
+
+A fabricated but internally consistent document can claim `match` even for
+a throwing hook. The operator must independently execute and review every
+exact staged generated test with the pinned maintained bindings before
+supplying this attestation; publishing it is an explicit trust decision, not
+proof of machine-observed success. CI must still execute the native tests.
+Missing evidence blocks a bound commit and cannot be bypassed by editing
+`plan.extensions`: the plan selection must equal qualified admission.
 
 ## Contracts and diagnostics
 

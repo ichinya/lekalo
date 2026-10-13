@@ -55,7 +55,8 @@ pub struct PlanArgs {
     /// The exact target id.
     #[arg(long, value_name = "TARGET")]
     pub target: String,
-    /// Additional pinned generation inputs (repeatable).
+    /// Assert a supplemental provenance input selected in ownership.inputs
+    /// (repeatable); undeclared coordinates are refused.
     #[arg(long, value_name = "FILE")]
     pub input: Vec<String>,
     #[command(flatten)]
@@ -79,9 +80,8 @@ pub struct ApplyArgs {
     /// Preview the transaction without writing anything.
     #[arg(long)]
     pub dry_run: bool,
-    /// The execution evidence of a bound generation (required to commit a
-    /// plan with validated extensions): the pinned generated-test digests
-    /// with their observed outcomes.
+    /// Caller-supplied native-run attestation required for a bound commit.
+    /// The core verifies test pins and outcome assertions, not execution.
     #[arg(long, value_name = "FILE")]
     pub execution: Option<String>,
     #[command(flatten)]
@@ -377,23 +377,22 @@ fn run_plan(args: PlanArgs) -> Outcome {
     // Every validated custom/foreign binding resolves to a real pinned
     // implementation file before any plan exists (finding K).
     core::bindings::resolve(&root(&args.project.project), target, &coverage)?;
-    // The complete pinned input closure: every explicit input plus the
-    // ownership configuration itself.
+    // The complete file-pin set is re-derivable from live caller-owned
+    // policy, not an arbitrary saved-plan array (r7 devin F2 / codex F1).
+    // --input only asserts a declared selection; omission still includes
+    // every policy-selected supplemental input.
     let project_root = root(&args.project.project);
-    let mut closure = Vec::new();
-    let mut inputs: Vec<(String, String)> = Vec::new();
-    inputs.push((
-        args.ownership.replace('\\', "/"),
-        core::digest(&read(&args.ownership)?),
-    ));
     for input in &args.input {
-        inputs.push((input.replace('\\', "/"), core::digest(&read(input)?)));
+        let path = input.replace('\\', "/");
+        if !ownership.inputs.contains(&path) {
+            return Err(core::failure(
+                core::PLAN_STALE,
+                &[("path", path.as_str()), ("reason", "input-selection")],
+            ));
+        }
     }
-    inputs.sort();
-    inputs.dedup();
-    for (path, digest) in inputs {
-        closure.push(core::InputPin { path, digest });
-    }
+    let ownership_path = args.ownership.replace('\\', "/");
+    let closure = core::plan::input_closure(&project_root, &ownership, Some(&ownership_path))?;
     // The before-state comes from recorded custody, never from guesses.
     let recorded: std::collections::BTreeMap<String, core::RecordOutput> =
         match core::history::current(&project_root) {
@@ -504,6 +503,18 @@ fn run_apply(args: ApplyArgs) -> Outcome {
     // time: a plan whose Model/IR/lock moved since the review is stale
     // (finding D).
     let parsed_plan = core::verify_plan(&plan)?;
+    let ownership_path = args.ownership.replace('\\', "/");
+    let expected_closure = core::plan::input_closure(
+        &root(&args.project.project),
+        &ownership,
+        Some(&ownership_path),
+    )?;
+    if parsed_plan.input_closure != expected_closure {
+        return Err(core::failure(
+            core::PLAN_STALE,
+            &[("path", "inputClosure"), ("reason", "input-selection")],
+        ));
+    }
     let coverage_doc = core::parse_coverage(&coverage)?;
     let authority =
         core::authority::derive(&selection(&args.project.project), &parsed_plan.modules[0])?;

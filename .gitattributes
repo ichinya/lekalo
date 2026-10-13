@@ -29,3 +29,5 @@ adapters/php-laravel/adapter.php -whitespace
 *.lock text eol=lf
 tests/fixtures/managed/planner/lekalo.lock text eol=lf
 tests/fixtures/** text eol=lf
+# SQLite snapshots are binary exact-byte custody, never text-normalized.
+tests/fixtures/**/*.sqlite -text !eol

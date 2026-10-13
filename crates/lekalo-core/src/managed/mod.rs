@@ -318,6 +318,15 @@ pub fn parse_ownership(bytes: &[u8]) -> Result<Ownership, DomainResult> {
     if !credential_free(&document.project) {
         return Err(invalid("project-credential"));
     }
+    if document.inputs.len() > 4095
+        || !sorted(&document.inputs.iter().collect::<Vec<_>>())
+        || !document
+            .inputs
+            .iter()
+            .all(|path| rel_path(path) && credential_free(path))
+    {
+        return Err(invalid("input-selection"));
+    }
     if document.modules.is_empty()
         || document.modules.len() > 64
         || !sorted(

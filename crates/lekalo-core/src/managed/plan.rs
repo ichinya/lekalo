@@ -60,6 +60,81 @@ pub fn generated_roots(
         .collect()
 }
 
+/// Re-derive the exact file-pin set from the live ownership policy. The
+/// supplemental selection cannot be minted by editing a saved plan. The
+/// ownership coordinate is supplied by the CLI or resolved from the retained
+/// plan by recovery; detached core callers may omit that coordinate.
+pub fn input_closure(
+    root: &std::path::Path,
+    ownership: &super::wire::Ownership,
+    ownership_path: Option<&str>,
+) -> Result<Vec<InputPin>, DomainResult> {
+    let mut paths: std::collections::BTreeSet<&str> =
+        ownership.inputs.iter().map(String::as_str).collect();
+    if let Some(path) = ownership_path {
+        paths.insert(path);
+    }
+    let mut closure = Vec::with_capacity(paths.len());
+    for path in paths {
+        if !rel_path(path) {
+            return Err(invalid("input-selection"));
+        }
+        let bytes = super::fs::read_file(root, path)
+            .ok()
+            .flatten()
+            .ok_or_else(|| {
+                diagnostic::failure(PLAN_STALE, &[("path", path), ("reason", "input")])
+            })?;
+        if Some(path) == ownership_path {
+            let parsed = super::parse_ownership(&bytes)?;
+            if super::hash(&parsed) != super::hash(ownership) {
+                return Err(diagnostic::failure(
+                    PLAN_STALE,
+                    &[("path", path), ("reason", "ownership")],
+                ));
+            }
+        }
+        closure.push(InputPin {
+            path: path.to_owned(),
+            digest: super::digest(&bytes),
+        });
+    }
+    Ok(closure)
+}
+
+/// Check one plan's selection against caller-owned policy. This also
+/// bounds detached core plans; arbitrary live extra pins are not authority.
+pub(crate) fn check_input_closure(
+    root: &std::path::Path,
+    plan: &GenerationPlan,
+    ownership: &super::wire::Ownership,
+) -> Result<(), DomainResult> {
+    let mut ownership_path = None;
+    for pin in &plan.input_closure {
+        if ownership.inputs.contains(&pin.path) {
+            continue;
+        }
+        let matching = super::fs::read_file(root, &pin.path)
+            .ok()
+            .flatten()
+            .and_then(|bytes| super::parse_ownership(&bytes).ok())
+            .is_some_and(|document| super::hash(&document) == super::hash(ownership));
+        if !matching || ownership_path.replace(pin.path.as_str()).is_some() {
+            return Err(diagnostic::failure(
+                PLAN_STALE,
+                &[("path", pin.path.as_str()), ("reason", "input-selection")],
+            ));
+        }
+    }
+    if plan.input_closure != input_closure(root, ownership, ownership_path)? {
+        return Err(diagnostic::failure(
+            PLAN_STALE,
+            &[("path", "inputClosure"), ("reason", "input-selection")],
+        ));
+    }
+    Ok(())
+}
+
 /// Build the deterministic plan for one admitted module/target.
 ///
 /// `inputs` must already be the caller's exact closure; ordering and pin
