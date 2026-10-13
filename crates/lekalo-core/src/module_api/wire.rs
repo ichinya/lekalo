@@ -1017,21 +1017,3 @@ pub struct MappingDivergence {
 
 /// BTree convenience alias for the resolved attachment map.
 pub type ModuleMap = BTreeMap<String, ModulePolicy>;
-
-#[cfg(test)]
-mod probe_tests {
-    use super::*;
-    #[test]
-    fn probe_attachment_decode() {
-        let bytes = std::fs::read(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../tests/fixtures/module-api/reference/tasks/module-api.json"
-        ))
-        .unwrap();
-        let value: Result<Attachment, _> = serde_json::from_slice(&bytes);
-        match value {
-            Ok(a) => println!("OK modules={}", a.modules.len()),
-            Err(e) => println!("ERR {e}"),
-        }
-    }
-}

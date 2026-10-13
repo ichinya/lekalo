@@ -422,20 +422,12 @@ pub fn boundary_verdict(
         gaps.push("owner-evidence-missing".to_owned());
     }
     // The verdict: exact semantic violations are invalid under strict;
-    // advisory default keeps the run valid with explicit findings.
+    // advisory default keeps the run valid with explicit findings. The
+    // rule set is owned by `is_boundary_rule` alone (r4 review finding:
+    // the boundary-rule set was triplicated and could drift).
     let boundary_violations = evidence
         .iter()
-        .filter(|finding| {
-            matches!(
-                finding.rule,
-                "module-api.symbol-not-exported"
-                    | "module-api.import-undeclared"
-                    | "module-api.public-private-exposure"
-                    | "module-api.public-target-exposure"
-                    | "module-api.cross-module-write-forbidden"
-                    | "module-api.dependency-cycle"
-            )
-        })
+        .filter(|finding| is_boundary_rule(finding.rule))
         .count();
     let (assessment, class) = if boundary_violations > 0 {
         (

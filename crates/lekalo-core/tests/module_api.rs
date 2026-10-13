@@ -2822,6 +2822,111 @@ fn r4_mapping_conformance_compares_independent_evidence() {
 }
 
 #[test]
+fn r4_review_mapping_roles_bind_to_their_positional_argument() {
+    // r4 review finding (devin F2 / codex 2): each positional evidence
+    // argument must carry its own role. Swapped but otherwise valid,
+    // digest-sealed documents are refused as `mapping-implementation-role`
+    // instead of certifying a report with inverted implementation labels,
+    // and an identical-implementation pair is refused the same way.
+    let bundle = std::fs::read("tests/fixtures/module-api/standalone/golden-bundle.json").unwrap();
+    let in_process =
+        std::fs::read("tests/fixtures/module-api/mapping/in-process/mapping-evidence.json")
+            .unwrap();
+    let service =
+        std::fs::read("tests/fixtures/module-api/mapping/service/mapping-evidence.json").unwrap();
+    let refuses_role = |error: &lekalo_core::diagnostics::DiagnosticSet| {
+        error.as_slice().iter().any(|diagnostic| {
+            diagnostic.id() == "module-api.input-invalid"
+                && matches!(
+                    diagnostic.data().get("detail"),
+                    Some(lekalo_core::diagnostics::DataValue::Token(detail))
+                        if detail == "mapping-implementation-role"
+                )
+        })
+    };
+    // Swapped flag order: both documents are valid and sealed, but each
+    // occupies the other implementation's positional role.
+    let swapped =
+        lekalo_core::module_api::check_mapping_conformance(&bundle, &service, &in_process)
+            .expect_err("swapped roles are refused");
+    assert!(refuses_role(&swapped));
+    // An identical-implementation pair is refused by the same binding.
+    let identical =
+        lekalo_core::module_api::check_mapping_conformance(&bundle, &in_process, &in_process)
+            .expect_err("identical roles are refused");
+    assert!(refuses_role(&identical));
+    // The correctly ordered golden pair still certifies.
+    let (conformance, _) =
+        lekalo_core::module_api::check_mapping_conformance(&bundle, &in_process, &service)
+            .expect("ordered roles conform");
+    assert!(conformance.conforms);
+}
+
+#[test]
+fn r4_review_union_registry_and_boundary_rule_set_are_pinned() {
+    // r4 review F1: the 0.8.0 successor must be the union of the live M8
+    // format/adoption registry and this issue's module-api family. Every
+    // successor accessor parses the same merged bytes and every landed
+    // family resolves, so neither side of the merge can drop a pin.
+    let module = lekalo_core::diagnostics::DiagnosticRegistry::module_successor().unwrap();
+    let format = lekalo_core::diagnostics::DiagnosticRegistry::format_successor().unwrap();
+    let adoption = lekalo_core::diagnostics::DiagnosticRegistry::adoption().unwrap();
+    assert_eq!(module.len(), 556);
+    assert_eq!(format.len(), module.len());
+    assert_eq!(adoption.len(), module.len());
+    for family in ["module-api.", "format.", "adoption."] {
+        assert!(
+            module.entries().any(|entry| entry.id().starts_with(family)),
+            "family {family} missing from the union successor"
+        );
+    }
+    // r4 review finding (devin F3/codex 5): the strict boundary-rule set
+    // lives once (`is_boundary_rule`) and the meta table may not drift
+    // from the union registry.
+    let six = [
+        "module-api.symbol-not-exported",
+        "module-api.import-undeclared",
+        "module-api.public-private-exposure",
+        "module-api.public-target-exposure",
+        "module-api.cross-module-write-forbidden",
+        "module-api.dependency-cycle",
+    ];
+    for rule in six {
+        assert!(lekalo_core::module_api::validate::is_boundary_rule(rule));
+    }
+    let registered: Vec<&str> = module
+        .entries()
+        .map(|entry| entry.id())
+        .filter(|id| id.starts_with("module-api."))
+        .collect();
+    assert_eq!(registered.len(), 14);
+    for id in &registered {
+        let (code, severity, category) = lekalo_core::module_api::diagnostic::meta(id);
+        let entry = module.entry(id).unwrap();
+        assert_eq!(code, entry.code(), "meta code drift for {id}");
+        assert_eq!(
+            severity,
+            entry.default_severity().as_str(),
+            "meta severity drift for {id}"
+        );
+        assert_eq!(
+            category,
+            entry.category().as_str(),
+            "meta category drift for {id}"
+        );
+    }
+    // No registered module-api rule outside the six is silently a
+    // boundary rule: the strict set stays exact.
+    for id in &registered {
+        assert_eq!(
+            lekalo_core::module_api::validate::is_boundary_rule(id),
+            six.contains(id),
+            "boundary set drift for {id}"
+        );
+    }
+}
+
+#[test]
 fn r4_context_consumer_selectors_obey_the_grammar() {
     // r4 finding 9/codex: the pure context seam validates the consumer
     // selector against the capsule contract's own grammar.

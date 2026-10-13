@@ -196,8 +196,12 @@ pub fn check_mapping_conformance(
     let bundle: PublicBundle = parse_bundle(bundle_bytes)?;
     let in_process = parse_mapping_evidence(in_process_bytes)?;
     let service = parse_mapping_evidence(service_bytes)?;
-    if in_process.implementation == service.implementation {
-        return Err(invalid("mapping-implementation-pair"));
+    // Each positional argument must carry its own role: the first document
+    // is the in-process implementation and the second the extracted
+    // service. Without this binding a swapped flag order would certify a
+    // report with inverted implementation labels (issue #113 r4 F2).
+    if in_process.implementation != "in-process" || service.implementation != "extracted-service" {
+        return Err(invalid("mapping-implementation-role"));
     }
     let mut divergences: Vec<MappingDivergence> = Vec::new();
     for evidence in [&in_process, &service] {

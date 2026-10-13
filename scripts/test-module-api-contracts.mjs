@@ -457,6 +457,12 @@ const reseal = (document, domain) => {
   malformed.implementation = 'frankenstein';
   reseal(malformed, 'lekalo/module-mapping-evidence/1');
   run(['module', 'api', 'mapping', `${fixture}/standalone/golden-bundle.json`, '--in-process', `${fixture}/mapping/in-process/mapping-evidence.json`, '--service', temp('mapping-malformed.json', malformed)], { exit: 1 });
+  // Swapped flag order (r4 review finding): both documents are valid and
+  // sealed, but each occupies the other implementation's positional role.
+  // The run must refuse with `mapping-implementation-role` instead of
+  // certifying a report with inverted implementation labels.
+  const swapped = run(['module', 'api', 'mapping', `${fixture}/standalone/golden-bundle.json`, '--in-process', `${fixture}/mapping/service/mapping-evidence.json`, '--service', `${fixture}/mapping/in-process/mapping-evidence.json`], { exit: 1 });
+  assert.ok(codes(swapped.document).includes('LEK-MODULE-001'), 'swapped roles are invalid input');
   // The integrity controls stay: a port mapping a non-operation export
   // (a value object) or leaking an unexported symbol refuses admission.
   const mappingRoot = scratchProject(reference, 'mapping');
