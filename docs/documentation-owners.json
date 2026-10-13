@@ -3048,7 +3048,7 @@
       "id": "contract:contracts/module-api-lock.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/module-api-lock.schema.v0.8.0.json",
-      "sourceDigest": "sha256:bae2792034b43db11fb491bf85a0adb43c3e6553791d8c06de578803de9e15b0",
+      "sourceDigest": "sha256:f14be4d4e02e08454b94d3385abb8cf2df341f3eb99039af6c0fad0b258dbad6",
       "owner": "docs/module-api.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

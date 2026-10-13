@@ -4,7 +4,7 @@
 // rewrites the tracked goldens in both fixture trees (the workspace tree
 // of the Node gate and the crate tree of the core integration tests).
 import { spawnSync, execFileSync } from 'node:child_process';
-import { writeFileSync, readFileSync, mkdirSync, copyFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdirSync, copyFileSync, cpSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -42,8 +42,18 @@ writeFileSync(join(root, `${fixture}/diff/golden-diff.json`), JSON.stringify({ s
 // 3. lock fixture.
 write(`${fixture}/lock/golden-lock.json`, ['module', 'api', 'lock', '--project', `${fixture}/lock`, '--api', 'module-api.json', '--module', 'tasks', '--consumer', 'planner'], 'moduleApiLock');
 
-// 4. the core integration-test fixture tree keeps its own tracked copy
-//    of the standalone/diff goldens.
+// 4. populated public dependency: shared scalar -> nested Task view ->
+//    planner lock and standalone context. Foreign shapes remain explicit
+//    gaps; their exact public bundle pins must survive every projection.
+const dependencies = `${fixture}/public-dependencies`;
+write(`${dependencies}/golden-bundle-shared.json`, ['module', 'api', 'export', 'shared', '--project', dependencies, '--api', 'module-api.json'], 'modulePublicContract');
+write(`${dependencies}/golden-bundle.json`, ['module', 'api', 'export', 'tasks', '--project', dependencies, '--api', 'module-api.json'], 'modulePublicContract');
+write(`${dependencies}/golden-lock.json`, ['module', 'api', 'lock', '--project', dependencies, '--api', 'module-api.json', '--module', 'tasks', '--consumer', 'planner'], 'moduleApiLock');
+write(`${dependencies}/golden-context.json`, ['module', 'api', 'context', `${dependencies}/golden-bundle.json`, '--consumer', 'planner', '--uses', 'tasks.task_envelope', '--budget', '4000'], 'moduleConsumerContext');
+
+// 5. the core integration-test fixture tree keeps its own tracked copy
+//    of the standalone/diff goldens and the populated dependency project.
+cpSync(join(root, dependencies), join(root, 'crates/lekalo-core/tests/fixtures/module-api/public-dependencies'), { recursive: true });
 mkdirSync(join(root, 'crates/lekalo-core/tests/fixtures/module-api/standalone'), { recursive: true });
 mkdirSync(join(root, 'crates/lekalo-core/tests/fixtures/module-api/diff'), { recursive: true });
 for (const name of ['golden-bundle.json', 'golden-consumers.json', 'golden-context.json', 'golden-context-tiny.json']) {

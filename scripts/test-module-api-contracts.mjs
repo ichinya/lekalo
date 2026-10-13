@@ -191,6 +191,10 @@ const reseal = (document, domain) => {
   validates('module-consumer-context', read(`${fixture}/standalone/golden-context.json`));
   validates('module-consumer-context', read(`${fixture}/standalone/golden-context-tiny.json`));
   for (const side of ['in-process', 'service']) validates('module-mapping-evidence', read(`${fixture}/mapping/${side}/mapping-evidence.json`));
+  validates('module-api', read(`${fixture}/public-dependencies/module-api.json`));
+  for (const name of ['golden-bundle.json', 'golden-bundle-shared.json']) validates('module-public-contract', read(`${fixture}/public-dependencies/${name}`));
+  validates('module-api-lock', read(`${fixture}/public-dependencies/golden-lock.json`));
+  validates('module-consumer-context', read(`${fixture}/public-dependencies/golden-context.json`));
   checked.push('closed-schemas');
 }
 // 4. Reference check: advisory pass, deterministic bytes, digest pins.
@@ -463,6 +467,20 @@ const reseal = (document, domain) => {
   // certifying a report with inverted implementation labels.
   const swapped = run(['module', 'api', 'mapping', `${fixture}/standalone/golden-bundle.json`, '--in-process', `${fixture}/mapping/service/mapping-evidence.json`, '--service', `${fixture}/mapping/in-process/mapping-evidence.json`], { exit: 1 });
   assert.ok(codes(swapped.document).includes('LEK-MODULE-001'), 'swapped roles are invalid input');
+  // r5 F2: correct role labels and seals cannot certify two mechanisms
+  // when both evidence documents bind the same port. Exercise both
+  // service-on-local and local-on-service forgeries.
+  for (const [name, inProcess, service] of [
+    ['service-on-local', structuredClone(inProcessDoc), { ...structuredClone(serviceDoc), port: inProcessDoc.port }],
+    ['local-on-service', { ...structuredClone(inProcessDoc), port: serviceDoc.port }, structuredClone(serviceDoc)],
+  ]) {
+    reseal(inProcess, 'lekalo/module-mapping-evidence/1');
+    reseal(service, 'lekalo/module-mapping-evidence/1');
+    validates('module-mapping-evidence', inProcess);
+    validates('module-mapping-evidence', service);
+    const refused = run(['module', 'api', 'mapping', `${fixture}/standalone/golden-bundle.json`, '--in-process', temp(`${name}-local.json`, inProcess), '--service', temp(`${name}-service.json`, service)], { exit: 1 });
+    assert.ok(refused.document.diagnostics.some((d) => d.code === 'LEK-MODULE-001' && d.data.detail === 'mapping-port-distinct'), 'same-port evidence is invalid, not conforming');
+  }
   // The integrity controls stay: a port mapping a non-operation export
   // (a value object) or leaking an unexported symbol refuses admission.
   const mappingRoot = scratchProject(reference, 'mapping');
@@ -525,7 +543,7 @@ const reseal = (document, domain) => {
 // 17. Read-only producer: no checkout mutations and no runtime cache.
 {
   const inventory = (dir) => readdirSync(join(root, dir), { recursive: true }).sort().join(',');
-  const projects = [reference, `${fixture}/visibility`, `${fixture}/writes`, `${fixture}/lock`, `${fixture}/cycles`, `${fixture}/portability`, `${fixture}/diff/before`, `${fixture}/diff/after`];
+  const projects = [reference, `${fixture}/visibility`, `${fixture}/writes`, `${fixture}/lock`, `${fixture}/cycles`, `${fixture}/portability`, `${fixture}/diff/before`, `${fixture}/diff/after`, `${fixture}/public-dependencies`];
   const before = projects.map(inventory);
   run(['module', 'api', 'check', '--project', reference, '--api', 'module-api.json']);
   run(['module', 'api', 'export', 'tasks', '--project', reference, '--api', 'module-api.json']);
@@ -649,6 +667,94 @@ const reseal = (document, domain) => {
     run(['module', 'api', 'context', `${fixture}/standalone/golden-bundle.json`, '--consumer', bad, '--uses', 'tasks.task_view', '--budget', '4000'], { exit: 1 });
   }
   checked.push('r4-admission-and-policy-probes');
+}
+
+// 19. r5 F1: provenance states are closed even outside the public digest
+// domain. The schema and the real decoder must agree on both variants.
+{
+  const original = read(`${fixture}/standalone/golden-bundle.json`);
+  const contextArgs = (path) => ['module', 'api', 'context', path, '--consumer', 'planner', '--uses', 'tasks.task_view', '--budget', '4000'];
+  for (const revision of [{ state: 'unknown' }, { state: 'known', value: 'deadbeefdeadbeef' }]) {
+    const bundle = structuredClone(original);
+    bundle.pins.sourceRevision = revision;
+    validates('module-public-contract', bundle);
+    const capsule = payload(run(contextArgs(temp('bundle-valid-state.json', bundle))).document, 'moduleConsumerContext');
+    assert.equal(capsule.producerDigest, original.digest, 'provenance state leaves public identity unchanged');
+  }
+  for (const revision of [
+    { state: 'unknown', value: 'deadbeefdeadbeef' },
+    { state: 'unknown', value: null },
+    { state: 'unknown', extra: 1 },
+    { state: 'known', value: 'deadbeefdeadbeef', extra: 1 },
+  ]) {
+    const bundle = structuredClone(original);
+    bundle.pins.sourceRevision = revision;
+    assert.equal(validators.get('module-public-contract')(bundle), false, 'schema refuses extra state members');
+    const refused = run(contextArgs(temp('bundle-smuggled-state.json', bundle)), { exit: 1 });
+    assert.ok(refused.document.diagnostics.some((d) => d.code === 'LEK-MODULE-001' && d.data.detail === 'closed-shape'), 'decoder refuses with closed-shape rather than dropping members');
+  }
+  checked.push('r5-closed-provenance-states');
+}
+
+// 20. r5 F3: populated publicDependencies from an authored foreign scalar
+// through export, lock/check, diff, and isolated public-only context.
+{
+  const dependencies = `${fixture}/public-dependencies`;
+  run(['module', 'api', 'check', '--project', dependencies, '--api', 'module-api.json', '--strict']);
+  const bundle = payload(run(['module', 'api', 'export', 'tasks', '--project', dependencies, '--api', 'module-api.json']).document, 'modulePublicContract');
+  assert.deepEqual(bundle, read(`${dependencies}/golden-bundle.json`));
+  const shared = payload(run(['module', 'api', 'export', 'shared', '--project', dependencies, '--api', 'module-api.json']).document, 'modulePublicContract');
+  assert.deepEqual(shared, read(`${dependencies}/golden-bundle-shared.json`));
+  assert.deepEqual(bundle.publicDependencies, [{ moduleId: 'shared', digest: shared.digest, apiVersion: '1.0.0', exports: ['shared.task_id'] }], 'foreign pin is the actual exported dependency bundle');
+  const project = scratchProject(dependencies, 'public-dependencies');
+  const lockArgs = ['module', 'api', 'lock', '--project', project, '--api', 'module-api.json', '--module', 'tasks', '--consumer', 'planner'];
+  const lock = payload(run(lockArgs, { cwd: probeRoot }).document, 'moduleApiLock');
+  assert.deepEqual(lock, read(`${dependencies}/golden-lock.json`));
+  assert.deepEqual(lock.publicDependencies, bundle.publicDependencies);
+  run([...lockArgs, '--check', '--lock', 'golden-lock.json'], { cwd: probeRoot });
+  // The populated lock schema and decoder require the same export list;
+  // an exact digest pin alone must not silently erase selected symbols.
+  const withoutExports = structuredClone(lock);
+  delete withoutExports.publicDependencies[0].exports;
+  assert.equal(validators.get('module-api-lock')(withoutExports), false);
+  const malformed = run([...lockArgs, '--check', '--lock', tempAttachment(project, 'pin-without-exports.json', withoutExports)], { exit: 1, cwd: probeRoot });
+  assert.ok(malformed.document.diagnostics.some((d) => d.code === 'LEK-MODULE-001' && d.data.detail === 'required-member-missing'));
+  for (const [name, mutate, detail] of [
+    ['stale-pin', (l) => { l.publicDependencies[0].digest = `sha256:${'0'.repeat(64)}`; }, 'lock-dependency-digest'],
+    ['missing-pin', (l) => { l.publicDependencies = []; }, 'lock-dependency-missing'],
+  ]) {
+    const stale = structuredClone(lock);
+    mutate(stale);
+    const denied = run([...lockArgs, '--check', '--lock', tempAttachment(project, `${name}.json`, stale)], { exit: 3, cwd: probeRoot });
+    assert.ok(codes(denied.document).includes('LEK-MODULE-014'));
+    assert.ok(denied.document.diagnostics.some((d) => d.code === 'LEK-MODULE-013' && d.data.detail === detail), `${name} denies with exact dependency evidence`);
+  }
+  // A real foreign public change re-pins the Task bundle with its API
+  // version unchanged, denies the old consumer lock, and breaks the diff.
+  const scalar = join(probeRoot, project, 'lekalo/modules/shared/entities.yaml');
+  const oldScalar = readFileSync(scalar, 'utf8');
+  assert.ok(oldScalar.includes('base: uuid'));
+  writeFileSync(scalar, oldScalar.replace('base: uuid', 'base: string'));
+  const after = payload(run(['module', 'api', 'export', 'tasks', '--project', project, '--api', 'module-api.json'], { cwd: probeRoot }).document, 'modulePublicContract');
+  assert.equal(after.apiVersion, bundle.apiVersion);
+  assert.notEqual(after.publicDependencies[0].digest, shared.digest);
+  const changed = run([...lockArgs, '--check', '--lock', 'golden-lock.json'], { exit: 3, cwd: probeRoot });
+  assert.ok(changed.document.diagnostics.some((d) => d.code === 'LEK-MODULE-013' && d.data.detail === 'lock-dependency-digest'));
+  const diff = payload(run(['module', 'api', 'diff', `${dependencies}/golden-bundle.json`, temp('dependency-bundle-after.json', after)]).document, 'moduleApiDiff');
+  assert.equal(diff.verdict, 'breaking');
+  // Only bundle bytes exist in this isolated directory. Pins and missing
+  // foreign signatures survive; a fitting budget is not a completeness claim.
+  const isolated = join(scratch, 'dependency-no-provider');
+  mkdirSync(isolated);
+  const isolatedBundle = join(isolated, 'bundle.json');
+  writeFileSync(isolatedBundle, JSON.stringify(bundle));
+  const capsule = payload(run(['module', 'api', 'context', isolatedBundle, '--consumer', 'planner', '--uses', 'tasks.task_envelope', '--budget', '4000'], { cwd: isolated }).document, 'moduleConsumerContext');
+  assert.deepEqual(capsule, read(`${dependencies}/golden-context.json`));
+  assert.deepEqual(capsule.dependencies, bundle.publicDependencies);
+  assert.deepEqual(capsule.exports.map((e) => e.export), ['tasks.task_envelope', 'tasks.task_view']);
+  assert.deepEqual(capsule.gaps, ['foreign-signature-not-materialized']);
+  assert.deepEqual(capsule.omissions, [{ subject: 'shared.task_id', reason: 'dependency-signature-not-in-bundle' }]);
+  checked.push('r5-populated-public-dependencies');
 }
 
 process.stdout.write(JSON.stringify({ ok: true, gate: 'module-api-contracts', ajv: '8.17.1', schemas: families.length, checks: checked.length, checked }) + '\n');

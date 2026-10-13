@@ -409,11 +409,29 @@ pub struct PublicPins {
 }
 
 /// A `known`/`unknown` state that never carries an unavailable scalar.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum State<T> {
     Known { value: T },
     Unknown,
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for State<T> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Internally tagged unit variants ignore remaining members even with
+        // deny_unknown_fields. Decode Unknown as an empty struct variant so
+        // both arms are closed without changing the public enum or wire shape.
+        #[derive(Deserialize)]
+        #[serde(tag = "state", rename_all = "kebab-case", deny_unknown_fields)]
+        enum ClosedState<T> {
+            Known { value: T },
+            Unknown {},
+        }
+        Ok(match ClosedState::deserialize(deserializer)? {
+            ClosedState::Known { value } => Self::Known { value },
+            ClosedState::Unknown {} => Self::Unknown,
+        })
+    }
 }
 
 impl<T> State<T> {

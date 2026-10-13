@@ -2927,6 +2927,159 @@ fn r4_review_union_registry_and_boundary_rule_set_are_pinned() {
 }
 
 #[test]
+fn r5_source_revision_states_are_closed_and_keep_their_wire_shape() {
+    use lekalo_core::module_api::wire::State;
+    let bytes = std::fs::read("tests/fixtures/module-api/standalone/golden-bundle.json").unwrap();
+    let original: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    for revision in [
+        serde_json::json!({ "state": "unknown" }),
+        serde_json::json!({ "state": "known", "value": "deadbeefdeadbeef" }),
+    ] {
+        let state: State<String> = serde_json::from_value(revision.clone()).unwrap();
+        assert_eq!(serde_json::to_value(state).unwrap(), revision);
+        let mut bundle = original.clone();
+        bundle["pins"]["sourceRevision"] = revision;
+        let parsed =
+            lekalo_core::module_api::public::parse_bundle(&serde_json::to_vec(&bundle).unwrap())
+                .expect("valid provenance state needs no public digest reseal");
+        assert_eq!(parsed.digest, original["digest"].as_str().unwrap());
+    }
+    for (revision, expected_detail) in [
+        (
+            serde_json::json!({ "state": "unknown", "value": "deadbeefdeadbeef" }),
+            "closed-shape",
+        ),
+        (
+            serde_json::json!({ "state": "unknown", "value": null }),
+            "closed-shape",
+        ),
+        (
+            serde_json::json!({ "state": "unknown", "extra": 1 }),
+            "closed-shape",
+        ),
+        (
+            serde_json::json!({ "state": "known", "value": "deadbeefdeadbeef", "extra": 1 }),
+            "closed-shape",
+        ),
+        (
+            serde_json::json!({ "state": "known" }),
+            "required-member-missing",
+        ),
+    ] {
+        assert!(serde_json::from_value::<State<String>>(revision.clone()).is_err());
+        let mut bundle = original.clone();
+        bundle["pins"]["sourceRevision"] = revision;
+        let error =
+            lekalo_core::module_api::public::parse_bundle(&serde_json::to_vec(&bundle).unwrap())
+                .expect_err("extra or missing state members refuse before digest validation");
+        assert!(error.as_slice().iter().any(|diagnostic| {
+            diagnostic.id() == "module-api.input-invalid"
+                && matches!(
+                    diagnostic.data().get("detail"),
+                    Some(lekalo_core::diagnostics::DataValue::Token(detail))
+                        if detail == expected_detail
+                )
+        }));
+    }
+}
+
+#[test]
+fn r5_mapping_roles_require_distinct_port_surfaces() {
+    let bundle = std::fs::read("tests/fixtures/module-api/standalone/golden-bundle.json").unwrap();
+    let local = std::fs::read("tests/fixtures/module-api/mapping/in-process/mapping-evidence.json")
+        .unwrap();
+    let remote =
+        std::fs::read("tests/fixtures/module-api/mapping/service/mapping-evidence.json").unwrap();
+    let seal = |bytes: &[u8], port: &str| {
+        let mut document = lekalo_core::module_api::parse_mapping_evidence(bytes).unwrap();
+        document.port = port.to_owned();
+        document.digest.clear();
+        document.digest = lekalo_core::module_api::wire::digest(
+            lekalo_core::module_api::wire::DIGEST_DOMAIN_MAPPING,
+            &lekalo_core::module_api::wire::canonical(&document),
+        );
+        serde_json::to_vec(&document).unwrap()
+    };
+    // Both symmetric forgeries retain their proper positional role and
+    // valid digest. Each document passes standalone admission, but two
+    // labels over one port cannot certify the two-mechanism contract.
+    for (in_process, service) in [
+        (local.clone(), seal(&remote, "tasks.inprocess")),
+        (seal(&local, "tasks.api"), remote.clone()),
+    ] {
+        lekalo_core::module_api::parse_mapping_evidence(&in_process).unwrap();
+        lekalo_core::module_api::parse_mapping_evidence(&service).unwrap();
+        let error =
+            lekalo_core::module_api::check_mapping_conformance(&bundle, &in_process, &service)
+                .expect_err("same-port role pair refuses");
+        assert!(error.as_slice().iter().any(|diagnostic| {
+            diagnostic.id() == "module-api.input-invalid"
+                && matches!(
+                    diagnostic.data().get("detail"),
+                    Some(lekalo_core::diagnostics::DataValue::Token(detail))
+                        if detail == "mapping-port-distinct"
+                )
+        }));
+    }
+    let (report, evidence) =
+        lekalo_core::module_api::check_mapping_conformance(&bundle, &local, &remote).unwrap();
+    assert!(report.conforms);
+    assert_ne!(report.in_process, report.service);
+    assert!(evidence.is_empty());
+}
+
+#[test]
+fn r5_populated_public_dependency_fixture_preserves_exact_pins() {
+    const PROJECT: &str = "tests/fixtures/module-api/public-dependencies";
+    let compilation = compile(PROJECT);
+    let bytes = attachment(PROJECT);
+    let verdict = check(&bytes, &compilation, true, None).unwrap();
+    assert_eq!(verdict.report.assessment, "pass");
+    let resolved = resolve(&bytes, &compilation).unwrap();
+    let shared = export_public(&resolved, &compilation, "shared").unwrap();
+    let bundle = export_public(&resolved, &compilation, "tasks").unwrap();
+    assert_eq!(bundle.public_dependencies.len(), 1);
+    let dependency = &bundle.public_dependencies[0];
+    assert_eq!(dependency.module_id, "shared");
+    assert_eq!(dependency.digest, shared.digest);
+    assert_eq!(dependency.api_version.as_deref(), Some("1.0.0"));
+    assert_eq!(dependency.exports, ["shared.task_id"]);
+    let golden_bundle: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(format!("{PROJECT}/golden-bundle.json")).unwrap())
+            .unwrap();
+    assert_eq!(serde_json::to_value(&bundle).unwrap(), golden_bundle);
+    let lock = resolve_lock(&resolved, &compilation, "tasks", "planner").unwrap();
+    assert_eq!(lock.public_dependencies, bundle.public_dependencies);
+    let supplied = lekalo_core::module_api::parse_lock(
+        &std::fs::read(format!("{PROJECT}/golden-lock.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(lock, supplied);
+    assert!(lekalo_core::module_api::check_lock(&lock, &supplied).is_empty());
+    let mut stale = supplied.clone();
+    stale.public_dependencies[0].digest = format!("sha256:{}", "0".repeat(64));
+    let findings = lekalo_core::module_api::check_lock(&lock, &stale);
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].detail, "lock-dependency-digest");
+    assert_eq!(findings[0].path, ["shared"]);
+    let capsule = plan_consumer_context(
+        &serde_json::to_vec(&bundle).unwrap(),
+        "planner",
+        &["tasks.task_envelope".to_owned()],
+        4000,
+    )
+    .unwrap();
+    assert_eq!(capsule.dependencies, bundle.public_dependencies);
+    assert_eq!(capsule.exports.len(), 2, "nested local shapes are retained");
+    assert_eq!(capsule.gaps, ["foreign-signature-not-materialized"]);
+    assert_eq!(capsule.omissions[0].subject, "shared.task_id");
+    let golden_context: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(format!("{PROJECT}/golden-context.json")).unwrap())
+            .unwrap();
+    assert_eq!(serde_json::to_value(capsule).unwrap(), golden_context);
+}
+
+#[test]
 fn r4_context_consumer_selectors_obey_the_grammar() {
     // r4 finding 9/codex: the pure context seam validates the consumer
     // selector against the capsule contract's own grammar.

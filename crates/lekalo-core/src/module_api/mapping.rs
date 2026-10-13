@@ -203,6 +203,12 @@ pub fn check_mapping_conformance(
     if in_process.implementation != "in-process" || service.implementation != "extracted-service" {
         return Err(invalid("mapping-implementation-role"));
     }
+    // Distinct implementation labels alone cannot prove two port mappings:
+    // a resealed service document bound to the local-call port (or vice
+    // versa) must not certify both mechanisms from the same surface.
+    if in_process.port == service.port {
+        return Err(invalid("mapping-port-distinct"));
+    }
     let mut divergences: Vec<MappingDivergence> = Vec::new();
     for evidence in [&in_process, &service] {
         bind_and_observe(&bundle, evidence, &mut divergences);

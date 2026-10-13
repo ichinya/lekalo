@@ -1,0 +1,62 @@
+{
+  "apiVersion": "1.2.0",
+  "capabilities": [],
+  "deprecations": [],
+  "digest": "sha256:0b9bf8814fb334b2a7460f88bcea2e7069852c662ba5fd02f79db9e0286ae7b3",
+  "exports": [
+    {
+      "export": "tasks.task_envelope",
+      "fields": [
+        {
+          "name": "task",
+          "required": true,
+          "type": {
+            "ref": "tasks.task_view"
+          }
+        }
+      ],
+      "kind": "value-object",
+      "since": "1.0.0",
+      "version": 1
+    },
+    {
+      "export": "tasks.task_view",
+      "fields": [
+        {
+          "name": "task_id",
+          "required": true,
+          "type": {
+            "ref": "shared.task_id"
+          }
+        }
+      ],
+      "kind": "value-object",
+      "since": "1.0.0",
+      "version": 1
+    }
+  ],
+  "identity": "dev.lekalo.module-public-contract@0.8.0",
+  "pins": {
+    "irDigest": "sha256:0209a69be282b93222073cad215b6af0243e4a34bcfd7391b918e8d62d6cc44e",
+    "modelVersion": "0.2.16",
+    "sourceRevision": {
+      "state": "unknown"
+    }
+  },
+  "ports": [],
+  "producer": {
+    "module": "tasks",
+    "project": "tasks"
+  },
+  "publicDependencies": [
+    {
+      "apiVersion": "1.0.0",
+      "digest": "sha256:b88e983dda6f7ead7ea47b4eacaded98f5feac7979a978bb737ac576c1249a41",
+      "exports": [
+        "shared.task_id"
+      ],
+      "moduleId": "shared"
+    }
+  ],
+  "schemaVersion": "lekalo/module-public-contract/v0.8.0"
+}

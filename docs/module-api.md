@@ -107,6 +107,15 @@ error export carries its own code, retryability, and payload shape — and its
 effect facts preserve the emitted event ids and full capability obligations
 (required/optional, owner, version), never counts or bare names.
 
+Foreign public dependency pins retain the provider module, API version,
+public digest, and selected export IDs through bundles, consumer locks, and
+capsules. If the standalone bundle does not materialize a foreign signature,
+the capsule retains its pin and reports `foreign-signature-not-materialized`
+with the omitted symbol; `fits:true` describes the budget, not completeness.
+The synthetic `public-dependencies` fixture exercises a nested Task view over
+`shared.task_id`, fresh/stale lock checks, dependency diff, and context without
+a provider checkout.
+
 ## Mapping conformance
 
 `module api mapping` proves the boundary's implementation criterion (AC7):
@@ -117,7 +126,11 @@ implementation, each stating per public operation of its mapped port the
 exact IDs, input/result shapes, error unions, effect obligations,
 read/write meaning, and capability demands it observes, plus the
 capabilities it explicitly cannot provide) are checked against one pinned
-public digest and against each other. A conforming pair is valid (exit 0);
+public digest and against each other. The first evidence document must declare
+`in-process`, the second `extracted-service`, and they must bind distinct
+bundle ports; a same-port pair is invalid (`mapping-port-distinct`, exit 1),
+not proof of both mechanisms. No port-name convention or transport class is
+inferred from these synthetic declarations. A conforming pair is valid (exit 0);
 every divergence — a wrong signature, error union, effect set, access
 meaning, missing observation, digest rebinding, or an unsupported required
 capability — is a typed required-evidence gap (`LEK-MODULE-012`, exit 4), so
