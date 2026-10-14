@@ -37,7 +37,11 @@ const result={
   work:array(object({module:token,sha256:digest,state:{enum:['executed','reused']}}),4096),
   counts:object({diagnostics:counter,executedUnits:counter,reusedUnits:counter,changedFiles:counter}),
   capsuleInvalidations:array(token,128),
-  pins:object({modelVersion:{const:'0.2.16'},registryVersion:{const:'0.8.0'}},['registryVersion']),
+  pins:object({modelVersion:{const:'0.2.16'},registryVersion:{const:'0.8.0'},
+   versions:object({core:{const:'0.8.0'},ir:{const:'0.2.16'},graph:{const:'0.2.16'},impact:{const:'0.2.16'},validationProfile:{const:'0.6.4'},diagnostic:{const:'lekalo/diagnostic/v0.2.16'},artifactManifest:{const:'lekalo/artifact-manifest/v0.2.16'},lock:{const:'lekalo/lock/v0.3.2'},targetProtocol:{const:'0.3.2'},targetCapabilities:{const:'dev.lekalo.target-capabilities@0.6.4'}}),
+   revisions:object({modelDigest:digest,irDigest:digest,sourceMapDigest:digest,graphDigest:digest,lockDigest:digest,lockInputDigest:digest,profileDigest:digest,manifestInputDigest:digest},[]),
+   adapters:array(object({target:token,id:token,version:{...string(64),pattern:'^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$'},digest,declaredDigest:digest,entryDigest:digest,capabilityDigest:digest,protocolVersion:{enum:['0.3.2','0.6.4']},profile:token},['target','id','version','digest','declaredDigest','entryDigest','capabilityDigest','protocolVersion']),8)
+  },['registryVersion','versions','revisions','adapters']),
   impact:{$ref:'#/$defs/impact'},
   drift:object({verdict:{enum:['clean','reported']},clean:counter,stale:counter,manualDrift:counter,missing:counter,orphan:counter,reported:counter,findings:counter}),
   pipelineCounts:object({decodedDocuments:counter,reusedDocuments:counter,decodedDefinitions:counter,reusedDefinitions:counter,emittedGraphUnits:counter,reusedGraphUnits:counter,assembledGraphNodes:counter,assembledGraphEdges:counter,graphCyclePasses:counter})
@@ -57,6 +61,7 @@ const event={
   arm('run-completed',{...run,diagnosticsMode:{const:'replace'},status:{enum:statuses},result:{$ref:'#/$defs/result'}}),
   arm('run-cancelled',{runId:run.runId,generation:counter,sourceRevision:digest,supersededByGeneration:counter,committed:{const:false}},['runId','generation','sourceRevision','supersededByGeneration','committed']),
   arm('recovery-required',{cause:{enum:['overflow','ambiguous-rename','subscription-lost','inventory-mismatch']},action:{const:'full-rescan'},backend:{enum:['native','poll']},status:{enum:statuses},diagnostics:array({$ref:'#/$defs/result/$defs/diagnostic'},512)},['cause','action']),
+  arm('recovery-required',{cause:{const:'cancellation-incomplete'},action:{const:'stop'},runId:{...counter,minimum:1},generation:counter,sourceRevision:digest,committed:{const:false},status:{const:'unavailable'},diagnostics:array({$ref:'#/$defs/result/$defs/diagnostic'},512)},['cause','action','runId','generation','sourceRevision','committed','status','diagnostics']),
   arm('session-stopped',{reason:{enum:['interrupt','stop-after-runs','output-failure','terminal-refusal']},runs:counter,lastStatus:{enum:statuses}},['reason','runs'])
  ],
  $defs:{result:rewrite(nested,'#/$defs/result')}

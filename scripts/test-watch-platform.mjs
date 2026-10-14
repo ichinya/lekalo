@@ -9,6 +9,7 @@ import {StringDecoder} from 'node:string_decoder';
 import {tmpdir} from 'node:os';
 import {resolve,join,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {generatedProbe} from './lib/watch-generated-probe.mjs';
 const require=createRequire(import.meta.url);
 const Ajv=require('ajv/dist/2020').default;
 assert.equal(require('ajv/package.json').version,'8.17.1','pinned independent validator');
@@ -92,5 +93,5 @@ async function probe(backend){
     return {backend,platform:process.platform,events:events.length,settled:completed.length};
   }finally{rmSync(project,{recursive:true,force:true});}
 }
-const results=[];for(const backend of ['native','poll'])results.push(await probe(backend));
+const results=[];for(const backend of ['native','poll'])results.push({...await probe(backend),generatedFeedback:await generatedProbe({root,binary,backend,validate,inventory})});
 process.stdout.write(JSON.stringify({ok:true,results})+'\n');

@@ -230,6 +230,8 @@ jobs:
         run: |
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-platform.mjs
+          node scripts/test-watch-equivalence.mjs
+          node scripts/test-watch-consumers.mjs
       - name: Run neutral trace evidence and assessment contracts (issue #35)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules

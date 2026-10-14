@@ -151,18 +151,76 @@ impl Native {
         Ok(())
     }
 }
+#[cfg(test)]
+#[path = "watch_output_tests.rs"]
+mod output_tests;
+
 struct Output {
     json: bool,
     sequence: u64,
     session: String,
+    writer: mpsc::SyncSender<(String, mpsc::SyncSender<io::Result<()>>)>,
+    failed: std::cell::Cell<bool>,
 }
 impl Output {
+    fn new(json: bool) -> Self {
+        Self::with_writer(json, io::stdout())
+    }
+    fn with_writer(json: bool, mut out: impl Write + Send + 'static) -> Self {
+        let (writer, rx) = mpsc::sync_channel::<(String, mpsc::SyncSender<io::Result<()>>)>(1);
+        std::thread::spawn(move || {
+            while let Ok((line, reply)) = rx.recv() {
+                let result = out.write_all(line.as_bytes()).and_then(|()| out.flush());
+                let failed = result.is_err();
+                let _ = reply.send(result);
+                if failed {
+                    break;
+                }
+            }
+        });
+        Self {
+            json,
+            sequence: 0,
+            session: format!("s-{}", std::process::id()),
+            writer,
+            failed: std::cell::Cell::new(false),
+        }
+    }
+    fn deliver(&self, line: String, timeout: Duration) -> io::Result<()> {
+        if self.failed.get() {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "watch output failed",
+            ));
+        }
+        let result = (|| {
+            if line.len() > core::request::limits::MAX_OUTPUT_QUEUE_BYTES {
+                return Err(io::Error::other("watch output bound"));
+            }
+            let (reply, rx) = mpsc::sync_channel(1);
+            self.writer.try_send((line, reply)).map_err(|_| {
+                io::Error::new(io::ErrorKind::BrokenPipe, "watch output unavailable")
+            })?;
+            rx.recv_timeout(timeout)
+                .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "watch output deadline"))?
+        })();
+        if result.is_err() {
+            self.failed.set(true);
+        }
+        result
+    }
     fn next(&mut self) -> u64 {
         self.sequence += 1;
         self.sequence
     }
     fn emit(&self, event: WatchEvent) -> io::Result<()> {
-        let line = if self.json {
+        if self.failed.get() {
+            return Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "watch output failed",
+            ));
+        }
+        let mut line = if self.json {
             event.to_json_line()
         } else {
             let value = event.value();
@@ -201,27 +259,28 @@ impl Output {
         if line.len() > core::events::MAX_EVENT_BYTES {
             return Err(io::Error::other("watch output bound"));
         }
-        // Synchronous bounded delivery deliberately backpressures. The
-        // filesystem channel remains bounded and overflow is reconciled.
-        let mut out = io::stdout().lock();
-        writeln!(out, "{line}")?;
-        out.flush()?;
+        line.push('\n');
         if !self.json && event.event() == "run-completed" {
             for diagnostic in event.value()["result"]["diagnostics"]
                 .as_array()
                 .into_iter()
                 .flatten()
             {
+                use std::fmt::Write as _;
                 writeln!(
-                    out,
+                    line,
                     "  {} [{}]",
                     diagnostic["id"].as_str().unwrap_or("diagnostic"),
                     diagnostic["severity"].as_str().unwrap_or("unknown")
-                )?;
+                )
+                .expect("String write");
             }
-            out.flush()?;
         }
-        Ok(())
+        // One producer awaits each acknowledgement. Failure is latched, so
+        // at most one <=16 MiB record is outstanding even after a timeout.
+        // A blocked OS write is process-owned; fail-stop the CLI rather than
+        // blocking cancellation/adapter teardown on an unresponsive reader.
+        self.deliver(line, Duration::from_secs(5))
     }
 }
 struct Active {
@@ -229,6 +288,7 @@ struct Active {
     generation: u64,
     captured: InputSnapshot,
     cancel: Arc<AtomicBool>,
+    cancel_since: Option<Instant>,
     reply: Receiver<(WatchService, Result<RunOutcome, DomainResult>)>,
     join: std::thread::JoinHandle<()>,
 }
@@ -239,7 +299,7 @@ fn start(
     generation: u64,
     full: bool,
 ) -> Active {
-    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel = Arc::new(AtomicBool::new(core::interrupt::interrupted()));
     let worker_cancel = cancel.clone();
     let (tx, reply) = mpsc::sync_channel(1);
     let captured = snapshot.without_bytes();
@@ -259,6 +319,7 @@ fn start(
                     },
                 )
             });
+        drop(snapshot);
         let _ = tx.send((service, outcome));
     });
     Active {
@@ -266,9 +327,38 @@ fn start(
         generation,
         captured,
         cancel,
+        cancel_since: None,
         reply,
         join,
     }
+}
+const TEARDOWN_TIMEOUT: Duration = Duration::from_secs(15);
+fn remaining_teardown(worker: &Active) -> Duration {
+    TEARDOWN_TIMEOUT.saturating_sub(
+        worker
+            .cancel_since
+            .map_or(Duration::ZERO, |since| since.elapsed()),
+    )
+}
+fn wait_finished(join: &std::thread::JoinHandle<()>, timeout: Duration) -> bool {
+    let since = Instant::now();
+    while !join.is_finished() {
+        if since.elapsed() >= timeout {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    true
+}
+fn report_incomplete(output: &mut Output, worker: &Active) {
+    let seq = output.next();
+    let _ = output.emit(WatchEvent::cancellation_incomplete(
+        seq,
+        &output.session,
+        worker.id,
+        worker.generation,
+        &worker.captured.source_revision(),
+    ));
 }
 fn dirty(
     rx: &Receiver<PathBuf>,
@@ -287,7 +377,7 @@ fn dirty(
             continue;
         };
         let path = relative.to_string_lossy().replace('\\', "/");
-        let classified = snapshot::classify_event_path(&path);
+        let classified = policy.classify_event_path(&path);
         if classified == snapshot::EventClass::Ignored
             || (classified == snapshot::EventClass::Generated && !policy.generate_check)
         {
@@ -368,12 +458,26 @@ fn warning_result(rule: &str, status: Status) -> DomainResult {
 pub fn run(args: WatchArgs, json_requested: bool, no_cache: bool) -> Result<u8, DomainResult> {
     let stream = args.json_lines && !json_requested;
     match run_inner(args, json_requested, no_cache) {
+        Err(_) if core::interrupt::interrupted() => {
+            if stream {
+                let output = Output::new(true);
+                if output
+                    .emit(WatchEvent::session_stopped(
+                        1,
+                        &output.session,
+                        "interrupt",
+                        0,
+                        None,
+                    ))
+                    .is_err()
+                {
+                    return Ok(1);
+                }
+            }
+            Ok(0)
+        }
         Err(failure) if stream => {
-            let mut output = Output {
-                json: true,
-                sequence: 0,
-                session: format!("s-{}", std::process::id()),
-            };
+            let mut output = Output::new(true);
             let sequence = output.next();
             if output
                 .emit(WatchEvent::recovery_update(
@@ -413,12 +517,22 @@ fn run_inner(args: WatchArgs, json_requested: bool, no_cache: bool) -> Result<u8
     let json = args.json_lines;
     let request = args.request(no_cache);
     request.validate()?;
+    if !core::interrupt::install() {
+        return Err(warning_result(
+            request.backend.as_str(),
+            Status::Unavailable,
+        ));
+    }
     let root = lekalo_core::orchestration::project_root(&LoadSelection {
         project: request.project.clone(),
     })?;
     let policy = CapturePolicy {
         generate_check: request.stages.generate_check,
-        ..CapturePolicy::default()
+        target_roots: core::targets::preflight(
+            &root,
+            &request.targets,
+            request.adapter_timeout_ms,
+        )?,
     };
     let discovery = snapshot::capture_with_policy(&root, &policy).map_err(|e| e.domain_result())?;
     if let Some(scope) = &request.module {
@@ -460,18 +574,8 @@ fn run_inner(args: WatchArgs, json_requested: bool, no_cache: bool) -> Result<u8
     };
     let baseline =
         snapshot::capture_with_policy(&root, &policy).map_err(|error| error.domain_result())?;
-    if !core::interrupt::install() {
-        return Err(warning_result(
-            request.backend.as_str(),
-            Status::Unavailable,
-        ));
-    }
     let service = WatchService::new(request.clone())?;
-    let mut output = Output {
-        json,
-        sequence: 0,
-        session: format!("s-{}", std::process::id()),
-    };
+    let mut output = Output::new(json);
     let backend = if native.is_some() { "native" } else { "poll" };
     let seq = output.next();
     if output
@@ -521,6 +625,13 @@ fn run_inner(args: WatchArgs, json_requested: bool, no_cache: bool) -> Result<u8
     let mut last_refusal = None;
     loop {
         let now = epoch.elapsed().as_millis().min(u64::MAX as u128) as u64;
+        if active.as_ref().is_some_and(|worker| {
+            worker.cancel_since.is_some() && remaining_teardown(worker).is_zero()
+        }) {
+            stop_reason = "terminal-refusal";
+            terminal = true;
+            break;
+        }
         dirty(&rx, &root, &policy, &inventory, &mut scheduler, now);
         let subscription_lost = failed.swap(false, Ordering::SeqCst);
         let overflow = lost.swap(false, Ordering::SeqCst);
@@ -606,8 +717,9 @@ fn run_inner(args: WatchArgs, json_requested: bool, no_cache: bool) -> Result<u8
             scheduler.poll(now)
         } {
             Decision::CancelStale { .. } => {
-                if let Some(active) = &active {
+                if let Some(active) = &mut active {
                     active.cancel.store(true, Ordering::SeqCst);
+                    active.cancel_since.get_or_insert_with(Instant::now);
                 }
             }
             Decision::Start {
@@ -661,6 +773,13 @@ fn run_inner(args: WatchArgs, json_requested: bool, no_cache: bool) -> Result<u8
         match reply {
             Some(Ok((mut service, outcome))) => {
                 let worker = active.take().expect("reply owns active worker");
+                if !wait_finished(&worker.join, remaining_teardown(&worker)) {
+                    worker.cancel.store(true, Ordering::SeqCst);
+                    report_incomplete(&mut output, &worker);
+                    stop_reason = "terminal-refusal";
+                    terminal = true;
+                    break;
+                }
                 if worker.join.join().is_err() {
                     stop_reason = "terminal-refusal";
                     terminal = true;
@@ -743,22 +862,29 @@ fn run_inner(args: WatchArgs, json_requested: bool, no_cache: bool) -> Result<u8
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    if let Some(worker) = active {
+    if let Some(mut worker) = active {
         worker.cancel.store(true, Ordering::SeqCst);
-        let _ = worker.reply.recv();
-        if worker.join.join().is_err() {
+        worker.cancel_since.get_or_insert_with(Instant::now);
+        if wait_finished(&worker.join, remaining_teardown(&worker)) {
+            if worker.join.join().is_err() {
+                terminal = true;
+                stop_reason = "terminal-refusal";
+            }
+            let seq = output.next();
+            let _ = output.emit(WatchEvent::run_cancelled(
+                seq,
+                &output.session,
+                worker.id,
+                worker.generation,
+                &worker.captured.source_revision(),
+                scheduler.generation(),
+            ));
+        } else {
+            // No fake cancellation terminal and no overlapping replacement.
+            report_incomplete(&mut output, &worker);
             terminal = true;
             stop_reason = "terminal-refusal";
         }
-        let seq = output.next();
-        let _ = output.emit(WatchEvent::run_cancelled(
-            seq,
-            &output.session,
-            worker.id,
-            worker.generation,
-            &worker.captured.source_revision(),
-            scheduler.generation(),
-        ));
     }
     drop(native);
     let seq = output.next();

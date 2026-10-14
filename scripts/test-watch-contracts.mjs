@@ -16,7 +16,7 @@ const ajv=new Ajv({strict:true,allErrors:true});
 const validateResult=ajv.compile(load('watch-result'));
 const validateEvent=ajv.compile(load('watch-event'));
 const digest='sha256:'+ '0'.repeat(64);
-const result={schemaVersion:'lekalo/watch-result/v0.8.0',identity:'dev.lekalo.watch-result@0.8.0',status:'valid',diagnosticsMode:'replace',sourceRevision:digest,diagnostics:[],stages:[{stage:'validate',state:'executed',coverage:'complete'}],changedInputs:[],affected:{scope:'full',reason:'baseline',modules:[]},work:[],counts:{diagnostics:0,executedUnits:0,reusedUnits:0,changedFiles:0},capsuleInvalidations:[],pins:{modelVersion:'0.2.16',registryVersion:'0.8.0'},pipelineCounts:{decodedDocuments:0,reusedDocuments:0,decodedDefinitions:0,reusedDefinitions:0,emittedGraphUnits:0,reusedGraphUnits:0,assembledGraphNodes:0,assembledGraphEdges:0,graphCyclePasses:0}};
+const result={schemaVersion:'lekalo/watch-result/v0.8.0',identity:'dev.lekalo.watch-result@0.8.0',status:'valid',diagnosticsMode:'replace',sourceRevision:digest,diagnostics:[],stages:[{stage:'validate',state:'executed',coverage:'complete'}],changedInputs:[],affected:{scope:'full',reason:'baseline',modules:[]},work:[],counts:{diagnostics:0,executedUnits:0,reusedUnits:0,changedFiles:0},capsuleInvalidations:[],pins:{modelVersion:'0.2.16',registryVersion:'0.8.0',versions:{core:'0.8.0',ir:'0.2.16',graph:'0.2.16',impact:'0.2.16',validationProfile:'0.6.4',diagnostic:'lekalo/diagnostic/v0.2.16',artifactManifest:'lekalo/artifact-manifest/v0.2.16',lock:'lekalo/lock/v0.3.2',targetProtocol:'0.3.2',targetCapabilities:'dev.lekalo.target-capabilities@0.6.4'},revisions:{},adapters:[]},pipelineCounts:{decodedDocuments:0,reusedDocuments:0,decodedDefinitions:0,reusedDefinitions:0,emittedGraphUnits:0,reusedGraphUnits:0,assembledGraphNodes:0,assembledGraphEdges:0,graphCyclePasses:0}};
 const common={schemaVersion:'lekalo/watch-event/v0.8.0',identity:'dev.lekalo.watch-event@0.8.0',sequence:1,sessionId:'contract-test'};
 const run={runId:1,generation:0,sourceRevision:digest};
 const events=[
@@ -27,6 +27,8 @@ const events=[
  {...common,event:'recovery-required',cause:'overflow',action:'full-rescan'},
  {...common,event:'session-stopped',reason:'interrupt',runs:1,lastStatus:'valid'},
 ];
+const incomplete={...common,event:'recovery-required',...run,cause:'cancellation-incomplete',action:'stop',committed:false,status:'unavailable',diagnostics:[{schema_version:'lekalo/diagnostic/v0.2.16',registry_version:'0.8.0',id:'watch.cancellation-incomplete',code:'LEK-WATCH-007',severity:'error',category:'infrastructure',message_id:'watch.cancellation-incomplete',message:'Teardown unproven.',data:{stage:'worker'},related_locations:[],causes:[],fixes:[],metadata:{}}]};
+events.push(incomplete);
 let positive=0,negative=0;
 function valid(validate,value){assert(validate(value),JSON.stringify(validate.errors));positive++;}
 function invalid(validate,value){assert(!validate(value),'schema unexpectedly accepted invalid vector');negative++;}
@@ -41,10 +43,16 @@ invalid(validateResult,{...result,pipelineCounts:{...result.pipelineCounts,filte
 invalid(validateResult,{...result,pipelineCounts:{decodedDocuments:0}});
 invalid(validateResult,{...result,sourceRevision:'sha256:bad'});
 invalid(validateResult,{...result,diagnosticsMode:'append'});
+invalid(validateResult,{...result,pins:{...result.pins,versions:{...result.pins.versions,ir:'0.8.0'}}});
+invalid(validateResult,{...result,pins:{...result.pins,revisions:{modelDigest:'bad'}}});
+invalid(validateResult,{...result,pins:{...result.pins,adapters:[{target:'demo',id:'demo',version:'1x0x0',digest,declaredDigest:digest,entryDigest:digest,capabilityDigest:digest,protocolVersion:'0.3.2'}]}});
 for(const path of ['/absolute','../escape','lekalo/../escape','C:/secret','lekalo/path\\escape'])invalid(validateResult,{...result,changedInputs:[{path,kind:'created',class:'semantic',newSha256:digest}]});
 invalid(validateResult,{...result,work:[{module:'planner',sha256:digest,state:'filtered'}]});
 invalid(validateResult,{...result,stages:[{stage:'generate',state:'executed',coverage:'complete'}]});
 invalid(validateResult,{...result,capsuleInvalidations:Array(129).fill('planner.task')});
+valid(validateResult,{...result,pins:{...result.pins,adapters:[{target:'demo',id:'demo',version:'0.8.0',digest,declaredDigest:digest,entryDigest:digest,capabilityDigest:digest,protocolVersion:'0.3.2'}]}});
+invalid(validateEvent,{...incomplete,action:'full-rescan'});
+invalid(validateEvent,{...incomplete,committed:true});
 invalid(validateEvent,{...events[3],committed:true});
 const noRevision=structuredClone(events[3]);delete noRevision.sourceRevision;invalid(validateEvent,noRevision);
 invalid(validateEvent,{...events[2],result:{...result,rawSource:'secret'}});

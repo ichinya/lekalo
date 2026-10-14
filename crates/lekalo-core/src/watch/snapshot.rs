@@ -85,11 +85,18 @@ pub struct InputSnapshot {
     pub files: BTreeMap<String, FileRecord>,
     pub generated: BTreeMap<String, FileRecord>,
     pub directories: BTreeSet<String>,
+    /// Captured target read roots, including authoritative absence.
+    pub selected_roots: BTreeSet<String>,
 }
 impl InputSnapshot {
     pub fn source_revision(&self) -> String {
         use sha2::{Digest, Sha256};
         let mut digest = Sha256::new();
+        for root in &self.selected_roots {
+            digest.update(b"root\0");
+            digest.update(root.as_bytes());
+            digest.update(b"\n");
+        }
         for path in &self.directories {
             if !path.starts_with(GENERATED_ROOT) {
                 digest.update(b"dir\0");
@@ -143,6 +150,7 @@ impl InputSnapshot {
             files: records(&self.files),
             generated: records(&self.generated),
             directories: self.directories.clone(),
+            selected_roots: self.selected_roots.clone(),
         }
     }
     pub fn same_inventory(&self, other: &Self) -> bool {
@@ -159,6 +167,7 @@ impl InputSnapshot {
                     })
         };
         self.directories == other.directories
+            && self.selected_roots == other.selected_roots
             && same_records(&self.files, &other.files)
             && same_records(&self.generated, &other.generated)
     }
@@ -173,6 +182,24 @@ pub enum EventClass {
     Generated,
     Ignored,
 }
+impl CapturePolicy {
+    pub fn classify_event_path(&self, path: &str) -> EventClass {
+        let class = classify_event_path(path);
+        if class != EventClass::Ignored {
+            return class;
+        }
+        if self
+            .target_roots
+            .iter()
+            .any(|root| path == root || path.starts_with(&format!("{root}/")))
+        {
+            EventClass::Semantic
+        } else {
+            EventClass::Ignored
+        }
+    }
+}
+
 pub fn classify_event_path(path: &str) -> EventClass {
     if path == GENERATED_ROOT || path.starts_with(".lekalo/generated/") {
         EventClass::Generated
@@ -216,7 +243,10 @@ fn inventory(
             path: String::new(),
         });
     }
-    let mut snapshot = InputSnapshot::default();
+    let mut snapshot = InputSnapshot {
+        selected_roots: policy.target_roots.clone(),
+        ..InputSnapshot::default()
+    };
     let mut budget = 0usize;
     for path in ["lekalo", "lekalo.lock"]
         .into_iter()
@@ -236,6 +266,7 @@ fn inventory(
             Err(error) => return Err(failure(path, error)),
         }
     }
+    super::budget::admit(&snapshot)?;
     Ok(snapshot)
 }
 

@@ -256,10 +256,166 @@
         },
         "registryVersion": {
           "const": "0.8.0"
+        },
+        "versions": {
+          "type": "object",
+          "properties": {
+            "core": {
+              "const": "0.8.0"
+            },
+            "ir": {
+              "const": "0.2.16"
+            },
+            "graph": {
+              "const": "0.2.16"
+            },
+            "impact": {
+              "const": "0.2.16"
+            },
+            "validationProfile": {
+              "const": "0.6.4"
+            },
+            "diagnostic": {
+              "const": "lekalo/diagnostic/v0.2.16"
+            },
+            "artifactManifest": {
+              "const": "lekalo/artifact-manifest/v0.2.16"
+            },
+            "lock": {
+              "const": "lekalo/lock/v0.3.2"
+            },
+            "targetProtocol": {
+              "const": "0.3.2"
+            },
+            "targetCapabilities": {
+              "const": "dev.lekalo.target-capabilities@0.6.4"
+            }
+          },
+          "required": [
+            "core",
+            "ir",
+            "graph",
+            "impact",
+            "validationProfile",
+            "diagnostic",
+            "artifactManifest",
+            "lock",
+            "targetProtocol",
+            "targetCapabilities"
+          ],
+          "additionalProperties": false
+        },
+        "revisions": {
+          "type": "object",
+          "properties": {
+            "modelDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "irDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "sourceMapDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "graphDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "lockDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "lockInputDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "profileDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "manifestInputDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "adapters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "target": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)*$"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)*$"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "declaredDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "entryDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "capabilityDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "protocolVersion": {
+                "enum": [
+                  "0.3.2",
+                  "0.6.4"
+                ]
+              },
+              "profile": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)*$"
+              }
+            },
+            "required": [
+              "target",
+              "id",
+              "version",
+              "digest",
+              "declaredDigest",
+              "entryDigest",
+              "capabilityDigest",
+              "protocolVersion"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 8
         }
       },
       "required": [
-        "registryVersion"
+        "registryVersion",
+        "versions",
+        "revisions",
+        "adapters"
       ],
       "additionalProperties": false
     },

@@ -108,19 +108,66 @@ pub fn discover_with_policy(
     limits: TransportLimits,
     policy: ExpansionPolicy,
 ) -> Result<DiscoveredAdapter, Failure> {
+    discover_cancellable(client, supply, root, limits, policy, None)
+}
+
+/// Internal immutable-view seam; all package, budget and consistency
+/// gates remain identical, but describe participates in stale-run cancellation.
+pub(crate) fn discover_cancellable(
+    client: &mut TargetClient,
+    supply: &AdapterSupply,
+    root: &Path,
+    limits: TransportLimits,
+    policy: ExpansionPolicy,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<DiscoveredAdapter, Failure> {
     let _ = limits;
+    discover_constrained(client, supply, root, policy, cancel, false)
+}
+
+/// Watch requires bounded processes/memory and forbids implicit environment,
+/// child-process or network grants. Other command policies stay unchanged.
+pub(crate) fn discover_watch_cancellable(
+    client: &mut TargetClient,
+    supply: &AdapterSupply,
+    root: &Path,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<DiscoveredAdapter, Failure> {
+    discover_constrained(client, supply, root, ExpansionPolicy::Refuse, cancel, true)
+}
+fn discover_constrained(
+    client: &mut TargetClient,
+    supply: &AdapterSupply,
+    root: &Path,
+    policy: ExpansionPolicy,
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+    watch: bool,
+) -> Result<DiscoveredAdapter, Failure> {
     let (manifest, synthesized) = gate_supply(supply, root)?;
     // A synthesized/implicit descriptor claims nothing: it gets the
     // strict default budget, not its synthesized manifest's empty
     // permission block (which would cap describe to nothing).
     let budget = SessionBudget::budget_for(if synthesized { None } else { manifest.as_ref() })
         .map_err(Failure::AdapterPackage)?;
+    if watch
+        && (!TargetClient::bounded_read_only_available()
+            || budget.children() != crate::adapter_package::budget::ChildPolicy::Denied
+            || budget.network() != &crate::adapter_package::budget::NetworkBudget::Denied
+            || !budget.environment().is_empty())
+    {
+        return Err(Failure::Target(
+            crate::target_protocol::TargetFailure::CapabilityUnsupported {
+                detail: "watch-bounded-read-only",
+            },
+        ));
+    }
     client.set_budget(if policy == ExpansionPolicy::AllowEscalated {
         budget.with_expansion_allowed()
     } else {
         budget
     });
-    let discovered = Discovery::run(client, &supply.command, root).map_err(Failure::Target)?;
+    let discovered = Discovery::run_with_cancel(client, &supply.command, root, cancel)
+        .map_err(Failure::Target)?;
     // The manifest-vs-describe consistency check (issue #32): describe
     // is self-assertion; the verified manifest is the independent
     // claim. Any disagreement refuses (adapter.manifest-mismatch).

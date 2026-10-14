@@ -3574,7 +3574,7 @@
       "id": "contract:contracts/watch-event.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/watch-event.schema.v0.8.0.json",
-      "sourceDigest": "sha256:28819d418a978abc1379a0ab5dacf0d6ccdf40aaada4a1ad08db67ea85598444",
+      "sourceDigest": "sha256:b07625c4011768cd3d343e44b66a67f910092a154ead3790c958993375fd0a46",
       "owner": "docs/cli.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3583,7 +3583,7 @@
       "id": "contract:contracts/watch-result.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/watch-result.schema.v0.8.0.json",
-      "sourceDigest": "sha256:4eb56ba46646f3ef14cdbca7106994848a7ee01f66e9802bee27e3bb6edc08f9",
+      "sourceDigest": "sha256:a3638af29e6e2ec0b25363b8f89511f3d8b2e0394ebf5a539e53894abef749d8",
       "owner": "docs/cli.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

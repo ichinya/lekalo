@@ -32,6 +32,22 @@ pub struct PipelineCounts {
 }
 
 impl Fragments {
+    pub(crate) fn charged_bytes(&self) -> usize {
+        self.rows.iter().map(|(key, row)| {
+            let normalized = &row.normalized;
+            256 + key.capacity() + std::mem::size_of::<Fragment>()
+                + normalized.id.capacity() + normalized.path.capacity()
+                + super::budget::node_heap(&normalized.node)
+                + normalized.crumbs.capacity() * std::mem::size_of::<(String, crate::loader::error::Span)>()
+                + normalized.crumbs.iter().map(|(text, _)| text.capacity()).sum::<usize>()
+                // The bounded typed IR has more compact canonical spelling
+                // than Rust enum/Vec layouts. Charge a conservative factor,
+                // not an alleged allocator measurement.
+                + row.compiled.project.to_canonical_json().len().saturating_mul(16)
+                + row.compiled.source_map.to_json().len().saturating_mul(4)
+        }).sum()
+    }
+
     pub(crate) fn compile(
         model: &NormalizedModel,
         previous: &Self,

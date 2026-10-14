@@ -242,6 +242,13 @@ impl Default for TargetClient {
 
 impl TargetClient {
     /// Build one client with explicit transport limits.
+    /// Watch cannot silently accept the legacy degraded memory/process
+    /// dimensions. This is availability, not a claim that spawn succeeded.
+    pub(crate) fn bounded_read_only_available() -> bool {
+        let report = confinement::ConfinementReport::compute(confinement::SandboxPolicy::strict());
+        report.memory_limit().is_some() && report.process_limit().is_some()
+    }
+
     pub fn new(limits: transport::TransportLimits) -> Self {
         Self {
             limits,

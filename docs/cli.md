@@ -132,11 +132,41 @@ settled revisions replace the complete effective diagnostic set. Cancelled
 runs cannot commit. The closed event/result schemas are
 `dev.lekalo.watch-event@0.8.0` and `dev.lekalo.watch-result@0.8.0`.
 
-Outstanding required work includes snapshot-bound ephemeral target scan and
-validation (`--target` currently reports unavailable), complete component pins,
-resource/teardown guarantees, and the full clean-command equivalence matrix.
-Windows native/poll probes currently cover burst edits, atomic replacement,
-parent-directory rename and deletion; CI is wired for Linux/macOS/Windows but
+`--target` now runs ephemeral locked scan/validation against captured inputs,
+without an observed index or scan receipt. Successful target execution is
+explicitly `adapter-full-scope`, not a selective-work claim. Entry checksums
+precede describe, including startup preparation. Only committed project-source
+adapters with full `scan.symbols` and scan/validate operations are supported;
+installed/registry supplies, overlapping generated read/write scopes, build
+read roots, implicit environment/network/child grants, and hosts without
+OS-enforced memory/process bounds are refused. Currently only the Windows job
+backend qualifies for target execution; Linux/macOS target support remains a
+mandatory gap, not an approved scope reduction.
+
+Results pin component versions, captured Model/IR/source-map/graph/lock/profile
+and manifest digests, and verified adapter/capability/protocol identities.
+Describe's self-asserted digest is recorded separately from the verified lock
+pin. Watch admission caps Model inputs at 1 MiB, 256 modules, 2048 definitions
+and 32768 normalized nodes. Session state uses a conservative 64 MiB charge
+with cache eviction before refusing mandatory state; this is not an RSS
+measurement. Output has one outstanding record (16 MiB maximum), a five-second
+acknowledgement deadline, and fail-stop behavior for slow/broken consumers.
+Cancellation allows fifteen seconds for worker termination; unproven teardown
+emits `recovery-required` with `action: stop`, never a fake cancellation or an
+overlapping replacement. An unterminated final line after output failure is
+not a complete replacement.
+
+Outstanding required work includes negotiated targeted adapter selection,
+non-Windows bounded adapter execution, descendant/fault scenario breadth,
+CPU/retained-memory audits, and the full multi-stage clean-command equivalence
+matrix.
+Windows native/poll probes cover burst edits, atomic replacement, parent
+rename/deletion, generated drift/recovery with unchanged semantic revision,
+and excluded cache/build feedback. Twenty-eight clean CLI comparisons cover
+default/strict/module and authorization reviews; real slow/broken pipe probes
+verify fail-stop output. Target tests cover crash/timeout, invalid evidence,
+write/child denial and cancellation after owned scan spawn. CI is wired for
+Linux/macOS/Windows but
 wiring is not evidence of a hosted pass. The research acceptance authority is
 [issue-95-research.md](m8/issue-95-research.md), not this checkpoint description.
 

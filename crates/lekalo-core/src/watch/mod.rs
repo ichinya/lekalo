@@ -11,6 +11,7 @@
 //! never generates, and never updates the lock; adapter work that
 //! cannot be proven read-only is reported explicitly unavailable.
 
+mod budget;
 pub mod changes;
 pub mod compile;
 pub mod diagnostics;
@@ -20,6 +21,7 @@ pub mod request;
 pub mod scheduler;
 pub mod selection;
 pub mod snapshot;
+pub mod targets;
 #[cfg(test)]
 mod tests;
 pub mod version;
@@ -176,11 +178,77 @@ pub struct ResultCounts {
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VersionPins {
+    pub core: &'static str,
+    pub ir: &'static str,
+    pub graph: &'static str,
+    pub impact: &'static str,
+    pub validation_profile: &'static str,
+    pub diagnostic: &'static str,
+    pub artifact_manifest: &'static str,
+    pub lock: &'static str,
+    pub target_protocol: &'static str,
+    pub target_capabilities: &'static str,
+}
+impl Default for VersionPins {
+    fn default() -> Self {
+        Self {
+            core: env!("CARGO_PKG_VERSION"),
+            ir: crate::ir::VERSION,
+            graph: crate::graph::VERSION,
+            impact: crate::impact::VERSION,
+            validation_profile: crate::validator::PROFILE_VERSION,
+            diagnostic: crate::diagnostics::version::SCHEMA_VERSION,
+            artifact_manifest: crate::artifacts::SCHEMA_VERSION,
+            lock: crate::lockfile::types::SCHEMA_VERSION,
+            target_protocol: crate::target_protocol::version::VERSION,
+            target_capabilities: crate::target_protocol::capability::REGISTRY_IDENTITY,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevisionPins {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ir_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_map_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub graph_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lock_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lock_input_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_digest: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manifest_input_digest: Option<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct ResultPins {
     #[serde(rename = "modelVersion", skip_serializing_if = "Option::is_none")]
     pub model_version: Option<&'static str>,
     #[serde(rename = "registryVersion")]
     pub registry_version: &'static str,
+    pub versions: VersionPins,
+    pub revisions: RevisionPins,
+    pub adapters: Vec<targets::AdapterPin>,
+}
+impl Default for ResultPins {
+    fn default() -> Self {
+        Self {
+            model_version: None,
+            registry_version: WATCH_REGISTRY_VERSION,
+            versions: VersionPins::default(),
+            revisions: RevisionPins::default(),
+            adapters: Vec::new(),
+        }
+    }
 }
 
 /// The drift summary of one generate-check execution.
@@ -395,6 +463,21 @@ fn normalize_diagnostics(diagnostics: Vec<Diagnostic>, status: Status) -> Vec<Di
         })
 }
 
+pub(crate) fn combine_statuses(left: Status, right: Status) -> Status {
+    for status in [
+        Status::Denied,
+        Status::UnsupportedVersion,
+        Status::Invalid,
+        Status::Unsupported,
+        Status::Unavailable,
+    ] {
+        if left == status || right == status {
+            return status;
+        }
+    }
+    Status::Valid
+}
+
 fn status_of(diagnostics: &[Diagnostic], denied: bool) -> Status {
     if denied
         || diagnostics
@@ -491,11 +574,24 @@ impl WatchService {
             files: digest_records(&self.accepted.files),
             generated: digest_records(&self.accepted.generated),
             directories: BTreeSet::new(),
+            selected_roots: BTreeSet::new(),
         };
         let empty = InputSnapshot::default();
         let reference = if baseline { &empty } else { &previous_snapshot };
         let changes = diff(reference, snapshot);
 
+        // Admit before frontend/IR amplification or scratch writes.
+        if let Err(error) = budget::admit(snapshot) {
+            return self.capture_refused_outcome(
+                context,
+                source_revision,
+                previous_revision,
+                changes,
+                error,
+                files,
+                generated,
+            );
+        }
         // Materialize the captured bytes and compile over them only.
         if let Err(error) = materialize(snapshot, scratch) {
             return self.capture_refused_outcome(
@@ -545,6 +641,7 @@ impl WatchService {
             )
         };
         let compiled = loaded.and_then(|loaded| {
+            budget::admit_model(&loaded.model)?;
             let empty = compile::Fragments::default();
             let previous = if self.request.no_cache {
                 &empty
@@ -585,6 +682,29 @@ impl WatchService {
             }
         };
 
+        if self.request.stages.validate {
+            if let Some(scope) = &self.request.module {
+                if !compilation
+                    .project
+                    .modules
+                    .iter()
+                    .any(|m| m.id.as_str() == scope)
+                {
+                    let set = crate::validator::validate_scoped(&compilation, &self.profile, scope)
+                        .expect_err("unknown module is a clean scoped refusal");
+                    return self.parse_invalid_outcome(
+                        context,
+                        source_revision,
+                        previous_revision,
+                        changes,
+                        Status::Invalid,
+                        set.as_slice().to_vec(),
+                        files,
+                        generated,
+                    );
+                }
+            }
+        }
         let empty_graph = crate::graph::build::GraphReuse::default();
         let previous_graph = if self.request.no_cache {
             &empty_graph
@@ -620,6 +740,7 @@ impl WatchService {
         let mut diagnostics: Vec<Diagnostic> = Vec::new();
         let mut denied = false;
         let mut unsupported_version = false;
+        let mut stage_status = Status::Valid;
         let mut work: Vec<WorkUnitWire> = Vec::new();
         let mut executed_units = 0usize;
         let mut reused_units = 0usize;
@@ -746,10 +867,19 @@ impl WatchService {
                 partitions.remove("").unwrap_or_default()
             };
             diagnostics.extend(global_partition.clone());
-            let (aggregate, aggregate_denied) =
+            // Scope projects the semantic report, not independent metadata,
+            // adapter or lifecycle findings appended by later components.
+            if let Some(scope) = &self.request.module {
+                diagnostics.retain(|d| {
+                    d.severity() == crate::diagnostics::types::Severity::Error
+                        || owner_of_diagnostic(d) == scope
+                });
+            }
+            let (aggregate, aggregate_status) =
                 self.aggregate_validate(scratch, &compilation, &model, diagnostics);
             diagnostics = aggregate;
-            denied |= aggregate_denied;
+            stage_status = combine_statuses(stage_status, aggregate_status);
+            denied |= aggregate_status == Status::Denied;
             let reason = if full {
                 affected.reason.map(str::to_owned)
             } else {
@@ -777,6 +907,7 @@ impl WatchService {
                 &source_revision,
             );
             denied = denied || extra_denied;
+            stage_status = combine_statuses(stage_status, status_of(&extra, extra_denied));
             impact = impact_result;
             stages.push(row);
             diagnostics.extend(extra);
@@ -833,6 +964,7 @@ impl WatchService {
                         staged_drift = None;
                         staged_drift_fingerprint = None;
                         let result = crate::DomainResult::from(&failure);
+                        stage_status = combine_statuses(stage_status, result.status());
                         diagnostics.extend(result.diagnostics().to_vec());
                         denied |= result.status() == Status::Denied;
                         unsupported_version |= result.status() == Status::UnsupportedVersion;
@@ -852,6 +984,7 @@ impl WatchService {
             match crate::orchestration::locked_check_captured(scratch, &model, &compilation) {
                 Ok(()) => stages.push(StageRow::executed("lock-preflight")),
                 Err(result) => {
+                    stage_status = combine_statuses(stage_status, result.status());
                     diagnostics.extend(result.diagnostics().to_vec());
                     unsupported_version |= result.status() == Status::UnsupportedVersion;
                     if matches!(result, crate::result::DomainResult::Denied { .. }) {
@@ -865,33 +998,25 @@ impl WatchService {
                 }
             }
         }
+        let mut adapter_pins = Vec::new();
         if !self.request.targets.is_empty() {
-            if !snapshot.files.contains_key("lekalo.lock") {
-                diagnostics.push(crate::watch::diagnostics::selective_unavailable(
-                    "target-scan",
-                    "lock-missing",
-                ));
-                stages.push(StageRow::unavailable(
-                    "target-scan",
-                    "lock-missing",
-                    "unsupported",
-                ));
-            } else {
-                // TODO(#95, required increment 4): implement negotiated,
-                // ephemeral snapshot-bound scan/validation. The accepted
-                // scan service persists state and must not be launched
-                // here. Until that seam is implemented and tested, this
-                // component is explicitly unavailable, not completed.
-                diagnostics.push(crate::watch::diagnostics::selective_unavailable(
-                    "target-scan",
-                    "read-only-scan",
-                ));
-                stages.push(StageRow::unavailable(
-                    "target-scan",
-                    "read-only-scan",
-                    "unsupported",
-                ));
+            let scan = crate::watch::targets::scan(
+                scratch,
+                &self.request,
+                &model,
+                &compilation,
+                snapshot,
+                context.cancel,
+            );
+            if context.cancel.load(Ordering::SeqCst) {
+                return stale_outcome(context, source_revision, previous_revision);
             }
+            stage_status = combine_statuses(stage_status, scan.status);
+            adapter_pins = scan.pins;
+            stages.extend(scan.rows);
+            diagnostics.extend(scan.diagnostics);
+            denied |= scan.status == Status::Denied;
+            unsupported_version |= scan.status == Status::UnsupportedVersion;
         }
 
         // Conservative dependency-linked invalidation includes both old
@@ -931,16 +1056,12 @@ impl WatchService {
             capsule_set.into_iter().collect()
         };
 
-        // Module scope retention: module-owned diagnostics plus every
-        // error anywhere (the accepted `validate --module` semantics).
-        if let Some(scope) = &self.request.module {
-            diagnostics.retain(|diagnostic| {
-                diagnostic.severity() == crate::diagnostics::types::Severity::Error
-                    || owner_of_diagnostic(diagnostic) == scope
-            });
-        }
         let diagnostics = {
-            let status = status_of(&diagnostics, denied);
+            let status = if denied || diagnostics.iter().any(|d| d.id() == "watch.resource-limit") {
+                Status::Denied
+            } else {
+                stage_status
+            };
             let status = if unsupported_version && status != Status::Denied {
                 Status::UnsupportedVersion
             } else {
@@ -948,7 +1069,11 @@ impl WatchService {
             };
             normalize_diagnostics(diagnostics, status)
         };
-        let status = status_of(&diagnostics, denied);
+        let status = if denied || diagnostics.iter().any(|d| d.id() == "watch.resource-limit") {
+            Status::Denied
+        } else {
+            stage_status
+        };
         let status = if unsupported_version && status != Status::Denied {
             Status::UnsupportedVersion
         } else {
@@ -960,7 +1085,43 @@ impl WatchService {
             } else {
                 status
             };
-        let result = WatchResult {
+        let input_hash = |bytes: &[u8]| format!("sha256:{}", crate::digest::sha256_hex(bytes));
+        let pins = ResultPins {
+            model_version,
+            adapters: adapter_pins,
+            revisions: RevisionPins {
+                model_digest: Some(input_hash(
+                    crate::loader::canonical_model_bytes(&model).as_bytes(),
+                )),
+                ir_digest: Some(input_hash(
+                    compilation.project.to_canonical_json().as_bytes(),
+                )),
+                source_map_digest: Some(input_hash(compilation.source_map.to_json().as_bytes())),
+                graph_digest: graph_result
+                    .as_ref()
+                    .ok()
+                    .and_then(|g| g.to_canonical_json().ok())
+                    .map(|json| input_hash(json.as_bytes())),
+                lock_digest: match crate::lockfile::plan::LockService::read_state_at(scratch) {
+                    Ok(crate::lockfile::LockState::Present(lock)) => {
+                        Some(lock.digest().as_str().to_owned())
+                    }
+                    _ => None,
+                },
+                lock_input_digest: snapshot.files.get("lekalo.lock").map(|r| r.sha256.clone()),
+                profile_digest: Some(input_hash(if self.request.strict {
+                    crate::validator::STRICT_PROFILE_BYTES
+                } else {
+                    crate::validator::DEFAULT_PROFILE_BYTES
+                })),
+                manifest_input_digest: snapshot
+                    .generated
+                    .get(".lekalo/generated/manifests/ownership.json")
+                    .map(|r| r.sha256.clone()),
+            },
+            ..ResultPins::default()
+        };
+        let mut result = WatchResult {
             schema_version: RESULT_SCHEMA_VERSION,
             identity: RESULT_IDENTITY,
             status,
@@ -997,33 +1158,45 @@ impl WatchService {
             impact,
             drift: staged_drift.clone(),
             pipeline_counts: Some(pipeline_counts),
-            pins: ResultPins {
-                model_version,
-                registry_version: WATCH_REGISTRY_VERSION,
-            },
+            pins,
         };
+        let mut staged = AcceptedState {
+            revision: source_revision.clone(),
+            files,
+            generated,
+            module_index,
+            symbols_by_path: symbols,
+            fingerprints,
+            partitions,
+            global_partition,
+            global_fingerprint,
+            drift_fingerprint: staged_drift_fingerprint,
+            drift: staged_drift,
+            documents,
+            fragments,
+            graph_fragments,
+        };
+        if let Err(count) = staged.fit_budget(request::limits::MAX_RESULT_STATE_BYTES) {
+            result
+                .diagnostics
+                .push(diagnostics::resource_limit("retained-state", count as u64));
+            result.diagnostics = normalize_diagnostics(result.diagnostics, Status::Denied);
+            result.counts.diagnostics = result.diagnostics.len();
+            result.status = Status::Denied;
+            for stage in &mut result.stages {
+                if stage.state != "not-requested" {
+                    *stage = StageRow::unavailable(stage.stage, "retained-state-limit", "partial");
+                }
+            }
+            staged = AcceptedState::default();
+        }
         RunOutcome {
             run_id: context.run_id,
             stale: false,
-            source_revision: source_revision.clone(),
-            status,
+            source_revision,
+            status: result.status,
             result,
-            staged: AcceptedState {
-                revision: source_revision,
-                files,
-                generated,
-                module_index,
-                symbols_by_path: symbols,
-                fingerprints,
-                partitions,
-                global_partition,
-                global_fingerprint,
-                drift_fingerprint: staged_drift_fingerprint,
-                drift: staged_drift,
-                documents,
-                fragments,
-                graph_fragments,
-            },
+            staged,
         }
     }
 
@@ -1038,22 +1211,22 @@ impl WatchService {
     /// The full `lekalo validate` aggregate over the captured tree:
     /// the semantic validator plus the classification, authorization,
     /// and transport reviews, exactly as the clean command runs them.
-    /// Returns the diagnostic set and whether the aggregate denied.
+    /// Preserves clean-command early refusals and status, not a severity guess.
     fn aggregate_validate(
         &self,
         root: &Path,
         compilation: &crate::ir::Compilation,
         model: &NormalizedModel,
         mut diagnostics: Vec<Diagnostic>,
-    ) -> (Vec<Diagnostic>, bool) {
+    ) -> (Vec<Diagnostic>, Status) {
         if diagnostics
             .iter()
             .any(|item| item.severity() == crate::diagnostics::types::Severity::Error)
         {
-            return (diagnostics, false);
+            return (diagnostics, Status::Invalid);
         }
         match crate::classification::discover(root) {
-            Err(set) => return (set.as_slice().to_vec(), false),
+            Err(set) => return (set.as_slice().to_vec(), Status::Invalid),
             Ok(Some((attachment, policy))) => {
                 let model_json = &crate::loader::canonical_model_bytes(model);
                 if let Err(set) = crate::classification::validate_custody(
@@ -1062,10 +1235,10 @@ impl WatchService {
                     &compilation.project,
                     model_json,
                 ) {
-                    return (set.as_slice().to_vec(), false);
+                    return (set.as_slice().to_vec(), Status::Invalid);
                 }
                 match crate::classification::validate_subjects(&attachment, compilation) {
-                    Err(set) => return (set.as_slice().to_vec(), false),
+                    Err(set) => return (set.as_slice().to_vec(), Status::Invalid),
                     Ok(resolution) => {
                         match crate::classification::validate_policy_and_grants(
                             &attachment,
@@ -1073,14 +1246,14 @@ impl WatchService {
                             &resolution,
                             &compilation.project,
                         ) {
-                            Err(set) => return (set.as_slice().to_vec(), false),
+                            Err(set) => return (set.as_slice().to_vec(), Status::Invalid),
                             Ok(review) => {
                                 if self.request.strict && review.invalid {
                                     return (
                                         crate::classification::findings_set(&review)
                                             .as_slice()
                                             .to_vec(),
-                                        false,
+                                        Status::Invalid,
                                     );
                                 }
                                 diagnostics.extend(
@@ -1095,7 +1268,6 @@ impl WatchService {
             }
             Ok(None) => {}
         }
-        let mut denied = false;
         let authorization = crate::authorization::parse::read_document(root).map(|document| {
             crate::authorization::review::review(
                 compilation,
@@ -1106,32 +1278,31 @@ impl WatchService {
         match authorization {
             Ok(crate::authorization::Review::Ok) => {}
             Ok(crate::authorization::Review::Invalid(set)) => {
-                diagnostics.extend(set.as_slice().to_vec());
+                return (set.as_slice().to_vec(), Status::Invalid)
             }
             Ok(crate::authorization::Review::Denied(set)) => {
-                diagnostics.extend(set.as_slice().to_vec());
-                denied = true;
+                return (set.as_slice().to_vec(), Status::Denied)
             }
-            Err(set) => return (set.as_slice().to_vec(), false),
+            Err(set) => return (set.as_slice().to_vec(), Status::Invalid),
         }
         match crate::transport_http::read_document(root) {
-            Err(set) => diagnostics.extend(set.as_slice().to_vec()),
+            Err(set) => return (set.as_slice().to_vec(), Status::Invalid),
             Ok(Some(attachment)) => {
                 let context = crate::transport_http::ValidationContext::new(&compilation.project);
                 if let Err(set) = crate::transport_http::validate(&attachment, &context) {
-                    diagnostics.extend(set.as_slice().to_vec());
+                    return (set.as_slice().to_vec(), Status::Invalid);
                 }
                 if let Err(set) = crate::openapi::render(
                     &attachment,
                     &context,
                     &crate::openapi::RenderConfig::new(),
                 ) {
-                    diagnostics.extend(set.as_slice().to_vec());
+                    return (set.as_slice().to_vec(), Status::Invalid);
                 }
             }
             Ok(None) => {}
         }
-        (diagnostics, denied)
+        (diagnostics, Status::Valid)
     }
 
     /// One impact stage pass. Returns the stage row, the extra domain
@@ -1313,11 +1484,21 @@ impl WatchService {
         let failure = error.domain_result();
         let diagnostics = failure.diagnostics().to_vec();
         let status = failure.status();
-        let stages = vec![
-            StageRow::unavailable("validate", reason, "partial"),
-            StageRow::not_requested("impact"),
-            StageRow::not_requested("generate-check"),
-        ];
+        let stages = [
+            ("validate", self.request.stages.validate),
+            ("impact", self.request.stages.impact),
+            ("generate-check", self.request.stages.generate_check),
+            ("target-scan", !self.request.targets.is_empty()),
+        ]
+        .into_iter()
+        .map(|(stage, selected)| {
+            if selected {
+                StageRow::unavailable(stage, reason, "partial")
+            } else {
+                StageRow::not_requested(stage)
+            }
+        })
+        .collect();
         let result = WatchResult {
             schema_version: RESULT_SCHEMA_VERSION,
             identity: RESULT_IDENTITY,
@@ -1344,10 +1525,7 @@ impl WatchService {
             impact: None,
             drift: None,
             pipeline_counts: None,
-            pins: ResultPins {
-                model_version: None,
-                registry_version: WATCH_REGISTRY_VERSION,
-            },
+            pins: ResultPins::default(),
         };
         RunOutcome {
             run_id: context.run_id,
@@ -1380,6 +1558,7 @@ impl WatchService {
             ("validate", self.request.stages.validate),
             ("impact", self.request.stages.impact),
             ("generate-check", self.request.stages.generate_check),
+            ("target-scan", !self.request.targets.is_empty()),
         ]
         .into_iter()
         .map(|(stage, selected)| {
@@ -1422,10 +1601,7 @@ impl WatchService {
             impact: None,
             drift: None,
             pipeline_counts: None,
-            pins: ResultPins {
-                model_version: None,
-                registry_version: WATCH_REGISTRY_VERSION,
-            },
+            pins: ResultPins::default(),
         };
         RunOutcome {
             run_id: context.run_id,
@@ -1496,10 +1672,7 @@ fn stale_outcome(
             impact: None,
             drift: None,
             pipeline_counts: None,
-            pins: ResultPins {
-                model_version: None,
-                registry_version: WATCH_REGISTRY_VERSION,
-            },
+            pins: ResultPins::default(),
         },
         staged: AcceptedState::default(),
     }

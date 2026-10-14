@@ -383,7 +383,7 @@
     {
       "family": "watch",
       "origin": "synthetic",
-      "note": "Issue #95: authored planner/unrelated Model documents for selective validation, immutable capture, graph reuse and filesystem lifecycle probes; no private application inputs."
+      "note": "Issue #95: authored planner/unrelated Model documents and a dependency-free read-only Node adapter with synthetic crash/timeout/write/invalid-evidence controls, plus runtime-generated budget and consumer fixtures; no private application inputs."
     }
   ]
 }

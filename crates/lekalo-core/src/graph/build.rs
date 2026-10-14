@@ -46,6 +46,50 @@ pub fn build_with_registry(
 pub(crate) struct GraphReuse {
     units: HashMap<NodeId, SourceUnit>,
     edges: HashMap<NodeId, Vec<PendingEdge>>,
+    ir_charge: usize,
+}
+
+impl GraphReuse {
+    pub(crate) fn charged_bytes(&self) -> usize {
+        let keys: usize = self
+            .units
+            .keys()
+            .chain(self.edges.keys())
+            .map(|id| id.as_str().len().saturating_mul(2))
+            .sum();
+        let edges: usize = self
+            .edges
+            .values()
+            .map(|rows| {
+                rows.capacity() * std::mem::size_of::<PendingEdge>()
+                    + rows
+                        .iter()
+                        .map(|row| {
+                            let source = match &row.provenance {
+                                EdgeProvenance::CanonicalIr { source_symbol, .. } => {
+                                    source_symbol.capacity()
+                                }
+                                _ => return usize::MAX / 4,
+                            };
+                            2 * (row.from.as_str().len() + row.to.as_str().len()) + source
+                        })
+                        .sum::<usize>()
+            })
+            .sum();
+        self.ir_charge
+            .saturating_add(keys)
+            .saturating_add(edges)
+            .saturating_add(
+                self.units
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<(NodeId, SourceUnit)>() + 32),
+            )
+            .saturating_add(
+                self.edges
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<(NodeId, Vec<PendingEdge>)>() + 32),
+            )
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -66,7 +110,10 @@ pub(crate) fn build_reusing(
     previous: &GraphReuse,
 ) -> Result<(DependencyGraph, GraphReuse, GraphWork), DiagnosticSet> {
     let (graph, work) = build_internal(project, &GraphRegistry::core(), Some(previous))?;
-    let mut next = GraphReuse::default();
+    let mut next = GraphReuse {
+        ir_charge: project.to_canonical_json().len().saturating_mul(16),
+        ..GraphReuse::default()
+    };
     if let Some(root) = &project.project {
         if let Some(id) = NodeId::new(NodeKindId::PROJECT, root.id.as_str()) {
             next.units.insert(id, SourceUnit::Project(root.clone()));

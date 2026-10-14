@@ -18,6 +18,11 @@ pub fn interrupted() -> bool {
     INTERRUPTED.load(Ordering::SeqCst)
 }
 
+/// Shared cancellation input for bounded startup adapter discovery.
+pub fn cancellation_flag() -> &'static AtomicBool {
+    &INTERRUPTED
+}
+
 /// Install the platform handler. Returns false when the platform
 /// refused the registration (the host then reports the session without
 /// a graceful-interrupt guarantee rather than pretending).

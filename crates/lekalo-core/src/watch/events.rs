@@ -197,6 +197,25 @@ impl WatchEvent {
         }
         Self::new(sequence, session_id, "recovery-required", payload)
     }
+    /// Explicit fail-stop, not a claim that cancellation teardown succeeded.
+    pub fn cancellation_incomplete(
+        sequence: u64,
+        session_id: &str,
+        run_id: u64,
+        generation: u64,
+        source_revision: &str,
+    ) -> Self {
+        Self::new(
+            sequence,
+            session_id,
+            "recovery-required",
+            json!({
+                "cause":"cancellation-incomplete", "action":"stop", "runId":run_id,
+                "generation":generation, "sourceRevision":source_revision, "committed":false,
+                "status":"unavailable", "diagnostics":[super::diagnostics::cancellation_incomplete("worker")],
+            }),
+        )
+    }
     pub fn session_stopped(
         sequence: u64,
         session_id: &str,
