@@ -90,10 +90,14 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
   goldenCount += 1;
 
   // 1. The envelope is the accepted success wrapper and the payload
-  // satisfies the closed wire schema.
+  // satisfies its negotiated closed wire schema: 0.2.16 goldens stay on
+  // the frozen predecessor bytes, 0.8.0 goldens (the successor, which
+  // also inspects 0.2.16 sources unchanged) on the successor schema.
   if (envelope.status !== "valid") fail(`${name}-envelope-status`, envelope.status);
   const inspect = envelope.inspect;
-  if (!validateInspect(inspect)) fail(`${name}-invalid`, validateInspect.errors);
+  const successor = inspect.schemaVersion === "lekalo/inspect/v0.8.0";
+  const validator = successor ? validateInspectV8 : validateInspect;
+  if (!validator(inspect)) fail(`${name}-invalid`, validator.errors);
 
   // 2. Fixed wire order: top-level keys follow the schema order exactly.
   const keys = Object.keys(inspect);
@@ -102,9 +106,14 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
     if (keys[index] !== key) fail(`${name}-section-order`, { at: index, got: keys[index] });
   });
 
-  // 3. Identities and coherence of the header.
-  if (inspect.schemaVersion !== "lekalo/inspect/v0.2.16") fail(`${name}-discriminator`);
-  if (inspect.identity !== "dev.lekalo.inspect@0.2.16") fail(`${name}-identity`);
+  // 3. Identities and coherence of the header (negotiated, exact: no
+  // version drift and no widened predecessor).
+  if (inspect.schemaVersion !== (successor ? "lekalo/inspect/v0.8.0" : "lekalo/inspect/v0.2.16")) {
+    fail(`${name}-discriminator`, inspect.schemaVersion);
+  }
+  if (inspect.identity !== (successor ? "dev.lekalo.inspect@0.8.0" : "dev.lekalo.inspect@0.2.16")) {
+    fail(`${name}-identity`, inspect.identity);
+  }
   if (inspect.selector.mode !== "short-name" && inspect.selector.input !== inspect.symbol.id) {
     fail(`${name}-selector-identity`, inspect.selector);
   }

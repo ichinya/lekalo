@@ -6,8 +6,9 @@
 // and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 
 import { createRequire } from "node:module";
-import { readFileSync, readdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
@@ -86,6 +87,14 @@ const baseSchema = read("contracts/graph.schema.v0.2.16.json");
 
 const goldenDir = "tests/fixtures/graph/golden";
 
+// Issue #52 drift closure: every pinned golden must be the live export
+// of exactly one owning fixture project. Adding a golden family without
+// wiring its live byte-comparison is a gate failure, not a silent gap.
+const OWNED_EXPORTS = {
+  "planner.graph.json": "tests/fixtures/graph/planner",
+  "tasklinks.graph.json": "tests/fixtures/task-external-links/project",
+};
+
 const CORE_NODE_KINDS = [
   "project", "module", "type", "entity", "operation", "policy",
   "event", "effect", "endpoint", "scenario", "target-binding", "requirement",
@@ -113,8 +122,10 @@ const canonicalEdgeKey = (edge) => [
 let goldenCount = 0;
 let nodeCount = 0;
 let edgeCount = 0;
+const seenGoldens = new Set();
 for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
   if (!name.endsWith(".json")) continue;
+  seenGoldens.add(name);
   const graph = read(`${goldenDir}/${name}`);
   goldenCount += 1;
 
@@ -231,10 +242,85 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
 
 if (goldenCount === 0) fail("no-goldens");
 
+// Every golden family must declare its owning fixture: an unmapped
+// golden would reintroduce the self-consistency-only gap.
+for (const name of seenGoldens) {
+  if (!OWNED_EXPORTS[name]) fail("golden-unmapped", `${name} has no owning fixture in OWNED_EXPORTS`);
+}
+for (const name of Object.keys(OWNED_EXPORTS)) {
+  if (!seenGoldens.has(name)) fail("golden-missing", `OWNED_EXPORTS pins ${name} but no such golden exists`);
+}
+
+// Live drift closure (issue #52): a byte-pinned golden certifies the
+// fixture that ships beside it. When the built CLI is available, re-export
+// each owning fixture (twice — the export must be byte-deterministic) and
+// byte-compare the canonical rendering of envelope.graph against the
+// pinned bytes, the exact assertion the Rust golden tests make. Without a
+// build the live legs are skipped; `--require-binary` turns a missing
+// binary into a failure so the CI job that builds first cannot skip them.
+const binaryCandidates = [
+  process.env.LEKALO_BIN,
+  join(root, "target/debug/lekalo"),
+  join(root, "target/debug/lekalo.exe"),
+].filter(Boolean);
+const binary = binaryCandidates.find((candidate) => {
+  try {
+    return statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+});
+if (!binary && process.argv.includes("--require-binary")) {
+  fail("binary-missing", "build first (cargo build --workspace --locked) or point LEKALO_BIN at the CLI");
+}
+// serde_json Value renders objects in BTreeMap order (keys sorted
+// recursively) with compact separators; replicate that exactly so the
+// byte comparison matches the Rust assertion byte-for-byte.
+const canonicalJson = (value) => {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const body = Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",");
+    return `{${body}}`;
+  }
+  return JSON.stringify(value);
+};
+let liveExports = 0;
+if (binary) {
+  for (const [name, projectRel] of Object.entries(OWNED_EXPORTS)) {
+    const exportOnce = () => spawnSync(
+      binary,
+      ["--no-cache", "--json", "graph", "export", "--project", "."],
+      { cwd: join(root, projectRel), encoding: "utf8", timeout: 120000, maxBuffer: 32 * 1024 * 1024 },
+    );
+    const first = exportOnce();
+    if (first.error || first.status !== 0) {
+      fail(`${name}-export-failed`, String(first.stderr ?? first.error).slice(0, 400));
+    }
+    const second = exportOnce();
+    if (second.error || second.status !== 0) {
+      fail(`${name}-export-failed`, String(second.stderr ?? second.error).slice(0, 400));
+    }
+    if (second.stdout !== first.stdout) fail(`${name}-export-nondeterministic`, "two exports of the same fixture differ");
+    const envelope = JSON.parse(first.stdout);
+    if (envelope.status !== "valid") fail(`${name}-export-status`, envelope.status);
+    const rendered = canonicalJson(envelope.graph);
+    const pinned = readFileSync(join(root, goldenDir, name), "utf8");
+    if (rendered !== pinned) {
+      fail(`${name}-golden-drift`, `the pinned golden does not match the live export of ${projectRel}: regenerate it by running the export twice (byte-identical) and pinning the canonical (sorted-key compact, no trailing newline) rendering of envelope.graph over ${goldenDir}/${name}`);
+    }
+    liveExports += 1;
+  }
+}
+
 process.stdout.write(`${JSON.stringify({
   ok: true,
   ajv: ajvVersion,
   goldens: goldenCount,
   nodes: nodeCount,
   edges: edgeCount,
+  liveExports,
+  liveExportsSkipped: binary ? 0 : Object.keys(OWNED_EXPORTS).length,
 }, null, 2)}\n`);
