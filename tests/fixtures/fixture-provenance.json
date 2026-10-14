@@ -218,6 +218,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "managed",
+      "origin": "synthetic",
+      "note": "Issue #41: authored managed ownership/coverage wire documents, the planner project, deterministic expected outputs, committed custody records, and hostile controls. No native runtime outcome or private material."
+    },
+    {
       "family": "metrics-export",
       "origin": "synthetic",
       "note": "Issue #102: authored paired trial metadata, local recorder observations, aggregate/manifest/preview goldens and hostile lifecycle probes. No private consumer data or #100 evaluation claims."
