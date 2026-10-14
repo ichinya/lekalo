@@ -46,6 +46,24 @@ pub fn apply(
 ) -> Outcome<AdoptionReceipt> {
     let document =
         wire::refactor_plan_of_bytes(plan_bytes).map_err(|error| error.domain_result())?;
+    // Shared cross-service writer serialization (r6, findings devin F2 +
+    // omp F2): the adoption installer joins the one project-wide mutation
+    // lock before any verification run, snapshot, or CAS install, so a
+    // change/migration/format writer can never interleave with its
+    // journaled writes. A sibling's interrupted transaction denies with
+    // the registered infrastructure rule (exit 3, denied).
+    let _shared = match crate::project_writer::WriterLock::mutation(
+        &ctx.root,
+        crate::project_writer::MutationFamily::Adoption,
+    ) {
+        Ok(lock) => Some(lock),
+        Err(crate::project_writer::MutationRefusal::ChangeRecovery { transaction }) => {
+            return Err(DomainResult::denied(
+                crate::change::ChangeError::RecoveryRequired { transaction }.diagnostic_set(),
+            ));
+        }
+        Err(_) => return Err(DomainResult::denied(diagnostic::writer_busy_set())),
+    };
     let value = serde_json::to_value(&document).expect("plan serializes");
     let recomputed = wire::digest(
         "adoption-refactor-plan",

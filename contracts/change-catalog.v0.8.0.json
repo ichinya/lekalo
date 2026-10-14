@@ -68,7 +68,7 @@
     {
       "operation": "enum-case:change",
       "status": "implemented",
-      "title": "Rename, revalue, or redescribe one enum case",
+      "title": "Rename or redescribe one enum case",
       "mutationClass": "member-destructive",
       "requiredEvidence": [
         "wire-value-review"

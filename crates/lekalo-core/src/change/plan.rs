@@ -273,10 +273,22 @@ impl PreparedChange {
     }
 
     /// The exact wire bytes of the plan projection (pretty; the document
-    /// carries its own envelope status).
-    pub fn to_json_string(&self) -> String {
+    /// carries its own envelope status). The serialized export obeys the
+    /// contract's bounded-export ceiling: an over-cap projection refuses
+    /// (the typed `PlanExportLimit` error) instead of emitting a plan its
+    /// own 32 MiB bound rejects (r6, finding omp F1).
+    pub fn to_json_string(&self) -> Result<String, super::diagnostic::ChangeError> {
         let wire = self.wire();
-        serde_json::to_string_pretty(&wire).unwrap_or_default()
+        let json = serde_json::to_string_pretty(&wire)
+            .map_err(|_| super::diagnostic::ChangeError::HistoryInvalid { detail: "export" })?;
+        if json.len() > version::MAX_PLAN_EXPORT_BYTES {
+            return Err(super::diagnostic::ChangeError::PlanExportLimit {
+                subject: "plan-bytes",
+                measured: json.len() as u64,
+                allowed: version::MAX_PLAN_EXPORT_BYTES as u64,
+            });
+        }
+        Ok(json)
     }
 
     fn wire(&self) -> PlanWire {

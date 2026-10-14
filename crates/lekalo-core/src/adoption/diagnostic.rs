@@ -20,6 +20,27 @@ fn named_record(name: &str, value: &str) -> std::collections::BTreeMap<String, N
     record
 }
 
+/// The shared cross-service writer serialization refusal (r6, findings
+/// devin F2 + omp F2): another service's writer holds the project-wide
+/// mutation lock, or a sibling's interrupted transaction blocks mutation
+/// under it. The infrastructure in-progress rule is not an adoption rule,
+/// so it rides the closed passthrough set at the family's denied class.
+pub(crate) fn writer_busy_set() -> DiagnosticSet {
+    match build(
+        "versioning.migration-in-progress",
+        None,
+        None,
+        DataObject::new(),
+    ) {
+        Ok(diagnostic) => match DiagnosticSet::try_from_unsorted(vec![diagnostic], Status::Invalid)
+        {
+            Ok(set) => set,
+            Err(_) => crate::result::singleton_set("diagnostics.registry-invalid"),
+        },
+        Err(_) => crate::result::singleton_set("diagnostics.registry-invalid"),
+    }
+}
+
 /// Finalize one registered diagnostic; a registry failure collapses to
 /// the registry-invariant set (double developer fault) instead of
 /// panicking.
@@ -33,7 +54,7 @@ fn one(id: &str, status: Status, data: DataObject) -> DiagnosticSet {
     }
 }
 
-/// `adoption.input-invalid` / LEK-ADOPT-001: a closed input is malformed,
+/// The registered `adoption.input-invalid` / LEK-ADOPT-001: a closed input is malformed,
 /// duplicate, foreign-scoped, or over limit.
 pub(crate) fn input_invalid_set(field: &str, reason: &str) -> DiagnosticSet {
     let mut data = DataObject::new();

@@ -170,8 +170,10 @@ file produce the identical plan and idempotency binding.
 
 ## Application, idempotency, recovery
 
-`change::apply_prepared` is the only writer. Under a project-scoped
-writer lock it rechecks the durable ledger first (a repeated key with
+`change::apply_prepared` is the only writer. Under the shared
+project-wide mutation lock (`.lekalo/cache/writer.lock`, held across
+change/migrate/format/generate/adoption writers) it rechecks the
+durable ledger first (a repeated key with
 the same canonical request replays the original committed receipt
 without another mutation; a different intent conflicts,
 `change.idempotency-conflict`, denied 3), revalidates every before
@@ -223,11 +225,11 @@ completes its cleanup BEFORE reporting committed, so a committed
 receipt never leaves its own reader barrier in place. The receipt
 surface verdicts EVERY pending journal with the closed decoder — a
 lexically-first committed-looking journal without exact history custody
-cannot mask a later unresolved one. Recovery reclaims a stale
-writer lock whose recorded holder is provably dead; a live holder still
-denies (`change.precondition-failed`). The rollback reports receipt
-state `rolled-back` — never `committed` — as a flat change-receipt
-document.
+cannot mask a later unresolved one. Recovery takes over the shared
+writer lock when its OS-held handle is released (a dead owner); a live
+holder still denies (`change.precondition-failed`). The rollback
+reports receipt state `rolled-back` — never `committed` — as a flat
+change-receipt document.
 
 The canonical history is a tamper-evident chain: each record carries a
 digest over the previous record's digest, the project identity, the

@@ -50,6 +50,7 @@ pub mod php_routes;
 pub mod portability;
 pub mod privacy;
 pub mod project_fs;
+mod project_writer;
 pub mod provider;
 pub mod query_model;
 pub mod reference_evaluation;

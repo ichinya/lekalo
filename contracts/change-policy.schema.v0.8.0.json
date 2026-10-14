@@ -19,6 +19,7 @@
     "allowBreakingClasses": {
       "type": "array",
       "maxItems": 8,
+      "uniqueItems": true,
       "items": {
         "enum": [
           "data-loss-risk",

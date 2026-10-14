@@ -60,7 +60,7 @@ pub enum MutationClass {
     Additive,
     /// Adds one member to an existing definition.
     MemberAdditive,
-    /// Removes, renames, or revalues one existing member.
+    /// Removes, renames, or redescribes one existing member.
     MemberDestructive,
     /// Adds, removes, or relocates whole definitions.
     Destructive,

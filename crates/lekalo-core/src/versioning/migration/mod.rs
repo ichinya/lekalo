@@ -124,6 +124,10 @@ pub enum VersioningFailure {
     RollbackFailed,
     /// A crashed transaction demands recovery before new work (`exit 1`).
     RecoveryRequired,
+    /// Another service's writer holds the shared project-wide mutation
+    /// lock, or a sibling service's interrupted transaction blocks new
+    /// mutation under it (r6, findings devin F2 + omp F2).
+    Serialized,
     /// A physical path policy denial inside the transaction home (`exit 1`).
     DeniedPath(String),
     /// An unclassified I/O failure inside a transaction phase (`exit 1`).
@@ -144,6 +148,7 @@ impl VersioningFailure {
             Self::MigrationPrecondition { .. } => reasons::MIGRATION_PRECONDITION,
             Self::NotFileMigratable { .. } => reasons::NOT_FILE_MIGRATABLE,
             Self::SourceChanged => reasons::SOURCE_CHANGED,
+            Self::Serialized => reasons::MIGRATION_IN_PROGRESS,
             Self::MigrationInProgress => reasons::MIGRATION_IN_PROGRESS,
             Self::BackupFailed => reasons::BACKUP_FAILED,
             Self::CommitFailed => reasons::COMMIT_FAILED,
@@ -497,6 +502,18 @@ impl MigrationService {
     pub fn apply(prepared: PreparedMigration) -> Result<MigrationReceipt, VersioningFailure> {
         embedded_registry()?;
         let write = transaction::MigrationWrite::new(prepared.root.clone());
+
+        // Shared cross-service writer serialization (r6, findings devin F2
+        // + omp F2): the project-wide mutation lock is held across this
+        // whole recovery -> revalidate -> replace window, and a sibling
+        // service's interrupted transaction refuses under it.
+        let _shared = match crate::project_writer::WriterLock::mutation(
+            &prepared.root,
+            crate::project_writer::MutationFamily::Migration,
+        ) {
+            Ok(lock) => lock,
+            Err(_) => return Err(VersioningFailure::Serialized),
+        };
 
         // A crashed earlier run recovers before new work; a live lock held
         // by another migration is an in-progress refusal.

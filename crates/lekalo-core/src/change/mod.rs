@@ -150,6 +150,54 @@ pub(crate) fn verify_history_project(root: &Path, history: &History) -> Result<(
     Ok(())
 }
 
+/// Prove that the model actually carries one record's committed semantic
+/// delta before the ledger may mint replay authority (r6, finding devin
+/// F1). The ledger is bound to the logical project id, so a GENUINE
+/// ledger file grafted into a different checkout of the SAME project id
+/// (a git clone, a template copy, a backup restore without its sibling
+/// sources) decodes and passes the project binding — replaying from it
+/// would mint a durable audit record for a change this project never
+/// received. The record's own receipt projection carries every replaced
+/// file's exact `afterDigest`: the committed postcondition. At least one
+/// non-history target must still carry its committed bytes; the history
+/// sidecar itself always matches (it IS the record being consulted), so
+/// it proves nothing about the sources. A no-op record carries no file
+/// and verifies only through its recorded absence of edits — the digest
+/// chain already binds it to the ledger it lives in.
+pub(crate) fn verify_record_postcondition(
+    root: &Path,
+    record: &HistoryRecord,
+) -> Result<(), ChangeError> {
+    let sources: Vec<receipt::FileOutcome> = record
+        .receipt
+        .get("files")
+        .and_then(Json::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| serde_json::from_value::<receipt::FileOutcome>(item.clone()).ok())
+        .filter(|outcome| outcome.path != version::HISTORY_LOGICAL_PATH)
+        .collect();
+    if sources.is_empty() {
+        return Ok(());
+    }
+    for outcome in &sources {
+        let path = root.join(outcome.path.replace('/', std::path::MAIN_SEPARATOR_STR));
+        match std::fs::read(&path) {
+            Ok(bytes)
+                if format!("sha256:{}", crate::digest::sha256_hex(&bytes))
+                    == outcome.after_digest =>
+            {
+                // This source still carries the committed change.
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+    Err(ChangeError::HistoryInvalid {
+        detail: "postcondition",
+    })
+}
+
 /// Whether one candidate symbol id satisfies the semantic-id grammar the
 /// loader already enforces; request decoding refuses everything else.
 pub(crate) fn symbol_id_valid(id: &str) -> bool {
@@ -543,6 +591,18 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         digest: history_digest,
     });
     inputs.sort_by(|left, right| left.path.as_bytes().cmp(right.path.as_bytes()));
+    // (r6, finding omp F1): the export obeys its own published schema —
+    // a plan whose input inventory exceeds the contract's 1000-entry pin
+    // cap cannot seal (the pins are the apply-time CAS authority, so no
+    // truncated plan may exist). The bounded-output refusal is explicit,
+    // never a schema-invalid document presented as complete.
+    if inputs.len() > version::MAX_PLAN_INPUTS {
+        return Err(ChangeError::PlanExportLimit {
+            subject: "inputs",
+            measured: inputs.len() as u64,
+            allowed: version::MAX_PLAN_INPUTS as u64,
+        });
+    }
 
     // Optional exact Model precondition.
     let model_digest = format!(
@@ -623,6 +683,17 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         });
     }
     file_diffs.sort_by(|left, right| left.path.as_bytes().cmp(right.path.as_bytes()));
+    // (r6, finding omp F1): the changed-file arrays obey the contract's
+    // 1000-entry caps the same way — the research contract's proposed
+    // "1,000 changed files" request bound. A sealed plan that cannot
+    // represent its own mutation set does not exist.
+    if file_edits.len() > version::MAX_PLAN_FILES || file_diffs.len() > version::MAX_PLAN_FILES {
+        return Err(ChangeError::PlanExportLimit {
+            subject: "fileEdits",
+            measured: file_edits.len().max(file_diffs.len()) as u64,
+            allowed: version::MAX_PLAN_FILES as u64,
+        });
+    }
 
     let prepared = PreparedChange {
         // The canonical re-serialization pins the request intent, not its
@@ -704,6 +775,10 @@ pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeErr
             if record.intent_digest != intent {
                 return Err(ChangeError::IdempotencyConflict);
             }
+            // A genuine-but-grafted ledger never mints replay authority
+            // (r6, finding devin F1): the project must actually carry the
+            // record's committed semantic delta.
+            verify_record_postcondition(&root, record)?;
             return replayed_receipt(record);
         }
     }
@@ -742,8 +817,18 @@ pub fn apply_prepared(
         }
     }
     let root = prepared.root.clone();
-    let _lock = transaction::WriterLock::acquire(&root)?;
-    refuse_while_recovery_pending(&root)?;
+    // Shared cross-service writer serialization (r6, findings devin F2 +
+    // omp F2): the change writer holds the one project-wide mutation lock
+    // for its whole stage -> verify -> replace -> finalize window, and
+    // re-checks every sibling service's durable barrier under it, refusing
+    // with the change family's own registered rules.
+    let _lock = match crate::project_writer::WriterLock::mutation(
+        &root,
+        crate::project_writer::MutationFamily::Change,
+    ) {
+        Ok(lock) => lock,
+        Err(refusal) => return Err(change_mutation_refusal(refusal)),
+    };
 
     // The durable ledger is authoritative: replay first, conflict second.
     // Absent (NotFound) means the first commit creates it; an existing
@@ -775,6 +860,10 @@ pub fn apply_prepared(
         if record.intent_digest != intent {
             return Err(ChangeError::IdempotencyConflict);
         }
+        // A genuine-but-grafted ledger never mints replay authority
+        // (r6, finding devin F1): the project must actually carry the
+        // record's committed semantic delta.
+        verify_record_postcondition(&root, record)?;
         return replayed_receipt(record);
     }
 
@@ -1104,7 +1193,15 @@ pub fn lookup_receipt(
     let history = History::decode(&history_bytes)?;
     verify_history_project(&root, &history)?;
     let key = receipt::key_digest(idempotency_key);
-    history.by_key(&key).map(stored_receipt).transpose()
+    match history.by_key(&key) {
+        // The receipt projection is authority: it too requires the model
+        // to carry the record's committed delta (r6, finding devin F1).
+        Some(record) => {
+            verify_record_postcondition(&root, record)?;
+            stored_receipt(record).map(Some)
+        }
+        None => Ok(None),
+    }
 }
 
 /// The outcome of one successful recovery: the flat receipt facts of the
@@ -1131,7 +1228,12 @@ pub fn recover_transaction(
     transaction: &str,
 ) -> Result<RecoveryOutcome, ChangeError> {
     let root = resolve_root(project)?;
-    let _lock = transaction::WriterLock::acquire(&root)?;
+    // Recovery holds the shared cross-service lock (so no sibling writer
+    // interleaves with its restorations) but deliberately skips the
+    // mutation() barrier re-check: recovery IS the resolver of the change
+    // journal, and journal-verified before/after digest pins make
+    // restoration drift fail closed on its own.
+    let _lock = crate::project_writer::WriterLock::acquire(&root)?;
     let result = transaction::recover(&root, transaction)?;
     Ok(RecoveryOutcome {
         transaction: transaction.to_owned(),
@@ -1155,7 +1257,7 @@ pub fn pending_transactions(project: Option<&str>) -> Result<Vec<String>, Change
 /// finding 1). Never used outside `cfg(test)` integration suites.
 #[doc(hidden)]
 pub struct TestWriterGuard {
-    _inner: transaction::WriterLock,
+    _inner: crate::project_writer::WriterLock,
 }
 
 /// Test-only: acquire the change writer lock for the selected project.
@@ -1165,7 +1267,7 @@ pub fn test_only_acquire_writer_lock(
 ) -> Result<TestWriterGuard, ChangeError> {
     let root = resolve_root(project)?;
     Ok(TestWriterGuard {
-        _inner: transaction::WriterLock::acquire(&root)?,
+        _inner: crate::project_writer::WriterLock::acquire(&root)?,
     })
 }
 
@@ -3233,12 +3335,38 @@ fn resolve_root(project: Option<&str>) -> Result<PathBuf, ChangeError> {
 }
 
 /// Refuse while any change journal awaits recovery (the reader barrier).
-fn refuse_while_recovery_pending(root: &Path) -> Result<(), ChangeError> {
+pub(crate) fn refuse_while_recovery_pending(root: &Path) -> Result<(), ChangeError> {
     match transaction::pending_transactions(root).first() {
         Some(transaction) => Err(ChangeError::RecoveryRequired {
             transaction: transaction.clone(),
         }),
         None => Ok(()),
+    }
+}
+
+/// Project one shared-writer refusal onto the change family's registered
+/// rules (r6, findings devin F2 + omp F2): the change barrier keeps its
+/// own recovery rule; a held shared lock or a sibling family's journal
+/// denies through the change precondition rule with the bounded subject
+/// token the rule carries.
+fn change_mutation_refusal(refusal: crate::project_writer::MutationRefusal) -> ChangeError {
+    match refusal {
+        crate::project_writer::MutationRefusal::ChangeRecovery { transaction } => {
+            ChangeError::RecoveryRequired { transaction }
+        }
+        crate::project_writer::MutationRefusal::LockHeld => ChangeError::PreconditionFailed {
+            subject: "writer-lock".to_owned(),
+            detail: "held",
+        },
+        crate::project_writer::MutationRefusal::SiblingJournal { code } => {
+            ChangeError::PreconditionFailed {
+                subject: "writer-lock".to_owned(),
+                detail: match code {
+                    "format.recovery-required" => "format-journal",
+                    _ => "migration-journal",
+                },
+            }
+        }
     }
 }
 

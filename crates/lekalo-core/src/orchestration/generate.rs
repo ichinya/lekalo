@@ -110,6 +110,41 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
     // exact lock, and the parsed manifest.
     let prepared = Prepared::prepare(request.selection)
         .map_err(|failure| DomainResult::from(&Failure::Artifact(failure)))?;
+    // Shared cross-service writer serialization (r6, findings devin F2 +
+    // omp F2): an APPLY-mode generate run joins the one project-wide
+    // mutation lock before any evidence write or adapter-driven target
+    // write; dry-run stays read-only and never locks. A sibling's
+    // interrupted transaction denies with the registered infrastructure
+    // rule (exit 3), the change family's own rule when it is theirs.
+    let _shared = if request.dry_run {
+        None
+    } else {
+        match crate::project_writer::WriterLock::mutation(
+            prepared.root(),
+            crate::project_writer::MutationFamily::Generate,
+        ) {
+            Ok(lock) => Some(lock),
+            Err(crate::project_writer::MutationRefusal::ChangeRecovery { transaction }) => {
+                return Err(DomainResult::denied(
+                    crate::change::ChangeError::RecoveryRequired { transaction }.diagnostic_set(),
+                ));
+            }
+            Err(_) => {
+                let diagnostics = crate::diagnostics::normalize::build(
+                    "versioning.migration-in-progress",
+                    None,
+                    None,
+                    crate::diagnostics::DataObject::new(),
+                )
+                .map(|diagnostic| vec![diagnostic])
+                .unwrap_or_default();
+                return Err(DomainResult::invalid(DomainResult::from_wire_set(
+                    crate::result::Status::Invalid,
+                    diagnostics,
+                )));
+            }
+        }
+    };
     let Some(supply) = request.supply.as_ref() else {
         return Err(DomainResult::from(&Failure::AdapterSupplyRequired));
     };

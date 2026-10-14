@@ -61,31 +61,57 @@ function readJson(relative) {
   return JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 }
 
-// Strict duplicate-key refusal (finding 8): JSON.parse silently accepts
-// duplicates, so detect them with a revival pass.
+// Strict duplicate-key refusal (finding 8; made real in r6, omp F3):
+// JSON.parse silently collapses duplicates, so post-parse key-set checks
+// are tautological. Duplicates are detected over the RAW text with a
+// per-object scanner that pairs keys to their enclosing object braces.
 function assertDupFree(text, where) {
-  const keys = [];
-  const walker = (value) => {
-    if (Array.isArray(value)) return value.forEach(walker);
-    if (value && typeof value === "object") {
-      const seen = new Set(Object.keys(value));
-      if (seen.size !== Object.keys(value).length) fail("duplicate-keys", where);
-      Object.values(value).forEach(walker);
+  // Token-walk the raw JSON: each '{' opens an object whose keys are the
+  // string literals immediately followed by ':'. A repeated key inside
+  // one object depth is a duplicate — the same property the Rust
+  // `unique_json` ingress refuses.
+  let depth = 0;
+  const scopes = new Map();
+  let i = 0;
+  const n = text.length;
+  while (i < n) {
+    const ch = text[i];
+    if (ch === '"') {
+      // Scan the full string literal.
+      let j = i + 1;
+      while (j < n) {
+        if (text[j] === '\\') { j += 2; continue; }
+        if (text[j] === '"') break;
+        j += 1;
+      }
+      const literal = text.slice(i + 1, j);
+      // A key is a string followed only by whitespace and ':'.
+      let k = j + 1;
+      while (k < n && /\s/.test(text[k])) k += 1;
+      if (text[k] === ':') {
+        if (!scopes.has(depth)) scopes.set(depth, new Set());
+        const seen = scopes.get(depth);
+        if (seen.has(literal)) fail("duplicate-keys", { where, key: literal });
+        seen.add(literal);
+      }
+      i = j + 1;
+      continue;
     }
-  };
+    if (ch === '{' || ch === '[') {
+      depth += 1;
+      scopes.set(depth, new Set());
+    } else if (ch === '}' || ch === ']') {
+      scopes.delete(depth);
+      depth -= 1;
+    }
+    i += 1;
+  }
   let parsed;
   try {
-    parsed = JSON.parse(text, (key, value) => {
-      if (key !== "" && keys.includes(key)) {
-        // Key repetition across different objects is legal; the object
-        // check above catches real duplicates.
-      }
-      return value;
-    });
+    parsed = JSON.parse(text);
   } catch (error) {
     fail("parse-failed", { where, error: error.message });
   }
-  walker(parsed);
   return parsed;
 }
 
@@ -215,18 +241,23 @@ if (!readFileSync(join(sandbox, "lekalo/modules/tasks/entities.yaml")).equals(en
 // 4. A stale writer lock does not brick recovery (round 1 finding 3):
 //    the OS-held lock proves the owner is dead and the artifact is taken
 //    over; a planted metadata file never substitutes for liveness.
+//    (r6, devin F2 + omp F2): the writer lock moved to the shared
+//    `.lekalo/cache/writer.lock` leaf; it is persistent — never unlinked
+//    — so recovery consumes the journal, and the stale artifact bytes
+//    are simply adopted-and-ignored (no holder metadata is written).
 freshSandbox("stale");
 const staleCache = join(sandbox, ".lekalo/cache/change");
+const staleSharedLeaf = join(sandbox, ".lekalo/cache/writer.lock");
 mkdirSync(staleCache, { recursive: true });
 writeJournal("change-gatest01", []);
-writeFileSync(join(staleCache, "writer.lock"), "held-by-a-dead-process\n");
+writeFileSync(staleSharedLeaf, "held-by-a-dead-process\n");
 writeFileSync(
   join(staleCache, "writer.lock.json"),
   `${JSON.stringify({ pid: 999999999, boot: "not-this-boot" })}\n`,
 );
 const stale = run(["change", "recover", "--project", ".", "--transaction", "change-gatest01", "--json"]);
 if (stale.code !== 0) fail("stale-lock-bricked-recovery", { code: stale.code, json: stale.json });
-if (existsSync(join(staleCache, "writer.lock"))) fail("stale-lock-not-released");
+if (!existsSync(staleSharedLeaf)) fail("shared-lock-leaf-unlinked");
 if (existsSync(join(sandbox, ".lekalo/cache/change/change-gatest01/journal.json"))) {
   fail("stale-journal-not-consumed");
 }
@@ -547,6 +578,44 @@ if (!existsSync(join(sandbox, ".lekalo/cache/change/leftover-tx/backups/0"))) {
   fail("clear-removed-change-home");
 }
 
+// 4c. Shared writer serialization (r6, findings devin F2 + omp F2): a
+//     sibling service's writer refuses while the change journal awaits
+//     recovery — the registered busy rule (exit 3, denied) with the
+//     change recovery rule for the change family's own journal. A live
+//     holder of the shared `.lekalo/cache/writer.lock` also denies the
+//     change writer itself (cross-service exclusion is real, not just
+//     the reader barrier).
+freshSandbox("serialize");
+writeJournal("change-gateser01", []);
+const migrateWhileBlocked = run(["migrate", "--project", ".", "--to", "0.7.0", "--json"]);
+if (migrateWhileBlocked.code === 0) fail("migrate-ignored-change-journal", migrateWhileBlocked.json);
+const formatWhileBlocked = run(["format", "--project", ".", "--json"]);
+if (formatWhileBlocked.code === 0) fail("format-ignored-change-journal", formatWhileBlocked.json);
+const serializeRequest = join(sandbox, "serialize-request.json");
+writeFileSync(
+  serializeRequest,
+  `${JSON.stringify(readJson("tests/fixtures/change/golden/request-add-field.json"))}\n`,
+);
+const changeWhileBlocked = run([
+  "change", "request", "--project", ".",
+  "--request", serializeRequest,
+  "--apply", "--idempotency-key", "gate-serialize-01",
+  "--json",
+]);
+if (changeWhileBlocked.code !== 3) fail("change-journal-barrier-exit", changeWhileBlocked.json);
+if (!changeWhileBlocked.json?.reasonCodes?.includes("change.recovery-required")) {
+  fail("change-journal-barrier-rule", changeWhileBlocked.json?.reasonCodes);
+}
+const sourceBefore = readFileSync(join(sandbox, "lekalo/modules/tasks/entities.yaml"));
+writeJournal("change-gateser02", [], {}, false);
+// The shared lock's leaf persists; recovery of the second planted journal
+// (no provenance) still refuses, and the sources stay untouched.
+const recoverSecond = run(["change", "recover", "--project", ".", "--transaction", "change-gateser02", "--json"]);
+if (recoverSecond.code === 0) fail("provenance-less-journal-recovered", recoverSecond.json);
+if (!readFileSync(join(sandbox, "lekalo/modules/tasks/entities.yaml")).equals(sourceBefore)) {
+  fail("serialize-sources-mutated");
+}
+
 rmSync(sandbox, { recursive: true, force: true });
 process.stdout.write(`${JSON.stringify({
   ok: true,
@@ -565,5 +634,6 @@ process.stdout.write(`${JSON.stringify({
     "pending-receipt-gated",
     "rollback-recovery-schema-valid",
     "cache-clear-custody",
+    "shared-writer-serialization",
   ],
 }, null, 2)}\n`);

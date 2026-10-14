@@ -62,3 +62,19 @@ pub const MAX_FILE_DIFF_BYTES: usize = 16 * 1024;
 
 /// Maximum patch lines of one file diff entry in a plan.
 pub const MAX_PATCH_LINES: usize = 512;
+
+/// Maximum pinned inputs in one plan export (the published
+/// `change-plan.schema` `inputs.maxItems`); a larger valid project
+/// degrades the plan to `complete: false` instead of emitting a document
+/// its own contract refuses (r6, finding omp F1).
+pub const MAX_PLAN_INPUTS: usize = 1000;
+
+/// Maximum planned file replacements in one plan export (the published
+/// `fileEdits`/`fileDiff` `maxItems`), same completion degradation.
+pub const MAX_PLAN_FILES: usize = 1000;
+
+/// Maximum serialized plan-export bytes: the research contract's
+/// "bounded plan export" ceiling. A projection over the cap refuses the
+/// whole preparation rather than emit a truncated plan presented as
+/// complete.
+pub const MAX_PLAN_EXPORT_BYTES: usize = 32 * 1024 * 1024;

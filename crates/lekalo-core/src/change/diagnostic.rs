@@ -81,6 +81,15 @@ pub enum ChangeError {
     RecoveryRequired { transaction: String },
     /// Malformed canonical history (`invalid`, exit 1).
     HistoryInvalid { detail: &'static str },
+    /// The sealed plan's export exceeds its own published bounded-schema
+    /// cap (r6, finding omp F1): input pins, changed files, or serialized
+    /// bytes beyond the contract ceiling refuse the preparation before
+    /// any schema-invalid plan can exist (`invalid`, exit 1).
+    PlanExportLimit {
+        subject: &'static str,
+        measured: u64,
+        allowed: u64,
+    },
     /// Policy document refused.
     PolicyInvalid { detail: &'static str },
     /// Required evidence missing, partial, or stale (`denied`, exit 3).
@@ -97,6 +106,7 @@ impl ChangeError {
             | Self::SubjectConflict { .. }
             | Self::CommitFailed { .. }
             | Self::HistoryInvalid { .. }
+            | Self::PlanExportLimit { .. }
             | Self::PolicyInvalid { .. }
             | Self::LoadFailed(_) => Status::Invalid,
             Self::UnsupportedVersion { .. } => Status::UnsupportedVersion,
@@ -224,6 +234,19 @@ impl ChangeError {
                 data.insert("detail".to_owned(), token_value(detail));
                 token_set(HISTORY_INVALID, status, data)
             }
+            Self::PlanExportLimit {
+                subject,
+                measured,
+                allowed,
+            } => {
+                let mut data = DataObject::new();
+                data.insert("detail".to_owned(), token_value(subject));
+                data.insert(
+                    "operation".to_owned(),
+                    token_value(&format!("plan-export {measured}/{allowed}")),
+                );
+                token_set(REQUEST_INVALID, status, data)
+            }
             Self::PolicyInvalid { detail } => {
                 let mut data = DataObject::new();
                 data.insert("detail".to_owned(), token_value(detail));
@@ -307,6 +330,11 @@ mod tests {
             ChangeError::PreconditionFailed {
                 subject: "inputs".to_owned(),
                 detail: "digest",
+            },
+            ChangeError::PlanExportLimit {
+                subject: "inputs",
+                measured: 1001,
+                allowed: 1000,
             },
             ChangeError::IdempotencyConflict,
             ChangeError::SourcePreservation {

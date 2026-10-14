@@ -165,6 +165,24 @@ if (sugarPreview.json?.requestDigest !== preview.json.requestDigest) {
   fail("sugar-request-digest", sugarPreview.json?.requestDigest);
 }
 if (!planValidate(sugarPreview.json)) fail("sugar-preview-schema", planValidate.errors);
+// r6, finding omp F8: the sealed-plan pin is a common flag — every sugar
+// verb accepts `--expect-plan`, and a wrong pin refuses at apply exactly
+// like the request-file surface.
+const sugarExpectPlan = run([
+  "change",
+  "entity-field:add",
+  ...projectArgs,
+  "--entity", "tasks.task",
+  "--name", "priority",
+  "--type", "tasks.priority",
+  "--apply", "--idempotency-key", "gate-expect-plan-01",
+  "--expect-plan", "sha256:" + "0".repeat(64),
+  "--json",
+]);
+if (sugarExpectPlan.code !== 3) fail("sugar-expect-plan-exit", { code: sugarExpectPlan.code, json: sugarExpectPlan.json });
+if (!sugarExpectPlan.json?.reasonCodes?.includes("change.precondition-failed")) {
+  fail("sugar-expect-plan-rule", sugarExpectPlan.json?.reasonCodes);
+}
 const sugarCase = run([
   "change",
   "enum-case:change",
@@ -493,6 +511,80 @@ const unblocked = run(["load", ...projectArgs, "--json"]);
 if (unblocked.code !== 0) fail("unblocked-exit", { code: unblocked.code });
 if (unblocked.json?.status !== "valid") fail("unblocked-status", unblocked.json);
 
+// 12. Windows-side link-escape evidence (r6, finding omp F6): the
+//     production no-follow refusals get pinned CI evidence on the exact
+//     platform where junctions are native. A directory junction AT the
+//     module home mounts outside bytes inside the project; a symlinked
+//     ledger plants a foreign history. Both must refuse with the
+//     registered structure/history rules and write nothing outside.
+//     POSIX has no junctions; the leg skips loudly there.
+let linkFlow = "windows-junction-custody";
+if (process.platform === "win32") {
+  const { execFileSync } = await import("node:child_process");
+  const outside = join(tmpdir(), `lekalo-change-gate-outside-${process.pid}`);
+  rmSync(outside, { recursive: true, force: true });
+  mkdirSync(outside, { recursive: true });
+  writeFileSync(join(outside, "victim.yaml"), "untouched: true\n");
+  // a. A junction at the module home: apply must refuse.
+  const junction = join(sandbox, "lekalo/modules/tasks");
+  cpSync(junction, `${junction}.real`, { recursive: true });
+  rmSync(junction, { recursive: true, force: true });
+  execFileSync("cmd", ["/c", "mklink", "/J", junction, outside], { stdio: "ignore" });
+  const junctionApply = run([
+    "change", "request", ...projectArgs,
+    "--request", requestFile,
+    "--apply", "--idempotency-key", "gate-junction-ok",
+    "--json",
+  ]);
+  if (junctionApply.code === 0) fail("junction-apply-accepted", junctionApply.json);
+  if (
+    !String(junctionApply.stdout + junctionApply.stderr).includes("structure.path-link") &&
+    junctionApply.json?.reasonCodes !== undefined &&
+    !junctionApply.json.reasonCodes.includes("structure.path-link")
+  ) {
+    fail("junction-rule", junctionApply.json ?? junctionApply.stderr);
+  }
+  if (readFileSync(join(outside, "victim.yaml"), "utf8") !== "untouched: true\n") {
+    fail("junction-outside-mutated");
+  }
+  // Restore the physical module home for the next leg.
+  rmSync(junction, { recursive: true, force: true });
+  cpSync(`${junction}.real`, junction, { recursive: true });
+  rmSync(`${junction}.real`, { recursive: true, force: true });
+  // b. A symlinked history sidecar: decode must refuse, not follow.
+  const historyPath = join(sandbox, "lekalo/change-history.json");
+  if (existsSync(historyPath)) rmSync(historyPath, { force: true });
+  writeFileSync(join(outside, "foreign-ledger.json"), "{}\n");
+  const { symlinkSync } = await import("node:fs");
+  try {
+    symlinkSync(join(outside, "foreign-ledger.json"), historyPath, "file");
+  } catch {
+    // Symlink privilege unavailable on this host: the junction leg above
+    // still pins the Windows escape evidence for this run.
+    linkFlow = "windows-junction-custody (symlink leg skipped: no privilege)";
+  }
+  if (linkFlow.startsWith("windows-junction-custody")) {
+    const linkedLedger = run([
+      "change", "receipt", ...projectArgs,
+      "--idempotency-key", "gate-never-key",
+      "--json",
+    ]);
+    if (linkedLedger.code === 0) fail("symlinked-ledger-accepted", linkedLedger.json);
+    if (
+      readFileSync(join(outside, "foreign-ledger.json"), "utf8") !== "{}\n"
+    ) {
+      fail("symlinked-ledger-mutated");
+    }
+    rmSync(historyPath, { force: true });
+  }
+  rmSync(outside, { recursive: true, force: true });
+} else {
+  linkFlow = "windows-junction-custody-skipped (posix host)";
+  process.stderr.write(
+    `${JSON.stringify({ warning: "junction-leg-skipped", detail: "posix host has no junctions" })}\n`,
+  );
+}
+
 rmSync(sandbox, { recursive: true, force: true });
 process.stdout.write(`${JSON.stringify({
   ok: true,
@@ -508,5 +600,6 @@ process.stdout.write(`${JSON.stringify({
     "breaking",
     "exits",
     "recovery",
+    linkFlow,
   ],
 }, null, 2)}\n`);

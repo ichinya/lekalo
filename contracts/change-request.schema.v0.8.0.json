@@ -137,7 +137,7 @@
       }
     },
     "literal": {
-      "description": "One bounded JSON literal tree. The runtime decoder additionally bounds the depth to four and each string to 4096 bytes; deeper or larger values are malformed.",
+      "description": "One bounded JSON literal tree. The runtime decoder additionally bounds the depth to four and each string to 8192 bytes; deeper or larger values are malformed.",
       "anyOf": [
         {
           "type": "string",

@@ -67,7 +67,10 @@ const MAX_PENDING_BYTES: usize = 64 * 1024;
 /// Maximum records accepted in one pending registry.
 const MAX_PENDING_RECORDS: usize = 64;
 
-/// The writer lock file name inside the change cache.
+/// The shared project-wide mutation lock leaf (under `.lekalo/cache`),
+/// owned by [`crate::project_writer`]; the tests here anchor the change
+/// service's behavior against it by name.
+#[cfg(test)]
 const LOCK_NAME: &str = "writer.lock";
 
 /// The backups directory name inside one transaction directory.
@@ -96,6 +99,7 @@ pub(crate) const STATE_COMMITTED: &str = "committed";
 struct StagedFile {
     target: PathBuf,
     backup: Option<PathBuf>,
+    before_digest: String,
     after_bytes: Vec<u8>,
     after_digest: String,
 }
@@ -107,126 +111,6 @@ pub(crate) struct Transaction {
     journal_dir: PathBuf,
     journal: Json,
     staged: Vec<StagedFile>,
-}
-
-/// The project-scoped writer lock: exclusive creation plus an OS-held
-/// handle, removed on drop.
-pub(crate) struct WriterLock {
-    path: PathBuf,
-    file: Option<std::fs::File>,
-}
-
-impl WriterLock {
-    /// Acquire the change writer lock, taking over a provably dead owner's
-    /// artifact when the operating system has released it (review round 2,
-    /// finding 1). The lock is an exclusive-create file PLUS an OS-held
-    /// handle (`share_mode(0)` on Windows, `flock` on Unix) kept open for
-    /// the whole critical section:
-    ///
-    /// - no lock file: created and held;
-    /// - lock file with a live holder: the shared-open or flock fails and
-    ///   the caller is denied — a live writer is never misclassified dead;
-    /// - lock file of a dead owner: the OS closed the handle, so the open
-    ///   or flock succeeds and recovery takes the artifact over — a crash
-    ///   can never brick recovery behind its own lock artifact;
-    /// - any other error (including a planted link at the lock path): fail
-    ///   closed, never reclaim on unknown ownership.
-    pub(crate) fn acquire(root: &Path) -> Result<Self, ChangeError> {
-        let cache = validated_cache_dir(root)?;
-        std::fs::create_dir_all(&cache).map_err(|_| ChangeError::WriteBoundaryDenied)?;
-        let path = cache.join(LOCK_NAME);
-        if let Ok(metadata) = std::fs::symlink_metadata(&path) {
-            if path_is_link(&metadata) {
-                // A link at the lock path is an escape attempt, never a
-                // lock: refuse instead of following it.
-                return Err(ChangeError::PreconditionFailed {
-                    subject: "writer-lock".to_owned(),
-                    detail: "held",
-                });
-            }
-        }
-        let file = open_held(&path).map_err(|_| ChangeError::PreconditionFailed {
-            subject: "writer-lock".to_owned(),
-            detail: "held",
-        })?;
-        // Holder identity is informational only; the OS handle is the
-        // ownership oracle.
-        let _ = record_holder(&file);
-        Ok(Self {
-            path,
-            file: Some(file),
-        })
-    }
-}
-
-impl Drop for WriterLock {
-    fn drop(&mut self) {
-        // Close the OS handle first so Windows allows the removal.
-        drop(self.file.take());
-        let _ = std::fs::remove_file(&self.path);
-    }
-}
-
-/// Windows: open with no sharing so any second open fails while a live
-/// holder exists; Unix: open then take a non-blocking exclusive `flock`.
-fn open_held(path: &Path) -> std::io::Result<std::fs::File> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .share_mode(0)
-            .open(path)?;
-        Ok(file)
-    }
-    #[cfg(unix)]
-    {
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(path)?;
-        rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive)?;
-        Ok(file)
-    }
-}
-
-/// Best-effort holder record inside the lock file (informational only).
-fn record_holder(file: &std::fs::File) -> Option<()> {
-    let mut file = file;
-    use std::io::Write;
-    file.set_len(0).ok()?;
-    let record = serde_json::json!({
-        "pid": std::process::id(),
-        "started": unix_time(),
-    });
-    file.write_all(record.to_string().as_bytes()).ok()?;
-    file.sync_all().ok()
-}
-
-fn unix_time() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0)
-}
-
-/// Whether one metadata describes a symlink/junction/reparse point (the
-/// authoritative link signal on both platforms).
-fn path_is_link(metadata: &std::fs::Metadata) -> bool {
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        metadata.file_attributes() & 0x400 != 0
-    }
-    #[cfg(unix)]
-    {
-        metadata.file_type().is_symlink()
-    }
 }
 
 /// Validate the change cache home component-wise with no-follow checks and
@@ -486,6 +370,7 @@ impl Transaction {
         self.staged.push(StagedFile {
             target,
             backup,
+            before_digest: digest,
             after_bytes: plan.after_bytes.clone(),
             after_digest,
         });
@@ -493,13 +378,51 @@ impl Transaction {
     }
 
     /// Apply every staged replacement in order and verify each after
-    /// digest. On any failure the originals are restored in reverse order;
-    /// a restoration that itself fails reports `RecoveryRequired` so the
+    /// digest. Immediately before each write the target's before digest
+    /// is re-verified against the staged preimage (r6 review findings
+    /// devin F2 and omp F2): a concurrent edit that landed between
+    /// staging and the replacement window refuses the transaction
+    /// instead of being silently clobbered — the bytes are already in
+    /// hand, so the check costs one read per file.
+    ///
+    /// On any failure the originals are restored in reverse order; a
+    /// restoration that itself fails reports `RecoveryRequired` so the
     /// caller retains the journal and the reader barrier (round 2,
     /// finding 5) instead of deleting the recovery material.
     pub(crate) fn replace_all(&mut self) -> Result<(), ChangeError> {
         let mut replaced = 0usize;
         for staged in &self.staged {
+            // Re-validation immediately before the replacement (the CAS
+            // point the research contract's step 7 requires): the staged
+            // preimage must still be the disk bytes. A creation target
+            // must still be absent.
+            let current = std::fs::read(&staged.target);
+            let fresh = match (&staged.backup, current.as_deref()) {
+                // A creation must still find nothing to replace.
+                (None, Err(error)) if error.kind() == std::io::ErrorKind::NotFound => true,
+                // A replacement must still carry its staged preimage.
+                (Some(_), Ok(bytes)) => {
+                    format!("sha256:{}", crate::digest::sha256_hex(bytes)) == staged.before_digest
+                }
+                _ => false,
+            };
+            if !fresh {
+                return if self.restore_prefix(replaced) {
+                    Err(ChangeError::PreconditionFailed {
+                        subject: staged
+                            .target
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or_default()
+                            .to_owned(),
+                        detail: "before-digest",
+                    })
+                } else {
+                    Err(ChangeError::RecoveryRequired {
+                        transaction: self.id.clone(),
+                    })
+                };
+            }
             if write_same_dir(&staged.target, &staged.after_bytes).is_err() {
                 return if self.restore_prefix(replaced) {
                     Err(ChangeError::CommitFailed {
@@ -1022,6 +945,29 @@ pub(crate) struct RecoveryResult {
 /// Verification failures, drifted files, and forged entries keep the
 /// journal (and the reader barrier) in place and fail closed.
 pub(crate) fn recover(root: &Path, transaction: &str) -> Result<RecoveryResult, ChangeError> {
+    // Orphaned pending-registry records are reclaimed here (r6, finding
+    // devin F3): a registry row whose journal directory is absent is
+    // stale provenance — the durable journal is authoritative (the
+    // barrier and every reader follow it), so the row is pruned and
+    // reported instead of accumulating forever behind a precondition
+    // refusal that never cleans up.
+    let registry = load_pending_registry(root).unwrap_or_default();
+    let mut orphans = Vec::new();
+    for record in &registry {
+        if pending_transactions(root)
+            .iter()
+            .all(|live| live != &record.transaction)
+        {
+            orphans.push(record.transaction.clone());
+        }
+    }
+    if !orphans.is_empty() {
+        let remaining: Vec<PendingRecord> = registry
+            .into_iter()
+            .filter(|record| !orphans.contains(&record.transaction))
+            .collect();
+        let _ = write_pending_registry(root, &remaining);
+    }
     let (journal_dir, journal) = load_validated_journal(root, transaction)?;
     let restorations = restorations_of(root, &journal_dir, &journal)?;
     match journal.state.as_str() {
@@ -1652,13 +1598,14 @@ fn write_same_dir(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project_writer::WriterLock;
 
     /// The writer lock denies a second holder while the first is alive.
     #[test]
     fn live_writer_lock_denies_a_second_holder() {
         let root = std::env::temp_dir().join(format!("lekalo-tx-lock-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join(".lekalo/cache/change")).expect("cache");
+        std::fs::create_dir_all(&root).expect("project root");
         let first = WriterLock::acquire(&root).expect("first holder");
         let second = WriterLock::acquire(&root);
         assert!(
@@ -1674,13 +1621,31 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
+    /// The shared lock leaf is persistent: releasing never unlinks it, so
+    /// a contender can never lock a stale inode of a removed name.
+    #[test]
+    fn released_lock_leaf_stays_in_place() {
+        let root = std::env::temp_dir().join(format!("lekalo-tx-leaf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("project root");
+        {
+            let _lock = WriterLock::acquire(&root).expect("holder");
+        }
+        assert!(
+            root.join(crate::project_writer::LOCK_PATH).is_file(),
+            "the leaf persists after release"
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
     /// A stale lock artifact of a dead owner is taken over — recovery is
-    /// never bricked behind its own crash artifact.
+    /// never bricked behind its own crash artifact. The shared leaf lives
+    /// directly under `.lekalo/cache`, not the change home.
     #[test]
     fn stale_lock_artifact_is_reclaimed() {
         let root = std::env::temp_dir().join(format!("lekalo-tx-stale-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        let cache = root.join(".lekalo/cache/change");
+        let cache = root.join(".lekalo/cache");
         std::fs::create_dir_all(&cache).expect("cache");
         std::fs::write(cache.join(LOCK_NAME), b"held-by-a-dead-process\n").expect("plant");
         let lock = WriterLock::acquire(&root);
@@ -1688,18 +1653,24 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
-    /// A link planted at the lock path fails closed instead of being
-    /// followed or replaced.
+    /// A link planted at the shared lock path fails closed instead of
+    /// being followed or replaced (omp F5: no preflight-then-open race
+    /// window — the open itself refuses the link).
     #[cfg(unix)]
     #[test]
     fn lock_path_link_fails_closed() {
         let root = std::env::temp_dir().join(format!("lekalo-tx-link-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        let cache = root.join(".lekalo/cache/change");
+        let cache = root.join(".lekalo/cache");
         std::fs::create_dir_all(&cache).expect("cache");
         std::os::unix::fs::symlink("/lekalo-elsewhere", cache.join(LOCK_NAME)).expect("link");
         let lock = WriterLock::acquire(&root);
         assert!(lock.is_err(), "a linked lock path must refuse");
+        assert_eq!(
+            std::fs::read_link(cache.join(LOCK_NAME)).expect("link intact"),
+            std::path::Path::new("/lekalo-elsewhere"),
+            "the planted link is never replaced"
+        );
         std::fs::remove_dir_all(&root).ok();
     }
 

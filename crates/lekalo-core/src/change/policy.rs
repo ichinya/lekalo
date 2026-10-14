@@ -113,12 +113,19 @@ impl Policy {
                         detail: "unknown-class",
                     });
                 }
-                if !allow_breaking_classes
+                // The published policy schema carries `uniqueItems` (r6,
+                // finding omp F10): a repeated class is a malformed policy
+                // document, not a silently-collapsed set — the canonical
+                // policy digest must not depend on dedup leniency.
+                if allow_breaking_classes
                     .iter()
                     .any(|allowed| allowed == class)
                 {
-                    allow_breaking_classes.push(class.to_owned());
+                    return Err(ChangeError::PolicyInvalid {
+                        detail: "duplicate-class",
+                    });
                 }
+                allow_breaking_classes.push(class.to_owned());
             }
         }
         allow_breaking_classes.sort_by(|left, right| {

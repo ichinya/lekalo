@@ -91,6 +91,12 @@ pub(crate) struct ExecutionArgs {
     /// Exact expected Model digest (`sha256:<64hex>`); a mismatch refuses.
     #[arg(long, value_name = "DIGEST")]
     expect_model: Option<String>,
+    /// Exact expected plan identity (`sha256:<64hex>`); a mismatch refuses
+    /// at apply. Every mutating verb accepts it (r6, finding omp F8): the
+    /// sealed-plan pin is a common execution precondition, not a
+    /// request-file-only one.
+    #[arg(long, value_name = "DIGEST")]
+    expect_plan: Option<String>,
     /// Project root selector, relative to the invocation directory.
     #[arg(long, value_name = "DIR")]
     project: Option<String>,
@@ -290,9 +296,6 @@ pub(crate) struct RequestArgs {
     /// Path of the change request document.
     #[arg(long, value_name = "FILE")]
     request: String,
-    /// The expected plan identity; a mismatch refuses before mutation.
-    #[arg(long, value_name = "DIGEST")]
-    expect_plan: Option<String>,
     #[command(flatten)]
     execution: ExecutionArgs,
 }
@@ -629,26 +632,46 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
             execute(
                 &args.execution,
                 &bytes,
-                args.expect_plan.as_deref(),
+                args.execution.expect_plan.as_deref(),
                 "change request",
             )
         }
         sugar => match lower(&sugar) {
             Ok(bytes) => {
-                let execution = match &sugar {
-                    ChangeCommands::EntityFieldAdd(args) => &args.execution,
-                    ChangeCommands::EntityFieldRemove(args) => &args.execution,
-                    ChangeCommands::EntityFieldRename(args) => &args.execution,
-                    ChangeCommands::EnumCaseAdd(args) => &args.execution,
-                    ChangeCommands::EnumCaseChange(args) => &args.execution,
-                    ChangeCommands::DefinitionAdd(args) => &args.execution,
-                    ChangeCommands::CommandEffectAdd(args) => &args.execution,
-                    ChangeCommands::CommandEffectRemove(args) => &args.execution,
-                    ChangeCommands::OperationInputSet(args) => &args.execution,
-                    ChangeCommands::OperationOutputSet(args) => &args.execution,
+                let (execution, expect_plan) = match &sugar {
+                    ChangeCommands::EntityFieldAdd(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::EntityFieldRemove(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::EntityFieldRename(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::EnumCaseAdd(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::EnumCaseChange(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::DefinitionAdd(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::CommandEffectAdd(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::CommandEffectRemove(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::OperationInputSet(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::OperationOutputSet(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
                     _ => unreachable!("sugar arm"),
                 };
-                execute(execution, &bytes, None, "change operation")
+                execute(execution, &bytes, expect_plan, "change operation")
             }
             Err(error) => error,
         },
@@ -699,9 +722,14 @@ fn execute(
 }
 
 /// A preview success: the exact plan wire bytes (the closed document
-/// carries its own `status`) plus the bounded human summary.
+/// carries its own `status`) plus the bounded human summary. An export
+/// over the contract's own bounds refuses with the registered rule
+/// (r6, finding omp F1).
 fn preview_result(prepared: &change::PreparedChange, human_subject: &str) -> DomainResult {
-    let plan = prepared.to_json_string();
+    let plan = match prepared.to_json_string() {
+        Ok(plan) => plan,
+        Err(error) => return error.into(),
+    };
     let human = format!(
         "{human_subject}: {} operation(s), {} file edit(s), equal={}",
         prepared.operations().len(),

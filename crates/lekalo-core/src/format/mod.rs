@@ -88,6 +88,10 @@ struct Planned {
     after_bytes: Vec<Vec<u8>>,
     /// The held ownership guard in apply mode (recovery + transaction).
     guard: std::cell::RefCell<Option<transaction::FormatGuard>>,
+    /// The shared cross-service mutation lock (r6, devin F2 + omp F2):
+    /// held from before planning until the transaction outcome is decided.
+    #[allow(dead_code)] // RAII: dropping releases the OS lock
+    shared_lock: Option<crate::project_writer::WriterLock>,
 }
 
 /// One rendered candidate pinned beside its source bytes.
@@ -117,6 +121,26 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
     let policy = Policy::embedded().map_err(|_policy_error| policy_failure())?;
     let selection = LoadSelection {
         project: request.project.clone(),
+    };
+
+    // Shared cross-service writer serialization (r6, findings devin F2 +
+    // omp F2): the mutating formatter joins the one project-wide mutation
+    // lock before its own ownership lock and any recovery, so a change or
+    // migration writer can never interleave with the format transaction's
+    // replacements. The registered infrastructure busy rule denies.
+    let _shared = if request.mode == FormatMode::Apply {
+        let root = crate::loader::root_for_selection(&selection)?;
+        match crate::project_writer::WriterLock::mutation(
+            &root,
+            crate::project_writer::MutationFamily::Format,
+        ) {
+            Ok(lock) => Some(lock),
+            Err(_) => {
+                return Err(transaction::ApplyFailure::Locked.into_result());
+            }
+        }
+    } else {
+        None
     };
 
     // Fail-closed recovery state: check and editor modes refuse; the
@@ -446,6 +470,7 @@ fn plan(request: &FormatRequest, stdin_bytes: Option<&[u8]>) -> Result<Planned, 
         stdin_losses,
         after_bytes,
         guard: std::cell::RefCell::new(guard),
+        shared_lock: _shared,
     })
 }
 

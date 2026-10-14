@@ -32,7 +32,8 @@
     },
     "records": {
       "type": "array",
-      "maxItems": 10000,
+      "maxItems": 4096,
+      "description": "The count bound is calibrated against the runtime 4 MiB ledger decode cap (r6, finding omp F9): a full ledger of boundary-size records stays decodable, and the runtime byte cap remains the final bound.",
       "items": {
         "$ref": "#/$defs/record"
       }
