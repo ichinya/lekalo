@@ -285,12 +285,17 @@ fn run_query(request: &QueryRequest, page: &PageArgs, no_cache: bool) -> DomainR
     };
     let store = SearchStore::resolve(&root).ok();
     // The warm durable path: reuse the persisted admitted registration
-    // (its Model digest, pins, admission manifest, AND the full
-    // recomputed snapshot digest all re-verify) instead of discarding
-    // it. Only a cursor-less, cache-enabled, manifest-less query takes
-    // it: an explicit `--inputs` always re-admits, and the bypass stays
-    // cold by contract.
-    if !no_cache && request.cursor.is_none() && page.inputs.is_none() {
+    // (its Model digest, pins, admission manifest, AND the derivation
+    // — directly when an honestly recorded memo certifies the freshly
+    // verified inputs, by full recompute otherwise — all re-verify)
+    // instead of discarding it. Only a cache-enabled, manifest-less
+    // request takes it: an explicit `--inputs` always re-admits, and
+    // the bypass stays cold by contract. Cursor pages take it too
+    // (issue #93 r6): the served document is the same generation the
+    // re-admission path would serve, and the cursor's own digest and
+    // policy binding is still enforced inside `execute`, so a token
+    // from another generation refuses exactly as before.
+    if !no_cache && page.inputs.is_none() {
         if let Some(store) = &store {
             if let Some(document) = warm_document(&root, &selection, store) {
                 return serve_document(&document, request);
@@ -417,7 +422,13 @@ fn run_query(request: &QueryRequest, page: &PageArgs, no_cache: bool) -> DomainR
             if !clobbers_registration {
                 let mut publish = document.clone();
                 publish.digest = index_digest.clone();
-                let _ = store.publish(&publish);
+                // The cold run just derived this snapshot from the
+                // live-admitted inputs: record the derivation memo so
+                // the next warm query verifies bounded inputs instead
+                // of re-deriving (issue #93 r6).
+                if store.publish(&publish).is_ok() {
+                    store.record_derivation(&publish);
+                }
             }
         }
     }
@@ -538,7 +549,12 @@ fn warm_document(
             return None;
         }
     }
-    let (_model, compilation) = lekalo_core::cache::load_compiled(selection, false).ok()?;
+    // The Model partition digest check compiles through the bypass
+    // path (the published loader path itself): byte-identical to the
+    // cached pipeline's compilation, read-only (a warm query never
+    // writes compiler-cache records), and it does not pay the cached
+    // pipeline's SQLite recording on every query (issue #93 r6).
+    let (_model, compilation) = lekalo_core::cache::load_compiled(selection, true).ok()?;
     let model_digest = format!(
         "sha256:{}",
         lekalo_core::search::sha256_of(compilation.project.to_canonical_json().as_bytes())
@@ -546,17 +562,37 @@ fn warm_document(
     if document.model_digest.as_deref() != Some(model_digest.as_str()) {
         return None;
     }
+    // Issue #93 r6 — the memoized derivation proof: the justification
+    // inputs above (every producer pin re-hashed from live bytes, the
+    // admitting manifest re-hashed to its recorded canonical digest
+    // and cap, and the fresh Model partition digest) are exactly what
+    // the derivation consumes. When an honestly recorded memo
+    // certifies that these inputs derive this generation's digest, the
+    // bounded pin phase IS the proof — the r5 per-query full
+    // re-assembly (superlinear at scale) runs only when the memo is
+    // absent, foreign, tampered, or names another generation, and a
+    // successful proof re-records it.
+    if store.derivation_memo_matches(&model_digest, &document) {
+        return Some(document);
+    }
     // The derivation proof: the admitted snapshot is recomputed under
     // the recorded admission semantics (pins and cap included) and its
     // content digest must equal the stored generation's byte for byte.
     // Pin verification alone proves the inputs are unchanged — this
     // proves the stored OUTPUT was derived from them.
     let reconstructed = reconstruct_manifest(&document)?;
-    let fresh =
-        recompute_snapshot_digest(selection, &reconstructed, document.admission.clone()).ok()?;
+    let fresh = recompute_snapshot_digest(
+        root,
+        &_model,
+        &compilation,
+        &reconstructed,
+        document.admission.clone(),
+    )
+    .ok()?;
     if fresh != document.digest {
         return None;
     }
+    store.record_derivation(&document);
     Some(document)
 }
 
@@ -591,6 +627,19 @@ fn readmit_saved_registration(
     let service =
         assemble_with_manifest(selection, &reconstructed, document.admission.clone()).ok()?;
     Some(service)
+}
+
+/// The compile-and-assemble wrapper of the derivation recompute: one
+/// bypass compile (read-only custody — the general compiler cache is
+/// never touched), then the shared admitted assembly.
+fn assemble_with_manifest(
+    selection: &lekalo_core::loader::LoadSelection,
+    manifest: &SearchInputs,
+    admission: Option<lekalo_core::search::AdmissionConfig>,
+) -> Result<Service, DomainResult> {
+    let root = lekalo_core::doctor::project_root(selection)?;
+    let (model, compilation) = lekalo_core::cache::load_compiled(selection, true)?;
+    assemble_with_compiled(&root, &model, &compilation, manifest, admission)
 }
 
 /// The durable snapshot document of one admitted run: the exact cards,
@@ -3433,7 +3482,7 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
                 let Some(document) = status.document.clone() else {
                     unreachable!("ready carries the validated generation");
                 };
-                match verify_generation_freshness(&root, &selection, &document) {
+                match verify_generation_freshness(&root, &selection, &store, &document) {
                     FreshnessVerdict::Fresh => state = "ready",
                     FreshnessVerdict::Drifted(pin) => {
                         diagnostics.extend(
@@ -3591,6 +3640,14 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
                 })
                 .unwrap_or(false);
             if current_valid {
+                // The reuse re-verified the derivation by content digest
+                // against the live-admitted inputs just now: record the
+                // memo so later warm queries and `status` verify
+                // bounded inputs instead of re-deriving (issue #93
+                // r6).
+                let mut certified = document.clone();
+                certified.digest = format!("sha256:{digest}");
+                store.record_derivation(&certified);
                 // The receipt names the invoked command, never a
                 // hardcoded one (issue #93 r5): a no-op `build` over a
                 // current store is a `search-index-build` reuse.
@@ -3613,7 +3670,14 @@ pub fn run_search_index(command: SearchIndexCommands, no_cache: bool) -> DomainR
             // never a published generation the store brands corrupt
             // (issue #93 r5).
             match store.publish(&document) {
-                Ok(()) => {}
+                Ok(()) => {
+                    // The build just derived this snapshot from the
+                    // live-admitted inputs: record the derivation memo
+                    // so warm reuse, cursors, and `status` verify
+                    // bounded inputs instead of re-deriving (issue #93
+                    // r6).
+                    store.record_derivation(&document);
+                }
                 Err(lekalo_core::search::index::StoreError::Corrupt) => {
                     return DomainResult::invalid(lekalo_core::search::diagnostic_input_invalid(
                         "index-invalid",
@@ -3653,12 +3717,17 @@ enum FreshnessVerdict {
 }
 
 /// The freshness oracle of one published generation: re-hash every
-/// recorded pin under the canonical project root, then recompute the
-/// exact snapshot digest a fresh build would publish under the same
-/// pinned admission semantics and compare by content.
+/// recorded pin under the canonical project root, re-hash the
+/// admitting manifest to its recorded canonical digest, then either
+/// reuse an honestly recorded derivation memo for the same freshly
+/// verified inputs (issue #93 r6 — bounded reads replace the per-status
+/// full snapshot recompute) or recompute the exact snapshot digest a
+/// fresh build would publish under the same pinned admission semantics
+/// and compare by content (re-recording the memo on success).
 fn verify_generation_freshness(
     root: &std::path::Path,
     selection: &lekalo_core::loader::LoadSelection,
+    store: &SearchStore,
     document: &lekalo_core::search::IndexDocument,
 ) -> FreshnessVerdict {
     let canonical_root = match std::fs::canonicalize(root) {
@@ -3705,15 +3774,51 @@ fn verify_generation_freshness(
     // Model assembly plus the pinned producers under the pinned
     // admission semantics (identity pins included), bounded reads, and
     // the manifest's own cap semantics. Any drift — model, producer
-    // bytes, coverage, or policy — changes the content digest.
+    // bytes, coverage, or policy — changes the content digest. The
+    // reconstructed manifest is checked first (a document whose pins
+    // cannot replay admission is drift, exactly as before).
     let reconstructed = match reconstruct_manifest(document) {
         Some(manifest) => manifest,
         None => return FreshnessVerdict::Drifted("input-pin"),
     };
-    let fresh = recompute_snapshot_digest(selection, &reconstructed, document.admission.clone());
-    match fresh {
-        Ok(digest) if digest == document.digest => FreshnessVerdict::Fresh,
-        Ok(_) => FreshnessVerdict::Drifted("input-pin"),
+    // One bypass compile serves both the bounded memo key and the
+    // fallback recompute (issue #93 r6). Read-only custody: the bypass
+    // path never touches the general compiler cache. A compile
+    // failure is the typed refusal it always was — it surfaces from
+    // the same admission step below.
+    match lekalo_core::cache::load_compiled(selection, true) {
+        Ok((model, compilation)) => {
+            let model_digest = format!(
+                "sha256:{}",
+                lekalo_core::search::sha256_of(compilation.project.to_canonical_json().as_bytes())
+            );
+            // Issue #93 r6 — the memoized derivation: every
+            // justification input above re-verified from live bytes,
+            // so an honestly recorded memo for exactly these inputs
+            // certifying this generation's digest IS the freshness
+            // verdict; the full recompute runs only on memo miss and
+            // re-records on success.
+            if store.derivation_memo_matches(&model_digest, document) {
+                return FreshnessVerdict::Fresh;
+            }
+            match recompute_snapshot_digest(
+                root,
+                &model,
+                &compilation,
+                &reconstructed,
+                document.admission.clone(),
+            ) {
+                Ok(digest) if digest == document.digest => {
+                    store.record_derivation_for(&model_digest, document);
+                    FreshnessVerdict::Fresh
+                }
+                Ok(_) => FreshnessVerdict::Drifted("input-pin"),
+                Err(result) => FreshnessVerdict::AdmissionRefused(result),
+            }
+        }
+        // The project no longer compiles: that refusal, with its own
+        // diagnostics, IS the answer (the recompute would fail at the
+        // same admission step).
         Err(result) => FreshnessVerdict::AdmissionRefused(result),
     }
 }
@@ -3763,13 +3868,17 @@ fn reconstruct_manifest(document: &lekalo_core::search::IndexDocument) -> Option
 /// Recompute the exact snapshot digest a fresh build would publish for
 /// the selected project under one reconstructed manifest: the same
 /// admitted assembly the build path runs, hashed over its own snapshot
-/// document. Admission failures surface as the refusal they are.
+/// document. The Model compilation is passed in — one compile serves
+/// both the bounded memo-key check and this fallback recompute
+/// (issue #93 r6). Admission failures surface as the refusal they are.
 fn recompute_snapshot_digest(
-    selection: &lekalo_core::loader::LoadSelection,
+    root: &std::path::Path,
+    model: &lekalo_core::loader::NormalizedModel,
+    compilation: &lekalo_core::ir::Compilation,
     manifest: &SearchInputs,
     admission: Option<lekalo_core::search::AdmissionConfig>,
 ) -> Result<String, DomainResult> {
-    let service = assemble_with_manifest(selection, manifest, admission)?;
+    let service = assemble_with_compiled(root, model, compilation, manifest, admission)?;
     let document = snapshot_document(&service);
     Ok(format!(
         "sha256:{}",
@@ -3777,22 +3886,23 @@ fn recompute_snapshot_digest(
     ))
 }
 
-/// Assemble one admitted service from an already-parsed manifest (the
-/// freshness oracle's re-admission): identical admission to `assemble`,
-/// minus the manifest file re-read. The recorded admission
-/// configuration rides along so the recomputed document carries the
-/// same persisted admission bytes a build would have written.
-fn assemble_with_manifest(
-    selection: &lekalo_core::loader::LoadSelection,
+/// Assemble one admitted service from an already-compiled Model and an
+/// already-parsed manifest (the derivation recompute's re-admission):
+/// identical admission to `assemble`, minus the compile and the
+/// manifest file re-read. The recorded admission configuration rides
+/// along so the recomputed document carries the same persisted
+/// admission bytes a build would have written.
+fn assemble_with_compiled(
+    root: &std::path::Path,
+    _model: &lekalo_core::loader::NormalizedModel,
+    compilation: &lekalo_core::ir::Compilation,
     manifest: &SearchInputs,
     admission: Option<lekalo_core::search::AdmissionConfig>,
 ) -> Result<Service, DomainResult> {
-    let root = lekalo_core::doctor::project_root(selection)?;
     // The freshness oracle is read-only: the bypass compile path never
     // touches the general compiler cache (the search store is only ever
     // read here), while the compilation itself stays deterministic, so
     // the recomputed digest is the one a build would publish.
-    let (_model, compilation) = lekalo_core::cache::load_compiled(selection, true)?;
     let graph = lekalo_core::effects::build(&compilation.project).map_err(DomainResult::invalid)?;
     let model_digest = format!(
         "sha256:{}",
@@ -3804,7 +3914,7 @@ fn assemble_with_manifest(
         digest: format!(
             "sha256:{}",
             lekalo_core::search::sha256_of(
-                lekalo_core::loader::canonical_model_bytes(&_model).as_bytes()
+                lekalo_core::loader::canonical_model_bytes(_model).as_bytes()
             )
         ),
         version: _model.model_version.as_str().to_owned(),
@@ -3836,7 +3946,7 @@ fn assemble_with_manifest(
         }
     }
     let admitted = admit_producers(
-        &root,
+        root,
         project_id.as_deref(),
         manifest,
         &compilation.project,

@@ -2294,6 +2294,91 @@ fn warm_forged_generation_never_serves() {
     );
 }
 
+/// Issue #93 r6 — the derivation memo end to end: a build records one
+/// honest memo; warm queries and `status` verify the bounded
+/// justification inputs against it instead of re-deriving the full
+/// snapshot per run; a tampered memo is a miss that falls back to the
+/// full proof (same honest bytes out, memo repaired); and producer
+/// drift is still stale — every pin re-hashes before the memo is ever
+/// consulted.
+#[test]
+fn derivation_memo_accelerates_warm_paths_without_masking_drift() {
+    let (project, _guard) = disposable_project();
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    let memo_dir = project.join(".lekalo/cache/search/memo");
+    let memos: Vec<std::fs::DirEntry> = std::fs::read_dir(&memo_dir)
+        .expect("memo dir")
+        .collect::<Result<_, _>>()
+        .expect("entries");
+    assert_eq!(memos.len(), 1, "one honest memo recorded at build");
+    let memo_path = memos[0].path();
+    let memo_bytes = std::fs::read_to_string(&memo_path).expect("memo bytes");
+    assert!(
+        memo_bytes.contains("search-derivation-memo"),
+        "{memo_bytes}"
+    );
+
+    // Warm query and status serve from the memo-verified generation.
+    let query = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--id",
+            "planner.focus_task",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&query), 0, "{}", stderr_text(&query));
+    let warm_answer = stdout_text(&query);
+    let status = json(&lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    ));
+    assert_eq!(status["searchIndex"]["state"], "ready");
+
+    // A tampered memo is a miss, never a lie: the full derivation proof
+    // runs, serves byte-identical output, and repairs the memo.
+    std::fs::write(&memo_path, "{\"forged\":true}").expect("tamper memo");
+    let proved = lekalo_in(
+        &project,
+        &[
+            "--json",
+            "find",
+            "--id",
+            "planner.focus_task",
+            "--project",
+            ".",
+        ],
+    );
+    assert_eq!(exit_code(&proved), 0, "{}", stderr_text(&proved));
+    assert_eq!(stdout_text(&proved), warm_answer, "identical honest bytes");
+    assert_eq!(
+        std::fs::read_to_string(&memo_path).expect("repaired memo"),
+        memo_bytes,
+        "the completed proof re-records the memo"
+    );
+
+    // Producer drift is still drift — pins re-hash before the memo.
+    let effects = project.join("evidence/effects.detected.json");
+    let original = std::fs::read_to_string(&effects).expect("read effects");
+    std::fs::write(&effects, format!("{original} ")).expect("drift effects");
+    let drifted = json(&lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    ));
+    assert_eq!(drifted["searchIndex"]["state"], "stale");
+
+    // Repair: the same memo re-verifies against the restored bytes.
+    std::fs::write(&effects, &original).expect("restore effects");
+    let repaired = json(&lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    ));
+    assert_eq!(repaired["searchIndex"]["state"], "ready");
+}
+
 /// `search-index update --inputs <manifest>` honors the requested
 /// admission: a replacement manifest republishes under the new
 /// admission (never `reused:true` of the old generation), and a missing

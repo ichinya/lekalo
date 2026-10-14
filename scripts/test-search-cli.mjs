@@ -689,6 +689,63 @@ ok(
 rmSync(join(project, "evidence/probe-manifest.json"), { force: true });
 rmSync(join(project, "evidence/diag-ghost.json"), { force: true });
 rmSync(join(project, "evidence/diag-conflict.json"), { force: true });
+
+// ---------------------------------------------------------------------------
+// Scale envelope (issue #93 r6): the r5 review measured the warm/query
+// paths at ~47 s per cached query and ~45 s `status` at ~4k cards
+// (superlinear derivation), invisible at the 36-card fixture scale.
+// This gate synthesizes a ~1.7k-card project and enforces a generous
+// per-invocation deadline on the warm paths (linear lexer + memoized
+// derivation finish in ~1-2 s at this scale in debug builds; the
+// quadratic/pre-memo mechanism measured ~21 s warm and ~13 s status on
+// the same machine). Measured seconds are recorded in the summary so
+// the envelope stays auditable, not gamed.
+// ---------------------------------------------------------------------------
+let scaleProject = mkdtempSync(join(tmpdir(), "lekalo-search-cli-scale-"));
+cpSync(fixture, scaleProject, { recursive: true });
+rmSync(join(scaleProject, ".lekalo"), { recursive: true, force: true });
+scaleProject = realpathSync.native(scaleProject);
+for (let m = 0; m < 150; m++) {
+  const dir = join(scaleProject, "lekalo", "modules", `scale${m}`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "module.yaml"),
+    `schema_version: "0.2.16"\ndefinitions:\n  - id: scale${m}\n    kind: module\n    version: 1\n    description: "Scale module ${m}"\n    imports:\n      - notify\n`,
+  );
+  let yaml = 'schema_version: "0.2.16"\ndefinitions:\n';
+  for (let e = 0; e < 10; e++) {
+    yaml += `  - id: scale${m}.entity${e}\n    kind: entity\n    version: 1\n    description: "Scale entity ${m} ${e} umlaut aeoeue"\n    fields:\n      - name: label\n        type: "notify.text"\n        required: true\n    identity:\n      - label\n`;
+  }
+  writeFileSync(join(dir, "entities.yaml"), yaml);
+}
+const runScale = (args) => spawnSync(binary, args, { cwd: scaleProject, encoding: "utf8", env: offlineEnv });
+const scaleBuild = runScale([
+  "--json", "search-index", "build", "--project", ".", "--inputs", inputsRelative,
+]);
+ok("r6-scale-build-exit", scaleBuild.status === 0, scaleBuild.stderr);
+const scaleCards = JSON.parse((scaleBuild.stdout ?? "").trim().length > 0 ? scaleBuild.stdout : scaleBuild.stderr).cards;
+ok("r6-scale-cards", scaleCards > 1_500, scaleCards);
+const SCALE_DEADLINE_MS = 10_000;
+const timedScale = (name, args, verify) => {
+  const started = Date.now();
+  const result = runScale(args);
+  const seconds = (Date.now() - started) / 1000;
+  ok(`${name}-exit`, result.status === 0, result.stderr);
+  verify(result);
+  ok(`${name}-deadline`, Date.now() - started < SCALE_DEADLINE_MS, `${seconds.toFixed(2)} s`);
+  return seconds;
+};
+const scaleWarm = timedScale("r6-scale-warm-find", ["--json", "find", "--id", "planner.focus_task", "--project", "."], (result) => {
+  ok("r6-scale-warm-exact", JSON.parse(result.stdout).items[0].card.id === "planner.focus_task", result.stdout);
+});
+const scaleStatus = timedScale("r6-scale-status", ["--json", "search-index", "status", "--project", "."], (result) => {
+  ok("r6-scale-status-ready", JSON.parse(result.stdout).searchIndex.state === "ready", result.stdout);
+});
+const scaleUpdate = timedScale("r6-scale-noop-update", ["--json", "search-index", "update", "--project", "."], (result) => {
+  ok("r6-scale-update-reused", JSON.parse(result.stdout).reused === true, result.stdout);
+});
+rmSync(scaleProject, { recursive: true, force: true });
+
 process.stdout.write(
-  `${JSON.stringify({ ok: true, checks, project: "disposable temp copy" }, null, 2)}\n`,
+  `${JSON.stringify({ ok: true, checks, project: "disposable temp copy", scale: { cards: scaleCards, warmFindSeconds: +scaleWarm.toFixed(2), statusSeconds: +scaleStatus.toFixed(2), noopUpdateSeconds: +scaleUpdate.toFixed(2), deadlineSeconds: SCALE_DEADLINE_MS / 1000 } }, null, 2)}\n`,
 );
