@@ -157,6 +157,24 @@ pub fn decode<T: serde::de::DeserializeOwned>(
     serde_json::from_value(value).map_err(|_| detail("closed-shape"))
 }
 
+/// Decode an optional-but-non-nullable member through its actual type.
+/// `#[serde(default)]` may admit absence where the schema allows it, but
+/// a present null must never silently collapse into `None`.
+fn non_null<'de, T: Deserialize<'de>, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<T>, D::Error> {
+    T::deserialize(deserializer).map(Some)
+}
+
+/// An omitted grant invariant is legal; a present one must be nonempty.
+fn non_empty_string<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    let value = String::deserialize(deserializer)?;
+    if value.is_empty() {
+        return Err(serde::de::Error::custom("empty-string"));
+    }
+    Ok(value)
+}
+
 struct Unique(serde_json::Value);
 
 impl<'de> Deserialize<'de> for Unique {
@@ -300,6 +318,7 @@ pub struct ConsumerDeclaration {
     pub consumer: String,
     pub uses: Vec<String>,
     pub mode: String,
+    #[serde(deserialize_with = "non_null")]
     pub policy: Option<VersionPolicyWire>,
 }
 
@@ -353,7 +372,11 @@ pub struct GrantPolicy {
     pub aggregate: String,
     pub operations: Vec<String>,
     pub fields: Vec<String>,
-    #[serde(default)]
+    #[serde(
+        default,
+        deserialize_with = "non_empty_string",
+        skip_serializing_if = "String::is_empty"
+    )]
     pub invariant: String,
     pub rationale: String,
 }
@@ -461,7 +484,11 @@ pub struct PublicExport {
     pub fields: Vec<PublicField>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub identity: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub returns: Option<TypeExpr>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reads: Vec<String>,
@@ -471,9 +498,17 @@ pub struct PublicExport {
     pub payload: Vec<PublicField>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub effects: Vec<EffectObligation>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub code: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub retryable: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub operations: Vec<String>,
@@ -501,13 +536,25 @@ pub struct PublicExport {
     pub errors: Vec<String>,
     /// The public query owner facts of an exported query: `one`,
     /// `optional`, `list`, `page`, or `stream`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub cardinality: Option<String>,
     /// `strong`, `bounded`, or `stale-ok`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub consistency: Option<String>,
     /// `none`, `offset`, or `cursor`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub pagination: Option<String>,
     /// The accepted rename alias evidence of the export (r3 review
     /// finding 10/codex): preserved in the public surface, never
@@ -895,6 +942,7 @@ pub struct ConsumerLock {
     pub producer: ProducerPin,
     pub api_version: Option<String>,
     pub digest: String,
+    #[serde(deserialize_with = "non_null")]
     pub policy: Option<VersionPolicyWire>,
     pub public_dependencies: Vec<PublicDependency>,
     pub selected: Vec<String>,
@@ -1035,3 +1083,98 @@ pub struct MappingDivergence {
 
 /// BTree convenience alias for the resolved attachment map.
 pub type ModuleMap = BTreeMap<String, ModulePolicy>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn r7_non_nullable_exports_distinguish_absence_from_null() {
+        for (kind, key, value) in [
+            ("query", "returns", json!({ "ref": "tasks.view" })),
+            ("error", "code", json!("TASK_FAILED")),
+            ("error", "retryable", json!(false)),
+            ("command", "input", json!([])),
+            ("query", "cardinality", json!("one")),
+            ("query", "consistency", json!("strong")),
+            ("query", "pagination", json!("none")),
+        ] {
+            let mut row = serde_json::to_value(PublicExport::empty("tasks.operation", kind))
+                .expect("export serializes");
+            assert!(
+                serde_json::from_value::<PublicExport>(row.clone()).is_ok(),
+                "absent {key}"
+            );
+            row[key] = value;
+            assert!(
+                serde_json::from_value::<PublicExport>(row.clone()).is_ok(),
+                "valid {key}"
+            );
+            row[key] = Value::Null;
+            assert!(
+                serde_json::from_value::<PublicExport>(row).is_err(),
+                "null {key}"
+            );
+        }
+        // These schema members are actually nullable, unlike the above.
+        let row = json!({ "export": "tasks.scalar", "kind": "scalar", "version": 0,
+                          "base": null, "aliasOf": null, "since": null });
+        assert!(serde_json::from_value::<PublicExport>(row).is_ok());
+    }
+
+    #[test]
+    fn r7_declared_and_locked_policies_are_non_nullable() {
+        let policy = json!({ "type": "exact-version", "version": "1.0.0" });
+        let declaration = json!({ "consumer": "planner", "uses": ["tasks.view"],
+                                  "mode": "source", "policy": policy });
+        let lock = json!({
+            "schemaVersion": "lekalo/module-api-lock/v0.8.0",
+            "identity": "dev.lekalo.module-api-lock@0.8.0",
+            "consumer": "planner", "producer": { "project": "tasks", "module": "tasks" },
+            "apiVersion": null, "digest": format!("sha256:{}", "a".repeat(64)),
+            "policy": policy, "publicDependencies": [], "selected": ["tasks.view"]
+        });
+        assert!(serde_json::from_value::<ConsumerDeclaration>(declaration.clone()).is_ok());
+        assert!(serde_json::from_value::<ConsumerLock>(lock.clone()).is_ok());
+        for missing in [false, true] {
+            let mut declaration = declaration.clone();
+            let mut lock = lock.clone();
+            if missing {
+                declaration.as_object_mut().unwrap().remove("policy");
+                lock.as_object_mut().unwrap().remove("policy");
+            } else {
+                declaration["policy"] = Value::Null;
+                lock["policy"] = Value::Null;
+            }
+            assert!(serde_json::from_value::<ConsumerDeclaration>(declaration).is_err());
+            assert!(serde_json::from_value::<ConsumerLock>(lock).is_err());
+        }
+        // Snapshot policy/mode are explicitly nullable in their schema.
+        let snapshot = json!({ "consumer": "planner", "declared": false,
+                               "mode": null, "policy": null, "uses": [] });
+        assert!(serde_json::from_value::<ConsumerRow>(snapshot).is_ok());
+    }
+
+    #[test]
+    fn r7_grant_invariant_is_nonempty_only_when_present() {
+        let mut grant = json!({ "grant": "shared-update", "consumer": "planner",
+                                "aggregate": "tasks.task", "operations": ["update"],
+                                "fields": ["*"], "rationale": "shared scheduling" });
+        let absent: GrantPolicy = serde_json::from_value(grant.clone()).expect("omission is legal");
+        assert!(absent.invariant.is_empty());
+        assert!(
+            serde_json::to_value(absent)
+                .unwrap()
+                .get("invariant")
+                .is_none(),
+            "legal omission round-trips without an illegal empty string"
+        );
+        for invalid in [json!(""), Value::Null] {
+            grant["invariant"] = invalid;
+            assert!(serde_json::from_value::<GrantPolicy>(grant.clone()).is_err());
+        }
+        grant["invariant"] = json!("tasks.concurrent_update");
+        assert!(serde_json::from_value::<GrantPolicy>(grant).is_ok());
+    }
+}

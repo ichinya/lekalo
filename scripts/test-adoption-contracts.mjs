@@ -81,7 +81,7 @@ for (const [family, path] of committedDocs) {
 // 2. The diagnostic-registry 0.8.0 union successor: full 0.6.5 union
 //    preserved verbatim plus the landed 0.8.0 families (the nine
 //    `adoption.*` rules, the `format.*`, `portability.*`, and
-//    `worklog-changelog.*` families, and `module-api.*`).
+//    `worklog-changelog.*`, `managed.*`, and `module-api.*` families).
 // ---------------------------------------------------------------------------
 const registry64 = read("contracts/diagnostic-registry.v0.6.4.json");
 const registry65 = read("contracts/diagnostic-registry.v0.6.5.json");
@@ -90,7 +90,7 @@ const registrySchema80 = read("contracts/diagnostic-registry.schema.v0.8.0.json"
 const validateRegistry = ajv.compile(registrySchema80);
 if (!validateRegistry(registry80)) fail("registry-invalid", validateRegistry.errors);
 const ids65 = new Map(registry65.entries.map((entry) => [entry.id, entry]));
-const landedFamilies = ["format.", "adoption.", "portability.", "worklog-changelog.", "module-api."];
+const landedFamilies = ["format.", "adoption.", "portability.", "worklog-changelog.", "managed.", "module-api."];
 const additions = registry80.entries.filter((entry) => !ids65.has(entry.id));
 if (registry80.entries.length !== registry65.entries.length + additions.length || additions.length === 0) {
   fail("registry-count", { v08: registry80.entries.length, v065: registry65.entries.length });

@@ -113,6 +113,32 @@ const reseal = (document, domain) => {
   return digest;
 };
 
+// The exact typed public digest projection. Keep the submitted document
+// intact: stripping its nulls while resealing would erase the hostile
+// input that an admission regression is meant to exercise.
+const resealBundle = (bundle) => {
+  const projection = structuredClone(bundle);
+  projection.digest = '';
+  projection.pins = { modelVersion: '', irDigest: '', sourceRevision: { state: 'unknown' } };
+  for (const export_ of projection.exports) {
+    export_.version = 0;
+    const operation = export_.kind === 'command' || export_.kind === 'query';
+    for (const key of Object.keys(export_)) {
+      const value = export_[key];
+      if (value === null || (Array.isArray(value) && value.length === 0 && !(operation && key === 'errors'))) delete export_[key];
+    }
+  }
+  projection.exports.sort((a, b) => (a.export < b.export ? -1 : a.export > b.export ? 1 : 0));
+  const sortKeys = { publicDependencies: 'moduleId', ports: 'port', capabilities: 'capability', deprecations: 'export' };
+  for (const key of Object.keys(sortKeys)) {
+    projection[key]?.sort((a, b) => (a[sortKeys[key]] < b[sortKeys[key]] ? -1 : a[sortKeys[key]] > b[sortKeys[key]] ? 1 : 0));
+  }
+  for (const dependency of projection.publicDependencies ?? []) dependency.exports.sort();
+  for (const port of projection.ports ?? []) port.operations.sort();
+  bundle.digest = seal(projection, 'lekalo/module-public-contract/1');
+  return bundle.digest;
+};
+
 // 1. Union registry successor: exact identity, sorted-unique ids, the
 // fourteen new rules, and the full 0.6.5 union preserved entry-for-entry.
 {
@@ -558,33 +584,6 @@ const reseal = (document, domain) => {
 // malformed attachments), version downgrades deny, and the consumer
 // selector grammar holds at the pure context seam.
 {
-  // A canonical-JSON bundle reseal that mirrors the exact digest
-  // projection (zeroed revisions, excluded pins, set order).
-  const resealBundle = (bundle) => {
-    const pins = bundle.pins;
-    bundle.digest = '';
-    bundle.pins = { modelVersion: '', irDigest: '', sourceRevision: { state: 'unknown' } };
-    for (const export_ of bundle.exports) {
-      export_.version = 0;
-      const operation = export_.kind === 'command' || export_.kind === 'query';
-      for (const key of Object.keys(export_)) {
-        const value = export_[key];
-        if (value === null || (Array.isArray(value) && value.length === 0 && !(operation && key === 'errors'))) delete export_[key];
-      }
-    }
-    bundle.exports.sort((a, b) => (a.export < b.export ? -1 : a.export > b.export ? 1 : 0));
-    const sortKeys = { publicDependencies: 'moduleId', ports: 'port', capabilities: 'capability', deprecations: 'export' };
-    for (const key of Object.keys(sortKeys)) {
-      if (!Array.isArray(bundle[key])) continue;
-      bundle[key].sort((a, b) => (a[sortKeys[key]] < b[sortKeys[key]] ? -1 : a[sortKeys[key]] > b[sortKeys[key]] ? 1 : 0));
-    }
-    for (const dependency of bundle.publicDependencies ?? []) dependency.exports.sort();
-    for (const port of bundle.ports ?? []) port.operations.sort();
-    const digest = seal(bundle, 'lekalo/module-public-contract/1');
-    bundle.digest = digest;
-    bundle.pins = pins;
-    return digest;
-  };
   const standalone = read(`${fixture}/standalone/golden-bundle.json`);
   const snapshotBefore = read(`${fixture}/diff/golden-consumers-before.json`);
   const diffPair = (afterPath, beforeSnapshotPath, afterSnapshotPath) => [
@@ -789,6 +788,85 @@ const reseal = (document, domain) => {
   const refused = run([...lockArgs, '--check', '--lock', tempAttachment(project, 'duplicate-moduleid.json', masked)], { exit: 1, cwd: probeRoot });
   assert.ok(refused.document.diagnostics.some((d) => d.code === 'LEK-MODULE-001' && d.data.detail === 'duplicate-lock-dependency'), 'duplicate moduleId pins refuse at admission');
   checked.push('r6-lock-admission-grammar');
+}
+
+// 22. r7 devin F2: missing, present-null, and present-empty are distinct
+// schema states. Non-nullable declarations/locks/exports refuse before
+// semantic use; actual nullable members and legal omissions still work.
+{
+  const refusesShape = (result, label) => {
+    assert.ok(result.document.diagnostics.some(d => d.code === 'LEK-MODULE-001' && d.data.detail === 'closed-shape'), `${label} refuses at decode, not staleness or digest comparison`);
+  };
+  const project = scratchProject(`${fixture}/public-dependencies`, 'nullable-r7');
+  const lockArgs = ['module', 'api', 'lock', '--project', project, '--api', 'module-api.json', '--module', 'tasks', '--consumer', 'planner'];
+  const validLock = payload(run(lockArgs, { cwd: probeRoot }).document, 'moduleApiLock');
+  validates('module-api-lock', validLock);
+  run([...lockArgs, '--check', '--lock', 'golden-lock.json'], { cwd: probeRoot });
+  const nullPolicy = read(`${fixture}/public-dependencies/module-api.json`);
+  nullPolicy.modules.find(m => m.moduleId === 'tasks').consumers[0].policy = null;
+  assert.equal(validators.get('module-api')(nullPolicy), false);
+  const badApi = tempAttachment(project, 'null-policy.json', nullPolicy);
+  refusesShape(run(['module', 'api', 'check', '--project', project, '--api', badApi], { exit: 1, cwd: probeRoot }), 'null declaration policy');
+  refusesShape(run(['module', 'api', 'lock', '--project', project, '--api', badApi, '--module', 'tasks', '--consumer', 'planner'], { exit: 1, cwd: probeRoot }), 'null policy cannot produce a schema-invalid lock');
+  const nullLock = structuredClone(validLock);
+  nullLock.policy = null;
+  assert.equal(validators.get('module-api-lock')(nullLock), false);
+  const badLock = tempAttachment(project, 'null-lock-policy.json', nullLock);
+  refusesShape(run([...lockArgs, '--check', '--lock', badLock], { exit: 1, cwd: probeRoot }), 'null lock policy');
+  refusesShape(run(['module', 'api', 'check', '--project', project, '--api', 'module-api.json', '--check-lock', '--lock', badLock], { exit: 1, cwd: probeRoot }), 'null lock policy at check seam');
+
+  const original = read(`${fixture}/standalone/golden-bundle.json`);
+  assert.equal(resealBundle(structuredClone(original)), original.digest, 'control reseal reproduces the committed digest');
+  original.exports.push({ export: 'tasks.failed', kind: 'error', version: 1, code: 'TASK_FAILED', retryable: false });
+  resealBundle(original);
+  const context = document => ['module', 'api', 'context', temp('nonnull-bundle.json', document), '--consumer', 'planner', '--uses', 'tasks.task_view', '--budget', '4000'];
+  validates('module-public-contract', original);
+  run(context(original));
+  for (const [kind, member, optional] of [
+    ['query', 'returns', true], ['error', 'code', true], ['error', 'retryable', true], ['command', 'input', true],
+    ['query', 'cardinality', false], ['query', 'consistency', false], ['query', 'pagination', false],
+  ]) {
+    const hostile = structuredClone(original);
+    hostile.exports.find(e => e.kind === kind)[member] = null;
+    resealBundle(hostile);
+    assert.equal(hostile.exports.find(e => e.kind === kind)[member], null, 'reseal must not erase the mutant');
+    assert.equal(validators.get('module-public-contract')(hostile), false, `null ${member} is schema-invalid`);
+    refusesShape(run(context(hostile), { exit: 1 }), `null ${member}`);
+    if (optional) {
+      const absent = structuredClone(original);
+      delete absent.exports.find(e => e.kind === kind)[member];
+      resealBundle(absent);
+      validates('module-public-contract', absent);
+      run(context(absent));
+    }
+  }
+  // All three facts set to null once used to bypass the typed partial-
+  // triple check as well as the required-member presence check.
+  const noFacts = structuredClone(original);
+  Object.assign(noFacts.exports.find(e => e.kind === 'query'), { cardinality: null, consistency: null, pagination: null });
+  resealBundle(noFacts);
+  assert.equal(validators.get('module-public-contract')(noFacts), false);
+  refusesShape(run(context(noFacts), { exit: 1 }), 'all-null query facts');
+  const nullable = structuredClone(original);
+  Object.assign(nullable.exports.find(e => e.kind === 'scalar'), { base: null, aliasOf: null, since: null });
+  nullable.apiVersion = null;
+  resealBundle(nullable);
+  validates('module-public-contract', nullable);
+  run(context(nullable));
+
+  const grantProject = scratchProject(`${fixture}/writes`, 'grant-nullable-r7');
+  const grantApi = read(`${fixture}/writes/module-api.json`);
+  grantApi.modules[0].grants = [{ grant: 'shared-update', consumer: 'planner', aggregate: 'tasks.task', operations: ['update'], fields: ['*'], rationale: 'shared scheduling' }];
+  validates('module-api', grantApi);
+  const grantArgs = document => ['module', 'api', 'check', '--project', grantProject, '--api', tempAttachment(grantProject, 'grant.json', document)];
+  run(grantArgs(grantApi), { cwd: probeRoot });
+  for (const value of ['', null]) {
+    const hostile = structuredClone(grantApi);
+    hostile.modules[0].grants[0].invariant = value;
+    assert.equal(validators.get('module-api')(hostile), false, 'present empty/null invariant is schema-invalid');
+    refusesShape(run(grantArgs(hostile), { exit: 1, cwd: probeRoot }), `invariant ${JSON.stringify(value)}`);
+  }
+  checked.push('r7-nonnullable-admission-and-optional-invariant');
 }
 
 process.stdout.write(JSON.stringify({ ok: true, gate: 'module-api-contracts', ajv: '8.17.1', schemas: families.length, checks: checked.length, checked }) + '\n');
