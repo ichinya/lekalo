@@ -85,8 +85,20 @@ fn main() {
     for name in list(&corpus, "valid") {
         let text = read(&corpus, &format!("valid/{name}"));
         let envelope = sdk::strict_parse(&text);
+        // Response routing covers the positional-seq envelope spelling
+        // too (issue #106 review r6 #1): a top-level array whose declared
+        // status position carries a response status is a response doc.
         let is_response = match &envelope {
-            Ok(value) => value.get("status").is_some(),
+            Ok(value) => {
+                value.get("status").is_some()
+                    || value.as_array().is_some_and(|items| {
+                        items
+                            .get(4)
+                            .and_then(Value::as_str)
+                            .is_some_and(|s| s == "ok" || s == "error")
+                            && items.get(2).and_then(Value::as_str).is_some()
+                    })
+            }
             Err(_) => text.contains("\"status\"") && text.contains("\"evidence\""),
         };
         if is_response {
@@ -139,6 +151,7 @@ fn main() {
         }
         let text = String::from_utf8(raw).unwrap_or_default();
         let is_response = text.contains("\"status\"") && text.contains("\"evidence\"");
+        // invalid/ rows: no seq spellings — the corpus invalid family is object-spelled.
         let actual = if !is_response {
             match sdk::admit_request(&text) {
                 Err(refusal) => (refusal.stage.to_owned(), refusal.reason),

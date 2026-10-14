@@ -7,6 +7,9 @@
   "require": {
     "php": ">=8.3.0"
   },
+  "suggest": {
+    "ext-mbstring": "Optional: UTF-8 character counting falls back to a byte-exact pure-PHP implementation when absent (issue #106 review r6 #2)."
+  },
   "autoload": {
     "psr-4": {
       "Lekalo\\AdapterSdk\\": "src/"

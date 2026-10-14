@@ -123,10 +123,10 @@ final class Build {
         if (!in_array($class, Protocol::ENUMS['errorClass'], true)) {
             return self::refuse('error-class');
         }
-        if ($code === '' || mb_strlen($code) > Protocol::BOUNDS['ERROR_CODE_MAX']) {
+        if ($code === '' || Decode::utf8Length($code) > Protocol::BOUNDS['ERROR_CODE_MAX']) {
             return self::refuse('error-code');
         }
-        if ($message === '' || mb_strlen($message) > Protocol::BOUNDS['ERROR_MESSAGE_MAX']) {
+        if ($message === '' || Decode::utf8Length($message) > Protocol::BOUNDS['ERROR_MESSAGE_MAX']) {
             return self::refuse('error-message');
         }
         $error = ['class' => $class, 'code' => $code, 'message' => $message];
@@ -135,7 +135,7 @@ final class Build {
                 return self::refuse('error-detail');
             }
             foreach ($detail as $item) {
-                if (mb_strlen($item) > Protocol::BOUNDS['ERROR_DETAIL_MAX']) {
+                if (Decode::utf8Length($item) > Protocol::BOUNDS['ERROR_DETAIL_MAX']) {
                     return self::refuse('error-detail');
                 }
             }
@@ -190,12 +190,12 @@ final class Build {
 
     /** Build one wire Finding row. */
     public static function buildFinding(string $code, string $path, ?string $detail = null): ?array {
-        if ($code === '' || mb_strlen($code) > Protocol::BOUNDS['ERROR_CODE_MAX']) {
+        if ($code === '' || Decode::utf8Length($code) > Protocol::BOUNDS['ERROR_CODE_MAX']) {
             return self::refuse('finding-code');
         }
         $finding = ['code' => $code, 'path' => $path];
         if ($detail !== null) {
-            if (mb_strlen($detail) > Protocol::BOUNDS['ERROR_DETAIL_MAX']) {
+            if (Decode::utf8Length($detail) > Protocol::BOUNDS['ERROR_DETAIL_MAX']) {
                 return self::refuse('finding-detail');
             }
             $finding['detail'] = $detail;
@@ -214,10 +214,10 @@ final class Build {
         if (!$found) {
             return self::refuse('diagnostic-code');
         }
-        if ($message === '' || mb_strlen($message) > Protocol::BOUNDS['ERROR_MESSAGE_MAX']) {
+        if ($message === '' || Decode::utf8Length($message) > Protocol::BOUNDS['ERROR_MESSAGE_MAX']) {
             return self::refuse('diagnostic-message');
         }
-        if (mb_strlen($rule) > Protocol::BOUNDS['ERROR_DETAIL_MAX']) {
+        if (Decode::utf8Length($rule) > Protocol::BOUNDS['ERROR_DETAIL_MAX']) {
             return self::refuse('diagnostic-rule');
         }
         return ['code' => $code, 'message' => $message, 'rule' => $rule];

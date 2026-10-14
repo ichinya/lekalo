@@ -482,6 +482,7 @@ lifecycleAccounting.fileValidLegs = 0;
 lifecycleAccounting.outputLimitLegs = 0;
 lifecycleAccounting.invalidBuilderLegs = 0;
 lifecycleAccounting.realCrashLegs = 0;
+lifecycleAccounting.stdoutHygieneLegs = 0;
 {
   const fileExchangeDir = mkdtempSync(join(tmpdir(), "adapter-sdk-vectors-file-exchange-"));
   process.on("exit", () => {
@@ -538,6 +539,49 @@ lifecycleAccounting.realCrashLegs = 0;
       fail("lifecycle-output-limit", `${lang}: the oversize refusal wrote stdout bytes`);
     }
     lifecycleAccounting.outputLimitLegs += 1;
+    // Hostile-admission stdout hygiene (issue #106 review r6 #2): a
+    // request whose typed members are MISSING (not merely wrong) must
+    // refuse with ZERO stdout bytes on every runtime — a runtime
+    // warning leaking onto the wire surface corrupts the single-JSON
+    // stdout contract exactly like the oversize refusal would.
+    const hostileMissingMembers = [
+      // native file change without `path` and without `change`:
+      JSON.stringify({
+        operation: "plan-native", project_root: ".", protocol: "lekalo.target/v1",
+        protocol_version: "0.3.2", request_id: `req-${"a".repeat(64)}`,
+        native_request: {
+          capability_snapshot_digest: `sha256:${"c".repeat(64)}`,
+          changes: { files: [{ change: "added" }, { path: "src/x.ts" }] },
+          execution_policy_ref: { digest: `sha256:${"d".repeat(64)}` },
+          input_manifest_digest: `sha256:${"e".repeat(64)}`,
+          scan_ref: { digest: `sha256:${"f".repeat(64)}` },
+          tool_catalog_digest: `sha256:${"0".repeat(64)}`,
+        },
+      }),
+      // error envelope without `class` + write entry without `action`:
+      JSON.stringify({
+        evidence: { adapter: { digest: `sha256:${"d".repeat(64)}`, id: "sdk-reference", version: "0.1.0" } },
+        error: { code: "boom", message: "m" },
+        operation: "scan", protocol: "lekalo.target/v1", protocol_version: "0.3.2",
+        request_id: `req-${"a".repeat(64)}`, status: "error",
+      }),
+      JSON.stringify({
+        evidence: { adapter: { digest: `sha256:${"d".repeat(64)}`, id: "sdk-reference", version: "0.1.0" } },
+        operation: "generate", protocol: "lekalo.target/v1", protocol_version: "0.3.2",
+        request_id: `req-${"a".repeat(64)}`, status: "ok",
+        writes: [{ path: "src/a.ts", sha256: `sha256:${"a".repeat(64)}` }],
+      }),
+    ];
+    for (const [row, hostile] of hostileMissingMembers.entries()) {
+      const leg = run(adapterArgs[0], [...adapterArgs.slice(1)], fileExchangeDir, { input: Buffer.from(hostile, "utf8"), timeout: 60000 });
+      if ((leg.stdout ?? "").length > 0) {
+        fail("lifecycle-stdout-hygiene", `${lang}/row-${row}: a refused request leaked ${(leg.stdout ?? "").length} stdout bytes: ${(leg.stdout ?? "").toString("utf8").slice(0, 80)}`);
+      }
+      if (leg.status === 0) {
+        fail("lifecycle-stdout-hygiene", `${lang}/row-${row}: a hostile member-missing request was admitted`);
+      }
+    }
+    lifecycleAccounting.stdoutHygieneLegs = (lifecycleAccounting.stdoutHygieneLegs ?? 0) + hostileMissingMembers.length;
     for (const mutant of ["operations", "protocol_versions", "transports", "max_entries", "max_writes", "capability", "identity", "negotiation", "describe"]) {
       trace(`emission ${lang}/${mutant}`);
       const leg = run(adapterArgs[0], [...adapterArgs.slice(1), "--lekalo-fault", `invalid-${mutant}`], fileExchangeDir, { input: Buffer.from(validDescribe), encoding: null, timeout: 60000 });
@@ -573,6 +617,9 @@ lifecycleAccounting.realCrashLegs = 0;
   }
   if (lifecycleAccounting.outputLimitLegs !== expectedLegs) {
     fail("lifecycle-output-limit-count", `executed ${lifecycleAccounting.outputLimitLegs} serializer-budget legs, expected ${expectedLegs} (one per SDK lane)`);
+  }
+  if (lifecycleAccounting.stdoutHygieneLegs !== expectedLegs * 3) {
+    fail("lifecycle-stdout-hygiene-count", `executed ${lifecycleAccounting.stdoutHygieneLegs} stdout-hygiene legs, expected ${expectedLegs * 3} (three hostile rows per SDK lane)`);
   }
 }
 
@@ -722,7 +769,12 @@ for (const name of corpusFiles("valid")) {
   // same envelope-shape check the runners use.
   const text = bytes.toString("utf8");
   const document = JSON.parse(text);
-  if (document.status !== undefined) {
+  // Response routing covers the positional-seq envelope spelling too
+  // (issue #106 review r6 #1): a top-level array whose declared status
+  // position carries a response status is a response document.
+  const isResponse = document.status !== undefined
+    || (Array.isArray(document) && ["ok", "error"].includes(document[4]) && typeof document[2] === "string");
+  if (isResponse) {
     pushRow(`valid/${name}`, bytes, "V", true, undefined); // response corpus: production must admit
   } else {
     pushRow(`valid/${name}`, bytes, "B", true, undefined);

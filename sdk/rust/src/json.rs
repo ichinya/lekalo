@@ -166,7 +166,11 @@ pub fn read_single_object_with(
         return Err(ParseReason::Oversize);
     }
     let value = strict_parse_with(text, allow_duplicate)?;
-    if !value.is_object() {
+    // The document must be an object or a positional array: serde's
+    // typed-struct paths admit BOTH spellings (visit_seq parity, issue
+    // #106 review r6 #1) and the decoders below distinguish struct
+    // positions from arbitrary documents.
+    if !matches!(value, Value::Object(_) | Value::Array(_)) {
         return Err(ParseReason::NotJson);
     }
     Ok(value)

@@ -106,10 +106,15 @@ func ReadSingleObjectWith(text string, maxBytes int, allowDuplicate func([]strin
 	if reason != "" {
 		return nil, reason
 	}
-	if _, ok := value.(map[string]any); !ok {
-		return nil, ReasonNotJSON
+	// The document must be an object or a positional array: serde's
+	// typed-struct paths admit BOTH spellings (visit_seq parity, issue
+	// #106 review r6 #1) and the decoders below distinguish struct
+	// positions from arbitrary documents.
+	switch value.(type) {
+	case map[string]any, []any:
+		return value, ""
 	}
-	return value, ""
+	return nil, ReasonNotJSON
 }
 
 func (p *parser) skipWhitespace() {

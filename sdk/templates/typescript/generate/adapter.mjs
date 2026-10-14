@@ -464,7 +464,11 @@ function readSingleObject(text, maxBytes, allowDuplicatePaths) {
   if (utf8Length(text) > maxBytes) return { ok: false, reason: "oversize" };
   const parsed = strictParse(text, allowDuplicatePaths);
   if (!parsed.ok) return parsed;
-  if (parsed.value === null || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+  // The document must be an object or a positional array: serde's
+  // typed-struct paths admit BOTH spellings (visit_seq parity, issue
+  // #106 review r6 #1) and the decoders below distinguish struct
+  // positions from arbitrary documents.
+  if (parsed.value === null || typeof parsed.value !== "object") {
     return { ok: false, reason: "shape" };
   }
   return parsed;
@@ -936,20 +940,32 @@ const LINT_VERSION = "0.6.4";
  * per-SDK table is authoritative here, not just the grammar. */
 const isKnownCapabilityId = (id) => CAPABILITY_DEFINITIONS.some((entry) => entry.id === id);
 
-/** All-default struct members accepted from a positional JSON sequence
- * (serde `visit_seq` parity, issue #106 review r5 #9): production
- * deserializes every `#[serde(default)]` struct from a seq positionally,
- * so `[]` (and any shorter prefix) decodes with the defaults filling
- * the tail. The SDK maps the prefix onto the declared field order and
- * refuses a longer seq exactly like serde's `invalid length` error. */
-function seqAsMembers(value, fields, reason = "shape") {
+/** Serde's typed-struct decoding accepts BOTH spellings at every closed
+ * wire struct: the member map and, via `visit_seq`, the positional
+ * sequence in declared field order. A seq shorter than the field list
+ * is prefix-tolerant (trailing members are absent or defaulted); a
+ * longer one is serde's invalid-length `shape` error (issue #106
+ * review r6 #1). `fields` must be the DECLARED field order. */
+function seqAsMembers(value, fields, path) {
   if (!Array.isArray(value)) return { ok: true, value };
-  if (value.length > fields.length) return failure(reason);
+  if (value.length > fields.length) return failure("shape");
   const members = {};
   fields.forEach((field, index) => {
     if (index < value.length) members[field] = value[index];
   });
   return { ok: true, value: members };
+}
+
+/** The struct-position admission shape: a member map (closed) or a
+ * positional sequence prefix of the declared fields — never a scalar
+ * (issue #106 review r6 #1). */
+function structValue(value, fields) {
+  if (value === null || typeof value !== "object") return false;
+  if (Array.isArray(value)) return value.length <= fields.length;
+  for (const key of Object.keys(value)) {
+    if (!fields.includes(key)) return false;
+  }
+  return true;
 }
 
 /** The closed safe reason tokens an SDK decoder refuses with. */
@@ -958,6 +974,14 @@ const DECODE_REASONS = [
   "operation", "oversize", "request-id", "shape", "token", "trailing-document",
   "unknown-member", "version",
 ];
+
+/** The declared wire field order of the closed structs (wire.rs), the
+ * positional-seq mapping order (serde visit_seq parity, issue #106
+ * review r6 #1). */
+const REQUEST_FIELDS = ["protocol", "protocol_version", "operation", "request_id", "project_root", "ir_path", "target", "profile", "profile_digest", "profile_capabilities", "dry_run", "limits", "plan_id", "native_request", "lint_request"];
+const RESPONSE_FIELDS = ["protocol", "protocol_version", "operation", "request_id", "status", "evidence", "capabilities", "result", "writes", "progress", "error"];
+const NATIVE_REQUEST_FIELDS = ["changes", "scan_ref", "observed_ref", "execution_policy_ref", "input_manifest_digest", "tool_catalog_digest", "capability_snapshot_digest"];
+const CAPABILITIES_FIELDS = ["adapter", "protocol_versions", "operations", "transports", "targets", "profiles", "read_scopes", "write_scopes", "progress", "ir_versions", "capabilities", "constraints"];
 
 const failure = (reason, detail) => ({ ok: false, reason, ...(detail === undefined ? {} : { detail }) });
 
@@ -987,7 +1011,9 @@ function boundedText(value, max, reason = "bounds") {
 // Substructures
 // ---------------------------------------------------------------------------
 
-function decodeIdentity(value) {
+function decodeIdentity(rawValue) {
+  if (!structValue(rawValue, ["id", "version", "digest"])) return failure("shape");
+  const value = seqAsMembers(rawValue, ["id", "version", "digest"]).value;
   const closed = closeObject(value, ["digest", "id", "version"]);
   if (closed) return closed;
   if (!isToken(value.id)) return failure("bounds");
@@ -996,7 +1022,9 @@ function decodeIdentity(value) {
   return { ok: true, value };
 }
 
-function decodeEvidence(value) {
+function decodeEvidence(rawValue) {
+  if (!structValue(rawValue, ["adapter", "plan_id"])) return failure("shape");
+  const value = seqAsMembers(rawValue, ["adapter", "plan_id"]).value;
   const closed = closeObject(value, ["adapter", "plan_id"]);
   if (closed) return closed;
   const absent = optional(value.adapter);
@@ -1011,7 +1039,9 @@ function decodeEvidence(value) {
   return { ok: true, value };
 }
 
-function decodeLimits(value) {
+function decodeLimits(rawValue) {
+  if (!structValue(rawValue, ["timeout_ms", "max_output_bytes"])) return failure("shape");
+  const value = seqAsMembers(rawValue, ["timeout_ms", "max_output_bytes"]).value;
   const closed = closeObject(value, ["max_output_bytes", "timeout_ms"]);
   if (closed) return closed;
   // Production requires BOTH members whenever `limits` is present
@@ -1043,7 +1073,9 @@ function decodeProfileCapabilities(value) {
   // never an empty default (issue #106 review r5 #1).
   if (!Array.isArray(value) || value.length === 0 || value.length > BOUNDS.MAX_DECLARED_CAPABILITIES) return failure("bounds");
   let previous = null;
-  for (const capability of value) {
+  for (const rawCapability of value) {
+    if (!structValue(rawCapability, ["id", "support"])) return failure("shape");
+    const capability = seqAsMembers(rawCapability, ["id", "support"]).value;
     const closed = closeObject(capability, ["id", "support"]);
     if (closed) return closed;
     if (!isCapabilityId(capability.id)) return failure("bounds");
@@ -1054,7 +1086,9 @@ function decodeProfileCapabilities(value) {
   return { ok: true, value };
 }
 
-function decodeContentRef(value) {
+function decodeContentRef(rawValue) {
+  if (!structValue(rawValue, ["digest", "revision", "adapter"])) return failure("shape");
+  const value = seqAsMembers(rawValue, ["digest", "revision", "adapter"]).value;
   const closed = closeObject(value, ["adapter", "digest", "revision"]);
   if (closed) return closed;
   if (!isSha256Digest(value.digest)) return failure("bounds");
@@ -1092,7 +1126,10 @@ function decodeNativeChanges(rawValue) {
   // Production validates the changed files without any ordering rule
   // (wire.rs native-request: member checks only) — the SDK's old
   // ascending-path requirement refused legal documents (review r5 #9).
-  for (const change of files) {
+  for (const [index, rawChange] of files.entries()) {
+    if (!structValue(rawChange, ["path", "change", "before_digest", "after_digest"])) return failure("shape");
+    const change = seqAsMembers(rawChange, ["path", "change", "before_digest", "after_digest"]).value;
+    files[index] = change;
     const inner = closeObject(change, ["after_digest", "before_digest", "change", "path"]);
     if (inner) return inner;
     if (!isLogicalPath(change.path)) return failure("bounds");
@@ -1111,11 +1148,10 @@ function decodeNativeChanges(rawValue) {
   return { ok: true, value: { files, symbols } };
 }
 
-function decodeNativeRequest(value) {
-  const closed = closeObject(value, [
-    "capability_snapshot_digest", "changes", "execution_policy_ref",
-    "input_manifest_digest", "observed_ref", "scan_ref", "tool_catalog_digest",
-  ]);
+function decodeNativeRequest(rawValue) {
+  if (!structValue(rawValue, NATIVE_REQUEST_FIELDS)) return failure("shape");
+  const value = seqAsMembers(rawValue, NATIVE_REQUEST_FIELDS).value;
+  const closed = closeObject(value, NATIVE_REQUEST_FIELDS);
   if (closed) return closed;
   for (const member of ["input_manifest_digest", "tool_catalog_digest", "capability_snapshot_digest"]) {
     const absent = optional(value[member]);
@@ -1138,6 +1174,20 @@ function decodeNativeRequest(value) {
 }
 
 function decodeStateString(value) {
+  // The adjacent-tag enum also admits the serde `visit_seq` pair:
+  // `["known", value]` and `[tag, null]` (the unit variants' serde `None`
+  // payload spelling) positionally; `[tag]` alone is an invalid length
+  // (issue #106 review r6 #1).
+  if (Array.isArray(value)) {
+    if (value.length > 2) return failure("shape");
+    const tag = value[0];
+    if (tag === "known") {
+      if (value.length !== 2 || typeof value[1] !== "string" || value[1] === "" || value[1].length > BOUNDS.ERROR_DETAIL_MAX) return failure("bounds");
+      return { ok: true, value };
+    }
+    if (["unknown", "withheld", "unsupported"].includes(tag)) return { ok: true, value };
+    return failure("shape");
+  }
   if (value === null || typeof value !== "object" || Array.isArray(value)) return failure("shape");
   const keys = Object.keys(value);
   if (value.state === "known") {
@@ -1152,8 +1202,11 @@ function decodeStateString(value) {
   return failure("shape");
 }
 
-function decodeLintBinding(value) {
-  // The pinned 0.6.4 schema spells the members camelCase (nativeId).
+function decodeLintBinding(rawValue) {
+  // The pinned 0.6.4 schema spells the members camelCase (nativeId);
+  // the seq spelling follows the declared struct order (r6 #1).
+  if (!structValue(rawValue, ["path", "nativeId", "symbol", "kind", "fingerprint"])) return failure("shape");
+  const value = seqAsMembers(rawValue, ["path", "nativeId", "symbol", "kind", "fingerprint"]).value;
   const closed = closeObject(value, ["fingerprint", "kind", "nativeId", "path", "symbol"]);
   if (closed) return closed;
   if (!isLogicalPath(value.path)) return failure("bounds");
@@ -1165,7 +1218,9 @@ function decodeLintBinding(value) {
   return { ok: true, value };
 }
 
-function decodeLintRequest(value) {
+function decodeLintRequest(rawValue) {
+  if (!structValue(rawValue, ["scope", "pins", "bindings", "files"])) return failure("shape");
+  const value = seqAsMembers(rawValue, ["scope", "pins", "bindings", "files"]).value;
   const closed = closeObject(value, ["bindings", "files", "pins", "scope"]);
   if (closed) return closed;
   // Every lint member is required on the wire (production's LintRequest
@@ -1174,8 +1229,13 @@ function decodeLintRequest(value) {
   // (issue #106 review r5 #8).
   for (const member of ["scope", "files", "bindings", "pins"]) {
     if (value[member] === undefined) return failure("shape");
-    const absent = optional(value[member]);
-    if (absent) return absent;
+    // pins is a REQUIRED struct (not an Option): an explicit null is
+    // serde's wrong-type `shape`, never the Option null token
+    // (issue #106 review r6 #7).
+    if (member !== "pins") {
+      const absent = optional(value[member]);
+      if (absent) return absent;
+    }
   }
   if (!Array.isArray(value.scope) || value.scope.length === 0 || value.scope.length > 10_000) return failure("bounds");
   if (!Array.isArray(value.files) || value.files.length > 4_096) return failure("bounds");
@@ -1186,10 +1246,14 @@ function decodeLintRequest(value) {
   for (const file of value.files) {
     if (!isLogicalPath(file)) return failure("bounds");
   }
-  for (const binding of value.bindings) {
-    const binding_ = decodeLintBinding(binding);
+  for (const [bindingIndex, rawBinding] of value.bindings.entries()) {
+    const binding_ = decodeLintBinding(rawBinding);
     if (!binding_.ok) return binding_;
+    value.bindings[bindingIndex] = binding_.value;
   }
+  if (!structValue(value.pins, ["model", "ir", "observed", "revision", "profile", "capabilities"])) return failure("shape");
+  const pinsValue = seqAsMembers(value.pins, ["model", "ir", "observed", "revision", "profile", "capabilities"]).value;
+  value.pins = pinsValue;
   const pins = closeObject(value.pins, ["capabilities", "ir", "model", "observed", "profile", "revision"]);
   if (pins) return pins;
   // Every pin is a State-tagged value; model/ir must carry known digests.
@@ -1211,12 +1275,18 @@ function decodeLintRequest(value) {
 function decodeRequest(text, maxBytes = BOUNDS.MAX_REQUEST_BYTES) {
   const document = readSingleObject(text, maxBytes);
   if (!document.ok) return document;
-  const value = document.value;
-  const closed = closeObject(value, [
-    "dry_run", "ir_path", "limits", "lint_request", "native_request",
-    "operation", "plan_id", "profile", "profile_capabilities", "profile_digest",
-    "project_root", "protocol", "protocol_version", "request_id", "target",
-  ]);
+  let value = document.value;
+  if (!structValue(value, REQUEST_FIELDS)) {
+    // Preserve the closed-vocabulary reason: an object with an unknown
+    // member is `unknown-member`, any other shape mismatch is `shape`.
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      const closed = closeObject(value, REQUEST_FIELDS);
+      if (closed) return closed;
+    }
+    return failure("shape");
+  }
+  value = seqAsMembers(value, REQUEST_FIELDS).value;
+  const closed = closeObject(value, REQUEST_FIELDS);
   if (closed) return closed;
   for (const member of ["protocol", "protocol_version", "operation", "request_id", "project_root"]) {
     if (value[member] === undefined) return failure("shape");
@@ -1269,10 +1339,14 @@ function decodeRequest(text, maxBytes = BOUNDS.MAX_REQUEST_BYTES) {
   if (value.lint_request !== undefined) {
     const lint = decodeLintRequest(value.lint_request);
     if (!lint.ok) return lint;
-  }  return { ok: true, value };
+    value.lint_request = lint.value;
+  }
+  return { ok: true, value };
 }
 
-function decodeWriteEntry(value) {
+function decodeWriteEntry(rawValue) {
+  if (!structValue(rawValue, ["path", "action", "sha256"])) return failure("shape");
+  const value = seqAsMembers(rawValue, ["path", "action", "sha256"]).value;
   const closed = closeObject(value, ["action", "path", "sha256"]);
   if (closed) return closed;
   if (!isLogicalPath(value.path)) return failure("bounds");
@@ -1323,7 +1397,10 @@ function decodeResult(rawValue) {
     const absent = optional(value.bindings);
     if (absent) return absent;
     if (!Array.isArray(value.bindings) || value.bindings.length > BOUNDS.BINDINGS_MAX) return failure("bounds");
-    for (const binding of value.bindings) {
+    for (const [bindingIndex, rawBinding] of value.bindings.entries()) {
+      if (!structValue(rawBinding, ["module", "target", "profile"])) return failure("shape");
+      const binding = seqAsMembers(rawBinding, ["module", "target", "profile"]).value;
+      value.bindings[bindingIndex] = binding;
       const inner = closeObject(binding, ["module", "profile", "target"]);
       if (inner) return inner;
       if (!isToken(binding.module) || !isToken(binding.target) || !isToken(binding.profile)) return failure("bounds");
@@ -1391,13 +1468,17 @@ const lintStateU64 = (value) => {
   return value.value === undefined;
 };
 
-const lintPins = (value) => {
+const lintPins = (rawValue) => {
+  if (!structValue(rawValue, ["model", "ir", "observed", "revision", "profile", "capabilities"])) return false;
+  const value = seqAsMembers(rawValue, ["model", "ir", "observed", "revision", "profile", "capabilities"]).value;
   const closed = closeObject(value, ["capabilities", "ir", "model", "observed", "profile", "revision"]);
   if (closed) return false;
   return ["capabilities", "ir", "model", "observed", "profile", "revision"].every((pin) => lintStateString(value[pin]));
 };
 
-const lintProducer = (value) => {
+const lintProducer = (rawValue) => {
+  if (!structValue(rawValue, ["id", "version", "artifactDigest", "tool", "compiler", "framework", "recipe"])) return false;
+  const value = seqAsMembers(rawValue, ["id", "version", "artifactDigest", "tool", "compiler", "framework", "recipe"]).value;
   const closed = closeObject(value, ["artifactDigest", "compiler", "framework", "id", "recipe", "tool", "version"]);
   if (closed) return false;
   return lintBounded256(value.id)
@@ -1409,7 +1490,9 @@ const lintProducer = (value) => {
     && lintStateString(value.framework);
 };
 
-const lintSource = (value) => {
+const lintSource = (rawValue) => {
+  if (!structValue(rawValue, ["id", "path", "fingerprint", "bytes"])) return false;
+  const value = seqAsMembers(rawValue, ["id", "path", "fingerprint", "bytes"]).value;
   const closed = closeObject(value, ["bytes", "fingerprint", "id", "path"]);
   if (closed) return false;
   return lintBounded256(value.id)
@@ -1418,7 +1501,9 @@ const lintSource = (value) => {
     && isInt(value.bytes) && value.bytes <= BOUNDS.MAX_REQUEST_BYTES;
 };
 
-const lintSpan = (value) => {
+const lintSpan = (rawValue) => {
+  if (!structValue(rawValue, ["id", "source", "start", "end", "line", "column", "endLine", "endColumn"])) return false;
+  const value = seqAsMembers(rawValue, ["id", "source", "start", "end", "line", "column", "endLine", "endColumn"]).value;
   const closed = closeObject(value, ["column", "end", "endColumn", "endLine", "id", "line", "source", "start"]);
   if (closed) return false;
   // Every span member is an unbounded `u64` in production (0 is a legal
@@ -1435,7 +1520,9 @@ const lintSpan = (value) => {
     && bounded("endColumn");
 };
 
-const lintCoverage = (value) => {
+const lintCoverage = (rawValue) => {
+  if (!structValue(rawValue, ["rule", "target", "scope", "state", "eligible", "examined", "limitations"])) return false;
+  const value = seqAsMembers(rawValue, ["rule", "target", "scope", "state", "eligible", "examined", "limitations"]).value;
   const closed = closeObject(value, ["eligible", "examined", "limitations", "rule", "scope", "state", "target"]);
   if (closed) return false;
   return lintBounded256(value.rule)
@@ -1447,7 +1534,10 @@ const lintCoverage = (value) => {
     && lintStringArray(value.limitations, 10_000, true);
 };
 
-const lintRecord = (value) => {
+const lintRecord = (rawValue) => {
+  const recordFields = ["id", "kind", "mechanism", "subject", "semanticSymbol", "operation", "resource", "field", "nativeId", "confidence", "currency", "origin", "claim", "binding", "configuration", "ownership", "trace", "value", "key", "candidates", "activation", "locations", "guards"];
+  if (!structValue(rawValue, recordFields)) return false;
+  const value = seqAsMembers(rawValue, recordFields).value;
   const closed = closeObject(value, [
     "activation", "binding", "candidates", "claim", "confidence", "configuration",
     "currency", "field", "guards", "id", "key", "kind", "locations", "mechanism",
@@ -1464,14 +1554,18 @@ const lintRecord = (value) => {
   const stringsOk = lintBounded256(value.id)
     && lintBounded256(value.subject)
     && lintBounded256(value.nativeId);
-  const route = (entry) => {
+  const route = (rawEntry) => {
+    if (!structValue(rawEntry, ["identity", "confidence", "currency", "origin"])) return false;
+    const entry = seqAsMembers(rawEntry, ["identity", "confidence", "currency", "origin"]).value;
     if (closeObject(entry, ["confidence", "currency", "identity", "origin"])) return false;
     return lintBounded256(entry.identity)
       && ["unknown", "low", "medium", "high", "exact"].includes(entry.confidence)
       && ["current", "stale", "unknown"].includes(entry.currency)
       && ["explicit", "extracted", "inferred"].includes(entry.origin);
   };
-  const step = (entry) => {
+  const step = (rawEntry) => {
+    if (!structValue(rawEntry, ["role", "identity", "locations", "guards", "confidence"])) return false;
+    const entry = seqAsMembers(rawEntry, ["role", "identity", "locations", "guards", "confidence"]).value;
     if (closeObject(entry, ["confidence", "guards", "identity", "locations", "role"])) return false;
     return ["binding", "trigger", "registration", "callback", "effect"].includes(entry.role)
       && lintBounded256(entry.identity)
@@ -1488,7 +1582,9 @@ const lintRecord = (value) => {
   return enumsOk && stringsOk && stateMembers && boolMembers && arraysOk;
 };
 
-function decodeLintEvidence(value) {
+function decodeLintEvidence(rawValue) {
+  if (!structValue(rawValue, ["schemaVersion", "identity", "target", "scope", "producer", "pins", "inputManifestDigest", "sources", "locations", "coverage", "records", "limitations"])) return failure("shape");
+  const value = seqAsMembers(rawValue, ["schemaVersion", "identity", "target", "scope", "producer", "pins", "inputManifestDigest", "sources", "locations", "coverage", "records", "limitations"]).value;
   const closed = closeObject(value, LINT_EVIDENCE_MEMBERS);
   if (closed) return closed;
   for (const member of LINT_EVIDENCE_MEMBERS) {
@@ -1535,7 +1631,9 @@ function decodeLintEvidence(value) {
  * refused as `bounds`. */
 const canonicalKey = (value) => canonicalJson(value);
 
-function decodeScanEntry(value) {
+function decodeScanEntry(rawValue) {
+  if (!structValue(rawValue, ["path", "kind", "detail", "evidence"])) return failure("shape");
+  let value = seqAsMembers(rawValue, ["path", "kind", "detail", "evidence"]).value;
   const closed = closeObject(value, ["detail", "evidence", "kind", "path"]);
   if (closed) return closed;
   if (!isLogicalPath(value.path)) return failure("bounds");
@@ -1562,7 +1660,10 @@ function decodeScanEntry(value) {
     if (evidence.references === null) return failure("explicit-null");
     const references = evidence.references === undefined ? [] : evidence.references;
     if (!Array.isArray(references) || references.length > BOUNDS.REFERENCES_MAX) return failure("bounds");
-    for (const reference of references) {
+    for (const [refIndex, rawReference] of references.entries()) {
+      if (!structValue(rawReference, ["target", "role", "confidence"])) return failure("shape");
+      const reference = seqAsMembers(rawReference, ["target", "role", "confidence"]).value;
+      references[refIndex] = reference;
       const refClosed = closeObject(reference, ["confidence", "role", "target"]);
       if (refClosed) return refClosed;
       // The target carries the manifest-local semantic-id grammar (core
@@ -1578,7 +1679,9 @@ function decodeScanEntry(value) {
   return { ok: true, value };
 }
 
-function decodeFinding(value) {
+function decodeFinding(rawValue) {
+  if (!structValue(rawValue, ["path", "code", "detail"])) return failure("shape");
+  const value = seqAsMembers(rawValue, ["path", "code", "detail"]).value;
   const closed = closeObject(value, ["code", "detail", "path"]);
   if (closed) return closed;
   if (!isLogicalPath(value.path)) return failure("bounds");
@@ -1610,7 +1713,10 @@ function decodeNativePlan(value) {
 
 function decodeProgress(value) {
   if (!Array.isArray(value) || value.length > BOUNDS.PROGRESS_STEPS_MAX) return failure("bounds");
-  for (const step of value) {
+  for (const [stepIndex, rawStep] of value.entries()) {
+    if (!structValue(rawStep, ["step", "state", "detail"])) return failure("shape");
+    const step = seqAsMembers(rawStep, ["step", "state", "detail"]).value;
+    value[stepIndex] = step;
     const closed = closeObject(step, ["detail", "state", "step"]);
     if (closed) return closed;
     if (boundedText(step.step, BOUNDS.PROGRESS_TEXT_MAX) || step.step === "") return failure("bounds");
@@ -1622,7 +1728,9 @@ function decodeProgress(value) {
   return { ok: true, value };
 }
 
-function decodeError(value) {
+function decodeError(rawValue) {
+  if (!structValue(rawValue, ["class", "code", "message", "retryable", "partial", "detail"])) return failure("shape");
+  const value = seqAsMembers(rawValue, ["class", "code", "message", "retryable", "partial", "detail"]).value;
   const closed = closeObject(value, ["class", "code", "detail", "message", "partial", "retryable"]);
   if (closed) return closed;
   if (!ENUMS.errorClass.includes(value.class)) return failure("shape");
@@ -1644,12 +1752,10 @@ function decodeError(value) {
   return { ok: true, value };
 }
 
-function decodeCapabilities(value, protocolVersion) {
-  const closed = closeObject(value, [
-    "adapter", "capabilities", "constraints", "ir_versions", "operations",
-    "profiles", "progress", "protocol_versions", "read_scopes", "targets",
-    "transports", "write_scopes",
-  ]);
+function decodeCapabilities(rawValue, protocolVersion) {
+  if (!structValue(rawValue, CAPABILITIES_FIELDS)) return failure("shape");
+  const value = seqAsMembers(rawValue, CAPABILITIES_FIELDS).value;
+  const closed = closeObject(value, CAPABILITIES_FIELDS);
   if (closed) return closed;
   const identity = decodeIdentity(value.adapter);
   if (!identity.ok) return identity;
@@ -1733,11 +1839,16 @@ function decodeResponse(text, maxBytes = BOUNDS.DEFAULT_MAX_OUTPUT_BYTES) {
   const document = readSingleObject(text, maxBytes, (path, previous, next) =>
     path.join(".") === "capabilities.capabilities" && ENUMS.supportState.includes(previous) && ENUMS.supportState.includes(next));
   if (!document.ok) return document;
-  const value = document.value;
-  const closed = closeObject(value, [
-    "capabilities", "error", "evidence", "operation", "progress", "protocol",
-    "protocol_version", "request_id", "result", "status", "writes",
-  ]);
+  let value = document.value;
+  if (!structValue(value, RESPONSE_FIELDS)) {
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      const closed = closeObject(value, RESPONSE_FIELDS);
+      if (closed) return closed;
+    }
+    return failure("shape");
+  }
+  value = seqAsMembers(value, RESPONSE_FIELDS).value;
+  const closed = closeObject(value, RESPONSE_FIELDS);
   if (closed) return closed;
   for (const member of ["protocol", "protocol_version", "operation", "request_id", "status", "evidence"]) {
     if (value[member] === undefined) return failure("shape");

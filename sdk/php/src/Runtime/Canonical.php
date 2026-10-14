@@ -95,7 +95,7 @@ final class Canonical {
                 return null;
             }
             $code = $finding['code'] ?? null;
-            if (!is_string($code) || $code === '' || mb_strlen($code) > 128) {
+            if (!is_string($code) || $code === '' || Decode::utf8Length($code) > 128) {
                 return null;
             }
             $path = $finding['path'] ?? null;
@@ -104,7 +104,7 @@ final class Canonical {
             }
             $detail = null;
             if (array_key_exists('detail', $finding) && $finding['detail'] !== null) {
-                if (!is_string($finding['detail']) || mb_strlen($finding['detail']) > 128) {
+                if (!is_string($finding['detail']) || Decode::utf8Length($finding['detail']) > 128) {
                     return null;
                 }
                 $detail = $finding['detail'];

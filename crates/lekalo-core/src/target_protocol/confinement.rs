@@ -529,6 +529,31 @@ impl Sandbox {
             .ok_or_else(|| refusal("sandbox-program"))?;
         let destination = self.runtime.join(filename);
         std::fs::copy(&program, &destination).map_err(|_| refusal("sandbox-runtime"))?;
+        // The runtime-asset closure (issue #106 review r6 #5): an
+        // interpreter is not always one self-contained executable. A
+        // dynamically linked runtime (PHP's `php.exe` + `php8.dll`) cannot
+        // start from a bare copy — the loader resolves siblings of the
+        // executable image only. The closed per-interpreter asset list
+        // below is copied from the interpreter's own directory beside the
+        // copied program; missing assets skip (the confined run then
+        // fails as an honest crash the battery classifies), never fall
+        // back to host-derived search paths. Copies confer no filesystem
+        // grants beyond executing the already-selected interpreter.
+        for asset in runtime_assets(&program) {
+            if filename.eq_ignore_ascii_case(asset) {
+                continue;
+            }
+            let Some(parent) = program.parent() else {
+                continue;
+            };
+            let source = parent.join(asset);
+            if source.is_file() {
+                let target = self.runtime.join(asset);
+                if target != destination {
+                    let _ = std::fs::copy(&source, &target);
+                }
+            }
+        }
         let mut args = command.args.clone();
         // A script explicitly supplied as the interpreter's first argument
         // is executable code, copied read-only. Other argv values confer no
@@ -782,7 +807,12 @@ fn resolve_program(program: &Path) -> Option<PathBuf> {
     if program.is_absolute() || program.components().count() > 1 {
         return program.is_file().then(|| program.to_path_buf());
     }
-    for dir in std::env::split_paths(&std::env::var_os("PATH")?) {
+    for dir in std::env::var_os("PATH")
+        .as_deref()
+        .map(std::env::split_paths)
+        .into_iter()
+        .flatten()
+    {
         let candidate = dir.join(program);
         if candidate.is_file() {
             return Some(candidate);
@@ -796,6 +826,31 @@ fn resolve_program(program: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// The fixed sibling-asset name bound per known dynamically linked
+/// interpreter (issue #106 review r6 #5): the closed, reviewed list of
+/// runtime files an interpreter image cannot start without. The bound
+/// is name-exact and bounded (no directories, no ini, nothing
+/// host-derived) — the sandbox copies only these from the interpreter's
+/// own directory beside the already-selected program. `php.exe` needs
+/// its core DLL and the ICU data tables the build links; every
+/// self-contained runtime (node, static rust/go binaries) needs none.
+fn runtime_assets(program: &Path) -> &'static [&'static str] {
+    let Some(name) = program.file_stem().and_then(|s| s.to_str()) else {
+        return &[];
+    };
+    if cfg!(windows) && name.eq_ignore_ascii_case("php") {
+        &[
+            "php8.dll",
+            "icudt77.dll",
+            "icuin77.dll",
+            "icuio77.dll",
+            "icuuc77.dll",
+        ]
+    } else {
+        &[]
+    }
 }
 
 #[cfg(test)]

@@ -11,6 +11,79 @@ use Lekalo\AdapterSdk\Generated\Capabilities;
 final class Decode {
     public const LINT_VERSION = '0.6.4';
 
+    /** UTF-8 code-point count without ext-mbstring (issue #106 review
+     * r6 #2): production `bounded()` counts `chars().count()`, and the
+     * wire is UTF-8, so invalid-byte inputs are already refused at the
+     * parse layer and every counted string is well-formed UTF-8. The
+     * byte classes below cover exactly the four well-formed sequence
+     * shapes, so counting leading bytes equals counting code points.
+     * Without mbstring this stays byte-exact and dependency-free. */
+    public static function utf8Length(string $text): int {
+        if (function_exists('mb_strlen')) {
+            return mb_strlen($text, 'UTF-8');
+        }
+        $count = 0;
+        $length = strlen($text);
+        for ($index = 0; $index < $length; $index++) {
+            $byte = ord($text[$index]);
+            if ($byte < 0x80 || ($byte >= 0xC0 && $byte < 0xF8)) {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    /** The first `$length` UTF-8 code points of `$text` (issue #106
+     * review r6 #2): mirrors the mbstring spelling that used to be the
+     * only implementation. */
+    public static function utf8Prefix(string $text, int $length): string {
+        if (function_exists('mb_substr')) {
+            return mb_substr($text, 0, $length, 'UTF-8');
+        }
+        $count = 0;
+        $byteLength = strlen($text);
+        for ($index = 0; $index < $byteLength; $index++) {
+            if ($count >= $length) {
+                return substr($text, 0, $index);
+            }
+            $byte = ord($text[$index]);
+            if ($byte < 0x80 || ($byte >= 0xC0 && $byte < 0xF8)) {
+                $count++;
+            }
+        }
+        return $text;
+    }
+
+    /** The UTF-8 code points of `$text` as a one-character list (the
+     * mb_str_split spelling without ext-mbstring, issue #106 review r6
+     * #2). */
+    public static function utf8Chars(string $text): array {
+        if (function_exists('mb_str_split')) {
+            return mb_str_split($text, 1, 'UTF-8');
+        }
+        $chars = [];
+        $current = '';
+        $pending = 0;
+        $byteLength = strlen($text);
+        for ($index = 0; $index < $byteLength; $index++) {
+            $byte = ord($text[$index]);
+            if ($pending > 0 && $byte >= 0x80 && $byte < 0xC0) {
+                $current .= $text[$index];
+                $pending--;
+                continue;
+            }
+            if ($current !== '') {
+                $chars[] = $current;
+            }
+            $current = $text[$index];
+            $pending = $byte >= 0xF0 ? 3 : ($byte >= 0xE0 ? 2 : ($byte >= 0xC0 ? 1 : 0));
+        }
+        if ($current !== '') {
+            $chars[] = $current;
+        }
+        return $chars;
+    }
+
     /** Raw-lexeme audit of the document under admission (issue #106
      * review r4 #3): member paths whose raw JSON value is an object, and
      * whose raw number lexeme is `-0`. json_decode's associative mapping
@@ -84,32 +157,77 @@ final class Decode {
         }
     }
 
-    /** Serde default structs accept objects or positional sequence prefixes.
-     * Remap the raw-shape audit too, so nested list/u64 checks stay exact. */
+    /** Serde's typed-struct decoding accepts BOTH spellings at every
+     * closed wire struct: the member map and, via `visit_seq`, the
+     * positional sequence in declared field order. A seq shorter than
+     * the field list is prefix-tolerant (trailing members are absent or
+     * defaulted); a longer one is serde's invalid-length `shape` error.
+     * The raw-shape audit paths remap so nested list/`-0` checks stay
+     * exact, and the seq identity is preserved through `rawObjectAt`:
+     * production's `visit_seq` still runs the typed field decoders, so
+     * a seq ELEMENT at a list-typed position is an admission refusal,
+     * never a collapse (issue #106 review r6 #1). */
     private static function defaultStruct(mixed &$value, array $fields, string $path): bool {
         if (!is_array($value)) {
             return false;
         }
         if (array_is_list($value) && !self::rawObjectAt($path)) {
-            if (count($value) > count($fields)) {
-                return false;
-            }
-            $mapped = [];
-            foreach ($value as $index => $member) {
-                $name = $fields[$index];
-                $mapped[$name] = $member;
-                foreach (['objectPaths', 'zeroPaths'] as $audit) {
-                    $prefix = "{$path}.{$index}";
-                    foreach (array_keys(self::${$audit}) as $key) {
-                        if ($key === $prefix || str_starts_with($key, $prefix . '.')) {
-                            self::${$audit}["{$path}.{$name}" . substr($key, strlen($prefix))] = true;
-                        }
+            return self::seqAsMembers($value, $fields, $path);
+        }
+        return $value === [] || self::isClosedObject($value, $fields);
+    }
+
+    /** Rewrite one positional sequence onto the declared field names
+     * (in place). A seq at a struct position is admissible only when it
+     * is not an object spelling and its length is inside the field
+     * list; every element path remaps from `<path>.<index>` to
+     * `<path>.<field>`. */
+    private static function seqAsMembers(array &$seq, array $fields, string $path): bool {
+        if (count($seq) > count($fields)) {
+            return false;
+        }
+        $mapped = [];
+        foreach ($seq as $index => $member) {
+            $name = $fields[$index];
+            $mapped[$name] = $member;
+            foreach (['objectPaths', 'zeroPaths'] as $audit) {
+                $prefix = $path === '' ? (string) $index : "{$path}.{$index}";
+                foreach (array_keys(self::${$audit}) as $key) {
+                    $key = (string) $key;
+                    if ($key === $prefix || str_starts_with($key, $prefix . '.')) {
+                        $suffix = $key === $prefix ? '' : substr($key, strlen($prefix));
+                        self::${$audit}[($path === '' ? $name : "{$path}.{$name}") . $suffix] = true;
                     }
                 }
             }
-            $value = $mapped;
         }
-        return $value === [] || self::isClosedObject($value, $fields);
+        $seq = $mapped;
+        return true;
+    }
+
+    /** The struct-position admission shape: a member map (closed) or a
+     * positional sequence prefix of the declared fields — never a
+     * scalar, never an object-spelled seq, never an over-long seq
+     * (serde's missing-field/invalid-length refusals). */
+    private static function structValue(mixed $value, array $fields, string $path): bool {
+        if (!is_array($value)) {
+            return false;
+        }
+        if (array_is_list($value)) {
+            return !self::rawObjectAt($path) && count($value) <= count($fields);
+        }
+        return self::isClosedObject($value, $fields);
+    }
+
+    /** Rebind one admitted struct-position value onto member names for
+     * the per-member checks below: sequences remap positionally with
+     * the audit-path rewrite, maps pass through unchanged. Returns the
+     * (possibly new) value; callers assign it back. Callers guard the
+     * shape with `structValue` first. */
+    private static function asMembers(mixed &$value, array $fields, string $path): void {
+        if (is_array($value) && array_is_list($value) && !self::rawObjectAt($path)) {
+            self::seqAsMembers($value, $fields, $path);
+        }
     }
 
     private static function isClosedObject(mixed $value, array $allowed): bool {
@@ -137,7 +255,7 @@ final class Decode {
     }
 
     private static function boundedText(mixed $value, int $max): bool {
-        return is_string($value) && mb_strlen($value) <= $max;
+        return is_string($value) && self::utf8Length($value) <= $max;
     }
 
     private static function explicitNull(array $value, string $key): bool {
@@ -172,11 +290,15 @@ final class Decode {
     // Request admission
     // ------------------------------------------------------------------
 
-    private static function admitRequestValue(array $value): ?array {
+    private static function admitRequestValue(array &$value): ?array {
         $allowed = ['dry_run', 'ir_path', 'limits', 'lint_request', 'native_request', 'operation', 'plan_id', 'profile', 'profile_capabilities', 'profile_digest', 'project_root', 'protocol', 'protocol_version', 'request_id', 'target'];
-        if (!self::isClosedObject($value, $allowed)) {
+        // The declared field order (wire.rs RequestEnvelope) drives the
+        // positional-seq mapping; `$allowed` above stays the closed-set.
+        $fields = ['protocol', 'protocol_version', 'operation', 'request_id', 'project_root', 'ir_path', 'target', 'profile', 'profile_digest', 'profile_capabilities', 'dry_run', 'limits', 'plan_id', 'native_request', 'lint_request'];
+        if (!self::structValue($value, $allowed, '')) {
             return self::refuse('decode', self::unknownOrShape($value, $allowed));
         }
+        self::asMembers($value, $fields, '');
         foreach (['protocol', 'protocol_version', 'operation', 'request_id', 'project_root'] as $member) {
             if (!array_key_exists($member, $value)) {
                 return self::refuse('decode', 'shape');
@@ -243,9 +365,10 @@ final class Decode {
         }
         if (isset($value['limits'])) {
             $limits = $value['limits'];
-            if (!self::isClosedObject($limits, ['max_output_bytes', 'timeout_ms'])) {
+            if (!self::structValue($limits, ['max_output_bytes', 'timeout_ms'], 'limits')) {
                 return self::refuse('decode', 'shape');
             }
+            self::asMembers($limits, ['timeout_ms', 'max_output_bytes'], 'limits');
             // Production requires BOTH members whenever `limits` is
             // present (wire.rs: absent or out-of-range is `shape`).
             foreach (['timeout_ms' => ['LIMITS_TIMEOUT_MIN', 'LIMITS_TIMEOUT_MAX'], 'max_output_bytes' => ['LIMITS_OUTPUT_MIN', 'LIMITS_OUTPUT_MAX']] as $member => $bounds) {
@@ -277,9 +400,10 @@ final class Decode {
             }
             $previous = null;
             foreach ($capabilities as $capability) {
-                if (!self::isClosedObject($capability, ['id', 'support'])) {
+                if (!self::structValue($capability, ['id', 'support'], 'profile_capabilities')) {
                     return self::refuse('decode', 'shape');
                 }
+                self::asMembers($capability, ['id', 'support'], 'profile_capabilities');
                 if (!Paths::isCapabilityId($capability['id'])) {
                     return self::refuse('decode', 'bounds');
                 }
@@ -313,10 +437,11 @@ final class Decode {
         return null;
     }
 
-    private static function admitContentRef(mixed $value): ?array {
-        if (!self::isClosedObject($value, ['adapter', 'digest', 'revision'])) {
+    private static function admitContentRef(mixed &$value, string $path): ?array {
+        if (!self::structValue($value, ['adapter', 'digest', 'revision'], $path)) {
             return self::refuse('decode', 'shape');
         }
+        self::asMembers($value, ['digest', 'revision', 'adapter'], $path);
         if (!Ids::isSha256Digest($value['digest'] ?? '')) {
             return self::refuse('decode', 'bounds');
         }
@@ -340,11 +465,13 @@ final class Decode {
         return null;
     }
 
-    private static function admitNativeRequest(mixed $value): ?array {
+    private static function admitNativeRequest(mixed &$value): ?array {
         $allowed = ['capability_snapshot_digest', 'changes', 'execution_policy_ref', 'input_manifest_digest', 'observed_ref', 'scan_ref', 'tool_catalog_digest'];
-        if (!self::isClosedObject($value, $allowed)) {
+        $fields = ['changes', 'scan_ref', 'observed_ref', 'execution_policy_ref', 'input_manifest_digest', 'tool_catalog_digest', 'capability_snapshot_digest'];
+        if (!self::structValue($value, $allowed, 'native_request')) {
             return self::refuse('decode', 'shape');
         }
+        self::asMembers($value, $fields, 'native_request');
         foreach (['input_manifest_digest', 'tool_catalog_digest', 'capability_snapshot_digest'] as $member) {
             if (self::explicitNull($value, $member)) {
                 return self::refuse('decode', 'explicit-null');
@@ -375,14 +502,15 @@ final class Decode {
         if (count($files) > 1024 || count($symbols) > 1024) {
             return self::refuse('decode', 'bounds');
         }
-        foreach ($files as $change) {
-            if (!self::isClosedObject($change, ['after_digest', 'before_digest', 'change', 'path'])) {
+        foreach ($files as $index => $change) {
+            if (!self::structValue($change, ['after_digest', 'before_digest', 'change', 'path'], "native_request.changes.files.{$index}")) {
                 return self::refuse('decode', 'shape');
             }
-            if (!Paths::isLogicalPath($change['path'])) {
+            self::asMembers($change, ['path', 'change', 'before_digest', 'after_digest'], "native_request.changes.files.{$index}");
+            if (!Paths::isLogicalPath($change['path'] ?? '')) {
                 return self::refuse('decode', 'bounds');
             }
-            if (!in_array($change['change'], Protocol::ENUMS['nativeChangeKind'], true)) {
+            if (!in_array($change['change'] ?? null, Protocol::ENUMS['nativeChangeKind'], true)) {
                 return self::refuse('decode', 'shape');
             }
             foreach (['after_digest', 'before_digest'] as $member) {
@@ -399,11 +527,11 @@ final class Decode {
                 return self::refuse('decode', 'bounds');
             }
         }
-        $refusal = self::admitContentRef($value['scan_ref']);
+        $value["scan_ref"] ??= null; $refusal = self::admitContentRef($value["scan_ref"], "native_request.scan_ref");
         if ($refusal !== null) {
             return $refusal;
         }
-        $refusal = self::admitContentRef($value['execution_policy_ref']);
+        $value["execution_policy_ref"] ??= null; $refusal = self::admitContentRef($value["execution_policy_ref"], "native_request.execution_policy_ref");
         if ($refusal !== null) {
             return $refusal;
         }
@@ -411,7 +539,7 @@ final class Decode {
             return self::refuse('decode', 'explicit-null');
         }
         if (isset($value['observed_ref'])) {
-            $refusal = self::admitContentRef($value['observed_ref']);
+            $refusal = self::admitContentRef($value["observed_ref"], "native_request.observed_ref");
             if ($refusal !== null) {
                 return $refusal;
             }
@@ -419,11 +547,13 @@ final class Decode {
         return null;
     }
 
-    private static function admitLintRequest(mixed $value): ?array {
+    private static function admitLintRequest(mixed &$value): ?array {
         $allowed = ['bindings', 'files', 'pins', 'scope'];
-        if (!self::isClosedObject($value, $allowed)) {
+        $fields = ['scope', 'pins', 'bindings', 'files'];
+        if (!self::structValue($value, $allowed, 'lint_request')) {
             return self::refuse('decode', 'shape');
         }
+        self::asMembers($value, $fields, 'lint_request');
         foreach ($allowed as $member) {
             if (!array_key_exists($member, $value)) {
                 return self::refuse('decode', 'shape');
@@ -441,11 +571,11 @@ final class Decode {
                 return self::refuse('decode', 'bounds');
             }
         }
-        $scope = $value['scope'] ?? [];
-        $files = $value['files'] ?? [];
-        $bindings = $value['bindings'] ?? [];
+        $scope = &$value["scope"]; $scope ??= [];
+        $files = &$value["files"]; $files ??= [];
+        $bindings = &$value["bindings"]; $bindings ??= [];
         if (count($scope) === 0 || count($scope) > 10000 || count($files) > 4096 || count($bindings) > 10000) {
-            return self::refuse('decode', 'bounds');
+            return self::refuse("decode", "bounds");
         }
         foreach ($scope as $scopeEntry) {
             if (!self::boundedText($scopeEntry, 128)) {
@@ -457,11 +587,13 @@ final class Decode {
                 return self::refuse('decode', 'bounds');
             }
         }
-        foreach ($bindings as $binding) {
+        foreach ($bindings as $index => $binding) {
+            $binding = &$bindings[$index];
             // The pinned 0.6.4 schema spells the members camelCase.
-            if (!self::isClosedObject($binding, ['fingerprint', 'kind', 'nativeId', 'path', 'symbol'])) {
+            if (!self::structValue($binding, ['fingerprint', 'kind', 'nativeId', 'path', 'symbol'], "lint_request.bindings.{$index}")) {
                 return self::refuse('decode', 'shape');
             }
+            self::asMembers($binding, ['path', 'nativeId', 'symbol', 'kind', 'fingerprint'], "lint_request.bindings.{$index}");
             if (!Paths::isLogicalPath($binding['path'])) {
                 return self::refuse('decode', 'bounds');
             }
@@ -476,16 +608,22 @@ final class Decode {
             if (!Ids::isSha256Digest($binding['fingerprint'] ?? '')) {
                 return self::refuse('decode', 'bounds');
             }
+            unset($binding);
         }
-        $pins = $value['pins'];
-        if (!self::isClosedObject($pins, ['capabilities', 'ir', 'model', 'observed', 'profile', 'revision'])) {
+        $pins = &$value['pins'];
+        if (!self::structValue($pins, ['capabilities', 'ir', 'model', 'observed', 'profile', 'revision'], 'lint_request.pins')) {
+            return self::refuse('decode', 'shape');
+        }
+        self::asMembers($pins, ['model', 'ir', 'observed', 'revision', 'profile', 'capabilities'], 'lint_request.pins');
+        if (self::explicitNull($pins, 'capabilities') || self::explicitNull($pins, 'ir') || self::explicitNull($pins, 'model')
+            || self::explicitNull($pins, 'observed') || self::explicitNull($pins, 'profile') || self::explicitNull($pins, 'revision')) {
             return self::refuse('decode', 'shape');
         }
         // The pinned 0.6.4 schema carries every pin as a State-tagged value
         // ({state:"known",value}|{state:"unknown"|"withheld"|"unsupported"}).
         foreach (['capabilities', 'ir', 'model', 'observed', 'profile', 'revision'] as $member) {
-            if (self::explicitNull($pins, $member)) {
-                return self::refuse('decode', 'explicit-null');
+            if (!array_key_exists($member, $pins)) {
+                return self::refuse('decode', 'shape');
             }
             $state = self::admitStateString($pins[$member] ?? null);
             if ($state !== null) {
@@ -495,8 +633,29 @@ final class Decode {
         return null;
     }
 
-    /** One State-tagged string value of the pinned 0.6.4 lint schema. */
+    /** One State-tagged string value of the pinned 0.6.4 lint schema.
+     * The adjacent-tag enum also admits the serde `visit_seq` pair:
+     * `["known", value]` and `[tag]` spell positionally (issue #106
+     * review r6 #1). A null VALUE element is the serde `None` spelling
+     * of the unit variants' absent payload, so `[tag, null]` is legal
+     * while `[tag, null, …]` (invalid length) refuses. */
     private static function admitStateString(mixed $value): ?array {
+        if (is_array($value) && array_is_list($value) && !self::rawObjectAt('state')) {
+            if (count($value) > 2) {
+                return self::refuse('decode', 'shape');
+            }
+            $tag = $value[0] ?? null;
+            if ($tag === 'known') {
+                if (count($value) !== 2 || !is_string($value[1]) || $value[1] === '' || self::utf8Length($value[1]) > 128) {
+                    return self::refuse('decode', 'bounds');
+                }
+                return null;
+            }
+            if (in_array($tag, ['unknown', 'withheld', 'unsupported'], true)) {
+                return null;
+            }
+            return self::refuse('decode', 'shape');
+        }
         if (!is_array($value) || !self::isClosedObject($value, ['state', 'value'])) {
             return self::refuse('decode', 'shape');
         }
@@ -522,21 +681,23 @@ final class Decode {
     // Response admission
     // ------------------------------------------------------------------
 
-    private static function admitIdentity(mixed $value): ?array {
-        if (!self::isClosedObject($value, ['digest', 'id', 'version'])) {
+    private static function admitIdentity(mixed &$value, string $path): ?array {
+        if (!self::structValue($value, ['digest', 'id', 'version'], $path)) {
             return self::refuse('decode', 'shape');
         }
+        self::asMembers($value, ['id', 'version', 'digest'], $path);
         if (!Paths::isToken($value['id'] ?? '') || !Paths::isContractVersion($value['version'] ?? '') || !Ids::isSha256Digest($value['digest'] ?? '')) {
             return self::refuse('decode', 'bounds');
         }
         return null;
     }
 
-    private static function admitEvidence(mixed $value): ?array {
-        if (!self::isClosedObject($value, ['adapter', 'plan_id'])) {
+    private static function admitEvidence(mixed &$value, string $path): ?array {
+        if (!self::structValue($value, ['adapter', 'plan_id'], $path)) {
             return self::refuse('decode', 'shape');
         }
-        $refusal = self::admitIdentity($value['adapter']);
+        self::asMembers($value, ['adapter', 'plan_id'], $path);
+        $value['adapter'] ??= null; $refusal = self::admitIdentity($value['adapter'], 'profile_capabilities.' . key($value));
         if ($refusal !== null) {
             return $refusal;
         }
@@ -549,14 +710,15 @@ final class Decode {
         return null;
     }
 
-    private static function admitWriteEntry(mixed $value): ?array {
-        if (!self::isClosedObject($value, ['action', 'path', 'sha256'])) {
+    private static function admitWriteEntry(mixed &$value, string $path): ?array {
+        if (!self::structValue($value, ['action', 'path', 'sha256'], $path)) {
             return self::refuse('decode', 'shape');
         }
+        self::asMembers($value, ['path', 'action', 'sha256'], $path);
         if (!Paths::isLogicalPath($value['path'] ?? '')) {
             return self::refuse('decode', 'bounds');
         }
-        if (!in_array($value['action'], Protocol::ENUMS['writeAction'], true)) {
+        if (!in_array($value['action'] ?? null, Protocol::ENUMS['writeAction'], true)) {
             return self::refuse('decode', 'shape');
         }
         if (self::explicitNull($value, 'sha256')) {
@@ -568,10 +730,11 @@ final class Decode {
         return null;
     }
 
-    private static function admitScanEntry(mixed $value, string $path = ''): ?array {
-        if (!self::isClosedObject($value, ['detail', 'evidence', 'kind', 'path'])) {
+    private static function admitScanEntry(mixed &$value, string $path): ?array {
+        if (!self::structValue($value, ['detail', 'evidence', 'kind', 'path'], $path)) {
             return self::refuse('decode', 'shape');
         }
+        self::asMembers($value, ['path', 'kind', 'detail', 'evidence'], $path);
         if (!Paths::isLogicalPath($value['path'] ?? '') || !self::boundedText($value['kind'] ?? null, 128)) {
             return self::refuse('decode', 'bounds');
         }
@@ -602,10 +765,11 @@ final class Decode {
             if (!is_array($references) || !array_is_list($references) || self::rawObjectAt("{$path}evidence.references") || count($references) > Protocol::BOUNDS['REFERENCES_MAX']) {
                 return self::refuse('decode', 'bounds');
             }
-            foreach ($references as $reference) {
-                if (!self::isClosedObject($reference, ['confidence', 'role', 'target'])) {
+            foreach ($references as $index => $reference) {
+                if (!self::structValue($reference, ['confidence', 'role', 'target'], "{$path}evidence.references.{$index}")) {
                     return self::refuse('decode', 'shape');
                 }
+                self::asMembers($reference, ['target', 'role', 'confidence'], "{$path}evidence.references.{$index}");
                 if (!self::boundedText($reference['target'] ?? null, 192)) {
                     return self::refuse('decode', 'bounds');
                 }
@@ -627,12 +791,14 @@ final class Decode {
         return null;
     }
 
-    private static function admitNativePlan(mixed $value): ?array {
+    private static function admitNativePlan(mixed &$value, string $path): ?array {
         $allowed = ['commands', 'completeness', 'digest', 'entries', 'kind', 'packages', 'run_eligibility', 'units'];
-        if (!self::isClosedObject($value, $allowed)) {
+        $fields = ['kind', 'digest', 'commands', 'packages', 'completeness', 'run_eligibility'];
+        if (!self::structValue($value, $allowed, $path)) {
             return self::refuse('decode', 'shape');
         }
-        if (!in_array($value['kind'], Protocol::ENUMS['nativePlanKind'], true)) {
+        self::asMembers($value, $fields, $path);
+        if (!in_array($value['kind'] ?? null, Protocol::ENUMS['nativePlanKind'], true)) {
             return self::refuse('decode', 'shape');
         }
         if (!Ids::isSha256Digest($value['digest'] ?? '')) {
@@ -642,7 +808,7 @@ final class Decode {
             if (self::explicitNull($value, $member)) {
                 return self::refuse('decode', 'explicit-null');
             }
-            if (isset($value[$member]) && (!self::numberInRange($value[$member], 0, Protocol::BOUNDS['MAX_CONSTRAINT_VALUE']) || self::rawNegativeZeroAt("result.native_plan.{$member}"))) {
+            if (isset($value[$member]) && (!self::numberInRange($value[$member], 0, Protocol::BOUNDS['MAX_CONSTRAINT_VALUE']) || self::rawNegativeZeroAt("{$path}.{$member}"))) {
                 return self::refuse('decode', 'bounds');
             }
         }
@@ -657,9 +823,9 @@ final class Decode {
         return null;
     }
 
-    private static function admitResult(mixed $value): ?array {
+    private static function admitResult(mixed &$value, string $path): ?array {
         $allowed = ['ok', 'truncated', 'entries', 'findings', 'bindings', 'native_plan', 'lint_evidence'];
-        if (!self::defaultStruct($value, $allowed, 'result')) {
+        if (!self::defaultStruct($value, $allowed, $path)) {
             return self::refuse('decode', 'shape');
         }
         foreach (['ok', 'truncated'] as $member) {
@@ -679,7 +845,9 @@ final class Decode {
                 return self::refuse('decode', 'bounds');
             }
             foreach ($entries as $index => $entry) {
-                $refusal = self::admitScanEntry($entry, "result.entries.{$index}.");
+                $entryRef = &$entries[$index];
+                $refusal = self::admitScanEntry($entryRef, "result.entries.{$index}");
+                unset($entryRef);
                 if ($refusal !== null) {
                     return $refusal;
                 }
@@ -693,10 +861,11 @@ final class Decode {
             if (!is_array($findings) || !array_is_list($findings) || self::rawObjectAt('result.findings') || count($findings) > Protocol::BOUNDS['FINDINGS_MAX']) {
                 return self::refuse('decode', 'bounds');
             }
-            foreach ($findings as $finding) {
-                if (!self::isClosedObject($finding, ['code', 'detail', 'path'])) {
+            foreach ($findings as $index => $finding) {
+                if (!self::structValue($finding, ['code', 'detail', 'path'], "result.findings.{$index}")) {
                     return self::refuse('decode', 'shape');
                 }
+                self::asMembers($finding, ['path', 'code', 'detail'], "result.findings.{$index}");
                 if (!Paths::isLogicalPath($finding['path'] ?? '') || !self::boundedText($finding['code'] ?? null, 128)) {
                     return self::refuse('decode', 'bounds');
                 }
@@ -716,10 +885,11 @@ final class Decode {
             if (!is_array($bindings) || !array_is_list($bindings) || self::rawObjectAt('result.bindings') || count($bindings) > Protocol::BOUNDS['BINDINGS_MAX']) {
                 return self::refuse('decode', 'bounds');
             }
-            foreach ($bindings as $binding) {
-                if (!self::isClosedObject($binding, ['module', 'profile', 'target'])) {
+            foreach ($bindings as $index => $binding) {
+                if (!self::structValue($binding, ['module', 'profile', 'target'], "result.bindings.{$index}")) {
                     return self::refuse('decode', 'shape');
                 }
+                self::asMembers($binding, ['module', 'target', 'profile'], "result.bindings.{$index}");
                 foreach (['module', 'profile', 'target'] as $member) {
                     if (!Paths::isToken($binding[$member] ?? '')) {
                         return self::refuse('decode', 'bounds');
@@ -731,7 +901,7 @@ final class Decode {
             return self::refuse('decode', 'explicit-null');
         }
         if (isset($value['native_plan'])) {
-            $refusal = self::admitNativePlan($value['native_plan']);
+            $refusal = self::admitNativePlan($value["native_plan"], "result.native_plan");
             if ($refusal !== null) {
                 return $refusal;
             }
@@ -744,7 +914,7 @@ final class Decode {
             // (issue #106 review r2 #3): a shallow object check admitted
             // `{}` as `status:"ok"`; the full pinned schema subtree must
             // hold instead.
-            $refusal = self::admitLintEvidence($value['lint_evidence']);
+            $refusal = self::admitLintEvidence($value["lint_evidence"], "result.lint_evidence");
             if ($refusal !== null) {
                 return $refusal;
             }
@@ -757,7 +927,7 @@ final class Decode {
         if (!is_string($value) || $value === '' || strlen($value) > 256) {
             return false;
         }
-        foreach (mb_str_split($value) as $index => $char) {
+        foreach (self::utf8Chars($value) as $index => $char) {
             $alnum = self::isAsciiAlnum($char);
             $extra = $char === '_' || $char === '.' || $char === '/' || $char === ':' || $char === '#' || $char === '@' || $char === '\\' || $char === '-';
             if (!($index === 0 ? $alnum : ($alnum || $extra))) {
@@ -790,7 +960,28 @@ final class Decode {
         return true;
     }
 
+    /** The adjacent-tag State<T> pair also admits the serde `visit_seq`
+     * spellings `[[tag, value]]`... i.e. `["known", v]` and `[tag]`
+     * positional pairs; `[tag, null]` is the serde `None` payload of the
+     * unit variants (issue #106 review r6 #1). */
+    private static function lintStateSeq(mixed $value): ?array {
+        if (!is_array($value) || !array_is_list($value) || count($value) > 2) {
+            return null;
+        }
+        $tag = $value[0] ?? null;
+        if (!in_array($tag, ['known', 'unknown', 'withheld', 'unsupported'], true)) {
+            return null;
+        }
+        return ['state' => $tag, 'value' => $value[1] ?? null, 'seqKnown' => $tag === 'known' && count($value) === 2];
+    }
+
     private static function lintStateString(mixed $value): bool {
+        if (($seq = self::lintStateSeq($value)) !== null) {
+            if ($seq['seqKnown']) {
+                return self::lintBounded256($seq['value']);
+            }
+            return $seq['state'] !== 'known';
+        }
         if (!self::isClosedObject($value, ['state', 'value'])) {
             return false;
         }
@@ -805,6 +996,12 @@ final class Decode {
     }
 
     private static function lintStateBool(mixed $value): bool {
+        if (($seq = self::lintStateSeq($value)) !== null) {
+            if ($seq['seqKnown']) {
+                return is_bool($seq['value']);
+            }
+            return $seq['state'] !== 'known';
+        }
         if (!self::isClosedObject($value, ['state', 'value'])) {
             return false;
         }
@@ -819,6 +1016,13 @@ final class Decode {
     }
 
     private static function lintStateU64(mixed $value, ?string $path = null): bool {
+        if (($seq = self::lintStateSeq($value)) !== null) {
+            if ($seq['seqKnown']) {
+                return self::numberInRange($seq['value'], 0, 10_000_000)
+                    && ($path === null || !self::rawNegativeZeroAt("{$path}.value"));
+            }
+            return $seq['state'] !== 'known';
+        }
         if (!self::isClosedObject($value, ['state', 'value'])) {
             return false;
         }
@@ -839,11 +1043,13 @@ final class Decode {
 
     private static function lintPins(mixed $value): bool {
         $allowed = ['capabilities', 'ir', 'model', 'observed', 'profile', 'revision'];
-        if (!self::isClosedObject($value, $allowed)) {
+        $fields = ['model', 'ir', 'observed', 'revision', 'profile', 'capabilities'];
+        if (!self::structValue($value, $allowed, 'result.lint_evidence.pins') || !is_array($value)) {
             return false;
         }
+        self::asMembers($value, $fields, 'result.lint_evidence.pins');
         foreach ($allowed as $pin) {
-            if (!self::lintStateString($value[$pin])) {
+            if (!self::lintStateString($value[$pin] ?? null)) {
                 return false;
             }
         }
@@ -852,89 +1058,96 @@ final class Decode {
 
     private static function lintProducer(mixed $value): bool {
         $allowed = ['artifactDigest', 'compiler', 'framework', 'id', 'recipe', 'tool', 'version'];
-        if (!self::isClosedObject($value, $allowed)) {
+        $fields = ['id', 'version', 'artifactDigest', 'tool', 'compiler', 'framework', 'recipe'];
+        if (!self::structValue($value, $allowed, 'result.lint_evidence.producer') || !is_array($value)) {
             return false;
         }
+        self::asMembers($value, $fields, 'result.lint_evidence.producer');
         foreach (['id', 'version', 'tool', 'recipe'] as $member) {
-            if (!self::lintBounded256($value[$member])) {
+            if (!self::lintBounded256($value[$member] ?? null)) {
                 return false;
             }
         }
-        return self::lintSha256($value['artifactDigest'])
-            && self::lintStateString($value['compiler'])
-            && self::lintStateString($value['framework']);
+        return self::lintSha256($value['artifactDigest'] ?? null)
+            && self::lintStateString($value['compiler'] ?? null)
+            && self::lintStateString($value['framework'] ?? null);
     }
 
     private static function lintSource(mixed $value, ?string $path = null): bool {
-        if (!self::isClosedObject($value, ['bytes', 'fingerprint', 'id', 'path'])) {
+        if (!self::structValue($value, ['bytes', 'fingerprint', 'id', 'path'], $path) || !is_array($value)) {
             return false;
         }
+        self::asMembers($value, ['id', 'path', 'fingerprint', 'bytes'], $path);
         $pathValue = $value['path'] ?? null;
-        return self::lintBounded256($value['id'])
+        return self::lintBounded256($value['id'] ?? null)
             && is_string($pathValue) && $pathValue !== '' && strlen($pathValue) <= 512 && Paths::isLogicalPath($pathValue)
-            && self::lintSha256($value['fingerprint'])
+            && self::lintSha256($value['fingerprint'] ?? null)
             && self::numberInRange($value['bytes'] ?? null, 0, Protocol::BOUNDS['MAX_REQUEST_BYTES'])
             && ($path === null || !self::rawNegativeZeroAt("{$path}.bytes"));
     }
 
     private static function lintSpan(mixed $value, ?string $path = null): bool {
-        if (!self::isClosedObject($value, ['column', 'end', 'endColumn', 'endLine', 'id', 'line', 'source', 'start'])) {
+        if (!self::structValue($value, ['column', 'end', 'endColumn', 'endLine', 'id', 'line', 'source', 'start'], $path) || !is_array($value)) {
             return false;
         }
+        self::asMembers($value, ['id', 'source', 'start', 'end', 'line', 'column', 'endLine', 'endColumn'], $path);
         $bounded = static function (mixed $member, int $min, string $name) use ($value, $path): bool {
             return self::numberInRange($member, $min, Protocol::BOUNDS['MAX_REQUEST_BYTES'])
                 && ($path === null || !self::rawNegativeZeroAt("{$path}.{$name}"));
         };
-        return self::lintBounded256($value['id'])
-            && self::lintBounded256($value['source'])
-            && $bounded($value['start'], 0, 'start')
-            && $bounded($value['end'], 0, 'end')
-            && $bounded($value['line'], 0, 'line')
-            && $bounded($value['column'], 0, 'column')
-            && $bounded($value['endLine'], 0, 'endLine')
-            && $bounded($value['endColumn'], 0, 'endColumn');
+        return self::lintBounded256($value['id'] ?? null)
+            && self::lintBounded256($value['source'] ?? null)
+            && $bounded($value['start'] ?? null, 0, 'start')
+            && $bounded($value['end'] ?? null, 0, 'end')
+            && $bounded($value['line'] ?? null, 0, 'line')
+            && $bounded($value['column'] ?? null, 0, 'column')
+            && $bounded($value['endLine'] ?? null, 0, 'endLine')
+            && $bounded($value['endColumn'] ?? null, 0, 'endColumn');
     }
 
     private static function lintCoverage(mixed $value, ?string $path = null): bool {
-        if (!self::isClosedObject($value, ['eligible', 'examined', 'limitations', 'rule', 'scope', 'state', 'target'])) {
+        if (!self::structValue($value, ['eligible', 'examined', 'limitations', 'rule', 'scope', 'state', 'target'], $path) || !is_array($value)) {
             return false;
         }
-        if (!in_array($value['state'], ['complete', 'partial', 'unknown', 'unsupported', 'withheld', 'disabled'], true)) {
+        self::asMembers($value, ['rule', 'target', 'scope', 'state', 'eligible', 'examined', 'limitations'], $path);
+        if (!in_array($value['state'] ?? null, ['complete', 'partial', 'unknown', 'unsupported', 'withheld', 'disabled'], true)) {
             return false;
         }
         foreach (['rule', 'target', 'scope'] as $member) {
-            if (!self::lintBounded256($value[$member])) {
+            if (!self::lintBounded256($value[$member] ?? null)) {
                 return false;
             }
         }
-        return self::lintStateU64($value['eligible'], $path === null ? null : "{$path}.eligible")
-            && self::lintStateU64($value['examined'], $path === null ? null : "{$path}.examined")
-            && self::lintStringArray($value['limitations'], 10_000, true, $path === null ? null : "{$path}.limitations");
+        return self::lintStateU64($value['eligible'] ?? null, $path === null ? null : "{$path}.eligible")
+            && self::lintStateU64($value['examined'] ?? null, $path === null ? null : "{$path}.examined")
+            && self::lintStringArray($value['limitations'] ?? null, 10_000, true, $path === null ? null : "{$path}.limitations");
     }
 
     private static function lintRoute(mixed $value): bool {
-        if (!self::isClosedObject($value, ['confidence', 'currency', 'identity', 'origin'])) {
+        if (!self::structValue($value, ['confidence', 'currency', 'identity', 'origin'], 'result.lint_evidence.records') || !is_array($value)) {
             return false;
         }
-        if (!in_array($value['confidence'], ['unknown', 'low', 'medium', 'high', 'exact'], true)
-            || !in_array($value['currency'], ['current', 'stale', 'unknown'], true)
-            || !in_array($value['origin'], ['explicit', 'extracted', 'inferred'], true)) {
+        self::asMembers($value, ['identity', 'confidence', 'currency', 'origin'], 'result.lint_evidence.records');
+        if (!in_array($value['confidence'] ?? null, ['unknown', 'low', 'medium', 'high', 'exact'], true)
+            || !in_array($value['currency'] ?? null, ['current', 'stale', 'unknown'], true)
+            || !in_array($value['origin'] ?? null, ['explicit', 'extracted', 'inferred'], true)) {
             return false;
         }
-        return self::lintBounded256($value['identity']);
+        return self::lintBounded256($value['identity'] ?? null);
     }
 
     private static function lintStep(mixed $value, ?string $path = null): bool {
-        if (!self::isClosedObject($value, ['confidence', 'guards', 'identity', 'locations', 'role'])) {
+        if (!self::structValue($value, ['confidence', 'guards', 'identity', 'locations', 'role'], $path) || !is_array($value)) {
             return false;
         }
-        if (!in_array($value['role'], ['binding', 'trigger', 'registration', 'callback', 'effect'], true)
-            || !in_array($value['confidence'], ['unknown', 'low', 'medium', 'high', 'exact'], true)) {
+        self::asMembers($value, ['role', 'identity', 'locations', 'guards', 'confidence'], $path);
+        if (!in_array($value['role'] ?? null, ['binding', 'trigger', 'registration', 'callback', 'effect'], true)
+            || !in_array($value['confidence'] ?? null, ['unknown', 'low', 'medium', 'high', 'exact'], true)) {
             return false;
         }
-        return self::lintBounded256($value['identity'])
-            && self::lintStringArray($value['locations'], 32, true, $path === null ? null : "{$path}.locations")
-            && self::lintStringArray($value['guards'], 32, true, $path === null ? null : "{$path}.guards");
+        return self::lintBounded256($value['identity'] ?? null)
+            && self::lintStringArray($value['locations'] ?? null, 32, true, $path === null ? null : "{$path}.locations")
+            && self::lintStringArray($value['guards'] ?? null, 32, true, $path === null ? null : "{$path}.guards");
     }
 
     private static function lintRecord(mixed $value, ?string $path = null): bool {
@@ -944,9 +1157,10 @@ final class Decode {
             'nativeId', 'operation', 'origin', 'ownership', 'resource', 'semanticSymbol',
             'subject', 'trace', 'value',
         ];
-        if (!self::isClosedObject($value, $allowed)) {
+        if (!self::structValue($value, $allowed, $path) || !is_array($value)) {
             return false;
         }
+        self::asMembers($value, $allowed, $path);
         if (!isset($value['kind']) || !isset($value['mechanism']) || !isset($value['confidence']) || !isset($value['currency']) || !isset($value['origin']) || !isset($value['claim'])) {
             return false;
         }
@@ -959,17 +1173,17 @@ final class Decode {
             return false;
         }
         foreach (['id', 'subject', 'nativeId'] as $member) {
-            if (!self::lintBounded256($value[$member])) {
+            if (!self::lintBounded256($value[$member] ?? null)) {
                 return false;
             }
         }
         foreach (['semanticSymbol', 'operation', 'resource', 'field', 'value', 'key'] as $member) {
-            if (!self::lintStateString($value[$member])) {
+            if (!self::lintStateString($value[$member] ?? null)) {
                 return false;
             }
         }
         foreach (['binding', 'configuration', 'ownership', 'trace'] as $member) {
-            if (!self::lintStateBool($value[$member])) {
+            if (!self::lintStateBool($value[$member] ?? null)) {
                 return false;
             }
         }
@@ -999,14 +1213,15 @@ final class Decode {
      * closed nested objects — shallow or malformed evidence is refused
      * instead of being emitted as success.
      */
-    private static function admitLintEvidence(mixed $value, string $path = 'result.lint_evidence'): ?array {
+    private static function admitLintEvidence(mixed &$value, string $path): ?array {
         $allowed = [
             'coverage', 'identity', 'inputManifestDigest', 'limitations', 'locations',
             'pins', 'producer', 'records', 'schemaVersion', 'scope', 'sources', 'target',
         ];
-        if (!self::isClosedObject($value, $allowed)) {
+        if (!self::structValue($value, $allowed, $path)) {
             return self::refuse('decode', 'shape');
         }
+        self::asMembers($value, ['schemaVersion', 'identity', 'target', 'scope', 'producer', 'pins', 'inputManifestDigest', 'sources', 'locations', 'coverage', 'records', 'limitations'], $path);
         foreach ($allowed as $member) {
             if (!array_key_exists($member, $value)) {
                 return self::refuse('decode', 'shape');
@@ -1072,14 +1287,15 @@ final class Decode {
         return null;
     }
 
-    private static function admitProgress(mixed $value, string $path = 'progress'): ?array {
+    private static function admitProgress(mixed &$value, string $path): ?array {
         if (!is_array($value) || !array_is_list($value) || self::rawObjectAt($path) || count($value) > Protocol::BOUNDS['PROGRESS_STEPS_MAX']) {
             return self::refuse('decode', 'bounds');
         }
         foreach ($value as $step) {
-            if (!self::isClosedObject($step, ['detail', 'state', 'step'])) {
+            if (!self::structValue($step, ['detail', 'state', 'step'], $path)) {
                 return self::refuse('decode', 'shape');
             }
+            self::asMembers($step, ['step', 'state', 'detail'], $path);
             if (!self::boundedText($step['step'] ?? null, 128)) {
                 return self::refuse('decode', 'bounds');
             }
@@ -1096,15 +1312,21 @@ final class Decode {
         return null;
     }
 
-    private static function admitError(mixed $value): ?array {
+    private static function admitError(mixed &$value, string $path): ?array {
         $allowed = ['class', 'code', 'detail', 'message', 'partial', 'retryable'];
-        if (!self::isClosedObject($value, $allowed)) {
+        if (!self::structValue($value, $allowed, 'error')) {
             return self::refuse('decode', 'shape');
         }
-        if (!in_array($value['class'], Protocol::ENUMS['errorClass'], true)) {
+        $fields = ['class', 'code', 'message', 'retryable', 'partial', 'detail'];
+        self::asMembers($value, $fields, $path);
+        if (!in_array($value['class'] ?? null, Protocol::ENUMS['errorClass'], true)) {
             return self::refuse('decode', 'shape');
         }
-        if (!self::boundedText($value['code'] ?? null, 128) || !self::boundedText($value['message'] ?? null, 256)) {
+        // Production's response validation refuses empty error strings
+        // after the bounded check (wire.rs `error.code.is_empty()`), so
+        // the SDK admission refuses them too (issue #106 review r6 #3).
+        if ($value['code'] === '' || $value['message'] === ''
+            || !self::boundedText($value['code'] ?? null, 128) || !self::boundedText($value['message'] ?? null, 256)) {
             return self::refuse('decode', 'bounds');
         }
         foreach (['partial', 'retryable'] as $member) {
@@ -1132,12 +1354,13 @@ final class Decode {
         return null;
     }
 
-    private static function admitCapabilities(mixed $value, string $version): ?array {
+    private static function admitCapabilities(mixed &$value, string $version, string $path): ?array {
         $allowed = ['adapter', 'capabilities', 'constraints', 'ir_versions', 'operations', 'profiles', 'progress', 'protocol_versions', 'read_scopes', 'targets', 'transports', 'write_scopes'];
-        if (!self::isClosedObject($value, $allowed)) {
+        if (!self::structValue($value, $allowed, $path)) {
             return self::refuse('decode', 'shape');
         }
-        $refusal = self::admitIdentity($value['adapter']);
+        self::asMembers($value, ['adapter', 'protocol_versions', 'operations', 'transports', 'targets', 'profiles', 'read_scopes', 'write_scopes', 'progress', 'ir_versions', 'capabilities', 'constraints'], $path);
+        $refusal = self::admitIdentity($value["adapter"], "{$path}.adapter");
         if ($refusal !== null) {
             return $refusal;
         }
@@ -1186,7 +1409,12 @@ final class Decode {
         if ($refusal !== null) {
             return $refusal;
         }
-        $scopeText = fn ($scope) => is_string($scope) && $scope !== '' && strlen($scope) <= Protocol::BOUNDS['PATH_MAX'];
+        // Production checks only uniqueness and the count ceiling on the
+        // scope lists (wire.rs `unique(&c.read_scopes, 0, 64)`); item
+        // content is unconstrained text, so the SDK's extra non-empty /
+        // length grammar is an over-strict divergence (issue #106 review
+        // r6 #4) and stays out of admission.
+        $scopeText = fn ($scope) => is_string($scope);
         $refusal = $checkList($value, 'read_scopes', Protocol::BOUNDS['MAX_SCOPES'], false, $scopeText);
         if ($refusal !== null) {
             return $refusal;
@@ -1236,11 +1464,12 @@ final class Decode {
         return null;
     }
 
-    private static function admitResponseValue(array $value): ?array {
+    private static function admitResponseValue(array &$value): ?array {
         $allowed = ['capabilities', 'error', 'evidence', 'operation', 'progress', 'protocol', 'protocol_version', 'request_id', 'result', 'status', 'writes'];
-        if (!self::isClosedObject($value, $allowed)) {
+        if (!self::structValue($value, $allowed, '')) {
             return self::refuse('decode', self::unknownOrShape($value, $allowed));
         }
+        self::asMembers($value, ['protocol', 'protocol_version', 'operation', 'request_id', 'status', 'evidence', 'capabilities', 'result', 'writes', 'progress', 'error'], '');
         foreach (['protocol', 'protocol_version', 'operation', 'request_id', 'status', 'evidence'] as $member) {
             if (!array_key_exists($member, $value)) {
                 return self::refuse('decode', 'shape');
@@ -1264,7 +1493,7 @@ final class Decode {
         if (!in_array($value['status'], Protocol::ENUMS['responseStatus'], true)) {
             return self::refuse('decode', 'shape');
         }
-        $refusal = self::admitEvidence($value['evidence']);
+        $refusal = self::admitEvidence($value["evidence"], "evidence");
         if ($refusal !== null) {
             return $refusal;
         }
@@ -1272,7 +1501,7 @@ final class Decode {
             return self::refuse('decode', 'explicit-null');
         }
         if (isset($value['capabilities'])) {
-            $refusal = self::admitCapabilities($value['capabilities'], $value['protocol_version']);
+            $refusal = self::admitCapabilities($value["capabilities"], $value["protocol_version"], "capabilities");
             if ($refusal !== null) {
                 return $refusal;
             }
@@ -1281,7 +1510,7 @@ final class Decode {
             return self::refuse('decode', 'explicit-null');
         }
         if (isset($value['result'])) {
-            $refusal = self::admitResult($value['result']);
+            $refusal = self::admitResult($value["result"], "result");
             if ($refusal !== null) {
                 return $refusal;
             }
@@ -1294,8 +1523,8 @@ final class Decode {
             if (!is_array($writes) || !array_is_list($writes) || self::rawObjectAt('writes') || count($writes) > Protocol::BOUNDS['MAX_PLAN_ENTRIES']) {
                 return self::refuse('decode', 'bounds');
             }
-            foreach ($writes as $entry) {
-                $refusal = self::admitWriteEntry($entry);
+            foreach ($writes as $index => $entry) {
+                $refusal = self::admitWriteEntry($writes[$index], "writes.{$index}");
                 if ($refusal !== null) {
                     return $refusal;
                 }
@@ -1305,7 +1534,7 @@ final class Decode {
             return self::refuse('decode', 'explicit-null');
         }
         if (isset($value['progress'])) {
-            $refusal = self::admitProgress($value['progress']);
+            $refusal = self::admitProgress($value["progress"], "progress");
             if ($refusal !== null) {
                 return $refusal;
             }
@@ -1314,7 +1543,7 @@ final class Decode {
             return self::refuse('decode', 'explicit-null');
         }
         if (isset($value['error'])) {
-            $refusal = self::admitError($value['error']);
+            $refusal = self::admitError($value["error"], "error");
             if ($refusal !== null) {
                 return $refusal;
             }

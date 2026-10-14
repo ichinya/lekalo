@@ -82,7 +82,18 @@ func main() {
 	// valid/
 	for _, name := range listCorpus(corpus, "valid") {
 		text := readCorpus(corpus, "valid/"+name)
+		// Response routing covers the positional-seq envelope spelling too
+		// (issue #106 review r6 #1): a top-level array whose declared status
+		// position carries a response status is a response document.
 		isResponse := strings.Contains(text, "\"status\"") && strings.Contains(text, "\"evidence\"")
+		if !isResponse && strings.HasPrefix(strings.TrimSpace(text), "[") {
+			var peek []any
+			if json.Unmarshal([]byte(text), &peek) == nil && len(peek) > 4 {
+				status, isStatus := peek[4].(string)
+				_, isOp := peek[2].(string)
+				isResponse = isStatus && isOp && (status == "ok" || status == "error")
+			}
+		}
 		if isResponse {
 			_, refusal := sdk.AdmitResponse(text)
 			record("valid/"+name, refusal == nil, refusalReason(refusal))
@@ -97,7 +108,18 @@ func main() {
 		text := readCorpus(corpus, "invalid/"+name)
 		expect := readCorpus(corpus, "invalid/"+strings.TrimSuffix(name, ".json")+".expect.json")
 		expectStage, expectReason := parseExpect(expect)
+		// Response routing covers the positional-seq envelope spelling too
+		// (issue #106 review r6 #1): a top-level array whose declared status
+		// position carries a response status is a response document.
 		isResponse := strings.Contains(text, "\"status\"") && strings.Contains(text, "\"evidence\"")
+		if !isResponse && strings.HasPrefix(strings.TrimSpace(text), "[") {
+			var peek []any
+			if json.Unmarshal([]byte(text), &peek) == nil && len(peek) > 4 {
+				status, isStatus := peek[4].(string)
+				_, isOp := peek[2].(string)
+				isResponse = isStatus && isOp && (status == "ok" || status == "error")
+			}
+		}
 		var actualStage, actualReason string
 		if !isResponse {
 			if _, refusal := sdk.AdmitRequest(text); refusal != nil {

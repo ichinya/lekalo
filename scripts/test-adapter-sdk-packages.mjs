@@ -89,6 +89,30 @@ rmSync(scratch, { recursive: true, force: true });
 mkdirSync(scratch, { recursive: true });
 const packed = {};
 
+// Provisioning preflight (issue #106 review r6 #3): every interpreter a
+// selected language needs is probed ONCE up front — a missing runtime is
+// a single actionable `provisioning` refusal, never per-check noise.
+{
+  const floors = { php: 8.3 };
+  const needed = new Set(languages.filter((language) => floors[language] !== undefined));
+  for (const language of needed) {
+    const probe = run(language, ["--version"], ROOT);
+    if (probe.error || probe.status !== 0) {
+      fail(
+        "provisioning",
+        `${language} is required for the ${language} checks but was not found on PATH`
+          + ` (install ${language} >= ${floors[language]} or extend PATH)`,
+      );
+    }
+    const versionLine = (probe.stdout ?? probe.stderr ?? "").split("\n")[0] ?? "";
+    const match = versionLine.match(new RegExp(`${language}[ .]*((\\d+)\\.(\\d+))`, "i"));
+    const version = match ? Number(`${match[2]}.${match[3]}`) : NaN;
+    if (Number.isNaN(version) || version < floors[language]) {
+      fail("provisioning", `${language} >= ${floors[language]} required, found: ${versionLine.trim().slice(0, 80)}`);
+    }
+  }
+}
+
 try {
   for (const language of languages) {
     const pkg = config.packages[language];

@@ -343,7 +343,11 @@ export function readSingleObject(text, maxBytes, allowDuplicatePaths) {
   if (utf8Length(text) > maxBytes) return { ok: false, reason: "oversize" };
   const parsed = strictParse(text, allowDuplicatePaths);
   if (!parsed.ok) return parsed;
-  if (parsed.value === null || typeof parsed.value !== "object" || Array.isArray(parsed.value)) {
+  // The document must be an object or a positional array: serde's
+  // typed-struct paths admit BOTH spellings (visit_seq parity, issue
+  // #106 review r6 #1) and the decoders below distinguish struct
+  // positions from arbitrary documents.
+  if (parsed.value === null || typeof parsed.value !== "object") {
     return { ok: false, reason: "shape" };
   }
   return parsed;

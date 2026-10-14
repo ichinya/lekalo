@@ -67,7 +67,14 @@ $list = function (string $family) use ($corpus): array {
 // ---- valid/ ----
 foreach ($list('valid') as $name) {
     $text = $read("valid/{$name}");
+    // Response routing covers the positional-seq envelope spelling too
+    // (issue #106 review r6 #1): a top-level array whose declared status
+    // position carries a response status is a response document.
     $isResponse = str_contains($text, '"status"') && str_contains($text, '"evidence"');
+    if (!$isResponse && str_starts_with(ltrim($text), '[')) {
+        $peek = json_decode($text, true);
+        $isResponse = is_array($peek) && isset($peek[4]) && in_array($peek[4], ['ok', 'error'], true) && isset($peek[2]) && is_string($peek[2]);
+    }
     if ($isResponse) {
         $decoded = Decode::admitResponse($text);
         $record("valid/{$name}", $decoded['ok'], $decoded['reason'] ?? '');
@@ -83,7 +90,14 @@ foreach ($list('invalid') as $name) {
     $expect = json_decode($read('invalid/' . preg_replace('/\.json$/', '.expect.json', $name)), true);
     $expectStage = (string) ($expect['stage'] ?? '');
     $expectReason = (string) ($expect['reason'] ?? '');
+    // Response routing covers the positional-seq envelope spelling too
+    // (issue #106 review r6 #1): a top-level array whose declared status
+    // position carries a response status is a response document.
     $isResponse = str_contains($text, '"status"') && str_contains($text, '"evidence"');
+    if (!$isResponse && str_starts_with(ltrim($text), '[')) {
+        $peek = json_decode($text, true);
+        $isResponse = is_array($peek) && isset($peek[4]) && in_array($peek[4], ['ok', 'error'], true) && isset($peek[2]) && is_string($peek[2]);
+    }
     $actualStage = 'none';
     $actualReason = '';
     if (!$isResponse) {

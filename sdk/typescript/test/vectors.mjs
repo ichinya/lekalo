@@ -46,7 +46,11 @@ const verdict = (name, ok, extra) => {
 for (const name of list("valid")) {
   const text = read(`valid/${name}`);
   const envelope = JSON.parse(text);
-  const isResponse = envelope.status !== undefined;
+  // Response routing covers the positional-seq envelope spelling too
+  // (issue #106 review r6 #1): a top-level array whose declared status
+  // position carries a response status is a response document.
+  const isResponse = envelope.status !== undefined
+    || (Array.isArray(envelope) && ["ok", "error"].includes(envelope[4]) && typeof envelope[2] === "string");
   if (isResponse) {
     const decoded = sdk.decodeResponse(text);
     verdict(`valid/${name}`, decoded.ok, decoded.ok ? {} : { reason: decoded.reason });
@@ -72,7 +76,14 @@ for (const name of list("invalid")) {
   }
   // The wire families are distinguishable without parsing: response
   // envelopes always carry the closed status/evidence pair.
-  const isResponse = text.includes('"status"') && text.includes('"evidence"');
+  // Response routing covers the positional-seq envelope spelling too
+  // (issue #106 review r6 #1): a top-level array whose declared status
+  // position carries a response status is a response document.
+  let isResponse = text.includes('"status"') && text.includes('"evidence"');
+  if (!isResponse && text.trimStart().startsWith("[")) {
+    const peek = JSON.parse(text);
+    isResponse = Array.isArray(peek) && ["ok", "error"].includes(peek[4]) && typeof peek[2] === "string";
+  }
   const decoded = expect.stage === "validate" || !isResponse
     ? (() => {
         const request = sdk.decodeRequest(text);

@@ -314,7 +314,11 @@ final class Json {
         if (!$parsed['ok']) {
             return $parsed;
         }
-        if (!is_array($parsed['value']) || array_is_list($parsed['value'])) {
+        // The document must be an object or a positional array: serde's
+        // typed-struct paths admit BOTH spellings (visit_seq parity,
+        // issue #106 review r6 #1) and the decoders below distinguish
+        // struct positions from arbitrary documents.
+        if (!is_array($parsed['value'])) {
             return ['ok' => false, 'reason' => 'shape'];
         }
         return $parsed;

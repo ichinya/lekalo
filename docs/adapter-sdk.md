@@ -15,6 +15,11 @@ the SDK references pass.
 | `lekalo-adapter-sdk-go` | Go ≥ 1.23 | `sdk/go` | `sdk/go/compatibility.json` |
 | `lekalo/adapter-sdk-php` | PHP ≥ 8.3 | `sdk/php` | `sdk/php/compatibility.json` |
 
+The PHP runtime has no required extensions: UTF-8 character counting
+falls back to a byte-exact pure-PHP implementation when `ext-mbstring`
+is absent (`ext-mbstring` is declared as an optional `suggest` in
+`composer.json`; presence is used when available, never required).
+
 Package versions are independent of the product version. A package
 version can never widen the exact accepted wire set: the emitted
 `compatibility.json` pins the closed supported spellings (`0.3.2`,

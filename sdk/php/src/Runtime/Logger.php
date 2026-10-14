@@ -15,7 +15,9 @@ final class Logger {
         if ($message === '' || str_contains($message, "\n") || str_contains($message, "\r")) {
             return;
         }
-        $text = mb_strlen($message) > self::MAX_MESSAGE_CHARS ? mb_substr($message, 0, self::MAX_MESSAGE_CHARS) : $message;
+        // UTF-8 code-point bound without ext-mbstring (issue #106 review
+        // r6 #2): the shared Decode helpers count characters byte-exactly.
+        $text = Decode::utf8Length($message) > self::MAX_MESSAGE_CHARS ? Decode::utf8Prefix($message, self::MAX_MESSAGE_CHARS) : $message;
         // The fixed-width UTC stamp keeps logs deterministic in shape and
         // free of host timezone data.
         $line = sprintf("%s %s[%s]: %s\n", gmdate('Ymd\THis\Z'), $level, $tag, $text);
@@ -44,7 +46,7 @@ final class Logger {
     }
 
     public static function isLoggableToken(mixed $value): bool {
-        return is_string($value) && $value !== '' && mb_strlen($value) <= 128
+        return is_string($value) && $value !== '' && Decode::utf8Length($value) <= 128
             && !str_contains($value, "\n") && !str_contains($value, "\r");
     }
 }

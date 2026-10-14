@@ -11,6 +11,63 @@ use crate::paths::{
     is_capability_id, is_contract_version, is_logical_path, is_semantic_id, is_token,
 };
 
+/// The declared wire field order of the closed structs (wire.rs), the
+/// positional-seq mapping order (serde visit_seq parity, issue #106
+/// review r6 #1).
+const REQUEST_FIELDS: &[&str] = &[
+    "protocol",
+    "protocol_version",
+    "operation",
+    "request_id",
+    "project_root",
+    "ir_path",
+    "target",
+    "profile",
+    "profile_digest",
+    "profile_capabilities",
+    "dry_run",
+    "limits",
+    "plan_id",
+    "native_request",
+    "lint_request",
+];
+const RESPONSE_FIELDS: &[&str] = &[
+    "protocol",
+    "protocol_version",
+    "operation",
+    "request_id",
+    "status",
+    "evidence",
+    "capabilities",
+    "result",
+    "writes",
+    "progress",
+    "error",
+];
+const NATIVE_REQUEST_FIELDS: &[&str] = &[
+    "changes",
+    "scan_ref",
+    "observed_ref",
+    "execution_policy_ref",
+    "input_manifest_digest",
+    "tool_catalog_digest",
+    "capability_snapshot_digest",
+];
+const CAPABILITIES_FIELDS: &[&str] = &[
+    "adapter",
+    "protocol_versions",
+    "operations",
+    "transports",
+    "targets",
+    "profiles",
+    "read_scopes",
+    "write_scopes",
+    "progress",
+    "ir_versions",
+    "capabilities",
+    "constraints",
+];
+
 /// A decode/validate refusal: one closed safe reason token.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Refusal {
@@ -31,7 +88,7 @@ impl Refusal {
 pub fn decode_request(text: &str) -> Result<Value, Refusal> {
     let value = read_single_object(text, protocol::bounds::MAX_REQUEST_BYTES as usize)
         .map_err(|reason| Refusal::new("decode", parse_reason(&reason)))?;
-    admit_request_value(&value)?;
+    let value = admit_request_value(&value)?;
     validate_request(&value)?;
     Ok(value)
 }
@@ -40,7 +97,7 @@ pub fn decode_request(text: &str) -> Result<Value, Refusal> {
 pub fn admit_request(text: &str) -> Result<Value, Refusal> {
     let value = read_single_object(text, protocol::bounds::MAX_REQUEST_BYTES as usize)
         .map_err(|reason| Refusal::new("decode", parse_reason(&reason)))?;
-    admit_request_value(&value)?;
+    let value = admit_request_value(&value)?;
     Ok(value)
 }
 
@@ -102,7 +159,7 @@ fn bounded_text(value: &Value, max: usize) -> bool {
 }
 
 /// Structural admission of one request envelope (closed shape + bounds).
-pub fn admit_request_value(value: &Value) -> Result<(), Refusal> {
+pub fn admit_request_value(value: &Value) -> Result<Value, Refusal> {
     let refuse = |reason: &str| Err(Refusal::new("decode", reason));
     let allowed = [
         "dry_run",
@@ -121,7 +178,7 @@ pub fn admit_request_value(value: &Value) -> Result<(), Refusal> {
         "request_id",
         "target",
     ];
-    if !is_closed_object(value, &allowed) {
+    if !struct_value(value, REQUEST_FIELDS) {
         return refuse(
             if str_members(value)
                 .iter()
@@ -133,6 +190,28 @@ pub fn admit_request_value(value: &Value) -> Result<(), Refusal> {
             },
         );
     }
+    let mut owned = seq_as_members(value, REQUEST_FIELDS)?.into_owned();
+    // Nested struct members are mapped by their own admission helpers
+    // BEFORE the shared borrow below: the mapped documents replace the
+    // seq spellings so the semantic pass sees member names (issue #106
+    // review r6 #1).
+    if let Some(native) = owned.get("native_request").cloned() {
+        let mapped_native = admit_native_request(&native)?;
+        if let Value::Object(outer) = &mut owned {
+            if let Some(slot) = outer.iter_mut().find(|(k, _)| k == "native_request") {
+                slot.1 = mapped_native;
+            }
+        }
+    }
+    if let Some(lint) = owned.get("lint_request").cloned() {
+        let mapped_lint = admit_lint_request(&lint)?;
+        if let Value::Object(outer) = &mut owned {
+            if let Some(slot) = outer.iter_mut().find(|(k, _)| k == "lint_request") {
+                slot.1 = mapped_lint;
+            }
+        }
+    }
+    let value = &owned;
     for member in [
         "protocol",
         "protocol_version",
@@ -225,19 +304,12 @@ pub fn admit_request_value(value: &Value) -> Result<(), Refusal> {
     if explicit_null(value, "native_request") {
         return refuse("explicit-null");
     }
-    if let Some(native) = value.get("native_request") {
-        admit_native_request(native)?;
-    }
-    if explicit_null(value, "lint_request") {
-        return refuse("explicit-null");
-    }
-    if let Some(lint) = value.get("lint_request") {
-        admit_lint_request(lint)?;
-    }
-    Ok(())
+    Ok(owned)
 }
 
 fn admit_limits(value: &Value) -> Result<(), Refusal> {
+    let value = seq_as_members(value, &["timeout_ms", "max_output_bytes"])?;
+    let value = value.as_ref();
     if !is_closed_object(value, &["max_output_bytes", "timeout_ms"]) {
         return Err(Refusal::new("decode", "shape"));
     }
@@ -291,6 +363,8 @@ fn admit_profile_capabilities(value: &Value) -> Result<(), Refusal> {
     }
     let mut previous: Option<String> = None;
     for capability in items {
+        let mapped = seq_as_members(capability, &["id", "support"])?;
+        let capability = mapped.as_ref();
         if !is_closed_object(capability, &["id", "support"]) {
             return Err(Refusal::new("decode", "shape"));
         }
@@ -363,7 +437,22 @@ fn seq_as_members<'a>(
     Ok(std::borrow::Cow::Owned(Value::Object(members)))
 }
 
-fn admit_content_ref(value: &Value) -> Result<(), Refusal> {
+/// The struct-position admission shape: a member map (closed) or a
+/// positional sequence prefix of the declared fields — never a scalar
+/// (issue #106 review r6 #1).
+fn struct_value(value: &Value, fields: &[&str]) -> bool {
+    match value {
+        Value::Array(items) => items.len() <= fields.len(),
+        Value::Object(members) => members
+            .iter()
+            .all(|(key, _)| fields.contains(&key.as_str())),
+        _ => false,
+    }
+}
+
+fn admit_content_ref(value: &Value, _path: &str) -> Result<(), Refusal> {
+    let value = seq_as_members(value, &["digest", "revision", "adapter"])?;
+    let value = value.as_ref();
     if !is_closed_object(value, &["adapter", "digest", "revision"]) {
         return Err(Refusal::new("decode", "shape"));
     }
@@ -400,7 +489,7 @@ fn admit_content_ref(value: &Value) -> Result<(), Refusal> {
     Ok(())
 }
 
-fn admit_native_request(value: &Value) -> Result<(), Refusal> {
+fn admit_native_request(value: &Value) -> Result<Value, Refusal> {
     let allowed = [
         "capability_snapshot_digest",
         "changes",
@@ -410,6 +499,8 @@ fn admit_native_request(value: &Value) -> Result<(), Refusal> {
         "scan_ref",
         "tool_catalog_digest",
     ];
+    let mapped = seq_as_members(value, NATIVE_REQUEST_FIELDS)?;
+    let value = mapped.as_ref();
     if !is_closed_object(value, &allowed) {
         return Err(Refusal::new("decode", "shape"));
     }
@@ -454,6 +545,8 @@ fn admit_native_request(value: &Value) -> Result<(), Refusal> {
     // (wire.rs native-request: member checks only) — the SDK's old
     // ascending-path requirement refused legal documents (review r5 #9).
     for change in files {
+        let mapped = seq_as_members(change, &["path", "change", "before_digest", "after_digest"])?;
+        let change = mapped.as_ref();
         if !is_closed_object(change, &["after_digest", "before_digest", "change", "path"]) {
             return Err(Refusal::new("decode", "shape"));
         }
@@ -486,19 +579,27 @@ fn admit_native_request(value: &Value) -> Result<(), Refusal> {
             return Err(Refusal::new("decode", "shape"));
         }
     }
-    admit_content_ref(value.get("scan_ref").unwrap_or(&Value::Null))?;
-    admit_content_ref(value.get("execution_policy_ref").unwrap_or(&Value::Null))?;
+    admit_content_ref(
+        value.get("scan_ref").unwrap_or(&Value::Null),
+        "native_request.scan_ref",
+    )?;
+    admit_content_ref(
+        value.get("execution_policy_ref").unwrap_or(&Value::Null),
+        "native_request.execution_policy_ref",
+    )?;
     if explicit_null(value, "observed_ref") {
         return Err(Refusal::new("decode", "explicit-null"));
     }
     if let Some(observed) = value.get("observed_ref") {
-        admit_content_ref(observed)?;
+        admit_content_ref(observed, "native_request.observed_ref")?;
     }
-    Ok(())
+    Ok(value.clone())
 }
 
-fn admit_lint_request(value: &Value) -> Result<(), Refusal> {
+fn admit_lint_request(value: &Value) -> Result<Value, Refusal> {
     let allowed = ["bindings", "files", "pins", "scope"];
+    let value = seq_as_members(value, &["scope", "pins", "bindings", "files"])?;
+    let value = value.as_ref();
     if !is_closed_object(value, &allowed) {
         return Err(Refusal::new("decode", "shape"));
     }
@@ -510,7 +611,10 @@ fn admit_lint_request(value: &Value) -> Result<(), Refusal> {
         if value.get(member).is_none() {
             return Err(Refusal::new("decode", "shape"));
         }
-        if explicit_null(value, member) {
+        // pins is a REQUIRED struct (not an Option): an explicit null is
+        // serde's wrong-type `shape`, never the Option null token
+        // (issue #106 review r6 #7).
+        if member != "pins" && explicit_null(value, member) {
             return Err(Refusal::new("decode", "explicit-null"));
         }
     }
@@ -535,6 +639,11 @@ fn admit_lint_request(value: &Value) -> Result<(), Refusal> {
     }
     for binding in bindings {
         let allowed = ["fingerprint", "kind", "nativeId", "path", "symbol"];
+        let mapped = seq_as_members(
+            binding,
+            &["path", "nativeId", "symbol", "kind", "fingerprint"],
+        )?;
+        let binding = mapped.as_ref();
         if !is_closed_object(binding, &allowed) {
             return Err(Refusal::new("decode", "shape"));
         }
@@ -562,7 +671,18 @@ fn admit_lint_request(value: &Value) -> Result<(), Refusal> {
             return Err(Refusal::new("decode", "bounds"));
         }
     }
-    let pins = value.get("pins").unwrap_or(&Value::Null);
+    let pins = seq_as_members(
+        value.get("pins").unwrap_or(&Value::Null),
+        &[
+            "model",
+            "ir",
+            "observed",
+            "revision",
+            "profile",
+            "capabilities",
+        ],
+    )?;
+    let pins = pins.as_ref();
     let allowed = [
         "capabilities",
         "ir",
@@ -574,19 +694,57 @@ fn admit_lint_request(value: &Value) -> Result<(), Refusal> {
     if !is_closed_object(pins, &allowed) {
         return Err(Refusal::new("decode", "shape"));
     }
+    if [
+        "capabilities",
+        "ir",
+        "model",
+        "observed",
+        "profile",
+        "revision",
+    ]
+    .iter()
+    .any(|member| explicit_null(pins, member))
+    {
+        return Err(Refusal::new("decode", "shape"));
+    }
     // The pinned 0.6.4 schema carries every pin as a State-tagged value
     // ({state:"known",value}|{state:"unknown"|"withheld"|"unsupported"}).
     for member in allowed {
-        if explicit_null(pins, member) {
-            return Err(Refusal::new("decode", "explicit-null"));
+        if pins.get(member).is_none() {
+            return Err(Refusal::new("decode", "shape"));
         }
         admit_state_string(pins.get(member).unwrap_or(&Value::Null))?;
     }
-    Ok(())
+    Ok(value.clone())
 }
 
 /// One State-tagged string value of the pinned 0.6.4 lint schema.
 fn admit_state_string(value: &Value) -> Result<(), Refusal> {
+    // The adjacent-tag enum also admits the serde `visit_seq` pair:
+    // ["known", value] and [tag, null] (the unit variants' serde None
+    // payload spelling) positionally; [tag] alone is an invalid length
+    // (issue #106 review r6 #1).
+    if let Some(items) = value.as_array() {
+        if items.len() > 2 {
+            return Err(Refusal::new("decode", "shape"));
+        }
+        let tag = items.first().and_then(Value::as_str).unwrap_or("");
+        return match tag {
+            "known" => {
+                if items.len() != 2
+                    || !items
+                        .get(1)
+                        .and_then(Value::as_str)
+                        .is_some_and(|v| !v.is_empty() && v.chars().count() <= 128)
+                {
+                    return Err(Refusal::new("decode", "bounds"));
+                }
+                Ok(())
+            }
+            "unknown" | "withheld" | "unsupported" => Ok(()),
+            _ => Err(Refusal::new("decode", "shape")),
+        };
+    }
     if !value.is_object() {
         return Err(Refusal::new("decode", "shape"));
     }
@@ -619,7 +777,9 @@ fn admit_state_string(value: &Value) -> Result<(), Refusal> {
 // Response admission
 // ---------------------------------------------------------------------------
 
-fn admit_identity(value: &Value) -> Result<(), Refusal> {
+fn admit_identity(value: &Value, _path: &str) -> Result<(), Refusal> {
+    let mapped = seq_as_members(value, &["id", "version", "digest"])?;
+    let value = mapped.as_ref();
     if !is_closed_object(value, &["digest", "id", "version"]) {
         return Err(Refusal::new("decode", "shape"));
     }
@@ -647,11 +807,16 @@ fn admit_identity(value: &Value) -> Result<(), Refusal> {
     Ok(())
 }
 
-fn admit_evidence(value: &Value) -> Result<(), Refusal> {
+fn admit_evidence(value: &Value, path: &str) -> Result<(), Refusal> {
+    let mapped = seq_as_members(value, &["adapter", "plan_id"])?;
+    let value = mapped.as_ref();
     if !is_closed_object(value, &["adapter", "plan_id"]) {
         return Err(Refusal::new("decode", "shape"));
     }
-    admit_identity(value.get("adapter").unwrap_or(&Value::Null))?;
+    admit_identity(
+        value.get("adapter").unwrap_or(&Value::Null),
+        &format!("{path}.adapter"),
+    )?;
     if explicit_null(value, "plan_id") {
         return Err(Refusal::new("decode", "explicit-null"));
     }
@@ -663,7 +828,9 @@ fn admit_evidence(value: &Value) -> Result<(), Refusal> {
     Ok(())
 }
 
-fn admit_write_entry(value: &Value) -> Result<(), Refusal> {
+fn admit_write_entry(value: &Value, _path: &str) -> Result<(), Refusal> {
+    let mapped = seq_as_members(value, &["path", "action", "sha256"])?;
+    let value = mapped.as_ref();
     if !is_closed_object(value, &["action", "path", "sha256"]) {
         return Err(Refusal::new("decode", "shape"));
     }
@@ -693,7 +860,9 @@ fn admit_write_entry(value: &Value) -> Result<(), Refusal> {
     Ok(())
 }
 
-fn admit_scan_entry(value: &Value) -> Result<(), Refusal> {
+fn admit_scan_entry(value: &Value, _path: &str) -> Result<(), Refusal> {
+    let mapped = seq_as_members(value, &["path", "kind", "detail", "evidence"])?;
+    let value = mapped.as_ref();
     if !is_closed_object(value, &["detail", "evidence", "kind", "path"]) {
         return Err(Refusal::new("decode", "shape"));
     }
@@ -744,6 +913,8 @@ fn admit_scan_entry(value: &Value) -> Result<(), Refusal> {
             return Err(Refusal::new("decode", "bounds"));
         }
         for reference in references {
+            let ref_mapped = seq_as_members(reference, &["target", "role", "confidence"])?;
+            let reference = ref_mapped.as_ref();
             if !is_closed_object(reference, &["confidence", "role", "target"]) {
                 return Err(Refusal::new("decode", "shape"));
             }
@@ -774,7 +945,7 @@ fn admit_scan_entry(value: &Value) -> Result<(), Refusal> {
     Ok(())
 }
 
-fn admit_native_plan(value: &Value) -> Result<(), Refusal> {
+fn admit_native_plan(value: &Value, _path: &str) -> Result<(), Refusal> {
     let allowed = [
         "commands",
         "completeness",
@@ -785,6 +956,18 @@ fn admit_native_plan(value: &Value) -> Result<(), Refusal> {
         "run_eligibility",
         "units",
     ];
+    let mapped = seq_as_members(
+        value,
+        &[
+            "kind",
+            "digest",
+            "commands",
+            "packages",
+            "completeness",
+            "run_eligibility",
+        ],
+    )?;
+    let value = mapped.as_ref();
     if !is_closed_object(value, &allowed) {
         return Err(Refusal::new("decode", "shape"));
     }
@@ -826,7 +1009,7 @@ fn admit_native_plan(value: &Value) -> Result<(), Refusal> {
     Ok(())
 }
 
-fn admit_result(member_value: &Value) -> Result<(), Refusal> {
+fn admit_result(member_value: &Value, _path: &str) -> Result<(), Refusal> {
     // All-default operation result: production deserializes it from a
     // positional seq too (`result:[]` is the all-default value), exactly
     // like serde struct-from-seq (issue #106 review r5 #9).
@@ -875,8 +1058,8 @@ fn admit_result(member_value: &Value) -> Result<(), Refusal> {
         if items.len() > protocol::bounds::SCAN_ENTRIES_MAX as usize {
             return Err(Refusal::new("decode", "bounds"));
         }
-        for entry in items {
-            admit_scan_entry(entry)?;
+        for (index, entry) in items.iter().enumerate() {
+            admit_scan_entry(entry, &format!("result.entries.{index}"))?;
         }
     }
     if explicit_null(value, "findings") {
@@ -890,6 +1073,8 @@ fn admit_result(member_value: &Value) -> Result<(), Refusal> {
             return Err(Refusal::new("decode", "bounds"));
         }
         for finding in items {
+            let mapped = seq_as_members(finding, &["path", "code", "detail"])?;
+            let finding = mapped.as_ref();
             if !is_closed_object(finding, &["code", "detail", "path"]) {
                 return Err(Refusal::new("decode", "shape"));
             }
@@ -921,6 +1106,8 @@ fn admit_result(member_value: &Value) -> Result<(), Refusal> {
             return Err(Refusal::new("decode", "bounds"));
         }
         for binding in items {
+            let mapped = seq_as_members(binding, &["module", "target", "profile"])?;
+            let binding = mapped.as_ref();
             if !is_closed_object(binding, &["module", "profile", "target"]) {
                 return Err(Refusal::new("decode", "shape"));
             }
@@ -939,7 +1126,7 @@ fn admit_result(member_value: &Value) -> Result<(), Refusal> {
         return Err(Refusal::new("decode", "explicit-null"));
     }
     if let Some(plan) = value.get("native_plan") {
-        admit_native_plan(plan)?;
+        admit_native_plan(plan, "result.native_plan")?;
     }
     if explicit_null(value, "lint_evidence") {
         return Err(Refusal::new("decode", "explicit-null"));
@@ -984,6 +1171,16 @@ fn lint_string_array(value: &Value, max: usize, unique: bool) -> bool {
 }
 
 fn lint_state_string(value: &Value) -> bool {
+    if let Some(items) = value.as_array() {
+        if items.len() > 2 {
+            return false;
+        }
+        let tag = items.first().and_then(Value::as_str).unwrap_or("");
+        if tag == "known" {
+            return items.len() == 2 && lint_bounded_256(items.get(1).unwrap_or(&Value::Null));
+        }
+        return matches!(tag, "unknown" | "withheld" | "unsupported");
+    }
     if !is_closed_object(value, &["state", "value"]) {
         return false;
     }
@@ -995,6 +1192,16 @@ fn lint_state_string(value: &Value) -> bool {
 }
 
 fn lint_state_bool(value: &Value) -> bool {
+    if let Some(items) = value.as_array() {
+        if items.len() > 2 {
+            return false;
+        }
+        let tag = items.first().and_then(Value::as_str).unwrap_or("");
+        if tag == "known" {
+            return items.len() == 2 && items.get(1).and_then(Value::as_bool).is_some();
+        }
+        return matches!(tag, "unknown" | "withheld" | "unsupported");
+    }
     if !is_closed_object(value, &["state", "value"]) {
         return false;
     }
@@ -1006,6 +1213,20 @@ fn lint_state_bool(value: &Value) -> bool {
 }
 
 fn lint_state_u64(value: &Value) -> bool {
+    if let Some(items) = value.as_array() {
+        if items.len() > 2 {
+            return false;
+        }
+        let tag = items.first().and_then(Value::as_str).unwrap_or("");
+        if tag == "known" {
+            return items.len() == 2
+                && items
+                    .get(1)
+                    .and_then(Value::as_u64)
+                    .is_some_and(|n| n <= 10_000_000);
+        }
+        return matches!(tag, "unknown" | "withheld" | "unsupported");
+    }
     if !is_closed_object(value, &["state", "value"]) {
         return false;
     }
@@ -1034,6 +1255,24 @@ fn lint_pins(value: &Value) -> bool {
         "profile",
         "revision",
     ];
+    if !struct_value(value, &allowed) {
+        return false;
+    }
+    let mapped = match seq_as_members(
+        value,
+        &[
+            "model",
+            "ir",
+            "observed",
+            "revision",
+            "profile",
+            "capabilities",
+        ],
+    ) {
+        Ok(mapped) => mapped,
+        Err(_) => return false,
+    };
+    let value = mapped.as_ref();
     is_closed_object(value, &allowed)
         && allowed
             .iter()
@@ -1050,6 +1289,25 @@ fn lint_producer(value: &Value) -> bool {
         "tool",
         "version",
     ];
+    if !struct_value(value, &allowed) {
+        return false;
+    }
+    let mapped = match seq_as_members(
+        value,
+        &[
+            "id",
+            "version",
+            "artifactDigest",
+            "tool",
+            "compiler",
+            "framework",
+            "recipe",
+        ],
+    ) {
+        Ok(mapped) => mapped,
+        Err(_) => return false,
+    };
+    let value = mapped.as_ref();
     is_closed_object(value, &allowed)
         && ["id", "version", "tool", "recipe"]
             .iter()
@@ -1061,6 +1319,14 @@ fn lint_producer(value: &Value) -> bool {
 
 fn lint_source(value: &Value) -> bool {
     let allowed = ["bytes", "fingerprint", "id", "path"];
+    if !struct_value(value, &allowed) {
+        return false;
+    }
+    let mapped = match seq_as_members(value, &["id", "path", "fingerprint", "bytes"]) {
+        Ok(mapped) => mapped,
+        Err(_) => return false,
+    };
+    let value = mapped.as_ref();
     is_closed_object(value, &allowed)
         && lint_bounded_256(value.get("id").unwrap_or(&Value::Null))
         && value
@@ -1085,6 +1351,26 @@ fn lint_span(value: &Value) -> bool {
         "source",
         "start",
     ];
+    if !struct_value(value, &allowed) {
+        return false;
+    }
+    let mapped = match seq_as_members(
+        value,
+        &[
+            "id",
+            "source",
+            "start",
+            "end",
+            "line",
+            "column",
+            "endLine",
+            "endColumn",
+        ],
+    ) {
+        Ok(mapped) => mapped,
+        Err(_) => return false,
+    };
+    let value = mapped.as_ref();
     if !is_closed_object(value, &allowed) {
         return false;
     }
@@ -1117,6 +1403,25 @@ fn lint_coverage(value: &Value) -> bool {
         "state",
         "target",
     ];
+    if !struct_value(value, &allowed) {
+        return false;
+    }
+    let mapped = match seq_as_members(
+        value,
+        &[
+            "rule",
+            "target",
+            "scope",
+            "state",
+            "eligible",
+            "examined",
+            "limitations",
+        ],
+    ) {
+        Ok(mapped) => mapped,
+        Err(_) => return false,
+    };
+    let value = mapped.as_ref();
     is_closed_object(value, &allowed)
         && ["rule", "target", "scope"]
             .iter()
@@ -1136,6 +1441,14 @@ fn lint_coverage(value: &Value) -> bool {
 
 fn lint_route(value: &Value) -> bool {
     let allowed = ["confidence", "currency", "identity", "origin"];
+    if !struct_value(value, &allowed) {
+        return false;
+    }
+    let mapped = match seq_as_members(value, &["identity", "confidence", "currency", "origin"]) {
+        Ok(mapped) => mapped,
+        Err(_) => return false,
+    };
+    let value = mapped.as_ref();
     is_closed_object(value, &allowed)
         && lint_bounded_256(value.get("identity").unwrap_or(&Value::Null))
         && matches!(
@@ -1154,6 +1467,17 @@ fn lint_route(value: &Value) -> bool {
 
 fn lint_step(value: &Value) -> bool {
     let allowed = ["confidence", "guards", "identity", "locations", "role"];
+    if !struct_value(value, &allowed) {
+        return false;
+    }
+    let mapped = match seq_as_members(
+        value,
+        &["role", "identity", "locations", "guards", "confidence"],
+    ) {
+        Ok(mapped) => mapped,
+        Err(_) => return false,
+    };
+    let value = mapped.as_ref();
     is_closed_object(value, &allowed)
         && matches!(
             value.get("role").and_then(Value::as_str),
@@ -1194,6 +1518,39 @@ fn lint_record(value: &Value) -> bool {
         "trace",
         "value",
     ];
+    let record_fields = [
+        "id",
+        "kind",
+        "mechanism",
+        "subject",
+        "semanticSymbol",
+        "operation",
+        "resource",
+        "field",
+        "nativeId",
+        "confidence",
+        "currency",
+        "origin",
+        "claim",
+        "binding",
+        "configuration",
+        "ownership",
+        "trace",
+        "value",
+        "key",
+        "candidates",
+        "activation",
+        "locations",
+        "guards",
+    ];
+    if !struct_value(value, &record_fields) {
+        return false;
+    }
+    let mapped = match seq_as_members(value, &record_fields) {
+        Ok(mapped) => mapped,
+        Err(_) => return false,
+    };
+    let value = mapped.as_ref();
     if !is_closed_object(value, &allowed) {
         return false;
     }
@@ -1283,6 +1640,27 @@ fn admit_lint_evidence(value: &Value) -> Result<(), Refusal> {
         "sources",
         "target",
     ];
+    if !struct_value(value, &allowed) {
+        return refuse("shape");
+    }
+    let mapped = seq_as_members(
+        value,
+        &[
+            "schemaVersion",
+            "identity",
+            "target",
+            "scope",
+            "producer",
+            "pins",
+            "inputManifestDigest",
+            "sources",
+            "locations",
+            "coverage",
+            "records",
+            "limitations",
+        ],
+    )?;
+    let value = mapped.as_ref();
     if !is_closed_object(value, &allowed) {
         return refuse("shape");
     }
@@ -1348,7 +1726,7 @@ fn admit_lint_evidence(value: &Value) -> Result<(), Refusal> {
     Ok(())
 }
 
-fn admit_progress(value: &Value) -> Result<(), Refusal> {
+fn admit_progress(value: &Value, _path: &str) -> Result<(), Refusal> {
     let Some(steps) = value.as_array() else {
         return Err(Refusal::new("decode", "bounds"));
     };
@@ -1356,6 +1734,8 @@ fn admit_progress(value: &Value) -> Result<(), Refusal> {
         return Err(Refusal::new("decode", "bounds"));
     }
     for step in steps {
+        let mapped = seq_as_members(step, &["step", "state", "detail"])?;
+        let step = mapped.as_ref();
         if !is_closed_object(step, &["detail", "state", "step"]) {
             return Err(Refusal::new("decode", "shape"));
         }
@@ -1378,8 +1758,13 @@ fn admit_progress(value: &Value) -> Result<(), Refusal> {
     Ok(())
 }
 
-fn admit_error(value: &Value) -> Result<(), Refusal> {
+fn admit_error(value: &Value, _path: &str) -> Result<(), Refusal> {
     let allowed = ["class", "code", "detail", "message", "partial", "retryable"];
+    let mapped = seq_as_members(
+        value,
+        &["class", "code", "message", "retryable", "partial", "detail"],
+    )?;
+    let value = mapped.as_ref();
     if !is_closed_object(value, &allowed) {
         return Err(Refusal::new("decode", "shape"));
     }
@@ -1452,7 +1837,7 @@ fn unique_bounded(
     }
 }
 
-fn admit_capabilities(value: &Value, protocol_version: &str) -> Result<(), Refusal> {
+fn admit_capabilities(value: &Value, protocol_version: &str, path: &str) -> Result<(), Refusal> {
     let allowed = [
         "adapter",
         "capabilities",
@@ -1467,10 +1852,15 @@ fn admit_capabilities(value: &Value, protocol_version: &str) -> Result<(), Refus
         "transports",
         "write_scopes",
     ];
+    let mapped = seq_as_members(value, CAPABILITIES_FIELDS)?;
+    let value = mapped.as_ref();
     if !is_closed_object(value, &allowed) {
         return Err(Refusal::new("decode", "shape"));
     }
-    admit_identity(value.get("adapter").unwrap_or(&Value::Null))?;
+    admit_identity(
+        value.get("adapter").unwrap_or(&Value::Null),
+        &format!("{path}.adapter"),
+    )?;
     let is_contract = |value: &Value| value.as_str().is_some_and(is_contract_version);
     let is_token_value = |value: &Value| value.as_str().is_some_and(is_token);
     // Operation set gating mirrors production validate_bounds exactly
@@ -1639,7 +2029,7 @@ fn admit_capabilities(value: &Value, protocol_version: &str) -> Result<(), Refus
 }
 
 /// Structural admission of one response envelope.
-pub fn admit_response_value(value: &Value) -> Result<(), Refusal> {
+pub fn admit_response_value(value: &Value) -> Result<Value, Refusal> {
     let allowed = [
         "capabilities",
         "error",
@@ -1653,7 +2043,7 @@ pub fn admit_response_value(value: &Value) -> Result<(), Refusal> {
         "status",
         "writes",
     ];
-    if !is_closed_object(value, &allowed) {
+    if !struct_value(value, RESPONSE_FIELDS) {
         return Err(Refusal::new(
             "decode",
             if str_members(value)
@@ -1666,6 +2056,7 @@ pub fn admit_response_value(value: &Value) -> Result<(), Refusal> {
             },
         ));
     }
+    let value = &*seq_as_members(value, RESPONSE_FIELDS)?;
     for member in [
         "protocol",
         "protocol_version",
@@ -1709,7 +2100,7 @@ pub fn admit_response_value(value: &Value) -> Result<(), Refusal> {
     if !protocol::enums::RESPONSESTATUS.contains(&status) {
         return Err(Refusal::new("decode", "shape"));
     }
-    admit_evidence(value.get("evidence").unwrap_or(&Value::Null))?;
+    admit_evidence(value.get("evidence").unwrap_or(&Value::Null), "evidence")?;
     let protocol_version = value
         .get("protocol_version")
         .and_then(Value::as_str)
@@ -1719,13 +2110,13 @@ pub fn admit_response_value(value: &Value) -> Result<(), Refusal> {
         return Err(Refusal::new("decode", "explicit-null"));
     }
     if let Some(capabilities) = value.get("capabilities") {
-        admit_capabilities(capabilities, &protocol_version)?;
+        admit_capabilities(capabilities, &protocol_version, "capabilities")?;
     }
     if explicit_null(value, "result") {
         return Err(Refusal::new("decode", "explicit-null"));
     }
     if let Some(result_member) = value.get("result") {
-        admit_result(result_member)?;
+        admit_result(result_member, "result")?;
         // Lint evidence is version-gated exactly like production
         // validate_bounds (issue #106 review r5 #1): the member is legal
         // only on a 0.6.4 `lint` response.
@@ -1751,23 +2142,23 @@ pub fn admit_response_value(value: &Value) -> Result<(), Refusal> {
         if items.len() > protocol::bounds::MAX_PLAN_ENTRIES as usize {
             return Err(Refusal::new("decode", "bounds"));
         }
-        for entry in items {
-            admit_write_entry(entry)?;
+        for (index, entry) in items.iter().enumerate() {
+            admit_write_entry(entry, &format!("writes.{index}"))?;
         }
     }
     if explicit_null(value, "progress") {
         return Err(Refusal::new("decode", "explicit-null"));
     }
     if let Some(progress) = value.get("progress") {
-        admit_progress(progress)?;
+        admit_progress(progress, "progress")?;
     }
     if explicit_null(value, "error") {
         return Err(Refusal::new("decode", "explicit-null"));
     }
     if let Some(error) = value.get("error") {
-        admit_error(error)?;
+        admit_error(error, "error")?;
     }
-    Ok(())
+    Ok(value.clone())
 }
 
 // ---------------------------------------------------------------------------
@@ -1861,6 +2252,12 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
             .and_then(Value::as_array)
             .unwrap_or(&[])
         {
+            let mapped = seq_as_members(
+                binding,
+                &["path", "nativeId", "symbol", "kind", "fingerprint"],
+            )
+            .map_err(|r| Refusal::new("validate", &r.reason))?;
+            let binding = mapped.as_ref();
             let path = binding.get("path").and_then(Value::as_str).unwrap_or("");
             let native_id = binding
                 .get("nativeId")
@@ -1885,7 +2282,19 @@ pub fn validate_request(value: &Value) -> Result<(), Refusal> {
                 return invalid("lint-binding");
             }
         }
-        let pins = lint.get("pins").unwrap_or(&Value::Null);
+        let pins_mapped = seq_as_members(
+            lint.get("pins").unwrap_or(&Value::Null),
+            &[
+                "model",
+                "ir",
+                "observed",
+                "revision",
+                "profile",
+                "capabilities",
+            ],
+        )
+        .map_err(|r| Refusal::new("validate", &r.reason))?;
+        let pins = pins_mapped.as_ref();
         let pin_known = |pin: &Value| -> Option<String> {
             if pin.get("state").and_then(Value::as_str) == Some("known") {
                 pin.get("value").and_then(Value::as_str).map(str::to_owned)

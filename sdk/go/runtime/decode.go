@@ -3,6 +3,7 @@
 package runtime
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/ichinya/lekalo-adapter-sdk-go/generated"
@@ -63,7 +64,8 @@ func AdmitRequest(text string) (Value, *Refusal) {
 	if reason != "" {
 		return nil, refuse(stageDecode, string(reason))
 	}
-	if refusal := AdmitRequestValue(value); refusal != nil {
+	value, refusal := AdmitRequestValue(value)
+	if refusal != nil {
 		return nil, refusal
 	}
 	if refusal := ValidateRequest(value); refusal != nil {
@@ -73,102 +75,110 @@ func AdmitRequest(text string) (Value, *Refusal) {
 }
 
 // AdmitRequestValue runs only the structural admission pass.
-func AdmitRequestValue(value Value) *Refusal {
+func AdmitRequestValue(value Value) (Value, *Refusal) {
 	allowed := []string{"dry_run", "ir_path", "limits", "lint_request", "native_request", "operation", "plan_id", "profile", "profile_capabilities", "profile_digest", "project_root", "protocol", "protocol_version", "request_id", "target"}
-	if !isClosedObject(value, allowed) {
-		return refuse(stageDecode, unknownOrShape(value, allowed))
+	// The declared field order (wire.rs RequestEnvelope) drives the
+	// positional-seq mapping (issue #106 review r6 #1).
+	fields := []string{"protocol", "protocol_version", "operation", "request_id", "project_root", "ir_path", "target", "profile", "profile_digest", "profile_capabilities", "dry_run", "limits", "plan_id", "native_request", "lint_request"}
+	if !structValue(value, fields) {
+		return nil, refuse(stageDecode, unknownOrShape(value, allowed))
 	}
+	value, _ = seqAsMembers(value, fields)
 	for _, member := range []string{"protocol", "protocol_version", "operation", "request_id", "project_root"} {
 		if !Has(value, member) {
-			return refuse(stageDecode, "shape")
+			return nil, refuse(stageDecode, "shape")
 		}
 		if IsNull(value, member) {
-			return refuse(stageDecode, "explicit-null")
+			return nil, refuse(stageDecode, "explicit-null")
 		}
 	}
 	if GetString(value, "protocol") != generated.WireToken {
-		return refuse(stageDecode, "token")
+		return nil, refuse(stageDecode, "token")
 	}
 	version := GetString(value, "protocol_version")
 	if !containsString(generated.SupportedProtocolVersions, version) {
-		return refuse(stageDecode, "version")
+		return nil, refuse(stageDecode, "version")
 	}
 	if !containsString(generated.LatestOperations, GetString(value, "operation")) {
-		return refuse(stageDecode, "operation")
+		return nil, refuse(stageDecode, "operation")
 	}
 	if !IsRequestID(GetString(value, "request_id")) {
-		return refuse(stageDecode, "request-id")
+		return nil, refuse(stageDecode, "request-id")
 	}
 	if GetString(value, "project_root") != "." {
-		return refuse(stageDecode, "grammar")
+		return nil, refuse(stageDecode, "grammar")
 	}
 	for _, member := range []string{"ir_path", "target", "profile"} {
 		if IsNull(value, member) {
-			return refuse(stageDecode, "explicit-null")
+			return nil, refuse(stageDecode, "explicit-null")
 		}
 		if Has(value, member) {
 			if member == "ir_path" {
 				if !IsLogicalPath(GetString(value, member)) {
-					return refuse(stageDecode, "grammar")
+					return nil, refuse(stageDecode, "grammar")
 				}
 			} else if !IsToken(GetString(value, member)) {
-				return refuse(stageDecode, "grammar")
+				return nil, refuse(stageDecode, "grammar")
 			}
 		}
 	}
 	if IsNull(value, "profile_digest") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "profile_digest") && !IsSha256Digest(GetString(value, "profile_digest")) {
-		return refuse(stageDecode, "bounds")
+		return nil, refuse(stageDecode, "bounds")
 	}
 	if IsNull(value, "dry_run") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "dry_run") {
 		if _, ok := GetBool(value, "dry_run"); !ok {
-			return refuse(stageDecode, "shape")
+			return nil, refuse(stageDecode, "shape")
 		}
 	}
 	if IsNull(value, "plan_id") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "plan_id") && !IsPlanID(GetString(value, "plan_id")) {
-		return refuse(stageDecode, "bounds")
+		return nil, refuse(stageDecode, "bounds")
 	}
 	if IsNull(value, "limits") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "limits") {
 		if refusal := admitLimits(value.(map[string]any)["limits"]); refusal != nil {
-			return refusal
+			return nil, refusal
 		}
 	}
 	if IsNull(value, "profile_capabilities") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "profile_capabilities") {
 		if refusal := admitProfileCapabilities(value.(map[string]any)["profile_capabilities"]); refusal != nil {
-			return refusal
+			return nil, refusal
 		}
 	}
 	if IsNull(value, "native_request") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "native_request") {
-		if refusal := admitNativeRequest(value.(map[string]any)["native_request"]); refusal != nil {
-			return refusal
+		nativeMapped, refusal := admitNativeRequest(valueOf(value, "native_request"))
+		if refusal != nil {
+			return nil, refusal
 		}
+		value.(map[string]any)["native_request"] = nativeMapped
 	}
 	if IsNull(value, "lint_request") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "lint_request") {
-		if refusal := admitLintRequest(value.(map[string]any)["lint_request"]); refusal != nil {
-			return refusal
+		lintMapped, refusal := admitLintRequest(valueOf(value, "lint_request"))
+		if refusal != nil {
+			return nil, refusal
 		}
+		value.(map[string]any)["lint_request"] = lintMapped
 	}
-	return nil
+	return value, nil
 }
 
 func unknownOrShape(value Value, allowed []string) string {
@@ -184,7 +194,11 @@ func unknownOrShape(value Value, allowed []string) string {
 	return "shape"
 }
 
-func admitLimits(value Value) *Refusal {
+func admitLimits(rawValue Value) *Refusal {
+	if !structValue(rawValue, []string{"timeout_ms", "max_output_bytes"}) {
+		return refuse(stageDecode, "shape")
+	}
+	value, _ := seqAsMembers(rawValue, []string{"timeout_ms", "max_output_bytes"})
 	if !isClosedObject(value, []string{"max_output_bytes", "timeout_ms"}) {
 		return refuse(stageDecode, "shape")
 	}
@@ -227,7 +241,12 @@ func admitProfileCapabilities(value Value) *Refusal {
 		return refuse(stageDecode, "bounds")
 	}
 	previous := ""
-	for _, capability := range items {
+	for index, capability := range items {
+		if !structValue(capability, []string{"id", "support"}) {
+			return refuse(stageDecode, "shape")
+		}
+		capability, _ = seqAsMembers(capability, []string{"id", "support"})
+		items[index] = capability
 		if !isClosedObject(capability, []string{"id", "support"}) {
 			return refuse(stageDecode, "shape")
 		}
@@ -246,7 +265,11 @@ func admitProfileCapabilities(value Value) *Refusal {
 	return nil
 }
 
-func admitContentRef(value Value) *Refusal {
+func admitContentRef(rawValue Value, path string) *Refusal {
+	if !structValue(rawValue, []string{"digest", "revision", "adapter"}) {
+		return refuse(stageDecode, "shape")
+	}
+	value, _ := seqAsMembers(rawValue, []string{"digest", "revision", "adapter"})
 	if !isClosedObject(value, []string{"adapter", "digest", "revision"}) {
 		return refuse(stageDecode, "shape")
 	}
@@ -277,17 +300,22 @@ func admitContentRef(value Value) *Refusal {
 	return nil
 }
 
-func admitNativeRequest(value Value) *Refusal {
+func admitNativeRequest(value Value) (Value, *Refusal) {
 	allowed := []string{"capability_snapshot_digest", "changes", "execution_policy_ref", "input_manifest_digest", "observed_ref", "scan_ref", "tool_catalog_digest"}
+	fields := []string{"changes", "scan_ref", "observed_ref", "execution_policy_ref", "input_manifest_digest", "tool_catalog_digest", "capability_snapshot_digest"}
+	if !structValue(value, fields) {
+		return nil, refuse(stageDecode, "shape")
+	}
+	value, _ = seqAsMembers(value, fields)
 	if !isClosedObject(value, allowed) {
-		return refuse(stageDecode, "shape")
+		return nil, refuse(stageDecode, "shape")
 	}
 	for _, member := range []string{"input_manifest_digest", "tool_catalog_digest", "capability_snapshot_digest"} {
 		if IsNull(value, member) {
-			return refuse(stageDecode, "explicit-null")
+			return nil, refuse(stageDecode, "explicit-null")
 		}
 		if !IsSha256Digest(GetString(value, member)) {
-			return refuse(stageDecode, "bounds")
+			return nil, refuse(stageDecode, "bounds")
 		}
 	}
 	changes := value.(map[string]any)["changes"]
@@ -296,41 +324,47 @@ func admitNativeRequest(value Value) *Refusal {
 	// exactly like serde struct-from-seq (issue #106 review r5 #9).
 	changes, refusal := seqAsMembers(changes, []string{"files", "symbols"})
 	if refusal != nil {
-		return refusal
+		return nil, refusal
 	}
 	if !isClosedObject(changes, []string{"files", "symbols"}) {
-		return refuse(stageDecode, "shape")
+		return nil, refuse(stageDecode, "shape")
 	}
 	files, refusal := optionalArray(changes, "files")
 	if refusal != nil {
-		return refusal
+		return nil, refusal
 	}
 	symbols, refusal := optionalArray(changes, "symbols")
 	if refusal != nil {
-		return refusal
+		return nil, refusal
 	}
 	if len(files) > 1024 || len(symbols) > 1024 {
-		return refuse(stageDecode, "bounds")
+		return nil, refuse(stageDecode, "bounds")
 	}
 	// Production validates the changed files without any ordering rule
 	// (wire.rs native-request: member checks only) — the SDK's old
 	// ascending-path requirement refused legal documents (review r5 #9).
-	for _, change := range files {
+	for index, change := range files {
+		if !structValue(change, []string{"path", "change", "before_digest", "after_digest"}) {
+			return nil, refuse(stageDecode, "shape")
+		}
+		mapped, _ := seqAsMembers(change, []string{"path", "change", "before_digest", "after_digest"})
+		files[index] = mapped
+		change = mapped
 		if !isClosedObject(change, []string{"after_digest", "before_digest", "change", "path"}) {
-			return refuse(stageDecode, "shape")
+			return nil, refuse(stageDecode, "shape")
 		}
 		if !IsLogicalPath(GetString(change, "path")) {
-			return refuse(stageDecode, "bounds")
+			return nil, refuse(stageDecode, "bounds")
 		}
 		if !containsString(GeneratedEnums("nativeChangeKind"), GetString(change, "change")) {
-			return refuse(stageDecode, "shape")
+			return nil, refuse(stageDecode, "shape")
 		}
 		for _, member := range []string{"after_digest", "before_digest"} {
 			if IsNull(change, member) {
-				return refuse(stageDecode, "explicit-null")
+				return nil, refuse(stageDecode, "explicit-null")
 			}
 			if Has(change, member) && !IsSha256Digest(GetString(change, member)) {
-				return refuse(stageDecode, "bounds")
+				return nil, refuse(stageDecode, "bounds")
 			}
 		}
 	}
@@ -338,24 +372,24 @@ func admitNativeRequest(value Value) *Refusal {
 	// bounded) — empty and long strings are both legal (review r5 #9).
 	for _, symbol := range symbols {
 		if _, ok := symbol.(string); !ok {
-			return refuse(stageDecode, "shape")
+			return nil, refuse(stageDecode, "shape")
 		}
 	}
-	if refusal := admitContentRef(changesOf(value, "scan_ref")); refusal != nil {
-		return refusal
+	if refusal := admitContentRef(valueOf(value, "scan_ref"), "native_request.scan_ref"); refusal != nil {
+		return nil, refusal
 	}
-	if refusal := admitContentRef(changesOf(value, "execution_policy_ref")); refusal != nil {
-		return refusal
+	if refusal := admitContentRef(valueOf(value, "execution_policy_ref"), "native_request.execution_policy_ref"); refusal != nil {
+		return nil, refusal
 	}
 	if IsNull(value, "observed_ref") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "observed_ref") {
-		if refusal := admitContentRef(value.(map[string]any)["observed_ref"]); refusal != nil {
-			return refusal
+		if refusal := admitContentRef(valueOf(value, "observed_ref"), "native_request.observed_ref"); refusal != nil {
+			return nil, refusal
 		}
 	}
-	return nil
+	return value, nil
 }
 
 func changesOf(value Value, key string) Value {
@@ -387,6 +421,24 @@ func seqAsMembers(value Value, fields []string) (Value, *Refusal) {
 	return members, nil
 }
 
+// structValue reports the struct-position admission shape: a member map
+// (closed) or a positional sequence prefix of the declared fields —
+// never a scalar (issue #106 review r6 #1).
+func structValue(value Value, fields []string) bool {
+	switch typed := value.(type) {
+	case []any:
+		return len(typed) <= len(fields)
+	case map[string]any:
+		for key := range typed {
+			if !containsString(fields, key) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
 func optionalArray(object Value, member string) ([]any, *Refusal) {
 	if !Has(object, member) {
 		return nil, nil
@@ -401,10 +453,15 @@ func optionalArray(object Value, member string) ([]any, *Refusal) {
 	return items, nil
 }
 
-func admitLintRequest(value Value) *Refusal {
+func admitLintRequest(value Value) (Value, *Refusal) {
 	allowed := []string{"bindings", "files", "pins", "scope"}
+	fields := []string{"scope", "pins", "bindings", "files"}
+	if !structValue(value, fields) {
+		return nil, refuse(stageDecode, "shape")
+	}
+	value, _ = seqAsMembers(value, fields)
 	if !isClosedObject(value, allowed) {
-		return refuse(stageDecode, "shape")
+		return nil, refuse(stageDecode, "shape")
 	}
 	// Every lint member is required on the wire (production's LintRequest
 	// has no serde defaults): a missing member is `shape` exactly like
@@ -412,30 +469,33 @@ func admitLintRequest(value Value) *Refusal {
 	// token (issue #106 review r5 #8).
 	for _, member := range []string{"scope", "files", "bindings", "pins"} {
 		if !Has(value, member) {
-			return refuse(stageDecode, "shape")
+			return nil, refuse(stageDecode, "shape")
 		}
-		if IsNull(value, member) {
-			return refuse(stageDecode, "explicit-null")
+		// pins is a REQUIRED struct (not an Option): an explicit null is
+		// serde's wrong-type `shape`, never the Option null token
+		// (issue #106 review r6 #7).
+		if member != "pins" && IsNull(value, member) {
+			return nil, refuse(stageDecode, "explicit-null")
 		}
 	}
 	scope, refusal := optionalArray(value, "scope")
 	if refusal != nil {
-		return refusal
+		return nil, refusal
 	}
 	files, refusal := optionalArray(value, "files")
 	if refusal != nil {
-		return refusal
+		return nil, refusal
 	}
 	bindings, refusal := optionalArray(value, "bindings")
 	if refusal != nil {
-		return refusal
+		return nil, refusal
 	}
 	if len(scope) == 0 || len(scope) > 10000 || len(files) > 4096 || len(bindings) > 10000 {
-		return refuse(stageDecode, "bounds")
+		return nil, refuse(stageDecode, "bounds")
 	}
 	for _, scopeEntry := range scope {
 		if !boundedText(scopeEntry, int(generated.ERROR_DETAIL_MAX)) {
-			return refuse(stageDecode, "bounds")
+			return nil, refuse(stageDecode, "bounds")
 		}
 	}
 	for _, file := range files {
@@ -445,51 +505,85 @@ func admitLintRequest(value Value) *Refusal {
 		// cross-language codec vocabulary must agree byte-for-byte).
 		text, ok := file.(string)
 		if !ok {
-			return refuse(stageDecode, "bounds")
+			return nil, refuse(stageDecode, "bounds")
 		}
 		if !IsLogicalPath(text) {
-			return refuse(stageDecode, "bounds")
+			return nil, refuse(stageDecode, "bounds")
 		}
 	}
-	for _, binding := range bindings {
+	for index, binding := range bindings {
+		if !structValue(binding, []string{"path", "nativeId", "symbol", "kind", "fingerprint"}) {
+			return nil, refuse(stageDecode, "shape")
+		}
+		mapped, _ := seqAsMembers(binding, []string{"path", "nativeId", "symbol", "kind", "fingerprint"})
+		bindings[index] = mapped
+		binding = mapped
 		if !isClosedObject(binding, []string{"fingerprint", "kind", "nativeId", "path", "symbol"}) {
-			return refuse(stageDecode, "shape")
+			return nil, refuse(stageDecode, "shape")
 		}
 		if !IsLogicalPath(GetString(binding, "path")) {
-			return refuse(stageDecode, "bounds")
+			return nil, refuse(stageDecode, "bounds")
 		}
 		for _, member := range []string{"nativeId", "symbol"} {
 			if !boundedText(binding.(map[string]any)[member], 128) {
-				return refuse(stageDecode, "bounds")
+				return nil, refuse(stageDecode, "bounds")
 			}
 		}
 		if !containsString([]string{"command", "entity"}, GetString(binding, "kind")) {
-			return refuse(stageDecode, "shape")
+			return nil, refuse(stageDecode, "shape")
 		}
 		if !IsSha256Digest(GetString(binding, "fingerprint")) {
-			return refuse(stageDecode, "bounds")
+			return nil, refuse(stageDecode, "bounds")
 		}
 	}
-	pins := value.(map[string]any)["pins"]
+	pins := valueOf(value, "pins")
+	if !structValue(pins, []string{"capabilities", "ir", "model", "observed", "profile", "revision"}) {
+		return nil, refuse(stageDecode, "shape")
+	}
+	pins, _ = seqAsMembers(pins, []string{"model", "ir", "observed", "revision", "profile", "capabilities"})
+	value.(map[string]any)["pins"] = pins
 	if !isClosedObject(pins, []string{"capabilities", "ir", "model", "observed", "profile", "revision"}) {
-		return refuse(stageDecode, "shape")
+		return nil, refuse(stageDecode, "shape")
+	}
+	if IsNull(pins, "capabilities") || IsNull(pins, "ir") || IsNull(pins, "model") ||
+		IsNull(pins, "observed") || IsNull(pins, "profile") || IsNull(pins, "revision") {
+		return nil, refuse(stageDecode, "shape")
 	}
 	// The pinned 0.6.4 schema carries every pin as a State-tagged value
 	// ({state:"known",value}|{state:"unknown"|"withheld"|"unsupported"}).
 	for _, member := range []string{"capabilities", "ir", "model", "observed", "profile", "revision"} {
-		if IsNull(pins, member) {
-			return refuse(stageDecode, "explicit-null")
+		if !Has(pins, member) {
+			return nil, refuse(stageDecode, "shape")
 		}
-		if refusal := admitStateString(pins.(map[string]any)[member]); refusal != nil {
-			return refusal
+		if refusal := admitStateString(valueOf(pins, member)); refusal != nil {
+			return nil, refusal
 		}
 	}
-	return nil
+	return value, nil
 }
 
 // admitStateString checks one State-tagged string value of the pinned
 // 0.6.4 lint schema.
 func admitStateString(value Value) *Refusal {
+	if seq, ok := value.([]any); ok {
+		if len(seq) > 2 {
+			return refuse(stageDecode, "shape")
+		}
+		tag, _ := seq[0].(string)
+		if tag == "known" {
+			if len(seq) != 2 {
+				return refuse(stageDecode, "shape")
+			}
+			if !boundedText(seq[1], 128) {
+				return refuse(stageDecode, "bounds")
+			}
+			return nil
+		}
+		if containsString([]string{"unknown", "withheld", "unsupported"}, tag) {
+			return nil
+		}
+		return refuse(stageDecode, "shape")
+	}
 	if value == nil || !isClosedObject(value, []string{"state", "value"}) {
 		return refuse(stageDecode, "shape")
 	}
@@ -527,13 +621,18 @@ func AdmitResponse(text string) (Value, *Refusal) {
 	if reason != "" {
 		return nil, refuse(stageDecode, string(reason))
 	}
-	if refusal := AdmitResponseValue(value); refusal != nil {
+	value, refusal := AdmitResponseValue(value)
+	if refusal != nil {
 		return nil, refusal
 	}
 	return value, nil
 }
 
-func admitIdentity(value Value) *Refusal {
+func admitIdentity(rawValue Value, path string) *Refusal {
+	if !structValue(rawValue, []string{"id", "version", "digest"}) {
+		return refuse(stageDecode, "shape")
+	}
+	value, _ := seqAsMembers(rawValue, []string{"id", "version", "digest"})
 	if !isClosedObject(value, []string{"digest", "id", "version"}) {
 		return refuse(stageDecode, "shape")
 	}
@@ -543,11 +642,15 @@ func admitIdentity(value Value) *Refusal {
 	return nil
 }
 
-func admitEvidence(value Value) *Refusal {
+func admitEvidence(rawValue Value, path string) *Refusal {
+	if !structValue(rawValue, []string{"adapter", "plan_id"}) {
+		return refuse(stageDecode, "shape")
+	}
+	value, _ := seqAsMembers(rawValue, []string{"adapter", "plan_id"})
 	if !isClosedObject(value, []string{"adapter", "plan_id"}) {
 		return refuse(stageDecode, "shape")
 	}
-	if refusal := admitIdentity(value.(map[string]any)["adapter"]); refusal != nil {
+	if refusal := admitIdentity(valueOf(value, "adapter"), path+".adapter"); refusal != nil {
 		return refusal
 	}
 	if IsNull(value, "plan_id") {
@@ -559,7 +662,11 @@ func admitEvidence(value Value) *Refusal {
 	return nil
 }
 
-func admitWriteEntry(value Value) *Refusal {
+func admitWriteEntry(rawValue Value, path string) *Refusal {
+	if !structValue(rawValue, []string{"path", "action", "sha256"}) {
+		return refuse(stageDecode, "shape")
+	}
+	value, _ := seqAsMembers(rawValue, []string{"path", "action", "sha256"})
 	if !isClosedObject(value, []string{"action", "path", "sha256"}) {
 		return refuse(stageDecode, "shape")
 	}
@@ -584,7 +691,11 @@ func admitWriteEntry(value Value) *Refusal {
 	return nil
 }
 
-func admitScanEntry(value Value) *Refusal {
+func admitScanEntry(rawValue Value, path string) *Refusal {
+	if !structValue(rawValue, []string{"path", "kind", "detail", "evidence"}) {
+		return refuse(stageDecode, "shape")
+	}
+	value, _ := seqAsMembers(rawValue, []string{"path", "kind", "detail", "evidence"})
 	if !isClosedObject(value, []string{"detail", "evidence", "kind", "path"}) {
 		return refuse(stageDecode, "shape")
 	}
@@ -629,7 +740,13 @@ func admitScanEntry(value Value) *Refusal {
 		if len(references) > int(generated.REFERENCES_MAX) {
 			return refuse(stageDecode, "bounds")
 		}
-		for _, reference := range references {
+		for index, reference := range references {
+			if !structValue(reference, []string{"target", "role", "confidence"}) {
+				return refuse(stageDecode, "shape")
+			}
+			mapped, _ := seqAsMembers(reference, []string{"target", "role", "confidence"})
+			references[index] = mapped
+			reference = mapped
 			if !isClosedObject(reference, []string{"confidence", "role", "target"}) {
 				return refuse(stageDecode, "shape")
 			}
@@ -651,8 +768,12 @@ func admitScanEntry(value Value) *Refusal {
 	return nil
 }
 
-func admitNativePlan(value Value) *Refusal {
+func admitNativePlan(rawValue Value, path string) *Refusal {
 	allowed := []string{"commands", "completeness", "digest", "entries", "kind", "packages", "run_eligibility", "units"}
+	if !structValue(rawValue, allowed) {
+		return refuse(stageDecode, "shape")
+	}
+	value, _ := seqAsMembers(rawValue, []string{"kind", "digest", "commands", "packages", "completeness", "run_eligibility"})
 	if !isClosedObject(value, allowed) {
 		return refuse(stageDecode, "shape")
 	}
@@ -687,7 +808,7 @@ func admitNativePlan(value Value) *Refusal {
 	return nil
 }
 
-func admitResult(memberValue Value) *Refusal {
+func admitResult(memberValue Value, path string) *Refusal {
 	// All-default operation result: production deserializes it from a
 	// positional seq too (`result:[]` is the all-default value), exactly
 	// like serde struct-from-seq (issue #106 review r5 #9).
@@ -718,8 +839,8 @@ func admitResult(memberValue Value) *Refusal {
 		if !ok || len(items) > int(generated.SCAN_ENTRIES_MAX) {
 			return refuse(stageDecode, "bounds")
 		}
-		for _, entry := range items {
-			if refusal := admitScanEntry(entry); refusal != nil {
+		for index, entry := range items {
+			if refusal := admitScanEntry(entry, fmt.Sprintf("result.entries.%d", index)); refusal != nil {
 				return refusal
 			}
 		}
@@ -733,7 +854,13 @@ func admitResult(memberValue Value) *Refusal {
 		if !ok || len(items) > int(generated.FINDINGS_MAX) {
 			return refuse(stageDecode, "bounds")
 		}
-		for _, finding := range items {
+		for index, finding := range items {
+			if !structValue(finding, []string{"path", "code", "detail"}) {
+				return refuse(stageDecode, "shape")
+			}
+			mapped, _ := seqAsMembers(finding, []string{"path", "code", "detail"})
+			items[index] = mapped
+			finding = mapped
 			if !isClosedObject(finding, []string{"code", "detail", "path"}) {
 				return refuse(stageDecode, "shape")
 			}
@@ -757,7 +884,13 @@ func admitResult(memberValue Value) *Refusal {
 		if !ok || len(items) > int(generated.BINDINGS_MAX) {
 			return refuse(stageDecode, "bounds")
 		}
-		for _, binding := range items {
+		for index, binding := range items {
+			if !structValue(binding, []string{"module", "target", "profile"}) {
+				return refuse(stageDecode, "shape")
+			}
+			mapped, _ := seqAsMembers(binding, []string{"module", "target", "profile"})
+			items[index] = mapped
+			binding = mapped
 			if !isClosedObject(binding, []string{"module", "profile", "target"}) {
 				return refuse(stageDecode, "shape")
 			}
@@ -772,7 +905,7 @@ func admitResult(memberValue Value) *Refusal {
 		return refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "native_plan") {
-		if refusal := admitNativePlan(value.(map[string]any)["native_plan"]); refusal != nil {
+		if refusal := admitNativePlan(valueOf(value, "native_plan"), "result.native_plan"); refusal != nil {
 			return refusal
 		}
 	}
@@ -836,7 +969,15 @@ func lintStringArray(value Value, max int, unique bool) bool {
 	return true
 }
 
-func lintStateString(value Value) bool {
+func lintStateString(rawValue Value) bool {
+	if seq, ok := rawValue.([]any); ok && len(seq) <= 2 {
+		tag, _ := seq[0].(string)
+		if tag == "known" {
+			return len(seq) == 2 && lintBounded256(seq[1])
+		}
+		return containsString([]string{"unknown", "withheld", "unsupported"}, tag)
+	}
+	value, _ := seqAsMembers(rawValue, []string{"state", "value"})
 	if !isClosedObject(value, []string{"state", "value"}) {
 		return false
 	}
@@ -849,7 +990,16 @@ func lintStateString(value Value) bool {
 	return false
 }
 
-func lintStateBool(value Value) bool {
+func lintStateBool(rawValue Value) bool {
+	if seq, ok := rawValue.([]any); ok && len(seq) <= 2 {
+		tag, _ := seq[0].(string)
+		if tag == "known" {
+			_, isBool := seq[1].(bool)
+			return len(seq) == 2 && isBool
+		}
+		return containsString([]string{"unknown", "withheld", "unsupported"}, tag)
+	}
+	value, _ := seqAsMembers(rawValue, []string{"state", "value"})
 	if !isClosedObject(value, []string{"state", "value"}) {
 		return false
 	}
@@ -863,7 +1013,16 @@ func lintStateBool(value Value) bool {
 	return false
 }
 
-func lintStateU64(value Value) bool {
+func lintStateU64(rawValue Value) bool {
+	if seq, ok := rawValue.([]any); ok && len(seq) <= 2 {
+		tag, _ := seq[0].(string)
+		if tag == "known" {
+			number, isNum := seq[1].(int64)
+			return len(seq) == 2 && isNum && number >= 0 && number <= 10_000_000
+		}
+		return containsString([]string{"unknown", "withheld", "unsupported"}, tag)
+	}
+	value, _ := seqAsMembers(rawValue, []string{"state", "value"})
 	if !isClosedObject(value, []string{"state", "value"}) {
 		return false
 	}
@@ -882,36 +1041,48 @@ func lintSha256(value Value) bool {
 	return ok && text != "" && len(text) <= 71 && IsSha256Digest(text)
 }
 
-func lintPins(value Value) bool {
+func lintPins(rawValue Value) bool {
 	allowed := []string{"capabilities", "ir", "model", "observed", "profile", "revision"}
+	if !structValue(rawValue, allowed) {
+		return false
+	}
+	value, _ := seqAsMembers(rawValue, []string{"model", "ir", "observed", "revision", "profile", "capabilities"})
 	if !isClosedObject(value, allowed) {
 		return false
 	}
 	for _, pin := range allowed {
-		if !lintStateString(value.(map[string]any)[pin]) {
+		if !lintStateString(valueOf(value, pin)) {
 			return false
 		}
 	}
 	return true
 }
 
-func lintProducer(value Value) bool {
+func lintProducer(rawValue Value) bool {
 	allowed := []string{"artifactDigest", "compiler", "framework", "id", "recipe", "tool", "version"}
+	if !structValue(rawValue, allowed) {
+		return false
+	}
+	value, _ := seqAsMembers(rawValue, []string{"id", "version", "artifactDigest", "tool", "compiler", "framework", "recipe"})
 	if !isClosedObject(value, allowed) {
 		return false
 	}
 	for _, member := range []string{"id", "version", "tool", "recipe"} {
-		if !lintBounded256(value.(map[string]any)[member]) {
+		if !lintBounded256(valueOf(value, member)) {
 			return false
 		}
 	}
-	return lintSha256(value.(map[string]any)["artifactDigest"]) &&
-		lintStateString(value.(map[string]any)["compiler"]) &&
-		lintStateString(value.(map[string]any)["framework"])
+	return lintSha256(valueOf(value, "artifactDigest")) &&
+		lintStateString(valueOf(value, "compiler")) &&
+		lintStateString(valueOf(value, "framework"))
 }
 
-func lintSource(value Value) bool {
+func lintSource(rawValue Value) bool {
 	allowed := []string{"bytes", "fingerprint", "id", "path"}
+	if !structValue(rawValue, allowed) {
+		return false
+	}
+	value, _ := seqAsMembers(rawValue, []string{"id", "path", "fingerprint", "bytes"})
 	if !isClosedObject(value, allowed) {
 		return false
 	}
@@ -925,8 +1096,12 @@ func lintSource(value Value) bool {
 		}()
 }
 
-func lintSpan(value Value) bool {
+func lintSpan(rawValue Value) bool {
 	allowed := []string{"column", "end", "endColumn", "endLine", "id", "line", "source", "start"}
+	if !structValue(rawValue, allowed) {
+		return false
+	}
+	value, _ := seqAsMembers(rawValue, []string{"id", "source", "start", "end", "line", "column", "endLine", "endColumn"})
 	if !isClosedObject(value, allowed) {
 		return false
 	}
@@ -944,8 +1119,12 @@ func lintSpan(value Value) bool {
 		bounded("endLine") && bounded("endColumn")
 }
 
-func lintCoverage(value Value) bool {
+func lintCoverage(rawValue Value) bool {
 	allowed := []string{"eligible", "examined", "limitations", "rule", "scope", "state", "target"}
+	if !structValue(rawValue, allowed) {
+		return false
+	}
+	value, _ := seqAsMembers(rawValue, []string{"rule", "target", "scope", "state", "eligible", "examined", "limitations"})
 	if !isClosedObject(value, allowed) {
 		return false
 	}
@@ -965,7 +1144,11 @@ func lintCoverage(value Value) bool {
 		lintStringArray(value.(map[string]any)["limitations"], 10_000, true)
 }
 
-func lintRoute(value Value) bool {
+func lintRoute(rawValue Value) bool {
+	if !structValue(rawValue, []string{"identity", "confidence", "currency", "origin"}) {
+		return false
+	}
+	value, _ := seqAsMembers(rawValue, []string{"identity", "confidence", "currency", "origin"})
 	if !isClosedObject(value, []string{"confidence", "currency", "identity", "origin"}) {
 		return false
 	}
@@ -987,7 +1170,11 @@ func lintRoute(value Value) bool {
 	return lintBounded256(value.(map[string]any)["identity"])
 }
 
-func lintStep(value Value) bool {
+func lintStep(rawValue Value) bool {
+	if !structValue(rawValue, []string{"role", "identity", "locations", "guards", "confidence"}) {
+		return false
+	}
+	value, _ := seqAsMembers(rawValue, []string{"role", "identity", "locations", "guards", "confidence"})
 	if !isClosedObject(value, []string{"confidence", "guards", "identity", "locations", "role"}) {
 		return false
 	}
@@ -1006,13 +1193,18 @@ func lintStep(value Value) bool {
 		lintStringArray(value.(map[string]any)["guards"], 32, true)
 }
 
-func lintRecord(value Value) bool {
+func lintRecord(rawValue Value) bool {
 	allowed := []string{
 		"activation", "binding", "candidates", "claim", "confidence", "configuration",
 		"currency", "field", "guards", "id", "key", "kind", "locations", "mechanism",
 		"nativeId", "operation", "origin", "ownership", "resource", "semanticSymbol",
 		"subject", "trace", "value",
 	}
+	recordFields := []string{"id", "kind", "mechanism", "subject", "semanticSymbol", "operation", "resource", "field", "nativeId", "confidence", "currency", "origin", "claim", "binding", "configuration", "ownership", "trace", "value", "key", "candidates", "activation", "locations", "guards"}
+	if !structValue(rawValue, recordFields) {
+		return false
+	}
+	value, _ := seqAsMembers(rawValue, recordFields)
 	if !isClosedObject(value, allowed) {
 		return false
 	}
@@ -1087,11 +1279,15 @@ func lintRecord(value Value) bool {
 // result (issue #106 review r2 #3): all twelve members required, const
 // identity/version, closed nested objects — shallow or malformed evidence
 // is refused instead of being emitted as success.
-func admitLintEvidence(value Value) *Refusal {
+func admitLintEvidence(rawValue Value) *Refusal {
 	allowed := []string{
 		"coverage", "identity", "inputManifestDigest", "limitations", "locations",
 		"pins", "producer", "records", "schemaVersion", "scope", "sources", "target",
 	}
+	if !structValue(rawValue, allowed) {
+		return refuse(stageDecode, "shape")
+	}
+	value, _ := seqAsMembers(rawValue, []string{"schemaVersion", "identity", "target", "scope", "producer", "pins", "inputManifestDigest", "sources", "locations", "coverage", "records", "limitations"})
 	object, ok := value.(map[string]any)
 	if !ok || !isClosedObject(value, allowed) {
 		return refuse(stageDecode, "shape")
@@ -1160,12 +1356,18 @@ func admitLintEvidence(value Value) *Refusal {
 	return nil
 }
 
-func admitProgress(value Value) *Refusal {
+func admitProgress(value Value, path string) *Refusal {
 	steps, ok := value.([]any)
 	if !ok || len(steps) > int(generated.PROGRESS_STEPS_MAX) {
 		return refuse(stageDecode, "bounds")
 	}
-	for _, step := range steps {
+	for index, step := range steps {
+		if !structValue(step, []string{"step", "state", "detail"}) {
+			return refuse(stageDecode, "shape")
+		}
+		mapped, _ := seqAsMembers(step, []string{"step", "state", "detail"})
+		steps[index] = mapped
+		step = mapped
 		if !isClosedObject(step, []string{"detail", "state", "step"}) {
 			return refuse(stageDecode, "shape")
 		}
@@ -1185,8 +1387,12 @@ func admitProgress(value Value) *Refusal {
 	return nil
 }
 
-func admitError(value Value) *Refusal {
+func admitError(rawValue Value, path string) *Refusal {
 	allowed := []string{"class", "code", "detail", "message", "partial", "retryable"}
+	if !structValue(rawValue, allowed) {
+		return refuse(stageDecode, "shape")
+	}
+	value, _ := seqAsMembers(rawValue, []string{"class", "code", "message", "retryable", "partial", "detail"})
 	if !isClosedObject(value, allowed) {
 		return refuse(stageDecode, "shape")
 	}
@@ -1238,12 +1444,16 @@ func uniqueBounded(items []any, max int) bool {
 	return true
 }
 
-func admitCapabilities(value Value, protocolVersion string) *Refusal {
+func admitCapabilities(rawValue Value, protocolVersion string, path string) *Refusal {
 	allowed := []string{"adapter", "capabilities", "constraints", "ir_versions", "operations", "profiles", "progress", "protocol_versions", "read_scopes", "targets", "transports", "write_scopes"}
+	if !structValue(rawValue, allowed) {
+		return refuse(stageDecode, "shape")
+	}
+	value, _ := seqAsMembers(rawValue, []string{"adapter", "protocol_versions", "operations", "transports", "targets", "profiles", "read_scopes", "write_scopes", "progress", "ir_versions", "capabilities", "constraints"})
 	if !isClosedObject(value, allowed) {
 		return refuse(stageDecode, "shape")
 	}
-	if refusal := admitIdentity(value.(map[string]any)["adapter"]); refusal != nil {
+	if refusal := admitIdentity(valueOf(value, "adapter"), path+".adapter"); refusal != nil {
 		return refusal
 	}
 	// min-1 is part of admission for the required declared lists
@@ -1382,52 +1592,57 @@ func admitCapabilities(value Value, protocolVersion string) *Refusal {
 }
 
 // AdmitResponseValue runs the structural admission pass on one response.
-func AdmitResponseValue(value Value) *Refusal {
+func AdmitResponseValue(value Value) (Value, *Refusal) {
 	allowed := []string{"capabilities", "error", "evidence", "operation", "progress", "protocol", "protocol_version", "request_id", "result", "status", "writes"}
+	fields := []string{"protocol", "protocol_version", "operation", "request_id", "status", "evidence", "capabilities", "result", "writes", "progress", "error"}
+	if !structValue(value, fields) {
+		return nil, refuse(stageDecode, unknownOrShape(value, allowed))
+	}
+	value, _ = seqAsMembers(value, fields)
 	if !isClosedObject(value, allowed) {
-		return refuse(stageDecode, unknownOrShape(value, allowed))
+		return nil, refuse(stageDecode, unknownOrShape(value, allowed))
 	}
 	for _, member := range []string{"protocol", "protocol_version", "operation", "request_id", "status", "evidence"} {
 		if !Has(value, member) {
-			return refuse(stageDecode, "shape")
+			return nil, refuse(stageDecode, "shape")
 		}
 		if IsNull(value, member) {
-			return refuse(stageDecode, "explicit-null")
+			return nil, refuse(stageDecode, "explicit-null")
 		}
 	}
 	if GetString(value, "protocol") != generated.WireToken {
-		return refuse(stageDecode, "token")
+		return nil, refuse(stageDecode, "token")
 	}
 	if !IsContractVersion(GetString(value, "protocol_version")) {
-		return refuse(stageDecode, "version")
+		return nil, refuse(stageDecode, "version")
 	}
 	if !containsString(generated.LatestOperations, GetString(value, "operation")) {
-		return refuse(stageDecode, "operation")
+		return nil, refuse(stageDecode, "operation")
 	}
 	if !IsRequestID(GetString(value, "request_id")) {
-		return refuse(stageDecode, "request-id")
+		return nil, refuse(stageDecode, "request-id")
 	}
 	if !containsString(GeneratedEnums("responseStatus"), GetString(value, "status")) {
-		return refuse(stageDecode, "shape")
+		return nil, refuse(stageDecode, "shape")
 	}
-	if refusal := admitEvidence(value.(map[string]any)["evidence"]); refusal != nil {
-		return refusal
+	if refusal := admitEvidence(valueOf(value, "evidence"), "evidence"); refusal != nil {
+		return nil, refusal
 	}
 	protocolVersion := GetString(value, "protocol_version")
 	if IsNull(value, "capabilities") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "capabilities") {
-		if refusal := admitCapabilities(value.(map[string]any)["capabilities"], protocolVersion); refusal != nil {
-			return refusal
+		if refusal := admitCapabilities(valueOf(value, "capabilities"), protocolVersion, "capabilities"); refusal != nil {
+			return nil, refusal
 		}
 	}
 	if IsNull(value, "result") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "result") {
-		if refusal := admitResult(value.(map[string]any)["result"]); refusal != nil {
-			return refusal
+		if refusal := admitResult(valueOf(value, "result"), "result"); refusal != nil {
+			return nil, refusal
 		}
 		// Lint evidence is version-gated exactly like production
 		// validate_bounds (issue #106 review r5 #1): the member is legal
@@ -1440,41 +1655,46 @@ func AdmitResponseValue(value Value) *Refusal {
 			carriesLintEvidence = len(items) >= 7
 		}
 		if carriesLintEvidence && (protocolVersion != "0.6.4" || GetString(value, "operation") != "lint") {
-			return refuse(stageDecode, "shape")
+			return nil, refuse(stageDecode, "shape")
 		}
 	}
 	if IsNull(value, "writes") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "writes") {
 		writes := value.(map[string]any)["writes"]
 		items, ok := writes.([]any)
 		if !ok || len(items) > int(generated.MAX_PLAN_ENTRIES) {
-			return refuse(stageDecode, "bounds")
+			return nil, refuse(stageDecode, "bounds")
 		}
-		for _, entry := range items {
-			if refusal := admitWriteEntry(entry); refusal != nil {
-				return refusal
+		for index, entry := range items {
+			if !structValue(entry, []string{"path", "action", "sha256"}) {
+				return nil, refuse(stageDecode, "shape")
+			}
+			mapped, _ := seqAsMembers(entry, []string{"path", "action", "sha256"})
+			items[index] = mapped
+			if refusal := admitWriteEntry(mapped, fmt.Sprintf("writes.%d", index)); refusal != nil {
+				return nil, refusal
 			}
 		}
 	}
 	if IsNull(value, "progress") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "progress") {
-		if refusal := admitProgress(value.(map[string]any)["progress"]); refusal != nil {
-			return refusal
+		if refusal := admitProgress(valueOf(value, "progress"), "progress"); refusal != nil {
+			return nil, refusal
 		}
 	}
 	if IsNull(value, "error") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "error") {
-		if refusal := admitError(value.(map[string]any)["error"]); refusal != nil {
-			return refusal
+		if refusal := admitError(valueOf(value, "error"), "error"); refusal != nil {
+			return nil, refusal
 		}
 	}
-	return nil
+	return value, nil
 }
 
 // ValidateRequest runs the cross-member request semantics.
