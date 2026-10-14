@@ -42,17 +42,18 @@ fn attachment_payload(attachment: &super::ExtendedEffectsAttachment) -> String {
         attachment.capability_requirements().iter().collect();
     requirements.sort_by_key(|requirement| requirement.requirement_id.as_str());
     object(vec![
-        (
-            "schemaVersion",
-            Some(string(super::version::SCHEMA_VERSION)),
-        ),
-        ("identity", Some(string(super::version::IDENTITY))),
+        ("schemaVersion", Some(string(attachment.schema_version()))),
+        ("identity", Some(string(attachment.identity()))),
         ("projectId", Some(string(attachment.project_id().as_str()))),
         ("modelRef", Some(model_ref_payload(attachment.model_ref()))),
         (
             "irRef",
             Some(digest_payload(
-                "dev.lekalo.ir@0.2.16",
+                if attachment.model_ref().version().relations_supported() {
+                    "dev.lekalo.ir@0.8.0"
+                } else {
+                    "dev.lekalo.ir@0.2.16"
+                },
                 attachment.ir_digest().as_str(),
             )),
         ),

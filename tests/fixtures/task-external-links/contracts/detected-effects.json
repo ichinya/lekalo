@@ -1,0 +1,112 @@
+{
+  "adapterId": "tasklinks/engine",
+  "targetId": "tasklinks/outbox-worker",
+  "protocolVersion": "0.2.16",
+  "evidenceDigest": "sha256:bfc046a60250bb165979aff8883a864223a4f370471d56e2a9263b4c0df28110",
+  "sourceRevision": "sha256:1b57dac24ac877caf5779a324d459ab08fa13e641e9c7e51599df1b9e04f8525",
+  "trust": "verified",
+  "transactions": [
+    {
+      "groupId": "tasklinks/tx-intent-dispatch",
+      "members": [
+        {
+          "operation": "tasklinks.dispatch_outbox",
+          "kind": "enqueue-job",
+          "subject": "job:tasklinks.queue/outbox"
+        }
+      ]
+    },
+    {
+      "groupId": "tasklinks/tx-intent-local",
+      "members": [
+        {
+          "operation": "tasklinks.request_action",
+          "kind": "update",
+          "subject": "canonical:planner.task"
+        },
+        {
+          "operation": "tasklinks.request_action",
+          "kind": "create",
+          "subject": "canonical:tasklinks.outbox_item"
+        }
+      ]
+    },
+    {
+      "groupId": "tasklinks/tx-intent-ack",
+      "members": [
+        {
+          "operation": "tasklinks.ack_delivery",
+          "kind": "emit-event",
+          "subject": "event:tasklinks.delivery_recorded"
+        }
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "occurrence": 0,
+      "kind": "external-call",
+      "operation": "tasklinks.dispatch_outbox",
+      "subject": "external-service:tasklinks.provider/github-issues",
+      "partialFailure": {
+        "caseRef": "tasklinks.case/partial-delivery",
+        "operation": "tasklinks.dispatch_outbox",
+        "recipients": [
+          {
+            "provider": "tasklinks.provider/github-issues",
+            "result": "delivered",
+            "receiptDigest": "sha256:c0770974e13db1f738ee74cb58d122f53824a4e3ecbca6d3c2a4a06b563e8d17"
+          },
+          {
+            "provider": "tasklinks.provider/mock-secondary",
+            "result": "failed",
+            "errorClass": "timeout"
+          }
+        ],
+        "retryEligible": [
+          "tasklinks.provider/mock-secondary"
+        ]
+      },
+      "trust": "verified"
+    },
+    {
+      "occurrence": 1,
+      "kind": "enqueue-job",
+      "operation": "tasklinks.dispatch_outbox",
+      "subject": "job:tasklinks.queue/outbox",
+      "transactionGroup": "tasklinks/tx-intent-dispatch",
+      "trust": "verified"
+    },
+    {
+      "occurrence": 2,
+      "kind": "update",
+      "operation": "tasklinks.request_action",
+      "subject": "canonical:planner.task",
+      "transactionGroup": "tasklinks/tx-intent-local",
+      "trust": "verified"
+    },
+    {
+      "occurrence": 3,
+      "kind": "create",
+      "operation": "tasklinks.request_action",
+      "subject": "canonical:tasklinks.outbox_item",
+      "transactionGroup": "tasklinks/tx-intent-local",
+      "trust": "verified"
+    },
+    {
+      "occurrence": 4,
+      "kind": "emit-event",
+      "operation": "tasklinks.ack_delivery",
+      "subject": "event:tasklinks.delivery_recorded",
+      "transactionGroup": "tasklinks/tx-intent-ack",
+      "trust": "verified"
+    },
+    {
+      "occurrence": 5,
+      "kind": "external-call",
+      "operation": "tasklinks.ack_delivery",
+      "subject": "external-service:tasklinks.provider/github-issues",
+      "trust": "current"
+    }
+  ]
+}

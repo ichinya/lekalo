@@ -116,7 +116,11 @@ frontier count — it never silently returns the first N results.
 - Pinned golden: `tests/fixtures/graph/golden/planner.graph.json`.
 - Independent Node gate: `node scripts/test-graph-contracts.mjs` — the
   exact Ajv 8.17.1 schema gate plus order, coherence, and acyclic-policy
-  invariants, run in CI on Node 18 and 24.
+  invariants, run in CI on Node 18 and 24. Against a built CLI (`--require-binary`)
+  it additionally re-exports every golden's owning fixture twice and
+  byte-compares the canonical rendering against the pinned bytes (issue #52
+  drift closure), so a stale golden fails the Node gate and the Rust golden
+  test at the same commit.
 - Rust suites: `crates/lekalo-core/tests/graph.rs` (loader-seam
   integration) and the `graph::cycle` internal unit tests (cycle policy on
   hand-assembled graphs).

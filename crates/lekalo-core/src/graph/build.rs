@@ -333,6 +333,19 @@ impl<'a> Builder<'a> {
                         RelationKindId::REFERENCES,
                         &entity.fields,
                     );
+                    // The typed relation declarations are real owned
+                    // references: every relation target becomes a graph
+                    // reference under the successor contract, so the
+                    // declared joins are visible to every consumer.
+                    for (ordinal, relation) in entity.relations.iter().enumerate() {
+                        self.emit_symbol_edge(
+                            symbol,
+                            &relation.target,
+                            ReferenceRole::EntityRelationTarget,
+                            RelationKindId::REFERENCES,
+                            ordinal,
+                        );
+                    }
                 }
                 Definition::Command(command) => {
                     self.emit_field_leaves(

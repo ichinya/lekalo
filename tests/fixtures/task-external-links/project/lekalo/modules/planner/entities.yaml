@@ -1,0 +1,75 @@
+schema_version: "0.8.0"
+definitions:
+  - id: planner.task_id
+    kind: scalar
+    version: 1
+    description: "Stable local task identifier"
+    base: uuid
+    visibility: project
+  - id: planner.workspace_id
+    kind: scalar
+    version: 1
+    description: "Workspace scope identifier"
+    base: uuid
+    visibility: project
+  - id: planner.text
+    kind: scalar
+    version: 1
+    description: "Human-readable canonical task text"
+    base: string
+  - id: planner.date
+    kind: scalar
+    version: 1
+    description: "Calendar date"
+    base: date
+  - id: planner.task_state
+    kind: enum
+    version: 1
+    description: "Task lifecycle state"
+    values:
+      - value: backlog
+        description: "Not started"
+      - value: active
+        description: "In progress"
+      - value: done
+        description: "Completed"
+  - id: planner.task
+    kind: entity
+    version: 1
+    description: "One focusable local task; links refer to it 0..N times"
+    fields:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: workspace_id
+        type: "planner.workspace_id"
+        required: true
+      - name: title
+        type: "planner.text"
+        required: true
+      - name: state
+        type: "planner.task_state"
+        required: true
+      - name: planned_for
+        type: "planner.date?"
+      - name: position
+        type: "planner.text?"
+      - name: focused_at
+        type: "planner.date?"
+      - name: paused_at
+        type: "planner.date?"
+    identity:
+      - task_id
+    relations:
+      - id: "tasklinks.rel.task_owns_links"
+        target: "tasklinks.task_external_link"
+        localFields:
+          - task_id
+        targetFields:
+          - task_id
+        min: 0
+        max: null
+        ownership: external
+        onDetach: retain-history
+        onDelete: restrict
+        description: "One task owns zero or more external links (Task 0..N links); the links themselves are owned by the tasklinks module, so this side is a reference, never a cascade"

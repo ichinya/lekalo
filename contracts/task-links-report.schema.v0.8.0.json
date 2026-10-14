@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.task-links-report-schema@0.8.0",
+  "title": "Lekalo task-links report schema v1",
+  "description": "Closed static validation report of the task-links attachment (issue #52): the exact relation, uniqueness, decision, binding, and delivery obligations that were checked against one Model/IR compilation, with typed findings carrying registered diagnostic ids. The report is derived output: its counts, sorted rows, and pin values must agree with the producing run, and it never embeds credentials, provider payloads, or consumer application names.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/task-links-report/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.task-links-report@0.8.0"
+    },
+    "attachmentRevision": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "projectId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "modelRef": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "0.8.0"
+        },
+        "irDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "irDigest"
+      ],
+      "additionalProperties": false
+    },
+    "profile": {
+      "enum": [
+        "strict",
+        "permissive"
+      ]
+    },
+    "status": {
+      "enum": [
+        "valid",
+        "invalid",
+        "gaps-admitted"
+      ]
+    },
+    "checks": {
+      "type": "object",
+      "properties": {
+        "relationsChecked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "uniqueConstraintsChecked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "decisionsChecked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "bindingsChecked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "providerContractsChecked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "entitiesChecked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "findings": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      },
+      "required": [
+        "relationsChecked",
+        "uniqueConstraintsChecked",
+        "decisionsChecked",
+        "bindingsChecked",
+        "providerContractsChecked",
+        "entitiesChecked",
+        "findings"
+      ],
+      "additionalProperties": false
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "profile",
+    "status",
+    "checks",
+    "findings"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "properties": {
+        "rule": {
+          "type": "string",
+          "pattern": "^tasklink\\.[a-z0-9-]+$"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^LEK-TASKLINK-00[1-8]$"
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "rule",
+        "code",
+        "subject",
+        "detail"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

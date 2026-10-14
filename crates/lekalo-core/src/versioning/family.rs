@@ -72,6 +72,7 @@ impl From<crate::loader::ModelVersion> for super::ContractVersion<ModelContract>
         use crate::loader::ModelVersion;
         let text = match version {
             ModelVersion::Current => "0.2.16",
+            ModelVersion::Successor => "0.8.0",
         };
         // The literals are compile-time constants proven canonical by tests.
         Self::parse_canonical(text).expect("finite Model literals are canonical")

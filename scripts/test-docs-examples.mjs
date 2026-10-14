@@ -272,7 +272,7 @@ function check(kind,output,cwd) {
     schema("validation-report.schema.v0.6.4.json",value);
     assert.equal(value.validation.profile,"strict"); assert.equal(value.validation.counts.error,0);
   } else if(kind==="inspect") {
-    schema("inspect.schema.v0.2.16.json",value.inspect);
+    schema("inspect.schema.v0.8.0.json",value.inspect);
     assert.equal(value.inspect.selector.resolvedId,"planner.focus_task");
     assert.equal(value.inspect.symbol.kind,"command");
   } else if(kind==="impact") {

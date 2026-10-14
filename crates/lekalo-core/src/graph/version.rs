@@ -18,6 +18,35 @@ pub const IDENTITY: &str = "dev.lekalo.graph@0.2.16";
 /// The exact wire discriminator of the graph contract.
 pub const SCHEMA_VERSION: &str = "lekalo/graph/v0.2.16";
 
+/// The exact graph contract version compiled from Model 0.8.0 sources
+/// (the typed relation successor; entity relation targets become graph
+/// references under the negotiated contract).
+pub const SUCCESSOR_VERSION: &str = "0.8.0";
+
+/// The exact contract identity compiled from Model 0.8.0 sources.
+pub const SUCCESSOR_IDENTITY: &str = "dev.lekalo.graph@0.8.0";
+
+/// The exact wire discriminator compiled from Model 0.8.0 sources.
+pub const SUCCESSOR_SCHEMA_VERSION: &str = "lekalo/graph/v0.8.0";
+
+/// The exact contract identity of one graph: the graph contract version
+/// follows the exact source Model version it was built from, exactly
+/// like the IR family it is compiled over.
+pub const fn identity_for(version: crate::loader::ModelVersion) -> &'static str {
+    match version {
+        crate::loader::ModelVersion::Current => IDENTITY,
+        crate::loader::ModelVersion::Successor => SUCCESSOR_IDENTITY,
+    }
+}
+
+/// The exact wire discriminator of one graph.
+pub const fn schema_version_for(version: crate::loader::ModelVersion) -> &'static str {
+    match version {
+        crate::loader::ModelVersion::Current => SCHEMA_VERSION,
+        crate::loader::ModelVersion::Successor => SUCCESSOR_SCHEMA_VERSION,
+    }
+}
+
 /// The maximum number of nodes one graph may hold (fatal beyond it).
 pub const MAX_NODES: usize = 100_000;
 
@@ -58,6 +87,13 @@ mod tests {
         assert_eq!(FAMILY, "dev.lekalo.graph");
         assert_eq!(VERSION, "0.2.16");
         assert_eq!(SCHEMA_VERSION, "lekalo/graph/v0.2.16");
+        assert_eq!(SUCCESSOR_IDENTITY, format!("{FAMILY}@{SUCCESSOR_VERSION}"));
+        assert_eq!(SUCCESSOR_SCHEMA_VERSION, "lekalo/graph/v0.8.0");
+        assert_eq!(identity_for(crate::loader::ModelVersion::Current), IDENTITY);
+        assert_eq!(
+            identity_for(crate::loader::ModelVersion::Successor),
+            SUCCESSOR_IDENTITY
+        );
     }
 
     #[test]

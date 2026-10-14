@@ -6,8 +6,9 @@
 // Node 18 and 24) and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 
 import { createRequire } from "node:module";
-import { readdirSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
@@ -32,15 +33,26 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
 const schema = read("contracts/inspect.schema.v0.2.16.json");
+// The 0.8.0 successor schema: the frozen predecessor stays in place
+// byte-for-byte; live output now carries the successor discriminator
+// and its modelVersion stays source-dependent.
+const successorSchema = read("contracts/inspect.schema.v0.8.0.json");
+if (successorSchema.properties.schemaVersion.const !== "lekalo/inspect/v0.8.0") {
+  fail("successor-discriminator", String(successorSchema.properties.schemaVersion.const));
+}
+if (schema.properties.schemaVersion.const !== "lekalo/inspect/v0.2.16") {
+  fail("predecessor-not-frozen", String(schema.properties.schemaVersion.const));
+}
 const goldenDir = "tests/fixtures/inspect/golden";
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateInspect = ajv.compile(schema);
+const validateInspectV8 = ajv.compile(successorSchema);
 
-const fail = (reason, detail) => {
+function fail(reason, detail) {
   process.stderr.write(`inspect-contract ${reason}: ${JSON.stringify(detail ?? "")}\n`);
   process.exit(1);
-};
+}
 
 // The closed v1 section order (ADR-0014): every golden envelope carries
 // all mandatory sections in exactly this key order.
@@ -78,10 +90,14 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
   goldenCount += 1;
 
   // 1. The envelope is the accepted success wrapper and the payload
-  // satisfies the closed wire schema.
+  // satisfies its negotiated closed wire schema: 0.2.16 goldens stay on
+  // the frozen predecessor bytes, 0.8.0 goldens (the successor, which
+  // also inspects 0.2.16 sources unchanged) on the successor schema.
   if (envelope.status !== "valid") fail(`${name}-envelope-status`, envelope.status);
   const inspect = envelope.inspect;
-  if (!validateInspect(inspect)) fail(`${name}-invalid`, validateInspect.errors);
+  const successor = inspect.schemaVersion === "lekalo/inspect/v0.8.0";
+  const validator = successor ? validateInspectV8 : validateInspect;
+  if (!validator(inspect)) fail(`${name}-invalid`, validator.errors);
 
   // 2. Fixed wire order: top-level keys follow the schema order exactly.
   const keys = Object.keys(inspect);
@@ -90,9 +106,14 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
     if (keys[index] !== key) fail(`${name}-section-order`, { at: index, got: keys[index] });
   });
 
-  // 3. Identities and coherence of the header.
-  if (inspect.schemaVersion !== "lekalo/inspect/v0.2.16") fail(`${name}-discriminator`);
-  if (inspect.identity !== "dev.lekalo.inspect@0.2.16") fail(`${name}-identity`);
+  // 3. Identities and coherence of the header (negotiated, exact: no
+  // version drift and no widened predecessor).
+  if (inspect.schemaVersion !== (successor ? "lekalo/inspect/v0.8.0" : "lekalo/inspect/v0.2.16")) {
+    fail(`${name}-discriminator`, inspect.schemaVersion);
+  }
+  if (inspect.identity !== (successor ? "dev.lekalo.inspect@0.8.0" : "dev.lekalo.inspect@0.2.16")) {
+    fail(`${name}-identity`, inspect.identity);
+  }
   if (inspect.selector.mode !== "short-name" && inspect.selector.input !== inspect.symbol.id) {
     fail(`${name}-selector-identity`, inspect.selector);
   }
@@ -191,10 +212,120 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
 
 if (goldenCount === 0) fail("no-goldens");
 
+// Live successor probes: the real binary's ordinary inspect output is
+// schema-valid under the published 0.8.0 successor, carries its
+// discriminator, and — for Model 0.8.0 sources — reports the typed
+// relation-cardinality and secondary-uniqueness facts in the
+// invariants section. A legacy 0.2.16 source inspects valid under the
+// SAME successor with its own source-dependent modelVersion (the
+// negotiated identity, never a widened predecessor).
+{
+  const binaryCandidates = [
+    join(root, "target/debug/lekalo"),
+    join(root, "target/debug/lekalo.exe"),
+  ];
+  const binary = binaryCandidates.find((candidate) => existsSync(candidate));
+  if (!binary) {
+    fail("binary-missing", "build the workspace first: cargo build --workspace --locked");
+  } else {
+    const liveInspect = (symbol, project) => {
+      const run = spawnSync(
+        binary,
+        ["--no-cache", "--json", "inspect", symbol, "--project", project],
+        { cwd: root, encoding: "utf8", timeout: 120000 },
+      );
+      if (run.error || run.status !== 0) {
+        fail("live-inspect-exit", `${symbol}: ${String(run.error ?? run.stderr).slice(0, 200)}`);
+        return null;
+      }
+      return JSON.parse(run.stdout).inspect;
+    };
+    const tasklinks = liveInspect(
+      "tasklinks.task_external_link",
+      "tests/fixtures/task-external-links/project",
+    );
+    if (tasklinks) {
+      if (!validateInspectV8(tasklinks)) {
+        fail("live-successor-invalid", validateInspectV8.errors);
+      }
+      if (tasklinks.schemaVersion !== "lekalo/inspect/v0.8.0") fail("live-discriminator", tasklinks.schemaVersion);
+      if (tasklinks.modelVersion !== "0.8.0") fail("live-model-version", tasklinks.modelVersion);
+      if (tasklinks.project?.irRef?.identity !== "dev.lekalo.ir@0.8.0") {
+        fail("live-ir-identity", tasklinks.project?.irRef?.identity);
+      }
+      const invariants = tasklinks.invariants.items ?? [];
+      const relation = invariants.find((item) => item.type === "relation");
+      const constraint = invariants.find((item) => item.type === "unique-constraint");
+      if (!relation || relation.relation !== "tasklinks.rel.task_links"
+        || relation.target !== "planner.task" || relation.min !== 1 || relation.max !== 1
+        || relation.onDetach !== "retain-history" || relation.onDelete !== "restrict") {
+        fail("live-relation-invariant", JSON.stringify(relation));
+      }
+      if (!constraint || constraint.constraint !== "tasklinks.uq_external_identity"
+        || constraint.fields.length !== 5 || constraint.comparison !== "exact-text"
+        || constraint.normalizationRef !== null) {
+        fail("live-unique-invariant", JSON.stringify(constraint));
+      }
+      if (tasklinks.invariants.state !== "available" || tasklinks.invariants.complete !== true) {
+        fail("live-invariants-state", tasklinks.invariants.state);
+      }
+      const contradictory = structuredClone(tasklinks);
+      contradictory.invariants.items.find((item) => item.type === "unique-constraint").normalizationRef = "planner.task";
+      if (validateInspectV8(contradictory)) {
+        fail("successor-exact-text-normalization-accepted");
+      }
+      contradictory.invariants.items.find((item) => item.type === "unique-constraint").comparison = "declared-normalization";
+      contradictory.invariants.items.find((item) => item.type === "unique-constraint").normalizationRef = null;
+      if (validateInspectV8(contradictory)) {
+        fail("successor-unpinned-normalization-accepted");
+      }
+    }
+    const scratch = mkdtempSync(join(root, "target/inspect-contract-"));
+    try {
+      const project = relative(root, join(scratch, "many-invariants")).replaceAll("\\", "/");
+      cpSync(join(root, "tests/fixtures/task-external-links/project"), project, { recursive: true });
+      const source = join(project, "lekalo/modules/tasklinks/entities.yaml");
+      const before = readFileSync(source, "utf8");
+      const pattern = /(      - id: "tasklinks\.rel\.task_links"[\s\S]*?)(?=    uniqueConstraints:)/;
+      const match = before.match(pattern);
+      if (!match) fail("invariant-bound-probe-no-op");
+      // Stay within the Model's 64-relation bound; every new fact
+      // must be present, not silently replaced by primary identity.
+      const additions = Array.from({ length: 62 }, (_, index) =>
+        match[1].replace("tasklinks.rel.task_links", `tasklinks.rel.extra_${String(index).padStart(3, "0")}`)).join("");
+      writeFileSync(source, before.replace(pattern, match[1] + additions));
+      const bounded = liveInspect("tasklinks.task_external_link", project);
+      if (!validateInspectV8(bounded)) fail("bounded-successor-invalid", validateInspectV8.errors);
+      if (bounded.invariants.state !== "available" || bounded.invariants.complete !== true
+        || bounded.invariants.items.length !== 65 || bounded.invariants.bounds !== undefined) {
+        fail("invariant-facts-missing", bounded.invariants);
+      }
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+    const legacy = liveInspect("planner.task", "tests/fixtures/inspect/planner");
+    if (legacy) {
+      if (!validateInspectV8(legacy)) {
+        fail("live-legacy-successor-invalid", validateInspectV8.errors);
+      }
+      if (legacy.modelVersion !== "0.2.16") fail("live-legacy-model-version", legacy.modelVersion);
+      if (legacy.project?.irRef?.identity && legacy.project.irRef.identity !== "dev.lekalo.ir@0.2.16") {
+        fail("live-legacy-ir-identity", legacy.project?.irRef?.identity);
+      }
+      // A 0.2.16 source declares no successor invariants: the section
+      // stays closed and the typed facts stay absent, never invented.
+      if ((legacy.invariants.items ?? []).some((item) => item.type !== "identity")) {
+        fail("live-legacy-invariant-invented", JSON.stringify(legacy.invariants.items));
+      }
+    }
+  }
+}
+
 process.stdout.write(`${JSON.stringify({
   ok: true,
   ajv: ajvVersion,
   goldens: goldenCount,
   sections: sectionChecks,
   items: itemChecks,
+  liveSuccessor: true,
 }, null, 2)}\n`);

@@ -64,6 +64,7 @@ fn step_by_id(id: &str) -> Option<&'static dyn MigrationStep> {
 fn finite_model(text: &str) -> Option<ModelVersion> {
     match text {
         "0.2.16" => Some(ModelVersion::Current),
+        "0.8.0" => Some(ModelVersion::Successor),
         _ => None,
     }
 }

@@ -1,0 +1,8 @@
+schema_version: "0.8.0"
+definitions:
+  - id: tasklinks
+    kind: module
+    version: 1
+    description: "Target-neutral multi-provider task link module (issue #52)"
+    imports:
+      - planner

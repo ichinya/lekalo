@@ -11616,6 +11616,202 @@
       "lifecycle": "active"
     },
     {
+      "id": "tasklink.conflict-resolution-invalid",
+      "code": "LEK-TASKLINK-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "tasklink.conflict-resolution-invalid",
+      "default_message": "A conflict resolution lacks an explicit command, precondition, policy, immutable audit effect, or a valid transition.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "tasklink.decision-incomplete",
+      "code": "LEK-TASKLINK-002",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "tasklink.decision-incomplete",
+      "default_message": "A required action/field decision lacks an actor scope, explicit policy, capability revision, or revision-bound decision input.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "tasklink.delivery-contract-invalid",
+      "code": "LEK-TASKLINK-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "tasklink.delivery-contract-invalid",
+      "default_message": "An external write is declared atomic with local state, a durable intent is missing, retry lacks dedup or reconciliation, or partial recipients are masked as complete.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "tasklink.evidence-invalid",
+      "code": "LEK-TASKLINK-008",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "unsupported-version"
+      ],
+      "message_id": "tasklink.evidence-invalid",
+      "default_message": "Task-link evidence carries stale or wrong pins, fabricated counts, missing source attribution, or an unadmitted claim stronger than its mock or native receipt supports.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "tasklink.fanout-not-admitted",
+      "code": "LEK-TASKLINK-003",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "tasklink.fanout-not-admitted",
+      "default_message": "A declared or evidenced outbound effect targets a denied, detached, unsupported, or unknown link, action, or field.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "tasklink.history-or-ownership-violation",
+      "code": "LEK-TASKLINK-006",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "tasklink.history-or-ownership-violation",
+      "default_message": "A declaration or evidence deletes external or history data on detach, writes protected planning fields, or bridges providers directly.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "tasklink.relation-identity-invalid",
+      "code": "LEK-TASKLINK-001",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid",
+        "unsupported-version"
+      ],
+      "message_id": "tasklink.relation-identity-invalid",
+      "default_message": "Missing or invalid tasklink relation cardinality, identity field, installation scope, or Model-to-storage uniqueness disagreement.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "tasklink.required-guarantee-unsupported",
+      "code": "LEK-TASKLINK-007",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "valid",
+        "invalid",
+        "unsupported"
+      ],
+      "message_id": "tasklink.required-guarantee-unsupported",
+      "default_message": "The selected adapter cannot supply a required identity, transaction, policy, durable outbox, or delivery guarantee; unknown and partial states retain explicit reasons.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "subject",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "trace.bridge-chain-uncovered",
       "code": "LEK-TRACE-007",
       "category": "semantic",

@@ -298,3 +298,400 @@ fn typed_references_carry_fully_qualified_ids_and_explicit_wrappers() {
     assert_eq!(effect.entity.as_str(), "planner.task");
     assert_eq!(effect.emits.len(), 1);
 }
+
+// ---------------------------------------------------------------------------
+// Model 0.8.0 successor: required members, semantic relation ownership.
+// ---------------------------------------------------------------------------
+
+use lekalo_core::loader::ModelVersion;
+use std::collections::BTreeMap;
+
+/// One disposable 0.8.0 project written under the crate's own `target`
+/// directory, referenced by an invocation-relative selector (the #4 path
+/// policy refuses absolute selections and `..` escapes). Every caller
+/// holds [`CWD_LOCK`] for its whole body, so the selector never races a
+/// working-directory change. `body` is the bare definition list of one
+/// entities document; the wrapper adds the document envelope.
+fn successor_project(name: &str, body: &str) -> String {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("target/ir-semantics")
+        .join(name);
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("lekalo/modules/alpha")).expect("temp project dirs");
+    std::fs::write(
+        root.join("lekalo/project.yaml"),
+        "schema_version: \"0.8.0\"\ndefinitions:\n  - id: alpha\n    kind: project\n    version: 1\n",
+    )
+    .expect("project.yaml");
+    std::fs::write(
+        root.join("lekalo/modules/alpha/module.yaml"),
+        "schema_version: \"0.8.0\"\ndefinitions:\n  - id: alpha\n    kind: module\n    version: 1\n",
+    )
+    .expect("module.yaml");
+    std::fs::write(
+        root.join("lekalo/modules/alpha/entities.yaml"),
+        format!("schema_version: \"0.8.0\"\ndefinitions:\n{body}"),
+    )
+    .expect("entities.yaml");
+    format!("target/ir-semantics/{name}")
+}
+
+/// Compile one temp 0.8.0 project and require success.
+fn assert_compiles(name: &str, entities_yaml: &str) {
+    let _guard = CWD_LOCK.lock().expect("cwd lock");
+    let project = successor_project(name, entities_yaml);
+    let model = normalize_model(&LoadSelection {
+        project: Some(project),
+    })
+    .expect("load must succeed");
+    assert_eq!(model.model_version, ModelVersion::Successor);
+    if let Err(failure) = compile(&model) {
+        panic!(
+            "{name}: expected a valid compilation, got {}",
+            failure
+                .diagnostics
+                .iter()
+                .map(|diagnostic| diagnostic.code.clone())
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+    }
+}
+
+/// Compile one temp 0.8.0 project and require refusal by registered code.
+fn assert_refused(name: &'static str, entities_yaml: &str, expected: &[&str]) {
+    let _guard = CWD_LOCK.lock().expect("cwd lock");
+    let project = successor_project(name, entities_yaml);
+    let model = normalize_model(&LoadSelection {
+        project: Some(project),
+    })
+    .expect("load must succeed");
+    let Err(failure) = compile(&model) else {
+        panic!("{name}: expected the compilation to fail");
+    };
+    let codes: BTreeMap<&str, usize> =
+        failure
+            .diagnostics
+            .iter()
+            .fold(BTreeMap::new(), |mut acc, diagnostic| {
+                *acc.entry(diagnostic.code.as_str()).or_insert(0) += 1;
+                acc
+            });
+    for code in expected {
+        assert!(
+            codes.contains_key(*code),
+            "{name}: expected {code} among {codes:?}"
+        );
+    }
+}
+
+const THING_SCALARS: &str =
+    "  - id: alpha.thing\n    kind: scalar\n    version: 1\n    base: string\n";
+
+/// One entity with a single `id` field plus optional typed members.
+fn entity(id: &str, relations: &str, constraints: &str) -> String {
+    let relations = if relations.is_empty() {
+        String::new()
+    } else {
+        format!("    relations:\n{relations}")
+    };
+    let constraints = if constraints.is_empty() {
+        String::new()
+    } else {
+        format!("    uniqueConstraints:\n{constraints}")
+    };
+    format!(
+        "  - id: {id}\n    kind: entity\n    version: 1\n    fields:\n      - name: id\n        type: alpha.thing\n        required: true\n    identity:\n      - id\n{relations}{constraints}"
+    )
+}
+
+fn relation(target: &str, local: &str, target_field: &str) -> String {
+    format!(
+        "      - id: \"alpha.rel.thing\"\n        target: \"{target}\"\n        localFields:\n          - {local}\n        targetFields:\n          - {target_field}\n        min: 0\n        max: null\n        ownership: local\n        onDetach: retain-history\n        onDelete: restrict\n"
+    )
+}
+
+#[test]
+fn successor_relations_validate_against_their_semantic_owner() {
+    // The coherent positive control: a typed join over equal types.
+    let good = format!(
+        "{}{}\n{}",
+        THING_SCALARS,
+        entity("alpha.left", &relation("alpha.right", "id", "id"), ""),
+        entity("alpha.right", "", "")
+    );
+    assert_compiles("positive", &good);
+
+    // A ghost relation target fails the whole compilation...
+    let ghost_target = format!(
+        "{}{}\n{}",
+        THING_SCALARS,
+        entity("alpha.left", &relation("alpha.ghost", "id", "id"), ""),
+        entity("alpha.right", "", "")
+    );
+    assert_refused("ghost-target", &ghost_target, &["ir.value-invalid"]);
+
+    // ...even when the malformed owner is otherwise unreferenced.
+    let isolated = format!(
+        "{}{}\n{}\n{}",
+        THING_SCALARS,
+        entity("alpha.left", "", ""),
+        entity("alpha.isolated", &relation("alpha.ghost", "id", "id"), ""),
+        entity("alpha.right", "", "")
+    );
+    assert_refused("isolated-ghost", &isolated, &["ir.value-invalid"]);
+
+    // Ghost local and target fields fail; so do mismatched join types.
+    let ghost_local = format!(
+        "{}{}\n{}",
+        THING_SCALARS,
+        entity(
+            "alpha.left",
+            &relation("alpha.right", "ghost_field", "id"),
+            ""
+        ),
+        entity("alpha.right", "", "")
+    );
+    assert_refused("ghost-local", &ghost_local, &["ir.value-invalid"]);
+
+    let ghost_target_field = format!(
+        "{}{}\n{}",
+        THING_SCALARS,
+        entity(
+            "alpha.left",
+            &relation("alpha.right", "id", "ghost_field"),
+            ""
+        ),
+        entity("alpha.right", "", "")
+    );
+    assert_refused(
+        "ghost-target-field",
+        &ghost_target_field,
+        &["ir.value-invalid"],
+    );
+
+    // A typed join over two different scalars cannot exist.
+    let second_scalar = "  - id: alpha.other\n    kind: scalar\n    version: 1\n    base: uuid\n";
+    let mismatched = format!(
+        "{}{}{}",
+        THING_SCALARS,
+        second_scalar,
+        "  - id: alpha.right\n    kind: entity\n    version: 1\n    fields:\n      - name: id\n        type: alpha.other\n        required: true\n    identity:\n      - id\n    relations:\n      - id: \"alpha.rel.thing\"\n        target: \"alpha.left\"\n        localFields:\n          - id\n        targetFields:\n          - id\n        min: 0\n        max: null\n        ownership: local\n        onDetach: retain-history\n        onDelete: restrict\n"
+    );
+    assert_refused("type-mismatch", &mismatched, &["ir.value-invalid"]);
+}
+
+#[test]
+fn successor_constraints_validate_fields_and_normalization() {
+    let scalars = format!(
+        "{THING_SCALARS}  - id: alpha.norm\n    kind: scalar\n    version: 1\n    base: string\n"
+    );
+    let exact = "      - id: \"alpha.uq.thing\"\n        fields:\n          - id\n        comparison: exact-text\n        scope: \"alpha-record-id\"\n";
+    let declared = "      - id: \"alpha.uq.thing\"\n        fields:\n          - id\n        comparison: declared-normalization\n        normalizationRef: alpha.norm\n        scope: \"alpha-record-id\"\n";
+    assert_compiles(
+        "constraint-positive",
+        &format!("{scalars}{}", entity("alpha.record", "", exact)),
+    );
+    assert_compiles(
+        "constraint-declared",
+        &format!("{scalars}{}", entity("alpha.record", "", declared)),
+    );
+
+    let ghost_field = "      - id: \"alpha.uq.thing\"\n        fields:\n          - ghost_field\n        comparison: exact-text\n        scope: \"alpha-record-id\"\n";
+    assert_refused(
+        "constraint-ghost-field",
+        &format!("{scalars}{}", entity("alpha.record", "", ghost_field)),
+        &["ir.value-invalid"],
+    );
+
+    let ghost_normalization = "      - id: \"alpha.uq.thing\"\n        fields:\n          - id\n        comparison: declared-normalization\n        normalizationRef: alpha.ghost\n        scope: \"alpha-record-id\"\n";
+    assert_refused(
+        "constraint-ghost-normalization",
+        &format!(
+            "{scalars}{}",
+            entity("alpha.record", "", ghost_normalization)
+        ),
+        &["ir.value-invalid"],
+    );
+}
+
+/// Decoder/schema parity probes for the relation and constraint member
+/// grammars: whatever the published Model schema admits, the decoder
+/// admits, and whatever it refuses, the decoder refuses. The separator
+/// is a literal dot on both sides, lengths count characters (not UTF-8
+/// bytes) on both sides, and an explicit `null` is refused exactly like
+/// the closed schema refuses it (absent is the only omission spelling).
+#[test]
+fn relation_and_constraint_grammar_matches_the_published_schema() {
+    // A non-dot separator (`!`) is schema-invalid now that the pattern
+    // escapes the separator, and the decoder refuses it in lockstep.
+    let bang_separator = format!(
+        "{}{}{}",
+        THING_SCALARS,
+        "  - id: alpha.left\n    kind: entity\n    version: 1\n    fields:\n      - name: id\n        type: alpha.thing\n        required: true\n    identity:\n      - id\n    relations:\n      - id: \"alpha!rel!thing\"\n        target: \"alpha.right\"\n        localFields:\n          - id\n        targetFields:\n          - id\n        min: 0\n        max: null\n        ownership: local\n        onDetach: retain-history\n        onDelete: restrict\n",
+        "  - id: alpha.right\n    kind: entity\n    version: 1\n    fields:\n      - name: id\n        type: alpha.thing\n        required: true\n    identity:\n      - id\n"
+    );
+    assert_refused("bang-separator-id", &bang_separator, &["ir.value-invalid"]);
+
+    // JSON Schema string lengths count characters: a 128-scalar
+    // non-ASCII scope is schema-valid under `maxLength: 128` and the
+    // decoder's char-based bound admits it too (it is 256 UTF-8
+    // bytes, which a byte-based bound would have refused).
+    let unicode_scope = "\u{00e9}".repeat(128);
+    let unicode_constraint = format!(
+        "      - id: \"alpha.uq.thing\"\n        fields:\n          - id\n        comparison: exact-text\n        scope: \"{unicode_scope}\"\n"
+    );
+    assert_compiles(
+        "constraint-unicode-scope-128-chars",
+        &format!(
+            "{THING_SCALARS}{}",
+            entity("alpha.record", "", &unicode_constraint)
+        ),
+    );
+    let over_scope = "\u{00e9}".repeat(129);
+    let over_constraint = format!(
+        "      - id: \"alpha.uq.thing\"\n        fields:\n          - id\n        comparison: exact-text\n        scope: \"{over_scope}\"\n"
+    );
+    assert_refused(
+        "constraint-unicode-scope-129-chars",
+        &format!(
+            "{THING_SCALARS}{}",
+            entity("alpha.record", "", &over_constraint)
+        ),
+        &["ir.value-invalid"],
+    );
+
+    // An explicit `null` normalizationRef is schema-invalid in every
+    // position; the decoder distinguishes it from an absent member and
+    // refuses it instead of silently treating it as an omission.
+    let null_normalization = "      - id: \"alpha.uq.thing\"\n        fields:\n          - id\n        comparison: exact-text\n        normalizationRef: null\n        scope: \"alpha-record-id\"\n";
+    assert_refused(
+        "constraint-null-normalization",
+        &format!(
+            "{THING_SCALARS}{}",
+            entity("alpha.record", "", null_normalization)
+        ),
+        &["ir.value-invalid"],
+    );
+}
+
+#[test]
+fn missing_required_members_fail_their_owning_definition() {
+    // Every required relation member is diagnosed with its own
+    // `ir.missing-field`, even on an otherwise unreferenced owner.
+    let relation_members: [(&str, &str); 9] = [
+        ("id", "        id: \"alpha.rel.thing\"\n"),
+        ("target", "        target: \"alpha.right\"\n"),
+        ("localFields", "        localFields:\n          - id\n"),
+        ("targetFields", "        targetFields:\n          - id\n"),
+        ("min", "        min: 0\n"),
+        ("max", "        max: null\n"),
+        ("ownership", "        ownership: local\n"),
+        ("onDetach", "        onDetach: retain-history\n"),
+        ("onDelete", "        onDelete: restrict\n"),
+    ];
+    for (missing, _) in relation_members.iter().enumerate() {
+        let mut body = String::new();
+        body.push_str(THING_SCALARS);
+        body.push_str(&entity("alpha.left", "", ""));
+        body.push('\n');
+        body.push_str(&entity("alpha.right", "", ""));
+        body.push_str("\n  - id: alpha.isolated\n    kind: entity\n    version: 1\n    fields:\n      - name: id\n        type: alpha.thing\n        required: true\n    identity:\n      - id\n    relations:\n");
+        let mut first = true;
+        for (index, (_, member)) in relation_members.iter().enumerate() {
+            if index == missing {
+                continue;
+            }
+            // The first surviving member opens the relation list item.
+            if first {
+                body.push_str("      - ");
+                body.push_str(member.trim_start());
+                first = false;
+            } else {
+                body.push_str(member);
+            }
+        }
+        assert_refused(
+            LEAKED_MISSING_RELATION[missing],
+            &body,
+            &["ir.missing-field"],
+        );
+    }
+
+    // The required constraint members diagnose too.
+    let constraint_members: [(&str, &str, &'static str); 4] = [
+        (
+            "id",
+            "        id: \"alpha.uq.thing\"\n",
+            "constraint-missing-id",
+        ),
+        (
+            "fields",
+            "        fields:\n          - id\n",
+            "constraint-missing-fields",
+        ),
+        (
+            "comparison",
+            "        comparison: exact-text\n",
+            "constraint-missing-comparison",
+        ),
+        (
+            "scope",
+            "        scope: \"alpha-record-id\"\n",
+            "constraint-missing-scope",
+        ),
+    ];
+    for (missing, _, label) in constraint_members.iter() {
+        let mut body = String::new();
+        body.push_str(THING_SCALARS);
+        body.push_str(&entity("alpha.record", "", ""));
+        body.push_str("\n    uniqueConstraints:\n");
+        let mut first = true;
+        for (key, member, _) in constraint_members.iter() {
+            if key == missing {
+                continue;
+            }
+            if first {
+                body.push_str("      - ");
+                body.push_str(member.trim_start());
+                first = false;
+            } else {
+                body.push_str(member);
+            }
+        }
+        assert_refused(label, &body, &["ir.missing-field"]);
+    }
+
+    // The nine-field bound mirrors the published schema exactly.
+    let mut nine = String::new();
+    nine.push_str(THING_SCALARS);
+    nine.push_str("  - id: alpha.nine\n    kind: entity\n    version: 1\n    fields:\n");
+    for index in 0..9 {
+        nine.push_str(&format!(
+            "      - name: field_{index}\n        type: alpha.thing\n        required: true\n"
+        ));
+    }
+    nine.push_str("    identity:\n      - field_0\n    relations:\n      - id: \"alpha.rel.thing\"\n        target: \"alpha.left\"\n        localFields:\n");
+    for index in 0..9 {
+        nine.push_str(&format!("          - field_{index}\n"));
+    }
+    nine.push_str("        targetFields:\n");
+    for index in 0..9 {
+        nine.push_str(&format!("          - field_{index}\n"));
+    }
+    nine.push_str("        min: 0\n        max: null\n        ownership: local\n        onDetach: retain-history\n        onDelete: restrict\n");
+    assert_refused("nine-fields", &nine, &["ir.value-invalid"]);
+}
+
+/// Static names for the parameterized missing-member refusals.
+static LEAKED_MISSING_RELATION: [&str; 9] = [
+    "missing-relation-id",
+    "missing-relation-target",
+    "missing-relation-localFields",
+    "missing-relation-targetFields",
+    "missing-relation-min",
+    "missing-relation-max",
+    "missing-relation-ownership",
+    "missing-relation-onDetach",
+    "missing-relation-onDelete",
+];

@@ -68,7 +68,8 @@ pub const FORMAT_REGISTRY_VERSION: &str = "0.8.0";
 ///
 /// After the milestone integration merges, this is the same merged
 /// `format.*` + `adoption.*` + `portability.*` + `worklog-changelog.*`
-/// + `managed.*` union registry as the other 0.8.0 family constants.
+/// + `managed.*` + `tasklink.*` union registry as the other 0.8.0
+///   family constants.
 pub const ADOPTION_REGISTRY_VERSION: &str = "0.8.0";
 
 /// The issue #19 M8 union successor: the merged registry plus the nine
@@ -86,6 +87,11 @@ pub const PILOT_REGISTRY_VERSION: &str = "0.8.0";
 /// plus the closed `managed.*` family. Predecessor producer pins are
 /// unchanged; managed producers pin this registry.
 pub const MANAGED_REGISTRY_VERSION: &str = "0.8.0";
+
+/// The issue #52 union successor: the merged union plus the eight
+/// `tasklink.*` declarations (LEK-TASKLINK-001..008) of the task-links
+/// pilot. Earlier producers keep their exact registry pins end to end.
+pub const TASKLINK_REGISTRY_VERSION: &str = "0.8.0";
 
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -34,7 +34,7 @@ use lekalo_core::versioning::{ContractVersion, VersionRegistry};
 const GOLDEN: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
 const GOLDEN_DIGEST: &str =
-    "sha256:e7365c6527820fc4815b36a4c246cb53f515c851426e20f715fbee38ffd85dd0";
+    "sha256:bf36aff210e1938aa19f0eee0c3dd82dd803bced701a8eb15350fd3ae9f4ea09";
 const MULTI: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/multi-adapter.lock.json");
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/lockfile/project";

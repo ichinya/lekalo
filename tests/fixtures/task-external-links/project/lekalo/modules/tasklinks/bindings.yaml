@@ -1,0 +1,20 @@
+schema_version: "0.8.0"
+definitions:
+  - id: tasklinks.binding_pilot
+    kind: target-binding
+    version: 1
+    description: "Bind the tasklinks pilot to the node-typescript target for the portability comparison"
+    portability: target-specific
+    target: node-typescript
+  - id: tasklinks.binding_port
+    kind: target-binding
+    version: 1
+    description: "Bind the maintained Laravel port target for the portability comparison"
+    portability: target-specific
+    target: php-laravel-maintained
+  - id: tasklinks.binding_battery
+    kind: target-binding
+    version: 1
+    description: "Bind the repository's own Rust core over bundled SQLite — the implementation the local qualification battery actually executes"
+    portability: target-specific
+    target: lekalo-core-bundled-sqlite
