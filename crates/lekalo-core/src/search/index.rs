@@ -25,18 +25,7 @@ use crate::search::projection::{Card, Projection};
 use crate::search::version::{
     INDEX_IDENTITY, INDEX_SCHEMA_VERSION, MAX_CARDS, MAX_INDEX_BYTES, MAX_POSTINGS, RECIPE,
 };
-use crate::search::wire::{canonical_json, reject_duplicate_keys, sha256_digest};
-
-/// The derivation-memo identity: a store-internal sidecar (like the
-/// current pointer, never a published contract and never wire bytes)
-/// caching one verified snapshot derivation (issue #93 r6).
-const MEMO_SCHEMA_VERSION: &str = "lekalo/search-derivation-memo/v0.8.0";
-const MEMO_IDENTITY: &str = "dev.lekalo.search-derivation-memo@0.8.0";
-
-/// Maximum derivation-memo bytes: the memo is pins and digests (a few
-/// KiB at fixture scale), never card content; a planted oversize memo
-/// is refused before allocation, exactly like the pointer read.
-const MAX_MEMO_BYTES: u64 = 1024 * 1024;
+use crate::search::wire::{canonical_json, sha256_digest};
 
 /// Why a durable store operation degraded.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -156,94 +145,6 @@ pub struct InputPin {
     /// admission semantics, not a loosened guess.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<String>,
-}
-
-/// The derivation memo of one generation: the bounded-read
-/// justification inputs of a completed derivation proof — the Model
-/// partition digest, the admitting manifest configuration, and the
-/// pinned producer set — plus the snapshot digest that derivation
-/// produced. Issue #93 r6: the r5 oracle re-derived the full snapshot
-/// on every warm query, `status`, and no-op `build`/`update`, which
-/// scaled superlinearly. With a memo, those paths re-verify the
-/// justification inputs (bounded reads — exactly the r5 pin phase)
-/// and reuse the recorded derivation; any drift, a missing memo, or a
-/// shape-invalid memo falls back to the full recompute, which then
-/// re-records it.
-///
-/// Custody: the memo is store state, written only by code that just
-/// completed an honest derivation (a publishing build/update/query or
-/// a verifying `status`). Its file name is the SHA-256 of its own key
-/// bytes (the record with an empty `derived` field), and its key must
-/// equal the freshly verified inputs, so a memo planted for one
-/// generation cannot serve another and a tampered or relocated memo
-/// falls back to the full proof. It extends exactly the trust the
-/// current pointer already carries: rewriting the memo's derived
-/// digest, like rewriting the pointer, requires the same cache-home
-/// write access as rewriting the generation itself.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct DerivationMemo {
-    schema_version: String,
-    identity: String,
-    recipe: String,
-    /// The Model partition digest the derivation ran under.
-    model_digest: String,
-    /// The admitting manifest configuration (path, canonical digest,
-    /// posting cap) the derivation ran under; absent for a
-    /// canonical-only build.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    admission: Option<AdmissionConfig>,
-    /// The pinned producer set the derivation consumed.
-    inputs: Vec<InputPin>,
-    /// The derived snapshot digest (`sha256:<64 hex>`).
-    derived: String,
-}
-
-/// The canonical key bytes of one derivation: exactly the memo record
-/// with an empty `derived` field. Canonical JSON sorts keys, so the
-/// key bytes are stable regardless of field order. `None` when the
-/// inputs cannot be serialized (a memo never certifies them).
-fn memo_key_bytes(
-    model_digest: &str,
-    admission: &Option<AdmissionConfig>,
-    inputs: &[InputPin],
-) -> Option<String> {
-    let memo = DerivationMemo {
-        schema_version: MEMO_SCHEMA_VERSION.to_owned(),
-        identity: MEMO_IDENTITY.to_owned(),
-        recipe: RECIPE.to_owned(),
-        model_digest: model_digest.to_owned(),
-        admission: admission.clone(),
-        inputs: inputs.to_vec(),
-        derived: String::new(),
-    };
-    Some(canonical_json(&serde_json::to_value(&memo).ok()?))
-}
-
-/// The memo file name (64 lowercase hex) of one derivation key.
-fn memo_key_name(
-    model_digest: &str,
-    admission: &Option<AdmissionConfig>,
-    inputs: &[InputPin],
-) -> Option<String> {
-    Some(sha256_digest(
-        memo_key_bytes(model_digest, admission, inputs)?.as_bytes(),
-    ))
-}
-
-/// The canonical memo payload bytes of one derivation record (the key
-/// fields plus the derived digest it certifies).
-fn memo_payload(model_digest: &str, document: &IndexDocument) -> Option<String> {
-    let memo = DerivationMemo {
-        schema_version: MEMO_SCHEMA_VERSION.to_owned(),
-        identity: MEMO_IDENTITY.to_owned(),
-        recipe: RECIPE.to_owned(),
-        model_digest: model_digest.to_owned(),
-        admission: document.admission.clone(),
-        inputs: document.inputs.clone(),
-        derived: document.digest.clone(),
-    };
-    Some(canonical_json(&serde_json::to_value(&memo).ok()?))
 }
 
 impl SearchIndex {
@@ -404,8 +305,10 @@ impl SearchStore {
     /// payload must all agree, and the payload must satisfy the closed
     /// structural invariants (every posting and qualified identity
     /// resolves to a carried card). An aliased copy under a foreign
-    /// digest name, a forged posting, or a re-hashed payload is
-    /// `Corrupt`, never served.
+    /// digest name or a dangling posting is `Corrupt`. These checks
+    /// prove byte integrity, not derivation: a cache writer can re-hash
+    /// forged cards, so serving callers must also compare against the
+    /// snapshot derived from the live admitted inputs.
     pub fn load(&self, digest: &str) -> Result<Option<IndexDocument>, StoreError> {
         // The generation name is exactly 64 lowercase hex characters.
         if digest.len() != 64
@@ -563,115 +466,6 @@ impl SearchStore {
                 },
             },
         }
-    }
-
-    /// The memo home: one bounded sidecar per derivation key under the
-    /// store root (`memo/`; both segments are short policy-safe names,
-    /// like the generations themselves).
-    fn memo_path(&self, name: &str) -> PathBuf {
-        self.root.join("memo").join(name)
-    }
-
-    /// Does an honestly recorded derivation memo certify that
-    /// `document.digest` is exactly what the freshly verified
-    /// justification inputs (`model_digest`, `document.admission`,
-    /// `document.inputs`) derive? A bounded read — no re-derivation
-    /// (issue #93 r6). Every refusal is a miss: the caller falls back
-    /// to the full proof.
-    pub fn derivation_memo_matches(&self, model_digest: &str, document: &IndexDocument) -> bool {
-        let Some(name) = memo_key_name(model_digest, &document.admission, &document.inputs) else {
-            return false;
-        };
-        let path = self.memo_path(&name);
-        // Bound BEFORE allocation, exactly like the pointer read.
-        if let Ok(metadata) = std::fs::metadata(&path) {
-            if metadata.len() > MAX_MEMO_BYTES {
-                return false;
-            }
-        }
-        let bytes = match std::fs::File::open(&path) {
-            Ok(file) => {
-                let mut bytes = Vec::new();
-                if file
-                    .take(MAX_MEMO_BYTES + 1)
-                    .read_to_end(&mut bytes)
-                    .is_err()
-                {
-                    return false;
-                }
-                bytes
-            }
-            Err(_) => return false,
-        };
-        if bytes.len() as u64 > MAX_MEMO_BYTES {
-            return false;
-        }
-        let Ok(text) = std::str::from_utf8(&bytes) else {
-            return false;
-        };
-        if reject_duplicate_keys(text).is_err() {
-            return false;
-        }
-        let Ok(memo) = serde_json::from_str::<DerivationMemo>(text) else {
-            return false;
-        };
-        // Shape: the memo's own key bytes must hash to its file name —
-        // tampered content or a file relocated under a foreign name
-        // never matches, whatever digest it claims.
-        let Some(content_name) = memo_key_name(&memo.model_digest, &memo.admission, &memo.inputs)
-        else {
-            return false;
-        };
-        if content_name != name {
-            return false;
-        }
-        memo.schema_version == MEMO_SCHEMA_VERSION
-            && memo.identity == MEMO_IDENTITY
-            && memo.recipe == RECIPE
-            && memo.derived == document.digest
-    }
-
-    /// Record one derivation memo after an honest derivation proof
-    /// (a publishing run or a completed freshness verification), keyed
-    /// by the Model digest the derivation actually ran under. The
-    /// memo names the document's own digest. Best-effort: a denied or
-    /// unwritable cache home degrades to full proofs on the next run,
-    /// it never fails the operation the memo accelerates.
-    pub fn record_derivation_for(&self, model_digest: &str, document: &IndexDocument) {
-        if self.derivation_memo_matches(model_digest, document) {
-            return;
-        }
-        let Some(name) = memo_key_name(model_digest, &document.admission, &document.inputs) else {
-            return;
-        };
-        let Some(payload) = memo_payload(model_digest, document) else {
-            return;
-        };
-        let dir = self.root.join("memo");
-        if std::fs::create_dir_all(&dir).is_err() {
-            return;
-        }
-        let temp = dir.join(format!(
-            "tmp-{}-{}",
-            std::process::id(),
-            &name[..12.min(name.len())]
-        ));
-        if std::fs::write(&temp, payload.as_bytes()).is_err() {
-            return;
-        }
-        // Concurrent runs derive identical bytes under one name: the
-        // rename is idempotent, like generation publication.
-        let _ = std::fs::rename(&temp, self.memo_path(&name));
-    }
-
-    /// Record the derivation of a document that carries its own Model
-    /// digest (the publishing paths: the document was assembled under
-    /// exactly the recorded inputs moments ago).
-    pub fn record_derivation(&self, document: &IndexDocument) {
-        let Some(model_digest) = document.model_digest.as_deref() else {
-            return;
-        };
-        self.record_derivation_for(model_digest, document);
     }
 }
 
@@ -915,131 +709,5 @@ mod tests {
         )
         .expect("pointer with oversize tail");
         assert_eq!(store.current(), Err(StoreError::Corrupt));
-    }
-
-    /// The memo bones: one pinned document with its own derivation
-    /// digests, for memo-mechanism probes.
-    fn memo_document(model_hex: &str, derived_hex: &str) -> IndexDocument {
-        let mut document = skeleton_document();
-        document.model_digest = Some(format!("sha256:{model_hex}"));
-        document.digest = format!("sha256:{derived_hex}");
-        document.inputs = vec![InputPin {
-            kind: "trace".to_owned(),
-            path: "evidence/trace.json".to_owned(),
-            digest: Some(format!("sha256:{derived_hex}")),
-            identity: Some("dev.lekalo.trace@0.8.0".to_owned()),
-        }];
-        document
-    }
-
-    #[test]
-    fn derivation_memo_round_trips_and_refuses_foreign_inputs() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let store = SearchStore::resolve(temp.path()).expect("resolves");
-        let model_hex = "1".repeat(64);
-        let derived_hex = "2".repeat(64);
-        let document = memo_document(&model_hex, &derived_hex);
-        // Nothing is certified before a derivation records it.
-        assert!(!store.derivation_memo_matches(&format!("sha256:{model_hex}"), &document));
-        store.record_derivation(&document);
-        assert!(store.derivation_memo_matches(&format!("sha256:{model_hex}"), &document));
-        // Recording is idempotent: the memo stays valid.
-        store.record_derivation(&document);
-        assert!(store.derivation_memo_matches(&format!("sha256:{model_hex}"), &document));
-        // A generation whose digest differs (the self-consistent forge
-        // class of issue #93 r4/r5) never rides an honest memo.
-        let mut forged = document.clone();
-        forged.digest = format!("sha256:{}", "3".repeat(64));
-        assert!(!store.derivation_memo_matches(&format!("sha256:{model_hex}"), &forged));
-        // Model drift keys a different memo (no hit).
-        assert!(!store.derivation_memo_matches(&format!("sha256:{}", "4".repeat(64)), &document));
-        // Drifted producer pins key a different memo.
-        let mut drifted = document.clone();
-        drifted.inputs[0].digest = Some(format!("sha256:{}", "5".repeat(64)));
-        assert!(!store.derivation_memo_matches(&format!("sha256:{model_hex}"), &drifted));
-        // A different admitting configuration keys a different memo —
-        // and one recorded under admission matches only that shape.
-        let mut admitted = document.clone();
-        admitted.admission = Some(AdmissionConfig {
-            path: "evidence/search-inputs.json".to_owned(),
-            digest: format!("sha256:{}", "6".repeat(64)),
-            max_postings: 1024,
-        });
-        assert!(!store.derivation_memo_matches(&format!("sha256:{model_hex}"), &admitted));
-        store.record_derivation(&admitted);
-        assert!(store.derivation_memo_matches(&format!("sha256:{model_hex}"), &admitted));
-        // The admission-less memo still matches its own document.
-        assert!(store.derivation_memo_matches(&format!("sha256:{model_hex}"), &document));
-    }
-
-    #[test]
-    fn derivation_memo_refuses_tampered_relocated_or_oversize_bytes() {
-        let temp = tempfile::tempdir().expect("tempdir");
-        let store = SearchStore::resolve(temp.path()).expect("resolves");
-        let model_hex = "a".repeat(64);
-        let derived_hex = "b".repeat(64);
-        let document = memo_document(&model_hex, &derived_hex);
-        store.record_derivation(&document);
-        let name = memo_key_name(
-            &format!("sha256:{model_hex}"),
-            &document.admission,
-            &document.inputs,
-        )
-        .expect("memo name");
-        let path = store.memo_path(&name);
-        let payload = std::fs::read_to_string(&path).expect("memo bytes");
-        // A key field edited in place (a forged justification input):
-        // the memo's own key bytes no longer hash to its name — a miss.
-        let tampered_key = payload.replace(
-            &format!("sha256:{model_hex}"),
-            &format!("sha256:{}", "c".repeat(64)),
-        );
-        std::fs::write(&path, &tampered_key).expect("tamper key");
-        assert!(!store.derivation_memo_matches(&format!("sha256:{model_hex}"), &document));
-        // Re-recording after an honest derivation repairs it.
-        store.record_derivation(&document);
-        assert!(store.derivation_memo_matches(&format!("sha256:{model_hex}"), &document));
-        // A tampered derived digest certifies a generation other than
-        // this document's — a miss, never a match.
-        let tampered_derived = payload.replace(
-            &format!("sha256:{derived_hex}"),
-            &format!("sha256:{}", "e".repeat(64)),
-        );
-        std::fs::write(&path, &tampered_derived).expect("tamper derived");
-        assert!(!store.derivation_memo_matches(&format!("sha256:{model_hex}"), &document));
-        store.record_derivation(&document);
-        assert!(store.derivation_memo_matches(&format!("sha256:{model_hex}"), &document));
-        // A valid memo relocated under a foreign name never matches.
-        let relocated = store.memo_path(&"d".repeat(64));
-        std::fs::rename(&path, &relocated).expect("relocate");
-        assert!(!store.derivation_memo_matches(&format!("sha256:{model_hex}"), &document));
-        std::fs::rename(&relocated, &path).expect("restore");
-        assert!(store.derivation_memo_matches(&format!("sha256:{model_hex}"), &document));
-        // Duplicate keys in the memo bytes are a miss (closed
-        // documents only).
-        std::fs::write(
-            &path,
-            format!(
-                "{{\"derived\":\"sha256:{derived_hex}\",\"derived\":\"sha256:{derived_hex}\"}}"
-            ),
-        )
-        .expect("dup keys");
-        assert!(!store.derivation_memo_matches(&format!("sha256:{model_hex}"), &document));
-        // Oversize memo bytes are refused before allocation.
-        std::fs::write(
-            &path,
-            serde_json::to_string(&serde_json::json!({
-                "schemaVersion": MEMO_SCHEMA_VERSION,
-                "identity": MEMO_IDENTITY,
-                "recipe": RECIPE,
-                "modelDigest": format!("sha256:{model_hex}"),
-                "inputs": [],
-                "derived": format!("sha256:{derived_hex}"),
-                "padding": "x".repeat(1024 * 1024 + 64),
-            }))
-            .expect("oversize"),
-        )
-        .expect("write oversize");
-        assert!(!store.derivation_memo_matches(&format!("sha256:{model_hex}"), &document));
     }
 }

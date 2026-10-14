@@ -14,6 +14,34 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use tempfile::TempDir;
 
+/// Byte-sorted-key compact JSON — byte-identical to the core's
+/// canonical JSON, so a planted store sidecar carries the exact bytes
+/// the (r6) content-addressed checks hashed.
+fn canonical_json_bytes(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
+            let body: Vec<String> = keys
+                .iter()
+                .map(|key| {
+                    format!(
+                        "{}:{}",
+                        serde_json::to_string(key).expect("key serializes"),
+                        canonical_json_bytes(&map[*key])
+                    )
+                })
+                .collect();
+            format!("{{{}}}", body.join(","))
+        }
+        serde_json::Value::Array(items) => {
+            let body: Vec<String> = items.iter().map(canonical_json_bytes).collect();
+            format!("[{}]", body.join(","))
+        }
+        other => serde_json::to_string(other).expect("scalar serializes"),
+    }
+}
+
 const FIXTURE: &str = "tests/fixtures/search/planner";
 
 fn lekalo_in(dir: &Path, args: &[&str]) -> Output {
@@ -2294,31 +2322,27 @@ fn warm_forged_generation_never_serves() {
     );
 }
 
-/// Issue #93 r6 — the derivation memo end to end: a build records one
-/// honest memo; warm queries and `status` verify the bounded
-/// justification inputs against it instead of re-deriving the full
-/// snapshot per run; a tampered memo is a miss that falls back to the
-/// full proof (same honest bytes out, memo repaired); and producer
-/// drift is still stale — every pin re-hashes before the memo is ever
-/// consulted.
+/// Issue #93 r7 (r4 F3 re-opened) — the exact forged-memo repro: the
+/// derivation memo's `derived` field is self-asserted, so the review's
+/// fresh repro rewrites an honest memo's `"derived":"sha256:<H>"` →
+/// `"sha256:<F>"` after planting a self-consistent forged generation,
+/// and the r6 match check (content-key → filename, memo.derived ==
+/// document.digest — every byte attacker-writable under
+/// `.lekalo/cache/search/`) certifies the forgery: `find` serves the
+/// forged bytes, `status` reports ready, and `update` reports
+/// `reused:true` over the forgery. Because a memo in the same
+/// attacker-writable cache can never attest a derivation, the memo is
+/// gone entirely: honest runs record no sidecar, the derivation proof
+/// is always decisive on serve/status paths, and a planted memo is
+/// inert bytes that neither accelerate nor corrupt anything.
 #[test]
-fn derivation_memo_accelerates_warm_paths_without_masking_drift() {
+fn forged_derivation_memo_never_certifies_a_forged_generation() {
     let (project, _guard) = disposable_project();
     assert_eq!(exit_code(&build_once(&project)), 0);
-    let memo_dir = project.join(".lekalo/cache/search/memo");
-    let memos: Vec<std::fs::DirEntry> = std::fs::read_dir(&memo_dir)
-        .expect("memo dir")
-        .collect::<Result<_, _>>()
-        .expect("entries");
-    assert_eq!(memos.len(), 1, "one honest memo recorded at build");
-    let memo_path = memos[0].path();
-    let memo_bytes = std::fs::read_to_string(&memo_path).expect("memo bytes");
-    assert!(
-        memo_bytes.contains("search-derivation-memo"),
-        "{memo_bytes}"
-    );
-
-    // Warm query and status serve from the memo-verified generation.
+    let store = project.join(".lekalo/cache/search");
+    // An honest run records no derivation memo at all: there is no
+    // sidecar to forge in the first place (issue #93 r7).
+    assert!(!store.join("memo").exists(), "no memo sidecar is written");
     let query = lekalo_in(
         &project,
         &[
@@ -2331,17 +2355,111 @@ fn derivation_memo_accelerates_warm_paths_without_masking_drift() {
         ],
     );
     assert_eq!(exit_code(&query), 0, "{}", stderr_text(&query));
-    let warm_answer = stdout_text(&query);
+    let honest_answer = stdout_text(&query);
     let status = json(&lekalo_in(
         &project,
         &["--json", "search-index", "status", "--project", "."],
     ));
     assert_eq!(status["searchIndex"]["state"], "ready");
 
-    // A tampered memo is a miss, never a lie: the full derivation proof
-    // runs, serves byte-identical output, and repairs the memo.
-    std::fs::write(&memo_path, "{\"forged\":true}").expect("tamper memo");
-    let proved = lekalo_in(
+    // Forge: edit one card, recompute the canonical content digest,
+    // store under the new name, repoint current.json — the
+    // self-consistent forge class the r6 memo was trusted against.
+    let pointer = std::fs::read_to_string(store.join("current.json")).expect("pointer");
+    let honest_hex = json_from(&pointer)["digest"]
+        .as_str()
+        .expect("digest")
+        .to_owned();
+    let mut document: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(store.join(&honest_hex)).expect("generation"),
+    )
+    .expect("generation json");
+    for card in document["cards"].as_array_mut().expect("cards") {
+        if card["key"] == "def:planner.focus_task" {
+            card["description"] = serde_json::Value::from("FORGED_MEMO_CANARY");
+        }
+    }
+    let mut record = document.clone();
+    record["digest"] = serde_json::Value::from("");
+    let canonical = serde_json::to_string(&record).expect("canonical");
+    let forged_hex = sha256_hex_test(canonical.as_bytes());
+    document["digest"] = serde_json::Value::from(format!("sha256:{forged_hex}"));
+    std::fs::write(
+        store.join(&forged_hex),
+        serde_json::to_string(&document).expect("payload"),
+    )
+    .expect("write forged");
+    std::fs::write(
+        store.join("current.json"),
+        format!("{{\"digest\":\"{forged_hex}\"}}"),
+    )
+    .expect("repoint");
+
+    // The review's exact repro: rewrite the honest memo's
+    // `"derived":"sha256:<H>"` → `"sha256:<F>"` and plant it under the
+    // memo-key filename the r6 checker computes for the (honest) pins
+    // the forged document still carries. With the r6 mechanism this
+    // certification served the forged bytes end to end. The planted
+    // bytes are a fully valid r6-shaped memo (every field, canonical
+    // JSON, key-hash filename), so this pins the whole mechanism, not
+    // a malformed degeneration of it.
+    let memo_dir = store.join("memo");
+    std::fs::create_dir_all(&memo_dir).expect("memo dir");
+    // The r6 memo omitted the admission member entirely when absent
+    // (skip_serializing_if) and refused unknown members, so mirror the
+    // honest shape exactly: admission present only when the generation
+    // carries one.
+    let mut memo = serde_json::Map::new();
+    memo.insert(
+        "schemaVersion".to_owned(),
+        serde_json::Value::from("lekalo/search-derivation-memo/v0.8.0"),
+    );
+    memo.insert(
+        "identity".to_owned(),
+        serde_json::Value::from("dev.lekalo.search-derivation-memo@0.8.0"),
+    );
+    memo.insert(
+        "recipe".to_owned(),
+        serde_json::Value::from("semantic-search/1"),
+    );
+    memo.insert(
+        "modelDigest".to_owned(),
+        serde_json::Value::from(document["modelDigest"].as_str().expect("model digest")),
+    );
+    if let Some(admission) = document.get("admission") {
+        memo.insert("admission".to_owned(), admission.clone());
+    }
+    memo.insert("inputs".to_owned(), document["inputs"].clone());
+    memo.insert(
+        "derived".to_owned(),
+        serde_json::Value::from(format!("sha256:{forged_hex}")),
+    );
+    let memo_bytes = canonical_json_bytes(&serde_json::Value::Object(memo.clone()));
+    // The r6 memo filename is the SHA-256 of its own KEY bytes — the
+    // record with an empty `derived` — so the planted file must carry
+    // exactly that name, exactly like the honest memo it impersonates
+    // (the review's repro edits the honest memo's derived claim in
+    // place, under its unchanged key-hash name).
+    let mut key = memo.clone();
+    key.insert("derived".to_owned(), serde_json::Value::from(String::new()));
+    let memo_name =
+        sha256_hex_test(canonical_json_bytes(&serde_json::Value::Object(key)).as_bytes());
+    std::fs::write(memo_dir.join(&memo_name), &memo_bytes).expect("plant memo");
+
+    // `status` must call the forged generation stale — a planted memo
+    // never certifies freshness — and the Drifted status path is
+    // read-only (it never repairs the pointer), so this must run
+    // BEFORE any warm query.
+    let status = json(&lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    ));
+    assert_eq!(status["searchIndex"]["state"], "stale");
+
+    // `find` must never serve the forged bytes over the planted memo —
+    // the derivation proof is decisive, so the honest re-admitted
+    // answer is served instead.
+    let served = lekalo_in(
         &project,
         &[
             "--json",
@@ -2352,31 +2470,79 @@ fn derivation_memo_accelerates_warm_paths_without_masking_drift() {
             ".",
         ],
     );
-    assert_eq!(exit_code(&proved), 0, "{}", stderr_text(&proved));
-    assert_eq!(stdout_text(&proved), warm_answer, "identical honest bytes");
+    assert_eq!(exit_code(&served), 0, "{}", stderr_text(&served));
+    assert!(
+        !stdout_text(&served).contains("FORGED_MEMO_CANARY"),
+        "forged stored content never serves warm: {}",
+        stdout_text(&served)
+    );
     assert_eq!(
-        std::fs::read_to_string(&memo_path).expect("repaired memo"),
-        memo_bytes,
-        "the completed proof re-records the memo"
+        stdout_text(&served),
+        honest_answer,
+        "the honest bytes, not the forged ones"
     );
 
-    // Producer drift is still drift — pins re-hash before the memo.
-    let effects = project.join("evidence/effects.detected.json");
-    let original = std::fs::read_to_string(&effects).expect("read effects");
-    std::fs::write(&effects, format!("{original} ")).expect("drift effects");
-    let drifted = json(&lekalo_in(
+    // Replant the same forge + memo to independently exercise update:
+    // the pointer was repaired by the stale-verdict path's republish
+    // only via update below, so repoint it first.
+    std::fs::write(
+        store.join("current.json"),
+        format!("{{\"digest\":\"{forged_hex}\"}}"),
+    )
+    .expect("repoint for update");
+    let update = lekalo_in(
         &project,
-        &["--json", "search-index", "status", "--project", "."],
-    ));
-    assert_eq!(drifted["searchIndex"]["state"], "stale");
+        &["--json", "search-index", "update", "--project", "."],
+    );
+    assert_eq!(exit_code(&update), 0, "{}", stderr_text(&update));
+    assert!(
+        !stdout_text(&update).contains("\"reused\":true"),
+        "no-op reuse over a forged generation via a planted memo: {}",
+        stdout_text(&update)
+    );
+    // The planted memo is inert: no honest path ever reads or rewrites
+    // it, and none is ever recorded again.
+    assert_eq!(
+        std::fs::read_to_string(memo_dir.join(&memo_name)).expect("memo untouched"),
+        memo_bytes,
+        "the planted memo is never consumed nor repaired into authority"
+    );
 
-    // Repair: the same memo re-verifies against the restored bytes.
-    std::fs::write(&effects, &original).expect("restore effects");
+    // The repaired store serves honestly and a drained update is a
+    // genuine no-op reuse of the honest generation — with no memo
+    // machinery to accelerate it (the derivation proof re-runs).
     let repaired = json(&lekalo_in(
         &project,
         &["--json", "search-index", "status", "--project", "."],
     ));
     assert_eq!(repaired["searchIndex"]["state"], "ready");
+    let drained = lekalo_in(
+        &project,
+        &["--json", "search-index", "update", "--project", "."],
+    );
+    assert_eq!(exit_code(&drained), 0, "{}", stderr_text(&drained));
+    assert!(
+        stdout_text(&drained).contains("\"reused\":true"),
+        "honest generation still reuses incrementally: {}",
+        stdout_text(&drained)
+    );
+    // No honest run ever records a memo again — the planted bytes stay
+    // garbage and no new authority ever appears beside the generation.
+    let memo_entries: Vec<std::fs::DirEntry> = std::fs::read_dir(&memo_dir)
+        .expect("memo dir")
+        .collect::<Result<_, _>>()
+        .expect("entries");
+    assert_eq!(
+        memo_entries.len(),
+        1,
+        "only the planted (never-consumed) memo remains"
+    );
+    assert_eq!(
+        memo_entries[0].file_name().to_string_lossy(),
+        memo_name,
+        "the planted memo is never rewritten, re-keyed, nor consumed"
+    );
+    let _ = std::fs::remove_dir_all(&memo_dir); // planted bytes are garbage, never state
 }
 
 /// `search-index update --inputs <manifest>` honors the requested
