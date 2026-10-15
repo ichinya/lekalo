@@ -347,10 +347,12 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
     // qualification reads the battery-written durable rows back
     // through real SQLite (executed custody, never file-format
     // custody), so the adapter owns the same engine the core battery
-    // executes on.
+    // executes on. `notify` + `tempfile` are the issue #95 watch
+    // additions (cross-platform event backend and hermetic fixture
+    // trees for the read-only dev loop).
     assert_eq!(
         cli_normal_dependencies,
-        ["clap", "lekalo-core", "rusqlite", "serde_json"]
+        ["clap", "lekalo-core", "notify", "rusqlite", "serde_json", "tempfile"]
     );
     // The only target-scoped dependency is the unix process-control
     // surface (issue #94 formatting custody on the M8 line); nothing else
