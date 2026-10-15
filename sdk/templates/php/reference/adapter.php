@@ -3,6 +3,8 @@
 // Template: reference (issue #106). The confined host copies exactly
 // this file; it requires nothing outside plain PHP.
 declare(strict_types=1);
+ini_set('display_errors', 'stderr');
+ini_set('display_startup_errors', '0');
 
 // ---- sdk/php/src/Generated/Protocol.php ----
 
@@ -1250,13 +1252,17 @@ final class Decode {
         if (!self::structValue($value, $allowed, '')) {
             return self::refuse('decode', self::unknownOrShape($value, $allowed));
         }
+        // A null ELEMENT inside a positional envelope seq is serde's
+        // typed invalid-type `shape`, never the map spelling's
+        // explicit-null token (issue #106 review r8 #9).
+        $nullReason = is_array($value) && array_is_list($value) && !self::rawObjectAt('') ? 'shape' : 'explicit-null';
         self::asMembers($value, $fields, '');
         foreach (['protocol', 'protocol_version', 'operation', 'request_id', 'project_root'] as $member) {
             if (!array_key_exists($member, $value)) {
                 return self::refuse('decode', 'shape');
             }
             if (self::explicitNull($value, $member)) {
-                return self::refuse('decode', 'explicit-null');
+                return self::refuse('decode', $nullReason);
             }
         }
         if ($value['protocol'] !== Protocol::WIRE_TOKEN) {
@@ -1277,7 +1283,7 @@ final class Decode {
         }
         foreach (['ir_path', 'target', 'profile'] as $member) {
             if (self::explicitNull($value, $member)) {
-                return self::refuse('decode', 'explicit-null');
+                return self::refuse('decode', $nullReason);
             }
             if (array_key_exists($member, $value)) {
                 // Strict typing at every typed call (issue #106 review r5
@@ -1295,25 +1301,25 @@ final class Decode {
             }
         }
         if (self::explicitNull($value, 'profile_digest')) {
-            return self::refuse('decode', 'explicit-null');
+            return self::refuse('decode', $nullReason);
         }
         if (isset($value['profile_digest']) && (!is_string($value['profile_digest']) || !Ids::isSha256Digest($value['profile_digest']))) {
             return self::refuse('decode', 'bounds');
         }
         if (self::explicitNull($value, 'dry_run')) {
-            return self::refuse('decode', 'explicit-null');
+            return self::refuse('decode', $nullReason);
         }
         if (isset($value['dry_run']) && !is_bool($value['dry_run'])) {
             return self::refuse('decode', 'shape');
         }
         if (self::explicitNull($value, 'plan_id')) {
-            return self::refuse('decode', 'explicit-null');
+            return self::refuse('decode', $nullReason);
         }
         if (isset($value['plan_id']) && (!is_string($value['plan_id']) || !Ids::isPlanId($value['plan_id']))) {
             return self::refuse('decode', 'bounds');
         }
         if (self::explicitNull($value, 'limits')) {
-            return self::refuse('decode', 'explicit-null');
+            return self::refuse('decode', $nullReason);
         }
         if (isset($value['limits'])) {
             $limits = $value['limits'];
@@ -1343,7 +1349,7 @@ final class Decode {
             }
         }
         if (self::explicitNull($value, 'profile_capabilities')) {
-            return self::refuse('decode', 'explicit-null');
+            return self::refuse('decode', $nullReason);
         }
         if (isset($value['profile_capabilities'])) {
             $capabilities = $value['profile_capabilities'];
@@ -1356,10 +1362,14 @@ final class Decode {
                     return self::refuse('decode', 'shape');
                 }
                 self::asMembers($capability, ['id', 'support'], 'profile_capabilities');
-                if (!Paths::isCapabilityId($capability['id'])) {
+                // Presence-safe member reads (issue #106 review r8 #4): a
+                // short positional seq leaves members ABSENT after the
+                // remap, and an unguarded read leaks a PHP warning onto
+                // stdout — the single-JSON wire surface.
+                if (!Paths::isCapabilityId($capability['id'] ?? '')) {
                     return self::refuse('decode', 'bounds');
                 }
-                if (!in_array($capability['support'], Protocol::ENUMS['supportState'], true)) {
+                if (!in_array($capability['support'] ?? null, Protocol::ENUMS['supportState'], true)) {
                     return self::refuse('decode', 'shape');
                 }
                 if ($previous !== null && strcmp((string) $capability['id'], $previous) <= 0) {
@@ -1369,7 +1379,7 @@ final class Decode {
             }
         }
         if (self::explicitNull($value, 'native_request')) {
-            return self::refuse('decode', 'explicit-null');
+            return self::refuse('decode', $nullReason);
         }
         if (isset($value['native_request'])) {
             $refusal = self::admitNativeRequest($value['native_request']);
@@ -1378,7 +1388,7 @@ final class Decode {
             }
         }
         if (self::explicitNull($value, 'lint_request')) {
-            return self::refuse('decode', 'explicit-null');
+            return self::refuse('decode', $nullReason);
         }
         if (isset($value['lint_request'])) {
             $refusal = self::admitLintRequest($value['lint_request']);
@@ -1546,7 +1556,10 @@ final class Decode {
                 return self::refuse('decode', 'shape');
             }
             self::asMembers($binding, ['path', 'nativeId', 'symbol', 'kind', 'fingerprint'], "lint_request.bindings.{$index}");
-            if (!Paths::isLogicalPath($binding['path'])) {
+            // Presence-safe member reads (issue #106 review r8 #4): a
+            // short positional binding seq leaves the tail members
+            // absent after the remap — never an unguarded deref.
+            if (!Paths::isLogicalPath($binding['path'] ?? null)) {
                 return self::refuse('decode', 'bounds');
             }
             foreach (['nativeId', 'symbol'] as $member) {
@@ -1554,7 +1567,7 @@ final class Decode {
                     return self::refuse('decode', 'bounds');
                 }
             }
-            if (!in_array($binding['kind'], ['command', 'entity'], true)) {
+            if (!in_array($binding['kind'] ?? null, ['command', 'entity'], true)) {
                 return self::refuse('decode', 'shape');
             }
             if (!Ids::isSha256Digest($binding['fingerprint'] ?? '')) {
@@ -1577,7 +1590,10 @@ final class Decode {
             if (!array_key_exists($member, $pins)) {
                 return self::refuse('decode', 'shape');
             }
-            $state = self::admitStateString($pins[$member] ?? null);
+            // The state admission NORMALIZES the serde `visit_seq` pair
+            // onto the member map in place (issue #106 review r8 #3), so
+            // the semantic validate pass below always reads {state,value}.
+            $state = self::admitStateString($pins[$member], "lint_request.pins.{$member}");
             if ($state !== null) {
                 return $state;
             }
@@ -1587,23 +1603,36 @@ final class Decode {
 
     /** One State-tagged string value of the pinned 0.6.4 lint schema.
      * The adjacent-tag enum also admits the serde `visit_seq` pair:
-     * `["known", value]` and `[tag]` spell positionally (issue #106
-     * review r6 #1). A null VALUE element is the serde `None` spelling
-     * of the unit variants' absent payload, so `[tag, null]` is legal
-     * while `[tag, null, …]` (invalid length) refuses. */
-    private static function admitStateString(mixed $value): ?array {
-        if (is_array($value) && array_is_list($value) && !self::rawObjectAt('state')) {
-            if (count($value) > 2) {
+     * `['known', value]` and `[tag, null]` (the unit variants' serde
+     * `None` payload) positionally — `[tag]` alone, a longer seq, a
+     * non-null payload at a unit variant, or a non-string payload at
+     * `known` is serde's invalid-length / invalid-type `shape` (issue
+     * #106 review r6 #1, r8 #2). The seq spelling is NORMALIZED onto
+     * the member map in place so every later validate reader sees
+     * {state,value} (r8 #3), and the raw-object audit is consulted at
+     * the REAL wire path so PHP's numeric-key object collapse can
+     * never masquerade as a seq (r8 #5). */
+    private static function admitStateString(mixed &$value, string $path): ?array {
+        if (is_array($value) && array_is_list($value) && !self::rawObjectAt($path)) {
+            if (count($value) !== 2) {
                 return self::refuse('decode', 'shape');
             }
-            $tag = $value[0] ?? null;
+            $tag = $value[0];
             if ($tag === 'known') {
-                if (count($value) !== 2 || !is_string($value[1]) || $value[1] === '' || self::utf8Length($value[1]) > 128) {
+                if (!is_string($value[1]) || $value[1] === '') {
+                    return self::refuse('decode', 'shape');
+                }
+                if (self::utf8Length($value[1]) > 128) {
                     return self::refuse('decode', 'bounds');
                 }
+                $value = ['state' => 'known', 'value' => $value[1]];
                 return null;
             }
             if (in_array($tag, ['unknown', 'withheld', 'unsupported'], true)) {
+                if ($value[1] !== null) {
+                    return self::refuse('decode', 'shape');
+                }
+                $value = ['state' => $tag];
                 return null;
             }
             return self::refuse('decode', 'shape');
@@ -1613,7 +1642,10 @@ final class Decode {
         }
         switch ($value['state'] ?? null) {
             case 'known':
-                if (count($value) !== 2 || !isset($value['value']) || !self::boundedText($value['value'], 128)) {
+                if (count($value) !== 2 || !array_key_exists('value', $value) || !is_string($value['value']) || $value['value'] === '') {
+                    return self::refuse('decode', 'shape');
+                }
+                if (self::utf8Length($value['value']) > 128) {
                     return self::refuse('decode', 'bounds');
                 }
                 return null;
@@ -1722,20 +1754,20 @@ final class Decode {
                     return self::refuse('decode', 'shape');
                 }
                 self::asMembers($reference, ['target', 'role', 'confidence'], "{$path}evidence.references.{$index}");
-                if (!self::boundedText($reference['target'] ?? null, 192)) {
+                if (!is_string($reference['target'] ?? null) || !self::boundedText($reference['target'] ?? null, 192)) {
                     return self::refuse('decode', 'bounds');
                 }
                 // The target carries the manifest-local semantic-id
                 // grammar (core trace::id::is_semantic_id, issue #106
                 // review r3 #8): production's response decoder refuses
                 // path-style slash targets, so the SDK must too.
-                if (!is_string($reference['target'] ?? null) || !Paths::isSemanticId($reference['target'])) {
+                if (!Paths::isSemanticId($reference['target'])) {
                     return self::refuse('decode', 'bounds');
                 }
-                if (!in_array($reference['role'], Protocol::ENUMS['scanEntryReferenceRole'], true)) {
+                if (!in_array($reference['role'] ?? null, Protocol::ENUMS['scanEntryReferenceRole'], true)) {
                     return self::refuse('decode', 'shape');
                 }
-                if (!in_array($reference['confidence'], Protocol::ENUMS['scanEntryConfidence'], true)) {
+                if (!in_array($reference['confidence'] ?? null, Protocol::ENUMS['scanEntryConfidence'], true)) {
                     return self::refuse('decode', 'shape');
                 }
             }
@@ -1913,116 +1945,156 @@ final class Decode {
     }
 
     /** The adjacent-tag State<T> pair also admits the serde `visit_seq`
-     * spellings `[[tag, value]]`... i.e. `["known", v]` and `[tag]`
-     * positional pairs; `[tag, null]` is the serde `None` payload of the
-     * unit variants (issue #106 review r6 #1). */
-    private static function lintStateSeq(mixed $value): ?array {
-        if (!is_array($value) || !array_is_list($value) || count($value) > 2) {
+     * spellings `[tag, value]` — the unit variants carry only the serde
+     * `None` payload `[tag, null]` (issue #106 review r6 #1, r8 #2).
+     * Returns the normalized {state,value} map, or null when the value
+     * is not the strict seq spelling (a 1-element or 3+-element seq, a
+     * non-null payload at a unit variant, an unknown tag, or the
+     * raw-object audit marking an object spelling at this path — r8 #5). */
+    private static function lintStateSeq(mixed $value, ?string $path = null): ?array {
+        if (!is_array($value) || !array_is_list($value) || count($value) !== 2) {
             return null;
         }
-        $tag = $value[0] ?? null;
+        if ($path !== null && self::rawObjectAt($path)) {
+            return null;
+        }
+        $tag = $value[0];
         if (!in_array($tag, ['known', 'unknown', 'withheld', 'unsupported'], true)) {
             return null;
         }
-        return ['state' => $tag, 'value' => $value[1] ?? null, 'seqKnown' => $tag === 'known' && count($value) === 2];
+        if ($tag !== 'known' && $value[1] !== null) {
+            return null;
+        }
+        return ['state' => $tag, 'value' => $value[1], 'seqKnown' => $tag === 'known'];
     }
 
-    private static function lintStateString(mixed $value): bool {
-        if (($seq = self::lintStateSeq($value)) !== null) {
+    /** The lint-side State<String> grammar as a tri-state verdict
+     * (issue #106 review r9 #9): a wrong SPELLING is serde's typed
+     * decode failure `shape`; a well-shaped known value that violates
+     * the bounded grammar is `bounds`. */
+    private static function lintStateString(mixed $value, ?string $path = null): bool|string {
+        if (($seq = self::lintStateSeq($value, $path)) !== null) {
             if ($seq['seqKnown']) {
-                return self::lintBounded256($seq['value']);
+                return $seq['value'] === null ? 'shape' : (self::lintBounded256($seq['value']) ? true : 'bounds');
             }
-            return $seq['state'] !== 'known';
+            return true;
         }
-        if (!self::isClosedObject($value, ['state', 'value'])) {
-            return false;
+        if (!is_array($value) || !self::isClosedObject($value, ['state', 'value'])) {
+            return 'shape';
         }
-        $state = $value['state'];
+        $state = $value['state'] ?? null;
         if ($state === 'known') {
-            return self::lintBounded256($value['value'] ?? null);
+            if (!array_key_exists('value', $value) || !is_string($value['value'])) {
+                return 'shape';
+            }
+            return self::lintBounded256($value['value']) ? true : 'bounds';
         }
         if ($state === 'unknown' || $state === 'withheld' || $state === 'unsupported') {
-            return !array_key_exists('value', $value);
+            return array_key_exists('value', $value) ? 'shape' : true;
         }
-        return false;
+        return 'shape';
     }
 
-    private static function lintStateBool(mixed $value): bool {
-        if (($seq = self::lintStateSeq($value)) !== null) {
+    private static function lintStateBool(mixed $value, ?string $path = null): bool|string {
+        if (($seq = self::lintStateSeq($value, $path)) !== null) {
             if ($seq['seqKnown']) {
-                return is_bool($seq['value']);
+                return is_bool($seq['value']) ? true : 'shape';
             }
-            return $seq['state'] !== 'known';
+            return true;
         }
-        if (!self::isClosedObject($value, ['state', 'value'])) {
-            return false;
+        if (!is_array($value) || !self::isClosedObject($value, ['state', 'value'])) {
+            return 'shape';
         }
-        $state = $value['state'];
+        $state = $value['state'] ?? null;
         if ($state === 'known') {
-            return is_bool($value['value'] ?? null);
+            if (!array_key_exists('value', $value) || !is_bool($value['value'])) {
+                return 'shape';
+            }
+            return true;
         }
         if ($state === 'unknown' || $state === 'withheld' || $state === 'unsupported') {
-            return !array_key_exists('value', $value);
+            return array_key_exists('value', $value) ? 'shape' : true;
         }
-        return false;
+        return 'shape';
     }
 
-    private static function lintStateU64(mixed $value, ?string $path = null): bool {
-        if (($seq = self::lintStateSeq($value)) !== null) {
+    private static function lintStateU64(mixed $value, ?string $path = null): bool|string {
+        if (($seq = self::lintStateSeq($value, $path)) !== null) {
             if ($seq['seqKnown']) {
-                return self::numberInRange($seq['value'], 0, 10_000_000)
-                    && ($path === null || !self::rawNegativeZeroAt("{$path}.value"));
+                if (!self::numberInRange($seq['value'], 0, 10_000_000)
+                    || ($path !== null && self::rawNegativeZeroAt("{$path}.value"))) {
+                    return 'bounds';
+                }
+                return true;
             }
-            return $seq['state'] !== 'known';
+            return true;
         }
-        if (!self::isClosedObject($value, ['state', 'value'])) {
-            return false;
+        if (!is_array($value) || !self::isClosedObject($value, ['state', 'value'])) {
+            return 'shape';
         }
-        $state = $value['state'];
+        $state = $value['state'] ?? null;
         if ($state === 'known') {
-            return self::numberInRange($value['value'] ?? null, 0, 10_000_000)
-                && ($path === null || !self::rawNegativeZeroAt("{$path}.value"));
+            if (!array_key_exists('value', $value) || !is_int($value['value']) || $value['value'] < 0) {
+                return 'shape';
+            }
+            if ($value['value'] > 10_000_000
+                || ($path !== null && self::rawNegativeZeroAt("{$path}.value"))) {
+                return 'bounds';
+            }
+            return true;
         }
         if ($state === 'unknown' || $state === 'withheld' || $state === 'unsupported') {
-            return !array_key_exists('value', $value);
+            return array_key_exists('value', $value) ? 'shape' : true;
         }
-        return false;
+        return 'shape';
     }
 
     private static function lintSha256(mixed $value): bool {
         return is_string($value) && $value !== '' && strlen($value) <= 71 && Ids::isSha256Digest($value);
     }
 
-    private static function lintPins(mixed $value): bool {
+    private static function lintPins(mixed $value): ?string {
         $allowed = ['capabilities', 'ir', 'model', 'observed', 'profile', 'revision'];
         $fields = ['model', 'ir', 'observed', 'revision', 'profile', 'capabilities'];
         if (!self::structValue($value, $allowed, 'result.lint_evidence.pins') || !is_array($value)) {
-            return false;
+            return 'shape';
         }
         self::asMembers($value, $fields, 'result.lint_evidence.pins');
         foreach ($allowed as $pin) {
-            if (!self::lintStateString($value[$pin] ?? null)) {
-                return false;
+            $verdict = self::lintStateString($value[$pin] ?? null, "result.lint_evidence.pins.{$pin}");
+            if ($verdict !== true) {
+                return $verdict;
             }
         }
-        return true;
+        return null;
     }
 
-    private static function lintProducer(mixed $value): bool {
+    private static function lintProducer(mixed $value): ?string {
         $allowed = ['artifactDigest', 'compiler', 'framework', 'id', 'recipe', 'tool', 'version'];
         $fields = ['id', 'version', 'artifactDigest', 'tool', 'compiler', 'framework', 'recipe'];
         if (!self::structValue($value, $allowed, 'result.lint_evidence.producer') || !is_array($value)) {
-            return false;
+            return 'shape';
         }
         self::asMembers($value, $fields, 'result.lint_evidence.producer');
         foreach (['id', 'version', 'tool', 'recipe'] as $member) {
             if (!self::lintBounded256($value[$member] ?? null)) {
-                return false;
+                return is_string($value[$member] ?? null) ? 'bounds' : 'shape';
             }
         }
-        return self::lintSha256($value['artifactDigest'] ?? null)
-            && self::lintStateString($value['compiler'] ?? null)
-            && self::lintStateString($value['framework'] ?? null);
+        $digest = $value['artifactDigest'] ?? null;
+        if (!is_string($digest)) {
+            return 'shape';
+        }
+        if (!self::lintSha256($digest)) {
+            return 'bounds';
+        }
+        foreach (['compiler', 'framework'] as $member) {
+            $verdict = self::lintStateString($value[$member] ?? null, "result.lint_evidence.producer.{$member}");
+            if ($verdict !== true) {
+                return $verdict;
+            }
+        }
+        return null;
     }
 
     private static function lintSource(mixed $value, ?string $path = null): bool {
@@ -2057,22 +2129,34 @@ final class Decode {
             && $bounded($value['endColumn'] ?? null, 0, 'endColumn');
     }
 
-    private static function lintCoverage(mixed $value, ?string $path = null): bool {
+    private static function lintCoverage(mixed $value, ?string $path = null): bool|string {
         if (!self::structValue($value, ['eligible', 'examined', 'limitations', 'rule', 'scope', 'state', 'target'], $path) || !is_array($value)) {
-            return false;
+            return 'shape';
         }
         self::asMembers($value, ['rule', 'target', 'scope', 'state', 'eligible', 'examined', 'limitations'], $path);
         if (!in_array($value['state'] ?? null, ['complete', 'partial', 'unknown', 'unsupported', 'withheld', 'disabled'], true)) {
-            return false;
+            return 'shape';
         }
         foreach (['rule', 'target', 'scope'] as $member) {
             if (!self::lintBounded256($value[$member] ?? null)) {
-                return false;
+                return is_string($value[$member] ?? null) ? 'bounds' : 'shape';
             }
         }
-        return self::lintStateU64($value['eligible'] ?? null, $path === null ? null : "{$path}.eligible")
-            && self::lintStateU64($value['examined'] ?? null, $path === null ? null : "{$path}.examined")
-            && self::lintStringArray($value['limitations'] ?? null, 10_000, true, $path === null ? null : "{$path}.limitations");
+        foreach (['eligible', 'examined'] as $member) {
+            $verdict = self::lintStateU64($value[$member] ?? null, $path === null ? null : "{$path}.{$member}");
+            if ($verdict !== true) {
+                return $verdict;
+            }
+        }
+        $limitations = $value['limitations'] ?? null;
+        $isList = is_array($limitations) && array_is_list($limitations) && !($path !== null && self::rawObjectAt("{$path}.limitations"));
+        if (!$isList) {
+            return 'shape';
+        }
+        if (!self::lintStringArray($limitations, 10_000, true, $path === null ? null : "{$path}.limitations")) {
+            return 'bounds';
+        }
+        return true;
     }
 
     private static function lintRoute(mixed $value): bool {
@@ -2102,19 +2186,28 @@ final class Decode {
             && self::lintStringArray($value['guards'] ?? null, 32, true, $path === null ? null : "{$path}.guards");
     }
 
-    private static function lintRecord(mixed $value, ?string $path = null): bool {
+    private static function lintRecord(mixed $value, ?string $path = null): bool|string {
         $allowed = [
             'activation', 'binding', 'candidates', 'claim', 'confidence', 'configuration',
             'currency', 'field', 'guards', 'id', 'key', 'kind', 'locations', 'mechanism',
             'nativeId', 'operation', 'origin', 'ownership', 'resource', 'semanticSymbol',
             'subject', 'trace', 'value',
         ];
+        // The DECLARED wire field order (ai_lint wire.rs Record, r8 #1):
+        // the serde `visit_seq` spelling maps positionally onto THIS
+        // list, never the alphabetical closed set above.
+        $fields = [
+            'id', 'kind', 'mechanism', 'subject', 'semanticSymbol', 'operation', 'resource',
+            'field', 'nativeId', 'confidence', 'currency', 'origin', 'claim', 'binding',
+            'configuration', 'ownership', 'trace', 'value', 'key', 'candidates',
+            'activation', 'locations', 'guards',
+        ];
         if (!self::structValue($value, $allowed, $path) || !is_array($value)) {
-            return false;
+            return 'shape';
         }
-        self::asMembers($value, $allowed, $path);
+        self::asMembers($value, $fields, $path);
         if (!isset($value['kind']) || !isset($value['mechanism']) || !isset($value['confidence']) || !isset($value['currency']) || !isset($value['origin']) || !isset($value['claim'])) {
-            return false;
+            return 'shape';
         }
         if (!in_array($value['kind'], ['binding-candidates', 'dispatch', 'convention', 'effect', 'path', 'reflection', 'string-reference', 'default', 'native-edge', 'field-write'], true)
             || !in_array($value['mechanism'], ['direct', 'observer', 'hook', 'magic'], true)
@@ -2122,41 +2215,60 @@ final class Decode {
             || !in_array($value['currency'], ['current', 'stale', 'unknown'], true)
             || !in_array($value['origin'], ['explicit', 'extracted', 'inferred'], true)
             || !in_array($value['claim'], ['structural', 'possible-behavior', 'verified-behavior'], true)) {
-            return false;
+            return 'shape';
         }
         foreach (['id', 'subject', 'nativeId'] as $member) {
             if (!self::lintBounded256($value[$member] ?? null)) {
-                return false;
+                return is_string($value[$member] ?? null) ? 'bounds' : 'shape';
             }
         }
         foreach (['semanticSymbol', 'operation', 'resource', 'field', 'value', 'key'] as $member) {
-            if (!self::lintStateString($value[$member] ?? null)) {
-                return false;
+            $verdict = self::lintStateString($value[$member] ?? null, $path === null ? null : "{$path}.{$member}");
+            if ($verdict !== true) {
+                return $verdict;
             }
         }
         foreach (['binding', 'configuration', 'ownership', 'trace'] as $member) {
-            if (!self::lintStateBool($value[$member] ?? null)) {
-                return false;
+            $verdict = self::lintStateBool($value[$member] ?? null, $path === null ? null : "{$path}.{$member}");
+            if ($verdict !== true) {
+                return $verdict;
             }
         }
-        if (!is_array($value['candidates']) || !array_is_list($value['candidates']) || ($path !== null && self::rawObjectAt("{$path}.candidates")) || count($value['candidates']) > 32) {
-            return false;
+        foreach (['candidates', 'activation'] as $member) {
+            $list = $value[$member] ?? null;
+            // In PHP json_decode collapses `{}` to `[]`, so the raw-object
+            // audit is the only thing distinguishing an OBJECT at a list
+            // position (shape) from a legal list (issue #106 review r8
+            // #9).
+            $isList = is_array($list) && array_is_list($list) && !($path !== null && self::rawObjectAt("{$path}.{$member}"));
+            if (!$isList) {
+                return 'shape';
+            }
+            if (count($list) > 32) {
+                return 'bounds';
+            }
         }
         foreach ($value['candidates'] as $candidate) {
             if (!self::lintRoute($candidate)) {
-                return false;
+                return 'bounds';
             }
-        }
-        if (!is_array($value['activation']) || !array_is_list($value['activation']) || ($path !== null && self::rawObjectAt("{$path}.activation")) || count($value['activation']) > 32) {
-            return false;
         }
         foreach ($value['activation'] as $index => $step) {
             if (!self::lintStep($step, $path === null ? null : "{$path}.activation.{$index}")) {
-                return false;
+                return 'bounds';
             }
         }
-        return self::lintStringArray($value['locations'], 32, true, $path === null ? null : "{$path}.locations")
-            && self::lintStringArray($value['guards'], 32, true, $path === null ? null : "{$path}.guards");
+        foreach (['locations', 'guards'] as $member) {
+            $list = $value[$member] ?? null;
+            $isList = is_array($list) && array_is_list($list) && !($path !== null && self::rawObjectAt("{$path}.{$member}"));
+            if (!$isList) {
+                return 'shape';
+            }
+            if (!self::lintStringArray($list, 32, true, $path === null ? null : "{$path}.{$member}")) {
+                return 'bounds';
+            }
+        }
+        return true;
     }
 
     /**
@@ -2183,11 +2295,20 @@ final class Decode {
             || $value['identity'] !== 'dev.lekalo.ai-lint-evidence@0.6.4') {
             return self::refuse('decode', 'shape');
         }
-        if (!self::lintBounded256($value['target'])
-            || !self::lintStringArray($value['scope'], 10_000, true, "{$path}.scope")
-            || !self::lintProducer($value['producer'])
-            || !self::lintPins($value['pins'])
-            || !self::lintSha256($value['inputManifestDigest'])) {
+        if (!self::lintBounded256($value['target'] ?? null)
+            || !self::lintStringArray($value['scope'] ?? null, 10_000, true, "{$path}.scope")) {
+            return self::refuse('decode', is_string($value['target'] ?? null) ? 'bounds' : 'shape');
+        }
+        foreach ([['producer', 'lintProducer'], ['pins', 'lintPins']] as [$member, $check]) {
+            $verdict = self::{$check}($value[$member] ?? null);
+            if ($verdict !== null) {
+                return self::refuse('decode', $verdict);
+            }
+        }
+        if (!is_string($value['inputManifestDigest'] ?? null)) {
+            return self::refuse('decode', 'shape');
+        }
+        if (!self::lintSha256($value['inputManifestDigest'])) {
             return self::refuse('decode', 'bounds');
         }
         if (!is_array($value['sources']) || !array_is_list($value['sources']) || self::rawObjectAt("{$path}.sources") || count($value['sources']) > 10_000) {
@@ -2221,16 +2342,18 @@ final class Decode {
             return self::refuse('decode', 'bounds');
         }
         foreach ($value['coverage'] as $index => $coverage) {
-            if (!self::lintCoverage($coverage, "{$path}.coverage.{$index}")) {
-                return self::refuse('decode', 'bounds');
+            $verdict = self::lintCoverage($coverage, "{$path}.coverage.{$index}");
+            if ($verdict !== true) {
+                return self::refuse('decode', $verdict);
             }
         }
         if (!is_array($value['records']) || !array_is_list($value['records']) || self::rawObjectAt("{$path}.records") || count($value['records']) > 10_000) {
             return self::refuse('decode', 'bounds');
         }
         foreach ($value['records'] as $index => $record) {
-            if (!self::lintRecord($record, "{$path}.records.{$index}")) {
-                return self::refuse('decode', 'bounds');
+            $verdict = self::lintRecord($record, "{$path}.records.{$index}");
+            if ($verdict !== true) {
+                return self::refuse('decode', $verdict);
             }
         }
         if (!self::lintStringArray($value['limitations'], 10_000, true, "{$path}.limitations")) {
@@ -2251,7 +2374,7 @@ final class Decode {
             if (!self::boundedText($step['step'] ?? null, 128)) {
                 return self::refuse('decode', 'bounds');
             }
-            if (!in_array($step['state'], Protocol::ENUMS['progressState'], true)) {
+            if (!in_array($step['state'] ?? null, Protocol::ENUMS['progressState'], true)) {
                 return self::refuse('decode', 'shape');
             }
             if (self::explicitNull($step, 'detail')) {
@@ -2276,9 +2399,15 @@ final class Decode {
         }
         // Production's response validation refuses empty error strings
         // after the bounded check (wire.rs `error.code.is_empty()`), so
-        // the SDK admission refuses them too (issue #106 review r6 #3).
-        if ($value['code'] === '' || $value['message'] === ''
-            || !self::boundedText($value['code'] ?? null, 128) || !self::boundedText($value['message'] ?? null, 256)) {
+        // the SDK admission refuses them too — as serde's typed-decode
+        // `shape`, never a bounds verdict (issue #106 review r6 #3, r8
+        // #7/#9). Presence-safe reads: a short positional seq leaves the
+        // tail members absent (r8 #4).
+        if (!is_string($value['code'] ?? null) || !is_string($value['message'] ?? null)
+            || $value['code'] === '' || $value['message'] === '') {
+            return self::refuse('decode', 'shape');
+        }
+        if (!self::boundedText($value['code'], 128) || !self::boundedText($value['message'], 256)) {
             return self::refuse('decode', 'bounds');
         }
         foreach (['partial', 'retryable'] as $member) {
@@ -2421,13 +2550,17 @@ final class Decode {
         if (!self::structValue($value, $allowed, '')) {
             return self::refuse('decode', self::unknownOrShape($value, $allowed));
         }
+        // A null ELEMENT inside a positional envelope seq is serde's
+        // typed invalid-type `shape`, never the map spelling's
+        // explicit-null token (issue #106 review r8 #9).
+        $nullReason = is_array($value) && array_is_list($value) && !self::rawObjectAt('') ? 'shape' : 'explicit-null';
         self::asMembers($value, ['protocol', 'protocol_version', 'operation', 'request_id', 'status', 'evidence', 'capabilities', 'result', 'writes', 'progress', 'error'], '');
         foreach (['protocol', 'protocol_version', 'operation', 'request_id', 'status', 'evidence'] as $member) {
             if (!array_key_exists($member, $value)) {
                 return self::refuse('decode', 'shape');
             }
             if (self::explicitNull($value, $member)) {
-                return self::refuse('decode', 'explicit-null');
+                return self::refuse('decode', $nullReason);
             }
         }
         if ($value['protocol'] !== Protocol::WIRE_TOKEN) {
@@ -2450,7 +2583,7 @@ final class Decode {
             return $refusal;
         }
         if (self::explicitNull($value, 'capabilities')) {
-            return self::refuse('decode', 'explicit-null');
+            return self::refuse('decode', $nullReason);
         }
         if (isset($value['capabilities'])) {
             $refusal = self::admitCapabilities($value["capabilities"], $value["protocol_version"], "capabilities");
@@ -2459,7 +2592,7 @@ final class Decode {
             }
         }
         if (self::explicitNull($value, 'result')) {
-            return self::refuse('decode', 'explicit-null');
+            return self::refuse('decode', $nullReason);
         }
         if (isset($value['result'])) {
             $refusal = self::admitResult($value["result"], "result");
@@ -2468,7 +2601,7 @@ final class Decode {
             }
         }
         if (self::explicitNull($value, 'writes')) {
-            return self::refuse('decode', 'explicit-null');
+            return self::refuse('decode', $nullReason);
         }
         if (isset($value['writes'])) {
             $writes = $value['writes'];
@@ -2483,7 +2616,7 @@ final class Decode {
             }
         }
         if (self::explicitNull($value, 'progress')) {
-            return self::refuse('decode', 'explicit-null');
+            return self::refuse('decode', $nullReason);
         }
         if (isset($value['progress'])) {
             $refusal = self::admitProgress($value["progress"], "progress");
@@ -2492,7 +2625,7 @@ final class Decode {
             }
         }
         if (self::explicitNull($value, 'error')) {
-            return self::refuse('decode', 'explicit-null');
+            return self::refuse('decode', $nullReason);
         }
         if (isset($value['error'])) {
             $refusal = self::admitError($value["error"], "error");
@@ -3012,6 +3145,13 @@ final class Serve {
      * message}` for a closed in-envelope refusal.
      */
     public static function serve(array $adapter): int {
+        // The process contract is "one JSON response on stdout, logs only
+        // to stderr" (issue #106 review r8 #4): a runtime warning must
+        // never reach stdout under ANY host ini spelling — php -d
+        // display_errors=1 included — so the serve lifetime pins the
+        // display target to stderr up front.
+        ini_set('display_errors', 'stderr');
+        ini_set('display_startup_errors', '0');
         try {
             return self::serveInner($adapter);
         } catch (\Throwable) {

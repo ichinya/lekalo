@@ -572,7 +572,67 @@ lifecycleAccounting.stdoutHygieneLegs = 0;
         writes: [{ path: "src/a.ts", sha256: `sha256:${"a".repeat(64)}` }],
       }),
     ];
-    for (const [row, hostile] of hostileMissingMembers.entries()) {
+    // Per-struct SHORT-POSITIONAL-SEQ sweep (issue #106 review r8 #4):
+    // a seq shorter than the declared fields leaves members ABSENT
+    // after the remap, and an unguarded deref leaks a runtime warning
+    // onto stdout (the r7 PHP leak class). Every lane must refuse with
+    // zero stdout bytes.
+    const hostileShortSeqs = [
+      // lint binding 3-element seq (the exact r7 serve-level repro): the
+      // tail members are absent after the remap;
+      JSON.stringify({
+        operation: "lint", project_root: ".", protocol: "lekalo.target/v1",
+        protocol_version: "0.6.4", request_id: `req-${"b".repeat(64)}`, target: "sdk-reference",
+        lint_request: {
+          bindings: [["src/domain/user.php", "app-models-user", "user"]],
+          files: ["src/domain/user.php"],
+          pins: {
+            capabilities: ["unknown", null], ir: ["known", `sha256:${"1".repeat(64)}`],
+            model: ["known", `sha256:${"2".repeat(64)}`], observed: ["unknown", null],
+            profile: ["unknown", null], revision: ["unknown", null],
+          },
+          scope: ["src"],
+        },
+      }),
+      // lint binding EMPTY seq: every member is absent;
+      JSON.stringify({
+        operation: "lint", project_root: ".", protocol: "lekalo.target/v1",
+        protocol_version: "0.6.4", request_id: `req-${"c".repeat(64)}`, target: "sdk-reference",
+        lint_request: {
+          bindings: [[]],
+          files: ["src/domain/user.php"],
+          pins: {
+            capabilities: ["unknown", null], ir: ["known", `sha256:${"1".repeat(64)}`],
+            model: ["known", `sha256:${"2".repeat(64)}`], observed: ["unknown", null],
+            profile: ["unknown", null], revision: ["unknown", null],
+          },
+          scope: ["src"],
+        },
+      }),
+      // profile capabilities: an EMPTY capability seq leaves id/support absent;
+      JSON.stringify({
+        operation: "generate", project_root: ".", protocol: "lekalo.target/v1",
+        protocol_version: "0.3.2", request_id: `req-${"d".repeat(64)}`, target: "sdk-reference",
+        profile: "default", profile_digest: `sha256:${"e".repeat(64)}`,
+        profile_capabilities: [[]], dry_run: true, ir_path: ".lekalo/ir/planner.json",
+      }),
+      // lint pins as a 1-element seq: five pin members are absent;
+      JSON.stringify({
+        operation: "lint", project_root: ".", protocol: "lekalo.target/v1",
+        protocol_version: "0.6.4", request_id: `req-${"f".repeat(64)}`, target: "sdk-reference",
+        lint_request: {
+          bindings: [], files: [], pins: [["unknown", null]], scope: ["src"],
+        },
+      }),
+      // native_request as a 1-element seq: the nested struct members are
+      // absent after the remap;
+      JSON.stringify({
+        operation: "plan-native", project_root: ".", protocol: "lekalo.target/v1",
+        protocol_version: "0.3.2", request_id: `req-${"9".repeat(64)}`,
+        native_request: [`sha256:${"0".repeat(64)}`],
+      }),
+    ];
+    for (const [row, hostile] of [...hostileMissingMembers, ...hostileShortSeqs].entries()) {
       const leg = run(adapterArgs[0], [...adapterArgs.slice(1)], fileExchangeDir, { input: Buffer.from(hostile, "utf8"), timeout: 60000 });
       if ((leg.stdout ?? "").length > 0) {
         fail("lifecycle-stdout-hygiene", `${lang}/row-${row}: a refused request leaked ${(leg.stdout ?? "").length} stdout bytes: ${(leg.stdout ?? "").toString("utf8").slice(0, 80)}`);
@@ -581,7 +641,7 @@ lifecycleAccounting.stdoutHygieneLegs = 0;
         fail("lifecycle-stdout-hygiene", `${lang}/row-${row}: a hostile member-missing request was admitted`);
       }
     }
-    lifecycleAccounting.stdoutHygieneLegs = (lifecycleAccounting.stdoutHygieneLegs ?? 0) + hostileMissingMembers.length;
+    lifecycleAccounting.stdoutHygieneLegs = (lifecycleAccounting.stdoutHygieneLegs ?? 0) + hostileMissingMembers.length + hostileShortSeqs.length;
     for (const mutant of ["operations", "protocol_versions", "transports", "max_entries", "max_writes", "capability", "identity", "negotiation", "describe"]) {
       trace(`emission ${lang}/${mutant}`);
       const leg = run(adapterArgs[0], [...adapterArgs.slice(1), "--lekalo-fault", `invalid-${mutant}`], fileExchangeDir, { input: Buffer.from(validDescribe), encoding: null, timeout: 60000 });
@@ -618,8 +678,8 @@ lifecycleAccounting.stdoutHygieneLegs = 0;
   if (lifecycleAccounting.outputLimitLegs !== expectedLegs) {
     fail("lifecycle-output-limit-count", `executed ${lifecycleAccounting.outputLimitLegs} serializer-budget legs, expected ${expectedLegs} (one per SDK lane)`);
   }
-  if (lifecycleAccounting.stdoutHygieneLegs !== expectedLegs * 3) {
-    fail("lifecycle-stdout-hygiene-count", `executed ${lifecycleAccounting.stdoutHygieneLegs} stdout-hygiene legs, expected ${expectedLegs * 3} (three hostile rows per SDK lane)`);
+  if (lifecycleAccounting.stdoutHygieneLegs !== expectedLegs * 8) {
+    fail("lifecycle-stdout-hygiene-count", `executed ${lifecycleAccounting.stdoutHygieneLegs} stdout-hygiene legs, expected ${expectedLegs * 8} (three hostile member-missing rows and five short-seq rows per SDK lane)`);
   }
 }
 

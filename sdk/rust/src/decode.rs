@@ -190,6 +190,14 @@ pub fn admit_request_value(value: &Value) -> Result<Value, Refusal> {
             },
         );
     }
+    // A null ELEMENT inside a positional envelope seq is serde's typed
+    // invalid-type `shape`, never the map spelling's explicit-null
+    // token (issue #106 review r8 #9).
+    let null_reason = if value.as_array().is_some() {
+        "shape"
+    } else {
+        "explicit-null"
+    };
     let mut owned = seq_as_members(value, REQUEST_FIELDS)?.into_owned();
     // Nested struct members are mapped by their own admission helpers
     // BEFORE the shared borrow below: the mapped documents replace the
@@ -223,7 +231,7 @@ pub fn admit_request_value(value: &Value) -> Result<Value, Refusal> {
             return refuse("shape");
         }
         if explicit_null(value, member) {
-            return refuse("explicit-null");
+            return refuse(null_reason);
         }
     }
     if value.get("protocol").and_then(Value::as_str) != Some(protocol::WIRE_TOKEN) {
@@ -252,7 +260,7 @@ pub fn admit_request_value(value: &Value) -> Result<Value, Refusal> {
     }
     for member in ["ir_path", "target", "profile"] {
         if explicit_null(value, member) {
-            return refuse("explicit-null");
+            return refuse(null_reason);
         }
         if let Some(member_value) = value.get(member) {
             let ok = if member == "ir_path" {
@@ -266,7 +274,7 @@ pub fn admit_request_value(value: &Value) -> Result<Value, Refusal> {
         }
     }
     if explicit_null(value, "profile_digest") {
-        return refuse("explicit-null");
+        return refuse(null_reason);
     }
     if let Some(digest) = value.get("profile_digest") {
         if !digest.as_str().is_some_and(is_sha256_digest) {
@@ -274,7 +282,7 @@ pub fn admit_request_value(value: &Value) -> Result<Value, Refusal> {
         }
     }
     if explicit_null(value, "dry_run") {
-        return refuse("explicit-null");
+        return refuse(null_reason);
     }
     if let Some(dry_run) = value.get("dry_run") {
         if dry_run.as_bool().is_none() {
@@ -282,7 +290,7 @@ pub fn admit_request_value(value: &Value) -> Result<Value, Refusal> {
         }
     }
     if explicit_null(value, "plan_id") {
-        return refuse("explicit-null");
+        return refuse(null_reason);
     }
     if let Some(plan) = value.get("plan_id") {
         if !plan.as_str().is_some_and(is_plan_id) {
@@ -290,19 +298,19 @@ pub fn admit_request_value(value: &Value) -> Result<Value, Refusal> {
         }
     }
     if explicit_null(value, "limits") {
-        return refuse("explicit-null");
+        return refuse(null_reason);
     }
     if let Some(limits) = value.get("limits") {
         admit_limits(limits)?;
     }
     if explicit_null(value, "profile_capabilities") {
-        return refuse("explicit-null");
+        return refuse(null_reason);
     }
     if let Some(capabilities) = value.get("profile_capabilities") {
         admit_profile_capabilities(capabilities)?;
     }
     if explicit_null(value, "native_request") {
-        return refuse("explicit-null");
+        return refuse(null_reason);
     }
     Ok(owned)
 }
@@ -709,39 +717,66 @@ fn admit_lint_request(value: &Value) -> Result<Value, Refusal> {
     }
     // The pinned 0.6.4 schema carries every pin as a State-tagged value
     // ({state:"known",value}|{state:"unknown"|"withheld"|"unsupported"}).
+    // Each admitted state is NORMALIZED onto the member map (the seq
+    // pair remaps onto {state,value}) so the semantic validate pass
+    // always reads member names (issue #106 review r8 #3).
+    let mut mapped_pins: Vec<(String, Value)> = Vec::with_capacity(allowed.len());
     for member in allowed {
-        if pins.get(member).is_none() {
-            return Err(Refusal::new("decode", "shape"));
-        }
-        admit_state_string(pins.get(member).unwrap_or(&Value::Null))?;
+        let raw = pins
+            .get(member)
+            .ok_or_else(|| Refusal::new("decode", "shape"))?;
+        mapped_pins.push(((*member).to_owned(), admit_state_string(raw)?));
     }
-    Ok(value.clone())
+    let normalized_pins = Value::Object(mapped_pins);
+    // The pins replacement is written back into the parent lint_request
+    // so validate_request's pin_known never re-reads a seq spelling.
+    let mut owned = value.clone();
+    if let Value::Object(members) = &mut owned {
+        for slot in members.iter_mut() {
+            if slot.0 == "pins" {
+                slot.1 = normalized_pins.clone();
+            }
+        }
+    }
+    Ok(owned)
 }
 
-/// One State-tagged string value of the pinned 0.6.4 lint schema.
-fn admit_state_string(value: &Value) -> Result<(), Refusal> {
+/// One State-tagged string value of the pinned 0.6.4 lint schema,
+/// admitted and NORMALIZED onto the member map form.
+fn admit_state_string(value: &Value) -> Result<Value, Refusal> {
     // The adjacent-tag enum also admits the serde `visit_seq` pair:
-    // ["known", value] and [tag, null] (the unit variants' serde None
-    // payload spelling) positionally; [tag] alone is an invalid length
-    // (issue #106 review r6 #1).
+    // ["known", value] and [tag, null] (the unit variants' serde `None`
+    // payload) positionally; `[tag]` alone, a longer seq, a non-null
+    // payload at a unit variant, or a non-string/empty payload at
+    // `known` is serde's invalid-length / invalid-type `shape` (issue
+    // #106 review r6 #1, r8 #2/#9).
     if let Some(items) = value.as_array() {
-        if items.len() > 2 {
+        if items.len() != 2 {
             return Err(Refusal::new("decode", "shape"));
         }
         let tag = items.first().and_then(Value::as_str).unwrap_or("");
         return match tag {
-            "known" => {
-                if items.len() != 2
-                    || !items
-                        .get(1)
-                        .and_then(Value::as_str)
-                        .is_some_and(|v| !v.is_empty() && v.chars().count() <= 128)
-                {
-                    return Err(Refusal::new("decode", "bounds"));
+            "known" => match items.get(1).and_then(Value::as_str) {
+                Some(text) if !text.is_empty() => {
+                    if text.chars().count() > 128 {
+                        return Err(Refusal::new("decode", "bounds"));
+                    }
+                    Ok(Value::Object(vec![
+                        ("state".to_owned(), Value::Str("known".to_owned())),
+                        ("value".to_owned(), Value::Str(text.to_owned())),
+                    ]))
                 }
-                Ok(())
+                _ => Err(Refusal::new("decode", "shape")),
+            },
+            "unknown" | "withheld" | "unsupported" => {
+                if !items.get(1).map(Value::is_null).unwrap_or(false) {
+                    return Err(Refusal::new("decode", "shape"));
+                }
+                Ok(Value::Object(vec![(
+                    "state".to_owned(),
+                    Value::Str(tag.to_owned()),
+                )]))
             }
-            "unknown" | "withheld" | "unsupported" => Ok(()),
             _ => Err(Refusal::new("decode", "shape")),
         };
     }
@@ -755,19 +790,23 @@ fn admit_state_string(value: &Value) -> Result<(), Refusal> {
             if names.len() != 2 || !names.contains(&"value") {
                 return Err(Refusal::new("decode", "shape"));
             }
-            if !bounded_text(
-                value.get("value").unwrap_or(&Value::Null),
-                protocol::bounds::ERROR_DETAIL_MAX as usize,
-            ) {
+            let text = value
+                .get("value")
+                .and_then(Value::as_str)
+                .ok_or_else(|| Refusal::new("decode", "shape"))?;
+            if text.is_empty() {
+                return Err(Refusal::new("decode", "shape"));
+            }
+            if text.chars().count() > 128 {
                 return Err(Refusal::new("decode", "bounds"));
             }
-            Ok(())
+            Ok(value.clone())
         }
         Some("unknown" | "withheld" | "unsupported") => {
             if value.member_names().len() != 1 {
                 return Err(Refusal::new("decode", "shape"));
             }
-            Ok(())
+            Ok(value.clone())
         }
         _ => Err(Refusal::new("decode", "shape")),
     }
@@ -1170,73 +1209,132 @@ fn lint_string_array(value: &Value, max: usize, unique: bool) -> bool {
         })
 }
 
-fn lint_state_string(value: &Value) -> bool {
-    if let Some(items) = value.as_array() {
-        if items.len() > 2 {
-            return false;
+/// The lint-side State<T> seq spelling (issue #106 review r6 #1, r8
+/// #2): the normalized {state,value} members only for the STRICT serde
+/// pair — exactly two elements, and the unit variants carry only the
+/// null payload.
+fn lint_state_seq(value: &Value) -> Option<Value> {
+    let items = value.as_array()?;
+    if items.len() != 2 {
+        return None;
+    }
+    let tag = items.first().and_then(Value::as_str).unwrap_or("");
+    if !["known", "unknown", "withheld", "unsupported"].contains(&tag) {
+        return None;
+    }
+    if tag != "known" && !items.get(1).map(Value::is_null).unwrap_or(false) {
+        return None;
+    }
+    Some(Value::Object(vec![
+        ("state".to_owned(), Value::Str(tag.to_owned())),
+        (
+            "value".to_owned(),
+            items.get(1).unwrap_or(&Value::Null).clone(),
+        ),
+    ]))
+}
+
+/// The lint-side State<T> verdicts are tri-state (issue #106 review r8
+/// #9): None means ok, Some("shape") is serde's typed decode failure
+/// class, Some("bounds") is the bounded known-value grammar.
+fn lint_state_string(value: &Value) -> Option<&'static str> {
+    if let Some(normalized) = lint_state_seq(value) {
+        if normalized.get("state").and_then(Value::as_str) != Some("known") {
+            return None;
         }
-        let tag = items.first().and_then(Value::as_str).unwrap_or("");
-        if tag == "known" {
-            return items.len() == 2 && lint_bounded_256(items.get(1).unwrap_or(&Value::Null));
-        }
-        return matches!(tag, "unknown" | "withheld" | "unsupported");
+        return match normalized.get("value") {
+            Some(v) if v.as_str().is_some() => {
+                if lint_bounded_256(v) {
+                    None
+                } else {
+                    Some("bounds")
+                }
+            }
+            _ => Some("shape"),
+        };
     }
     if !is_closed_object(value, &["state", "value"]) {
-        return false;
+        return Some("shape");
     }
     match value.get("state").and_then(Value::as_str) {
-        Some("known") => lint_bounded_256(value.get("value").unwrap_or(&Value::Null)),
-        Some("unknown" | "withheld" | "unsupported") => value.get("value").is_none(),
-        _ => false,
+        Some("known") => match value.get("value").and_then(Value::as_str) {
+            Some(_) if lint_bounded_256(value.get("value").unwrap_or(&Value::Null)) => None,
+            Some(_) => Some("bounds"),
+            None => Some("shape"),
+        },
+        Some("unknown" | "withheld" | "unsupported") => {
+            if value.get("value").is_none() {
+                None
+            } else {
+                Some("shape")
+            }
+        }
+        _ => Some("shape"),
     }
 }
 
-fn lint_state_bool(value: &Value) -> bool {
-    if let Some(items) = value.as_array() {
-        if items.len() > 2 {
-            return false;
+fn lint_state_bool(value: &Value) -> Option<&'static str> {
+    if let Some(normalized) = lint_state_seq(value) {
+        if normalized.get("state").and_then(Value::as_str) != Some("known") {
+            return None;
         }
-        let tag = items.first().and_then(Value::as_str).unwrap_or("");
-        if tag == "known" {
-            return items.len() == 2 && items.get(1).and_then(Value::as_bool).is_some();
-        }
-        return matches!(tag, "unknown" | "withheld" | "unsupported");
+        return if normalized.get("value").and_then(Value::as_bool).is_some() {
+            None
+        } else {
+            Some("shape")
+        };
     }
     if !is_closed_object(value, &["state", "value"]) {
-        return false;
+        return Some("shape");
     }
     match value.get("state").and_then(Value::as_str) {
-        Some("known") => value.get("value").and_then(Value::as_bool).is_some(),
-        Some("unknown" | "withheld" | "unsupported") => value.get("value").is_none(),
-        _ => false,
+        Some("known") => {
+            if value.get("value").and_then(Value::as_bool).is_some() {
+                None
+            } else {
+                Some("shape")
+            }
+        }
+        Some("unknown" | "withheld" | "unsupported") => {
+            if value.get("value").is_none() {
+                None
+            } else {
+                Some("shape")
+            }
+        }
+        _ => Some("shape"),
     }
 }
 
-fn lint_state_u64(value: &Value) -> bool {
-    if let Some(items) = value.as_array() {
-        if items.len() > 2 {
-            return false;
+fn lint_state_u64(value: &Value) -> Option<&'static str> {
+    if let Some(normalized) = lint_state_seq(value) {
+        if normalized.get("state").and_then(Value::as_str) != Some("known") {
+            return None;
         }
-        let tag = items.first().and_then(Value::as_str).unwrap_or("");
-        if tag == "known" {
-            return items.len() == 2
-                && items
-                    .get(1)
-                    .and_then(Value::as_u64)
-                    .is_some_and(|n| n <= 10_000_000);
-        }
-        return matches!(tag, "unknown" | "withheld" | "unsupported");
+        let number = normalized.get("value").and_then(Value::as_u64);
+        return match number {
+            Some(n) if n <= 10_000_000 => None,
+            Some(_) => Some("bounds"),
+            None => Some("shape"),
+        };
     }
     if !is_closed_object(value, &["state", "value"]) {
-        return false;
+        return Some("shape");
     }
     match value.get("state").and_then(Value::as_str) {
-        Some("known") => value
-            .get("value")
-            .and_then(Value::as_u64)
-            .is_some_and(|n| n <= 10_000_000),
-        Some("unknown" | "withheld" | "unsupported") => value.get("value").is_none(),
-        _ => false,
+        Some("known") => match value.get("value").and_then(Value::as_u64) {
+            Some(n) if n <= 10_000_000 => None,
+            Some(_) => Some("bounds"),
+            None => Some("shape"),
+        },
+        Some("unknown" | "withheld" | "unsupported") => {
+            if value.get("value").is_none() {
+                None
+            } else {
+                Some("shape")
+            }
+        }
+        _ => Some("shape"),
     }
 }
 
@@ -1246,7 +1344,7 @@ fn lint_sha256(value: &Value) -> bool {
         .is_some_and(|text| text.len() <= 71 && is_sha256_digest(text))
 }
 
-fn lint_pins(value: &Value) -> bool {
+fn lint_pins(value: &Value) -> Option<&'static str> {
     let allowed = [
         "capabilities",
         "ir",
@@ -1256,7 +1354,7 @@ fn lint_pins(value: &Value) -> bool {
         "revision",
     ];
     if !struct_value(value, &allowed) {
-        return false;
+        return Some("shape");
     }
     let mapped = match seq_as_members(
         value,
@@ -1270,16 +1368,21 @@ fn lint_pins(value: &Value) -> bool {
         ],
     ) {
         Ok(mapped) => mapped,
-        Err(_) => return false,
+        Err(_) => return Some("shape"),
     };
     let value = mapped.as_ref();
-    is_closed_object(value, &allowed)
-        && allowed
-            .iter()
-            .all(|pin| lint_state_string(value.get(pin).unwrap_or(&Value::Null)))
+    if !is_closed_object(value, &allowed) {
+        return Some("shape");
+    }
+    for pin in allowed {
+        if let Some(verdict) = lint_state_string(value.get(pin).unwrap_or(&Value::Null)) {
+            return Some(verdict);
+        }
+    }
+    None
 }
 
-fn lint_producer(value: &Value) -> bool {
+fn lint_producer(value: &Value) -> Option<&'static str> {
     let allowed = [
         "artifactDigest",
         "compiler",
@@ -1290,7 +1393,7 @@ fn lint_producer(value: &Value) -> bool {
         "version",
     ];
     if !struct_value(value, &allowed) {
-        return false;
+        return Some("shape");
     }
     let mapped = match seq_as_members(
         value,
@@ -1305,16 +1408,35 @@ fn lint_producer(value: &Value) -> bool {
         ],
     ) {
         Ok(mapped) => mapped,
-        Err(_) => return false,
+        Err(_) => return Some("shape"),
     };
     let value = mapped.as_ref();
-    is_closed_object(value, &allowed)
-        && ["id", "version", "tool", "recipe"]
-            .iter()
-            .all(|member| lint_bounded_256(value.get(member).unwrap_or(&Value::Null)))
-        && lint_sha256(value.get("artifactDigest").unwrap_or(&Value::Null))
-        && lint_state_string(value.get("compiler").unwrap_or(&Value::Null))
-        && lint_state_string(value.get("framework").unwrap_or(&Value::Null))
+    if !is_closed_object(value, &allowed) {
+        return Some("shape");
+    }
+    for member in ["id", "version", "tool", "recipe"] {
+        let member_value = value.get(member).unwrap_or(&Value::Null);
+        if !lint_bounded_256(member_value) {
+            return Some(if member_value.as_str().is_some() {
+                "bounds"
+            } else {
+                "shape"
+            });
+        }
+    }
+    let digest = value.get("artifactDigest").unwrap_or(&Value::Null);
+    if digest.as_str().is_none() {
+        return Some("shape");
+    }
+    if !lint_sha256(digest) {
+        return Some("bounds");
+    }
+    for member in ["compiler", "framework"] {
+        if let Some(verdict) = lint_state_string(value.get(member).unwrap_or(&Value::Null)) {
+            return Some(verdict);
+        }
+    }
+    None
 }
 
 fn lint_source(value: &Value) -> bool {
@@ -1393,7 +1515,7 @@ fn lint_span(value: &Value) -> bool {
         && bounded("endColumn")
 }
 
-fn lint_coverage(value: &Value) -> bool {
+fn lint_coverage(value: &Value) -> Option<&'static str> {
     let allowed = [
         "eligible",
         "examined",
@@ -1404,7 +1526,7 @@ fn lint_coverage(value: &Value) -> bool {
         "target",
     ];
     if !struct_value(value, &allowed) {
-        return false;
+        return Some("shape");
     }
     let mapped = match seq_as_members(
         value,
@@ -1419,24 +1541,41 @@ fn lint_coverage(value: &Value) -> bool {
         ],
     ) {
         Ok(mapped) => mapped,
-        Err(_) => return false,
+        Err(_) => return Some("shape"),
     };
     let value = mapped.as_ref();
-    is_closed_object(value, &allowed)
-        && ["rule", "target", "scope"]
-            .iter()
-            .all(|member| lint_bounded_256(value.get(member).unwrap_or(&Value::Null)))
-        && matches!(
-            value.get("state").and_then(Value::as_str),
-            Some("complete" | "partial" | "unknown" | "unsupported" | "withheld" | "disabled")
-        )
-        && lint_state_u64(value.get("eligible").unwrap_or(&Value::Null))
-        && lint_state_u64(value.get("examined").unwrap_or(&Value::Null))
-        && lint_string_array(
-            value.get("limitations").unwrap_or(&Value::Null),
-            10_000,
-            true,
-        )
+    if !is_closed_object(value, &allowed) {
+        return Some("shape");
+    }
+    if !matches!(
+        value.get("state").and_then(Value::as_str),
+        Some("complete" | "partial" | "unknown" | "unsupported" | "withheld" | "disabled")
+    ) {
+        return Some("shape");
+    }
+    for member in ["rule", "target", "scope"] {
+        let member_value = value.get(member).unwrap_or(&Value::Null);
+        if !lint_bounded_256(member_value) {
+            return Some(if member_value.as_str().is_some() {
+                "bounds"
+            } else {
+                "shape"
+            });
+        }
+    }
+    for member in ["eligible", "examined"] {
+        if let Some(verdict) = lint_state_u64(value.get(member).unwrap_or(&Value::Null)) {
+            return Some(verdict);
+        }
+    }
+    let limitations = value.get("limitations").unwrap_or(&Value::Null);
+    if limitations.as_array().is_none() {
+        return Some("shape");
+    }
+    if !lint_string_array(limitations, 10_000, true) {
+        return Some("bounds");
+    }
+    None
 }
 
 fn lint_route(value: &Value) -> bool {
@@ -1492,7 +1631,7 @@ fn lint_step(value: &Value) -> bool {
         )
 }
 
-fn lint_record(value: &Value) -> bool {
+fn lint_record(value: &Value) -> Option<&'static str> {
     let allowed = [
         "activation",
         "binding",
@@ -1544,16 +1683,19 @@ fn lint_record(value: &Value) -> bool {
         "guards",
     ];
     if !struct_value(value, &record_fields) {
-        return false;
+        return Some("shape");
     }
     let mapped = match seq_as_members(value, &record_fields) {
         Ok(mapped) => mapped,
-        Err(_) => return false,
+        Err(_) => return Some("shape"),
     };
     let value = mapped.as_ref();
     if !is_closed_object(value, &allowed) {
-        return false;
+        return Some("shape");
     }
+    // Required members and enums are serde's typed-decode `shape` class;
+    // the bounded string grammars stay `bounds` (issue #106 review r8
+    // #9).
     let enums_ok = matches!(
         value.get("kind").and_then(Value::as_str),
         Some(
@@ -1584,40 +1726,69 @@ fn lint_record(value: &Value) -> bool {
         value.get("claim").and_then(Value::as_str),
         Some("structural" | "possible-behavior" | "verified-behavior")
     );
-    let strings_ok = ["id", "subject", "nativeId"]
-        .iter()
-        .all(|member| lint_bounded_256(value.get(member).unwrap_or(&Value::Null)));
-    let states_ok = [
+    if !enums_ok {
+        return Some("shape");
+    }
+    for member in ["id", "subject", "nativeId"] {
+        let member_value = value.get(member).unwrap_or(&Value::Null);
+        if !lint_bounded_256(member_value) {
+            return Some(if member_value.as_str().is_some() {
+                "bounds"
+            } else {
+                "shape"
+            });
+        }
+    }
+    for member in [
         "semanticSymbol",
         "operation",
         "resource",
         "field",
         "value",
         "key",
-    ]
-    .iter()
-    .all(|member| lint_state_string(value.get(member).unwrap_or(&Value::Null)));
-    let bools_ok = ["binding", "configuration", "ownership", "trace"]
-        .iter()
-        .all(|member| lint_state_bool(value.get(member).unwrap_or(&Value::Null)));
-    let candidates_ok = value
+    ] {
+        if let Some(verdict) = lint_state_string(value.get(member).unwrap_or(&Value::Null)) {
+            return Some(verdict);
+        }
+    }
+    for member in ["binding", "configuration", "ownership", "trace"] {
+        if let Some(verdict) = lint_state_bool(value.get(member).unwrap_or(&Value::Null)) {
+            return Some(verdict);
+        }
+    }
+    for member in ["candidates", "activation"] {
+        let items = value.get(member).and_then(Value::as_array);
+        if items.is_none() {
+            return Some("shape");
+        }
+        if items.is_some_and(|items| items.len() > 32) {
+            return Some("bounds");
+        }
+    }
+    if value
         .get("candidates")
         .and_then(Value::as_array)
-        .is_some_and(|items| items.len() <= 32 && items.iter().all(lint_route));
-    let activation_ok = value
+        .is_some_and(|items| !items.iter().all(lint_route))
+    {
+        return Some("bounds");
+    }
+    if value
         .get("activation")
         .and_then(Value::as_array)
-        .is_some_and(|items| items.len() <= 32 && items.iter().all(lint_step));
-    let locations_ok = lint_string_array(value.get("locations").unwrap_or(&Value::Null), 32, true);
-    let guards_ok = lint_string_array(value.get("guards").unwrap_or(&Value::Null), 32, true);
-    enums_ok
-        && strings_ok
-        && states_ok
-        && bools_ok
-        && candidates_ok
-        && activation_ok
-        && locations_ok
-        && guards_ok
+        .is_some_and(|items| !items.iter().all(lint_step))
+    {
+        return Some("bounds");
+    }
+    for member in ["locations", "guards"] {
+        let member_value = value.get(member).unwrap_or(&Value::Null);
+        if member_value.as_array().is_none() {
+            return Some("shape");
+        }
+        if !lint_string_array(member_value, 32, true) {
+            return Some("bounds");
+        }
+    }
+    None
 }
 
 /// The closed `LintEvidence` subtree of a lint result (issue #106 review
@@ -1675,12 +1846,34 @@ fn admit_lint_evidence(value: &Value) -> Result<(), Refusal> {
     {
         return refuse("shape");
     }
-    if !lint_bounded_256(value.get("target").unwrap_or(&Value::Null))
-        || !lint_string_array(value.get("scope").unwrap_or(&Value::Null), 10_000, true)
-        || !lint_producer(value.get("producer").unwrap_or(&Value::Null))
-        || !lint_pins(value.get("pins").unwrap_or(&Value::Null))
-        || !lint_sha256(value.get("inputManifestDigest").unwrap_or(&Value::Null))
-    {
+    // The lint-subtree helpers are tri-state (issue #106 review r8 #9):
+    // a wrong spelling is the typed-decode `shape` class, the bounded
+    // grammars are `bounds`.
+    let target = value.get("target").unwrap_or(&Value::Null);
+    if target.as_str().is_none() {
+        return refuse("shape");
+    }
+    if !lint_bounded_256(target) {
+        return refuse("bounds");
+    }
+    let scope = value.get("scope").unwrap_or(&Value::Null);
+    if scope.as_array().is_none() {
+        return refuse("shape");
+    }
+    if !lint_string_array(scope, 10_000, true) {
+        return refuse("bounds");
+    }
+    if let Some(verdict) = lint_producer(value.get("producer").unwrap_or(&Value::Null)) {
+        return refuse(verdict);
+    }
+    if let Some(verdict) = lint_pins(value.get("pins").unwrap_or(&Value::Null)) {
+        return refuse(verdict);
+    }
+    let digest = value.get("inputManifestDigest").unwrap_or(&Value::Null);
+    if digest.as_str().is_none() {
+        return refuse("shape");
+    }
+    if !lint_sha256(digest) {
         return refuse("bounds");
     }
     let sources = value.get("sources").and_then(Value::as_array);
@@ -1706,15 +1899,25 @@ fn admit_lint_evidence(value: &Value) -> Result<(), Refusal> {
     let Some(coverages) = coverages else {
         return refuse("bounds");
     };
-    if coverages.len() > 10_000 || !coverages.iter().all(lint_coverage) {
+    if coverages.len() > 10_000 {
         return refuse("bounds");
+    }
+    for coverage in coverages {
+        if let Some(verdict) = lint_coverage(coverage) {
+            return refuse(verdict);
+        }
     }
     let records = value.get("records").and_then(Value::as_array);
     let Some(records) = records else {
         return refuse("bounds");
     };
-    if records.len() > 10_000 || !records.iter().all(lint_record) {
+    if records.len() > 10_000 {
         return refuse("bounds");
+    }
+    for record in records {
+        if let Some(verdict) = lint_record(record) {
+            return refuse(verdict);
+        }
     }
     if !lint_string_array(
         value.get("limitations").unwrap_or(&Value::Null),
@@ -1770,6 +1973,15 @@ fn admit_error(value: &Value, _path: &str) -> Result<(), Refusal> {
     }
     let class = value.get("class").and_then(Value::as_str).unwrap_or("");
     if !protocol::enums::ERRORCLASS.contains(&class) {
+        return Err(Refusal::new("decode", "shape"));
+    }
+    // Production's response validation refuses empty error strings
+    // after the bounded check (wire.rs `error.code.is_empty()`), so
+    // empty or wrong-typed strings are the typed-decode `shape` class,
+    // never `bounds` (issue #106 review r6 #3, r8 #7/#9).
+    let code = value.get("code").and_then(Value::as_str);
+    let message = value.get("message").and_then(Value::as_str);
+    if code.is_none() || message.is_none() || code == Some("") || message == Some("") {
         return Err(Refusal::new("decode", "shape"));
     }
     if !bounded_text(value.get("code").unwrap_or(&Value::Null), 128) {
@@ -1883,11 +2095,13 @@ fn admit_capabilities(value: &Value, protocol_version: &str, path: &str) -> Resu
             .as_str()
             .is_some_and(|t| protocol::enums::TRANSPORT.contains(&t))
     };
-    let is_scope_text = |value: &Value| {
-        value
-            .as_str()
-            .is_some_and(|s| !s.is_empty() && s.len() <= 512)
-    };
+    // Production checks only uniqueness and the count ceiling on the
+    // scope lists (wire.rs `unique(&c.read_scopes, 0, 64)`); item
+    // content is unconstrained text, so the SDK's extra non-empty /
+    // length grammar is an over-strict divergence (issue #106 review
+    // r6 #4, r8 #8) and stays out of admission — only the item type
+    // remains.
+    let is_scope_text = |value: &Value| value.as_str().is_some();
     if !unique_bounded(
         value,
         "protocol_versions",
@@ -2056,6 +2270,14 @@ pub fn admit_response_value(value: &Value) -> Result<Value, Refusal> {
             },
         ));
     }
+    // A null ELEMENT inside a positional envelope seq is serde's typed
+    // invalid-type `shape`, never the map spelling's explicit-null
+    // token (issue #106 review r8 #9).
+    let null_reason = if value.as_array().is_some() {
+        "shape"
+    } else {
+        "explicit-null"
+    };
     let value = &*seq_as_members(value, RESPONSE_FIELDS)?;
     for member in [
         "protocol",
@@ -2069,7 +2291,7 @@ pub fn admit_response_value(value: &Value) -> Result<Value, Refusal> {
             return Err(Refusal::new("decode", "shape"));
         }
         if explicit_null(value, member) {
-            return Err(Refusal::new("decode", "explicit-null"));
+            return Err(Refusal::new("decode", null_reason));
         }
     }
     if value.get("protocol").and_then(Value::as_str) != Some(protocol::WIRE_TOKEN) {
@@ -2107,13 +2329,13 @@ pub fn admit_response_value(value: &Value) -> Result<Value, Refusal> {
         .unwrap_or("")
         .to_owned();
     if value.get("capabilities") == Some(&Value::Null) {
-        return Err(Refusal::new("decode", "explicit-null"));
+        return Err(Refusal::new("decode", null_reason));
     }
     if let Some(capabilities) = value.get("capabilities") {
         admit_capabilities(capabilities, &protocol_version, "capabilities")?;
     }
     if explicit_null(value, "result") {
-        return Err(Refusal::new("decode", "explicit-null"));
+        return Err(Refusal::new("decode", null_reason));
     }
     if let Some(result_member) = value.get("result") {
         admit_result(result_member, "result")?;
@@ -2133,7 +2355,7 @@ pub fn admit_response_value(value: &Value) -> Result<Value, Refusal> {
         }
     }
     if explicit_null(value, "writes") {
-        return Err(Refusal::new("decode", "explicit-null"));
+        return Err(Refusal::new("decode", null_reason));
     }
     if let Some(writes) = value.get("writes") {
         let Some(items) = writes.as_array() else {
@@ -2147,13 +2369,13 @@ pub fn admit_response_value(value: &Value) -> Result<Value, Refusal> {
         }
     }
     if explicit_null(value, "progress") {
-        return Err(Refusal::new("decode", "explicit-null"));
+        return Err(Refusal::new("decode", null_reason));
     }
     if let Some(progress) = value.get("progress") {
         admit_progress(progress, "progress")?;
     }
     if explicit_null(value, "error") {
-        return Err(Refusal::new("decode", "explicit-null"));
+        return Err(Refusal::new("decode", null_reason));
     }
     if let Some(error) = value.get("error") {
         admit_error(error, "error")?;

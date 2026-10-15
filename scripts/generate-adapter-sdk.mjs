@@ -843,6 +843,12 @@ function bundlePhpTemplate(template, generatedFiles) {
     `// Template: ${template.name} (issue #106). The confined host copies exactly`,
     "// this file; it requires nothing outside plain PHP.",
     "declare(strict_types=1);",
+    // The standalone entry owns the whole process stdout (one JSON
+    // response): a runtime warning must never reach it under any host
+    // ini spelling — pin the display target to stderr at bootstrap
+    // (issue #106 review r8 #4).
+    "ini_set('display_errors', 'stderr');",
+    "ini_set('display_startup_errors', '0');",
     "",
   ];
   // Bundled classes all share one global namespace (the bundle declares

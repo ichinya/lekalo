@@ -68,6 +68,27 @@ are closed Draft 2020-12 artifacts under `contracts/`.
   battery (`lekalo adapter test`); native verdicts, reports, and exit
   codes pass through unchanged, and no wrapper ever awards a badge.
 
+## Admission entry-point depth (read before calling)
+
+The same-named admission entry points do NOT carry the same depth in
+all four packages — calling the shallow one and assuming the deep
+guarantee admits documents the host refuses (issue #106 review r8
+#11):
+
+| Package | Structural only (parse + closed shape + bounds) | Full admission (structural + semantic validate) |
+| --- | --- | --- |
+| TypeScript | `decodeRequest(text)` / `decodeResponse(text)` | `decodeRequest` **then** `validateRequest(value)` (the serve loop does both) |
+| Rust | `admit_request(text)` / `admit_response(text)` | `decode_request(text)` / `serve` |
+| Go | `AdmitRequestValue(value)` / `AdmitResponse(text)` | `AdmitRequest(text)` (parse + structural + semantic) |
+| PHP | `Decode::admitResponse(text)` | `Decode::admitRequest(text)` (parse + structural + semantic) |
+
+Use the FULL column whenever a document is trusted enough to act on;
+the structural-only entries exist for the SDK's own internals and for
+callers that run the semantic pass separately (responses additionally
+pair `decodeResponse`/`admit_response`/`AdmitResponse`/`admitResponse`
+with the `validateResponseIdentity`/`validateResponsePayload` pair).
+The serve loop in every package always runs the full path.
+
 ## Minimal adapter
 
 ```js

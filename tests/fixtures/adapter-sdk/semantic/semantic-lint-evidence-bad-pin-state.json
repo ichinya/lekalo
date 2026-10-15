@@ -1,5 +1,5 @@
 {
-  "expect": "reject:bounds",
+  "expect": "reject:shape",
   "kind": "validate-before-write",
   "name": "semantic-lint-evidence-bad-pin-state",
   "request": {

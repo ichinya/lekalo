@@ -33,6 +33,13 @@ final class Serve {
      * message}` for a closed in-envelope refusal.
      */
     public static function serve(array $adapter): int {
+        // The process contract is "one JSON response on stdout, logs only
+        // to stderr" (issue #106 review r8 #4): a runtime warning must
+        // never reach stdout under ANY host ini spelling — php -d
+        // display_errors=1 included — so the serve lifetime pins the
+        // display target to stderr up front.
+        ini_set('display_errors', 'stderr');
+        ini_set('display_startup_errors', '0');
         try {
             return self::serveInner($adapter);
         } catch (\Throwable) {

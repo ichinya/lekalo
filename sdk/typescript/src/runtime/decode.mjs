@@ -257,24 +257,33 @@ function decodeNativeRequest(rawValue) {
 
 function decodeStateString(value) {
   // The adjacent-tag enum also admits the serde `visit_seq` pair:
-  // `["known", value]` and `[tag, null]` (the unit variants' serde `None`
-  // payload spelling) positionally; `[tag]` alone is an invalid length
-  // (issue #106 review r6 #1).
+  // `["known", value]` and `[tag, null]` (the unit variants' serde
+  // `None` payload) positionally; `[tag]` alone, a longer seq, a
+  // non-null payload at a unit variant, or a non-string payload at
+  // `known` is serde's invalid-length / invalid-type `shape` (issue
+  // #106 review r6 #1, r8 #2). The seq spelling is NORMALIZED onto the
+  // member map so every later validate reader sees {state,value}
+  // (r8 #3).
   if (Array.isArray(value)) {
-    if (value.length > 2) return failure("shape");
+    if (value.length !== 2) return failure("shape");
     const tag = value[0];
     if (tag === "known") {
-      if (value.length !== 2 || typeof value[1] !== "string" || value[1] === "" || value[1].length > BOUNDS.ERROR_DETAIL_MAX) return failure("bounds");
-      return { ok: true, value };
+      if (typeof value[1] !== "string" || value[1] === "") return failure("shape");
+      if (value[1].length > BOUNDS.ERROR_DETAIL_MAX) return failure("bounds");
+      return { ok: true, value: { state: "known", value: value[1] } };
     }
-    if (["unknown", "withheld", "unsupported"].includes(tag)) return { ok: true, value };
+    if (["unknown", "withheld", "unsupported"].includes(tag)) {
+      if (value[1] !== null) return failure("shape");
+      return { ok: true, value: { state: tag } };
+    }
     return failure("shape");
   }
   if (value === null || typeof value !== "object" || Array.isArray(value)) return failure("shape");
   const keys = Object.keys(value);
   if (value.state === "known") {
     if (keys.length !== 2 || !keys.includes("state") || !keys.includes("value")) return failure("shape");
-    if (typeof value.value !== "string" || value.value === "" || value.value.length > BOUNDS.ERROR_DETAIL_MAX) return failure("bounds");
+    if (typeof value.value !== "string" || value.value === "") return failure("shape");
+    if (value.value.length > BOUNDS.ERROR_DETAIL_MAX) return failure("bounds");
     return { ok: true, value };
   }
   if (["unknown", "withheld", "unsupported"].includes(value.state)) {
@@ -323,7 +332,11 @@ function decodeLintRequest(rawValue) {
   if (!Array.isArray(value.files) || value.files.length > 4_096) return failure("bounds");
   if (!Array.isArray(value.bindings) || value.bindings.length > 10_000) return failure("bounds");
   for (const scope of value.scope) {
-    if (typeof scope !== "string" || scope === "" || scope.length > BOUNDS.ERROR_DETAIL_MAX) return failure("bounds");
+    // Type only at decode (issue #106 review r8 #9): an empty or
+    // non-token scope item is the semantic layer's `lint-request`
+    // refusal (the ai-lint token grammar), never a decode-stage length
+    // bound — production's typed Vec<String> admits any string item.
+    if (typeof scope !== "string" || scope.length > BOUNDS.ERROR_DETAIL_MAX) return failure("bounds");
   }
   for (const file of value.files) {
     if (!isLogicalPath(file)) return failure("bounds");
@@ -339,9 +352,13 @@ function decodeLintRequest(rawValue) {
   const pins = closeObject(value.pins, ["capabilities", "ir", "model", "observed", "profile", "revision"]);
   if (pins) return pins;
   // Every pin is a State-tagged value; model/ir must carry known digests.
+  // The admitted value is the NORMALIZED map form (seq pairs remap onto
+  // {state,value}) so the semantic validate pass never re-reads the seq
+  // spelling (issue #106 review r8 #3).
   for (const member of ["capabilities", "ir", "model", "observed", "profile", "revision"]) {
     const state = decodeStateString(value.pins[member]);
-    if (!state.ok) return member === "model" || member === "ir" ? failure("bounds") : state;
+    if (!state.ok) return state;
+    value.pins[member] = state.value;
   }
   return { ok: true, value };
 }
@@ -367,12 +384,21 @@ export function decodeRequest(text, maxBytes = BOUNDS.MAX_REQUEST_BYTES) {
     }
     return failure("shape");
   }
+  // A null ELEMENT inside a positional envelope seq is serde's typed
+  // invalid-type `shape`, never the map spelling's explicit-null token
+  // (issue #106 review r8 #9).
+  const seqSpelled = Array.isArray(value);
+  const absentMember = (member) => {
+    if (value[member] === null) return seqSpelled ? failure("shape", member) : failure("explicit-null", member);
+    return null;
+  };
   value = seqAsMembers(value, REQUEST_FIELDS).value;
   const closed = closeObject(value, REQUEST_FIELDS);
   if (closed) return closed;
   for (const member of ["protocol", "protocol_version", "operation", "request_id", "project_root"]) {
     if (value[member] === undefined) return failure("shape");
-    if (value[member] === null) return failure("explicit-null", member);
+    const absent = absentMember(member);
+    if (absent) return absent;
   }
   if (value.protocol !== WIRE_TOKEN) return failure("token");
   if (!SUPPORTED_PROTOCOL_VERSIONS.includes(value.protocol_version)) return failure("version");
@@ -380,7 +406,7 @@ export function decodeRequest(text, maxBytes = BOUNDS.MAX_REQUEST_BYTES) {
   if (!isRequestId(value.request_id)) return failure("request-id");
   if (value.project_root !== ".") return failure("grammar");
   for (const member of ["ir_path", "target", "profile"]) {
-    const absent = optional(value[member]);
+    const absent = absentMember(member);
     if (absent) return absent;
     if (value[member] !== undefined) {
       const ok = member === "ir_path" ? isLogicalPath(value[member]) : isToken(value[member]);
@@ -388,35 +414,37 @@ export function decodeRequest(text, maxBytes = BOUNDS.MAX_REQUEST_BYTES) {
     }
   }
   for (const member of ["profile_digest"]) {
-    const absent = optional(value[member]);
+    const absent = absentMember(member);
     if (absent) return absent;
     if (value[member] !== undefined && !isSha256Digest(value[member])) return failure("bounds");
   }
   for (const member of ["dry_run"]) {
-    const absent = optional(value[member]);
+    const absent = absentMember(member);
     if (absent) return absent;
     if (value[member] !== undefined && typeof value[member] !== "boolean") return failure("shape");
   }
   for (const member of ["plan_id"]) {
-    const absent = optional(value[member]);
+    const absent = absentMember(member);
     if (absent) return absent;
     if (value[member] !== undefined && !isPlanId(value[member])) return failure("bounds");
   }
-  const absentLimits = optional(value.limits);
+  const absentLimits = absentMember("limits");
   if (absentLimits) return absentLimits;
   if (value.limits !== undefined) {
     const limits = decodeLimits(value.limits);
     if (!limits.ok) return limits;
   }
+  const absentCaps = absentMember("profile_capabilities");
+  if (absentCaps) return absentCaps;
   const capabilities = decodeProfileCapabilities(value.profile_capabilities);
   if (!capabilities.ok) return capabilities;
-  const absentNative = optional(value.native_request);
+  const absentNative = absentMember("native_request");
   if (absentNative) return absentNative;
   if (value.native_request !== undefined) {
     const native = decodeNativeRequest(value.native_request);
     if (!native.ok) return native;
   }
-  const absentLint = optional(value.lint_request);
+  const absentLint = absentMember("lint_request");
   if (absentLint) return absentLint;
   if (value.lint_request !== undefined) {
     const lint = decodeLintRequest(value.lint_request);
@@ -526,50 +554,105 @@ const lintStringArray = (value, max, unique) => {
   return value.every(lintBounded256);
 };
 
+/** The lint-side State<T> seq spelling (issue #106 review r6 #1, r8
+ * #2): returns the normalized {state,value} map only for the STRICT
+ * serde pair — exactly two elements, and the unit variants carry only
+ * the null payload. Anything else is not the seq spelling. */
+const lintStateSeq = (value) => {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const tag = value[0];
+  if (!["known", "unknown", "withheld", "unsupported"].includes(tag)) return null;
+  if (tag !== "known" && value[1] !== null) return null;
+  return { state: tag, value: value[1] };
+};
+
+/** The lint-side State<T> verdicts are tri-state (issue #106 review r8
+ * #9): a wrong SPELLING is serde's typed decode failure `shape`; a
+ * well-shaped known value that violates the bounded grammar is
+ * `bounds`. */
 const lintStateString = (value) => {
+  const seq = lintStateSeq(value);
+  if (seq) {
+    if (seq.state !== "known") return true;
+    if (typeof seq.value !== "string") return "shape";
+    return lintBounded256(seq.value) ? true : "bounds";
+  }
   const closed = closeObject(value, ["state", "value"]);
-  if (closed) return false;
-  if (!["known", "unknown", "withheld", "unsupported"].includes(value.state)) return false;
-  if (value.state === "known") return lintBounded256(value.value);
-  return value.value === undefined;
+  if (closed) return "shape";
+  if (value.state === "known") {
+    if (typeof value.value !== "string") return "shape";
+    return lintBounded256(value.value) ? true : "bounds";
+  }
+  if (["unknown", "withheld", "unsupported"].includes(value.state)) {
+    return value.value === undefined ? true : "shape";
+  }
+  return "shape";
 };
 
 const lintStateBool = (value) => {
+  const seq = lintStateSeq(value);
+  if (seq) {
+    if (seq.state !== "known") return true;
+    return typeof seq.value === "boolean" ? true : "shape";
+  }
   const closed = closeObject(value, ["state", "value"]);
-  if (closed) return false;
-  if (!["known", "unknown", "withheld", "unsupported"].includes(value.state)) return false;
-  if (value.state === "known") return typeof value.value === "boolean";
-  return value.value === undefined;
+  if (closed) return "shape";
+  if (value.state === "known") {
+    return typeof value.value === "boolean" ? true : "shape";
+  }
+  if (["unknown", "withheld", "unsupported"].includes(value.state)) {
+    return value.value === undefined ? true : "shape";
+  }
+  return "shape";
 };
 
 const lintStateU64 = (value) => {
+  const seq = lintStateSeq(value);
+  if (seq) {
+    if (seq.state !== "known") return true;
+    if (!isInt(seq.value)) return "shape";
+    return seq.value <= 10_000_000 ? true : "bounds";
+  }
   const closed = closeObject(value, ["state", "value"]);
-  if (closed) return false;
-  if (!["known", "unknown", "withheld", "unsupported"].includes(value.state)) return false;
-  if (value.state === "known") return isInt(value.value) && value.value <= 10_000_000;
-  return value.value === undefined;
+  if (closed) return "shape";
+  if (value.state === "known") {
+    if (!isInt(value.value)) return "shape";
+    return value.value <= 10_000_000 ? true : "bounds";
+  }
+  if (["unknown", "withheld", "unsupported"].includes(value.state)) {
+    return value.value === undefined ? true : "shape";
+  }
+  return "shape";
 };
 
 const lintPins = (rawValue) => {
-  if (!structValue(rawValue, ["model", "ir", "observed", "revision", "profile", "capabilities"])) return false;
+  if (!structValue(rawValue, ["model", "ir", "observed", "revision", "profile", "capabilities"])) return "shape";
   const value = seqAsMembers(rawValue, ["model", "ir", "observed", "revision", "profile", "capabilities"]).value;
   const closed = closeObject(value, ["capabilities", "ir", "model", "observed", "profile", "revision"]);
-  if (closed) return false;
-  return ["capabilities", "ir", "model", "observed", "profile", "revision"].every((pin) => lintStateString(value[pin]));
+  if (closed) return "shape";
+  for (const pin of ["capabilities", "ir", "model", "observed", "profile", "revision"]) {
+    const verdict = lintStateString(value[pin]);
+    if (verdict !== true) return verdict;
+  }
+  return true;
 };
 
 const lintProducer = (rawValue) => {
-  if (!structValue(rawValue, ["id", "version", "artifactDigest", "tool", "compiler", "framework", "recipe"])) return false;
+  if (!structValue(rawValue, ["id", "version", "artifactDigest", "tool", "compiler", "framework", "recipe"])) return "shape";
   const value = seqAsMembers(rawValue, ["id", "version", "artifactDigest", "tool", "compiler", "framework", "recipe"]).value;
   const closed = closeObject(value, ["artifactDigest", "compiler", "framework", "id", "recipe", "tool", "version"]);
-  if (closed) return false;
-  return lintBounded256(value.id)
-    && lintBounded256(value.version)
-    && typeof value.artifactDigest === "string" && value.artifactDigest.length <= 71 && LINT_SHA256.test(value.artifactDigest)
-    && lintBounded256(value.tool)
-    && lintBounded256(value.recipe)
-    && lintStateString(value.compiler)
-    && lintStateString(value.framework);
+  if (closed) return "shape";
+  for (const member of ["id", "version", "tool", "recipe"]) {
+    if (typeof value[member] !== "string") return "shape";
+    if (!lintBounded256(value[member])) return "bounds";
+  }
+  if (typeof value.artifactDigest !== "string") return "shape";
+  if (!(value.artifactDigest.length <= 71 && LINT_SHA256.test(value.artifactDigest))) return "bounds";
+  for (const member of ["compiler", "framework"]) {
+    const verdict = lintStateString(value[member]);
+    if (verdict !== true) return verdict;
+  }
+  return true;
 };
 
 const lintSource = (rawValue) => {
@@ -603,22 +686,26 @@ const lintSpan = (rawValue) => {
 };
 
 const lintCoverage = (rawValue) => {
-  if (!structValue(rawValue, ["rule", "target", "scope", "state", "eligible", "examined", "limitations"])) return false;
+  if (!structValue(rawValue, ["rule", "target", "scope", "state", "eligible", "examined", "limitations"])) return "shape";
   const value = seqAsMembers(rawValue, ["rule", "target", "scope", "state", "eligible", "examined", "limitations"]).value;
   const closed = closeObject(value, ["eligible", "examined", "limitations", "rule", "scope", "state", "target"]);
-  if (closed) return false;
-  return lintBounded256(value.rule)
-    && lintBounded256(value.target)
-    && lintBounded256(value.scope)
-    && ["complete", "partial", "unknown", "unsupported", "withheld", "disabled"].includes(value.state)
-    && lintStateU64(value.eligible)
-    && lintStateU64(value.examined)
-    && lintStringArray(value.limitations, 10_000, true);
+  if (closed) return "shape";
+  if (!["complete", "partial", "unknown", "unsupported", "withheld", "disabled"].includes(value.state)) return "shape";
+  for (const member of ["rule", "target", "scope"]) {
+    if (typeof value[member] !== "string") return "shape";
+    if (!lintBounded256(value[member])) return "bounds";
+  }
+  for (const member of ["eligible", "examined"]) {
+    const verdict = lintStateU64(value[member]);
+    if (verdict !== true) return verdict;
+  }
+  if (!Array.isArray(value.limitations)) return "shape";
+  return lintStringArray(value.limitations, 10_000, true) ? true : "bounds";
 };
 
 const lintRecord = (rawValue) => {
   const recordFields = ["id", "kind", "mechanism", "subject", "semanticSymbol", "operation", "resource", "field", "nativeId", "confidence", "currency", "origin", "claim", "binding", "configuration", "ownership", "trace", "value", "key", "candidates", "activation", "locations", "guards"];
-  if (!structValue(rawValue, recordFields)) return false;
+  if (!structValue(rawValue, recordFields)) return "shape";
   const value = seqAsMembers(rawValue, recordFields).value;
   const closed = closeObject(value, [
     "activation", "binding", "candidates", "claim", "confidence", "configuration",
@@ -626,16 +713,23 @@ const lintRecord = (rawValue) => {
     "nativeId", "operation", "origin", "ownership", "resource", "semanticSymbol",
     "subject", "trace", "value",
   ]);
-  if (closed) return false;
+  if (closed) return "shape";
+  // Required members and enums are serde's typed-decode `shape` class;
+  // the bounded string grammars stay `bounds` (issue #106 review r8 #9).
+  for (const member of ["kind", "mechanism", "confidence", "currency", "origin", "claim", "id", "subject", "nativeId"]) {
+    if (value[member] === undefined) return "shape";
+  }
   const enumsOk = ["binding-candidates", "dispatch", "convention", "effect", "path", "reflection", "string-reference", "default", "native-edge", "field-write"].includes(value.kind)
     && ["direct", "observer", "hook", "magic"].includes(value.mechanism)
     && ["unknown", "low", "medium", "high", "exact"].includes(value.confidence)
     && ["current", "stale", "unknown"].includes(value.currency)
     && ["explicit", "extracted", "inferred"].includes(value.origin)
     && ["structural", "possible-behavior", "verified-behavior"].includes(value.claim);
-  const stringsOk = lintBounded256(value.id)
-    && lintBounded256(value.subject)
-    && lintBounded256(value.nativeId);
+  if (!enumsOk) return "shape";
+  for (const member of ["id", "subject", "nativeId"]) {
+    if (typeof value[member] !== "string") return "shape";
+    if (!lintBounded256(value[member])) return "bounds";
+  }
   const route = (rawEntry) => {
     if (!structValue(rawEntry, ["identity", "confidence", "currency", "origin"])) return false;
     const entry = seqAsMembers(rawEntry, ["identity", "confidence", "currency", "origin"]).value;
@@ -655,13 +749,25 @@ const lintRecord = (rawValue) => {
       && lintStringArray(entry.guards, 32, true)
       && ["unknown", "low", "medium", "high", "exact"].includes(entry.confidence);
   };
-  const stateMembers = ["semanticSymbol", "operation", "resource", "field", "value", "key"].every((member) => lintStateString(value[member]));
-  const boolMembers = ["binding", "configuration", "ownership", "trace"].every((member) => lintStateBool(value[member]));
-  const arraysOk = Array.isArray(value.candidates) && value.candidates.length <= 32 && value.candidates.every(route)
-    && Array.isArray(value.activation) && value.activation.length <= 32 && value.activation.every(step)
-    && lintStringArray(value.locations, 32, true)
-    && lintStringArray(value.guards, 32, true);
-  return enumsOk && stringsOk && stateMembers && boolMembers && arraysOk;
+  for (const member of ["semanticSymbol", "operation", "resource", "field", "value", "key"]) {
+    const verdict = lintStateString(value[member]);
+    if (verdict !== true) return verdict;
+  }
+  for (const member of ["binding", "configuration", "ownership", "trace"]) {
+    const verdict = lintStateBool(value[member]);
+    if (verdict !== true) return verdict;
+  }
+  for (const member of ["candidates", "activation"]) {
+    if (!Array.isArray(value[member])) return "shape";
+    if (value[member].length > 32) return "bounds";
+  }
+  if (!value.candidates.every(route)) return "bounds";
+  if (!value.activation.every(step)) return "bounds";
+  for (const member of ["locations", "guards"]) {
+    if (!Array.isArray(value[member])) return "shape";
+    if (!lintStringArray(value[member], 32, true)) return "bounds";
+  }
+  return true;
 };
 
 function decodeLintEvidence(rawValue) {
@@ -674,12 +780,19 @@ function decodeLintEvidence(rawValue) {
   }
   if (value.schemaVersion !== "lekalo/ai-lint-evidence/v0.6.4") return failure("shape");
   if (value.identity !== "dev.lekalo.ai-lint-evidence@0.6.4") return failure("shape");
+  if (typeof value.target !== "string") return failure("shape");
   if (!lintBounded256(value.target)) return failure("bounds");
+  if (!Array.isArray(value.scope)) return failure("shape");
   if (!lintStringArray(value.scope, 10_000, true)) return failure("bounds");
-  const producer = lintProducer(value.producer);
-  if (!producer) return failure("bounds");
-  if (!lintPins(value.pins)) return failure("bounds");
-  if (typeof value.inputManifestDigest !== "string" || value.inputManifestDigest.length > 71 || !LINT_SHA256.test(value.inputManifestDigest)) {
+  // The lint-subtree helpers are tri-state (issue #106 review r8 #9): a
+  // wrong spelling is the typed-decode `shape` class, the bounded
+  // grammars are `bounds`.
+  for (const [helper, member] of [[lintProducer, "producer"], [lintPins, "pins"]]) {
+    const verdict = helper(value[member]);
+    if (verdict !== true) return failure(verdict);
+  }
+  if (typeof value.inputManifestDigest !== "string") return failure("shape");
+  if (value.inputManifestDigest.length > 71 || !LINT_SHA256.test(value.inputManifestDigest)) {
     return failure("bounds");
   }
   if (!Array.isArray(value.sources) || value.sources.length > 10_000) return failure("bounds");
@@ -693,11 +806,13 @@ function decodeLintEvidence(rawValue) {
   }
   if (!Array.isArray(value.coverage) || value.coverage.length > 10_000) return failure("bounds");
   for (const coverage of value.coverage) {
-    if (!lintCoverage(coverage)) return failure("bounds");
+    const verdict = lintCoverage(coverage);
+    if (verdict !== true) return failure(verdict);
   }
   if (!Array.isArray(value.records) || value.records.length > 10_000) return failure("bounds");
   for (const record of value.records) {
-    if (!lintRecord(record)) return failure("bounds");
+    const verdict = lintRecord(record);
+    if (verdict !== true) return failure(verdict);
   }
   if (!lintStringArray(value.limitations, 10_000, true)) return failure("bounds");
   return { ok: true, value };
@@ -816,8 +931,14 @@ function decodeError(rawValue) {
   const closed = closeObject(value, ["class", "code", "detail", "message", "partial", "retryable"]);
   if (closed) return closed;
   if (!ENUMS.errorClass.includes(value.class)) return failure("shape");
-  if (boundedText(value.code, BOUNDS.ERROR_CODE_MAX) || value.code === "") return failure("bounds");
-  if (boundedText(value.message, BOUNDS.ERROR_MESSAGE_MAX) || value.message === "") return failure("bounds");
+  // Production refuses empty error strings after the bounded check
+  // (wire.rs `error.code.is_empty()`), so empty strings are the typed
+  // decode `shape` class, never `bounds` (issue #106 review r6 #3, r8
+  // #7/#9).
+  if (typeof value.code !== "string" || typeof value.message !== "string") return failure("shape");
+  if (value.code === "" || value.message === "") return failure("shape");
+  if (boundedText(value.code, BOUNDS.ERROR_CODE_MAX)) return failure("bounds");
+  if (boundedText(value.message, BOUNDS.ERROR_MESSAGE_MAX)) return failure("bounds");
   for (const member of ["partial", "retryable"]) {
     const absent = optional(value[member]);
     if (absent) return absent;
@@ -870,8 +991,13 @@ function decodeCapabilities(rawValue, protocolVersion) {
   if (!requiredList("transports", BOUNDS.TRANSPORTS_MAX, (t) => TRANSPORTS.includes(t))) return failure("bounds");
   if (!optionalList("targets", BOUNDS.TARGETS_MAX, isToken)) return failure("bounds");
   if (!optionalList("profiles", BOUNDS.PROFILES_MAX, isToken)) return failure("bounds");
-  if (!optionalList("read_scopes", BOUNDS.MAX_SCOPES, (s) => typeof s === "string" && s.length > 0 && s.length <= BOUNDS.PATH_MAX)) return failure("bounds");
-  if (!optionalList("write_scopes", BOUNDS.MAX_SCOPES, (s) => typeof s === "string" && s.length > 0 && s.length <= BOUNDS.PATH_MAX)) return failure("bounds");
+  // Production checks only uniqueness and the count ceiling on the
+  // scope lists (wire.rs `unique(&c.read_scopes, 0, 64)`); item content
+  // is unconstrained text, so the SDK's extra non-empty / length
+  // grammar is an over-strict divergence (issue #106 review r6 #4, r8
+  // #8) and stays out of admission.
+  if (!optionalList("read_scopes", BOUNDS.MAX_SCOPES, (s) => typeof s === "string")) return failure("bounds");
+  if (!optionalList("write_scopes", BOUNDS.MAX_SCOPES, (s) => typeof s === "string")) return failure("bounds");
   if (!optionalList("ir_versions", BOUNDS.MAX_IR_VERSIONS, isContractVersion)) return failure("bounds");
   // `progress` is a `#[serde(default)] bool` in production: absent is
   // legal (defaults false); a present non-boolean is a typed refusal
@@ -929,12 +1055,21 @@ export function decodeResponse(text, maxBytes = BOUNDS.DEFAULT_MAX_OUTPUT_BYTES)
     }
     return failure("shape");
   }
+  // A null ELEMENT inside a positional envelope seq is serde's typed
+  // invalid-type `shape`, never the map spelling's explicit-null token
+  // (issue #106 review r8 #9).
+  const seqSpelled = Array.isArray(value);
+  const absentMember = (member) => {
+    if (value[member] === null) return seqSpelled ? failure("shape", member) : failure("explicit-null", member);
+    return null;
+  };
   value = seqAsMembers(value, RESPONSE_FIELDS).value;
   const closed = closeObject(value, RESPONSE_FIELDS);
   if (closed) return closed;
   for (const member of ["protocol", "protocol_version", "operation", "request_id", "status", "evidence"]) {
     if (value[member] === undefined) return failure("shape");
-    if (value[member] === null) return failure("explicit-null", member);
+    const absent = absentMember(member);
+    if (absent) return absent;
   }
   if (value.protocol !== WIRE_TOKEN) return failure("token");
   if (!isContractVersion(value.protocol_version)) return failure("version");
@@ -943,13 +1078,13 @@ export function decodeResponse(text, maxBytes = BOUNDS.DEFAULT_MAX_OUTPUT_BYTES)
   if (!ENUMS.responseStatus.includes(value.status)) return failure("shape");
   const evidence = decodeEvidence(value.evidence);
   if (!evidence.ok) return evidence;
-  const absentCapabilities = optional(value.capabilities);
+  const absentCapabilities = absentMember("capabilities");
   if (absentCapabilities) return absentCapabilities;
   if (value.capabilities !== undefined) {
     const capabilities = decodeCapabilities(value.capabilities, value.protocol_version);
     if (!capabilities.ok) return capabilities;
   }
-  const absentResult = optional(value.result);
+  const absentResult = absentMember("result");
   if (absentResult) return absentResult;
   if (value.result !== undefined) {
     const result = decodeResult(value.result);
@@ -962,7 +1097,7 @@ export function decodeResponse(text, maxBytes = BOUNDS.DEFAULT_MAX_OUTPUT_BYTES)
     }
   }
   if (value.writes !== undefined) {
-    const absent = optional(value.writes);
+    const absent = absentMember("writes");
     if (absent) return absent;
     if (!Array.isArray(value.writes) || value.writes.length > BOUNDS.MAX_PLAN_ENTRIES) return failure("bounds");
     for (const entry of value.writes) {
@@ -970,13 +1105,13 @@ export function decodeResponse(text, maxBytes = BOUNDS.DEFAULT_MAX_OUTPUT_BYTES)
       if (!decoded.ok) return decoded;
     }
   }
-  const absentProgress = optional(value.progress);
+  const absentProgress = absentMember("progress");
   if (absentProgress) return absentProgress;
   if (value.progress !== undefined) {
     const progress = decodeProgress(value.progress);
     if (!progress.ok) return progress;
   }
-  const absentError = optional(value.error);
+  const absentError = absentMember("error");
   if (absentError) return absentError;
   if (value.error !== undefined) {
     const error = decodeError(value.error);

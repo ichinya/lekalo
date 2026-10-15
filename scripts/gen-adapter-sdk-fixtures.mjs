@@ -1191,7 +1191,10 @@ r5Invalid('lint-evidence-sequence-on-base', scanResponse, d => d.result = [true,
 r5Invalid('scan-references-null', scanResponseEvidence, d => d.result.entries[0].evidence.references = null, 'explicit-null');
 for (const member of ['guards', 'locations']) {
   r5Invalid(`activation-${member}-object`, lintResponse, d => d.result.lint_evidence.records[0].activation[0][member] = {});
-  r5Invalid(`record-${member}-object`, lintResponse, d => d.result.lint_evidence.records[0][member] = {});
+  // A wrong-TYPED record member (an object where the wire types a list)
+  // is serde's typed-decode failure `shape`, never `bounds` (issue #106
+  // review r8 #9).
+  r5Invalid(`record-${member}-object`, lintResponse, d => d.result.lint_evidence.records[0][member] = {}, 'shape');
 }
 for (const [type, empty] of Object.entries({ object: {}, list: [] })) {
   r5Valid(`changes-empty-${type}`, planNativeRequest, d => d.native_request.changes = empty);
@@ -1278,4 +1281,70 @@ for (const [member, sdkReason, clientReason, value] of [
     productionClientExpect: { accepted: false, reason: clientReason },
   });
 }
+// Round-8 differential regressions (issue #106 review r8): every row
+// pins a residual the r7 reviewers measured against the production
+// oracle — the strict State<T> seq pair, seq normalization onto the
+// validate layer, PHP's numeric-key object collapse, the lint record
+// declaration order, empty error strings, and the unconstrained scope
+// item text.
+const r8Valid = (name, base, mutate) => {
+  const doc = structuredClone(base); mutate(doc); writeWire('valid', `r8-${name}`, doc);
+};
+const r8Invalid = (name, base, mutate, stage = 'decode', reason = 'shape') => {
+  const doc = structuredClone(base); mutate(doc); writeWire('invalid', `r8-${name}`, doc);
+  writeExpect(`r8-${name}`, { stage, reason });
+};
+// r8 #3: production-legal ["known", v] pairs at REQUIRED pin positions
+// — the seq spelling must reach the semantic layer as {state,value}.
+r8Valid('pins-model-seq-pair', lintRequest, d => d.lint_request.pins.model = ["known", D("model")]);
+r8Valid('pins-ir-seq-pair', lintRequest, d => d.lint_request.pins.ir = ["known", D("ir")]);
+r8Valid('pins-observed-seq-unit', lintRequest, d => d.lint_request.pins.observed = ["unknown", null]);
+r8Valid('pins-all-seq', lintRequest, d => d.lint_request.pins = [
+  ["known", D("model")], ["known", D("ir")], ["unknown", null], ["unknown", null], ["unknown", null], ["unknown", null],
+]);
+// r8 #2: the strict unit-variant pair grammar — [tag] alone, a non-null
+// unit payload, the empty seq, and the bare/non-string/empty `known`
+// payloads are serde's typed-decode `shape`.
+r8Invalid('state-seq-unit-bare', lintRequest, d => d.lint_request.pins.observed = ["unknown"]);
+r8Invalid('state-seq-unit-payload-num', lintRequest, d => d.lint_request.pins.observed = ["unknown", 5]);
+r8Invalid('state-seq-unit-payload-str', lintRequest, d => d.lint_request.pins.profile = ["withheld", "x"]);
+r8Invalid('state-seq-empty', lintRequest, d => d.lint_request.pins.observed = []);
+r8Invalid('state-seq-known-bare', lintRequest, d => d.lint_request.pins.observed = ["known"]);
+r8Invalid('state-seq-known-nonstring', lintRequest, d => d.lint_request.pins.observed = ["known", 5]);
+r8Invalid('state-seq-known-empty', lintRequest, d => d.lint_request.pins.observed = ["known", ""]);
+// r8 #5: PHP's json_decode collapses {"0":…} onto a list value — the
+// raw-object audit must refuse the object spelling at State positions
+// (the same numeric-key object on the evidence side).
+r8Invalid('state-obj-numeric-keys', lintRequest, d => d.lint_request.pins.observed = JSON.parse('{"0":"unknown","1":null}'));
+r8Invalid('lev-pins-numeric-keys', lintResponse, d => d.result.lint_evidence.pins.observed = JSON.parse('{"0":"unknown","1":null}'));
+r8Invalid('lev-coverage-eligible-numeric-keys', lintResponse, d => d.result.lint_evidence.coverage[0].eligible = JSON.parse('{"0":"unknown","1":null}'));
+r8Invalid('lev-coverage-eligible-unit-bare', lintResponse, d => d.result.lint_evidence.coverage[0].eligible = ["unknown"]);
+// r8 #1: the lint record positional seq maps onto the DECLARED wire
+// field order (ai_lint wire.rs Record) — never the alphabetical set.
+{
+  const record = structuredClone(lintResponse.result.lint_evidence.records[0]);
+  const recordFields = ["id", "kind", "mechanism", "subject", "semanticSymbol", "operation", "resource", "field", "nativeId", "confidence", "currency", "origin", "claim", "binding", "configuration", "ownership", "trace", "value", "key", "candidates", "activation", "locations", "guards"];
+  r8Valid('record-seq-wire-order', lintResponse, d => d.result.lint_evidence.records[0] = recordFields.map((field) => structuredClone(record[field])));
+  const alpha = ["activation", "binding", "candidates", "claim", "confidence", "configuration", "currency", "field", "guards", "id", "key", "kind", "locations", "mechanism", "nativeId", "operation", "origin", "ownership", "resource", "semanticSymbol", "subject", "trace", "value"];
+  r8Invalid('record-seq-alpha-order', lintResponse, d => d.result.lint_evidence.records[0] = alpha.map((field) => structuredClone(record[field])));
+}
+// r8 #7: empty error strings are the typed-decode `shape` class
+// (wire.rs `error.code.is_empty()` refuses after the bounded check).
+r8Invalid('error-empty-code', verifyResponseError, d => d.error.code = "");
+r8Invalid('error-empty-message', verifyResponseError, d => d.error.message = "");
+// r8 #8: the scope lists check only count + uniqueness in production
+// (wire.rs `unique(&c.read_scopes, 0, 64)`) — empty, long, and astral
+// items are unconstrained text and must be admitted.
+r8Valid('scopes-empty-item', describeResponse, d => d.capabilities.read_scopes = [".lekalo/ir/**", ""]);
+r8Valid('scopes-long-item', describeResponse, d => d.capabilities.write_scopes = ["s".repeat(600)]);
+r8Valid('scopes-astral-item', describeResponse, d => d.capabilities.read_scopes = ["😀".repeat(300)]);
+// r8 #9: a null member inside a positional envelope seq is serde's
+// typed invalid-type `shape`, never the map spelling's explicit-null.
+{
+  writeWire('invalid', 'r8-request-seq-null-member', ["lekalo.target/v1", "0.3.2", "describe", R("seq-null-member"), null]);
+  writeExpect('r8-request-seq-null-member', { stage: 'decode', reason: 'shape' });
+}
+// r8 #9: an empty lint scope item is the semantic layer's lint-request
+// refusal (the ai-lint token grammar), never a decode-stage bound.
+r8Invalid('lint-scope-empty-item', lintRequest, d => d.lint_request.scope = ["src", ""], 'validate', 'lint-request');
 process.stdout.write(`${JSON.stringify({ ok: true, gate: "adapter-sdk-fixtures", written: written.length })}\n`);
