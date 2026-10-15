@@ -46,7 +46,10 @@ wire-shape-preserving minor increment (`0.2.16` → `1.3.0`, ADR-0014).
 ## One result, two views
 
 Human and JSON are two projections of the same normalized object. The JSON
-payload (`lekalo/inspect/v0.2.16`, identity `dev.lekalo.inspect@0.2.16`) is
+payload (`lekalo/inspect/v0.8.0`, identity `dev.lekalo.inspect@0.8.0`; the
+0.8.0 successor admits Model 0.8.0 sources and their typed
+relation/uniqueness invariants while every 0.2.16 source stays
+inspectable with its own source-dependent identity) is
 compact UTF-8 with a fixed top-level and section wire order:
 
 1. `schemaVersion`, `identity`, `modelVersion`, `project`, `selector`,

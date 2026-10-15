@@ -163,6 +163,11 @@ impl EffectRef {
         })
     }
 
+    /// The exact bounded subject identity for same-compilation owner joins.
+    pub(crate) fn subject(&self) -> &str {
+        &self.subject
+    }
+
     /// The closed kind key.
     pub(crate) const fn kind_key(&self) -> &'static str {
         self.kind_key

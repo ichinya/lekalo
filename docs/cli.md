@@ -1140,6 +1140,15 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo adapter test` | `lekalo adapter test [OPTIONS] [PROGRAM_ARGS]...` | [reference](adapter-conformance.md) |
 | `lekalo adapter trust` | `lekalo adapter trust [OPTIONS] --level <LEVEL> <ID>` | [reference](adapter-install.md) |
 | `lekalo adapter update` | `lekalo adapter update [OPTIONS] <ID>` | [reference](adapter-install.md) |
+| `lekalo adoption` | `lekalo adoption [OPTIONS] <COMMAND>` | [reference](adoption.md) |
+| `lekalo adoption analyze` | `lekalo adoption analyze [OPTIONS]` | [reference](adoption.md) |
+| `lekalo adoption apply` | `lekalo adoption apply [OPTIONS] --plan <FILE> --verification <FILE> --confirm <DIGEST>` | [reference](adoption.md) |
+| `lekalo adoption confirm` | `lekalo adoption confirm [OPTIONS]` | [reference](adoption.md) |
+| `lekalo adoption coverage` | `lekalo adoption coverage [OPTIONS]` | [reference](adoption.md) |
+| `lekalo adoption recovery` | `lekalo adoption recovery [OPTIONS]` | [reference](adoption.md) |
+| `lekalo adoption refactor` | `lekalo adoption refactor [OPTIONS] --verification <FILE>` | [reference](adoption.md) |
+| `lekalo adoption rollback` | `lekalo adoption rollback [OPTIONS] --receipt <FILE>` | [reference](adoption.md) |
+| `lekalo adoption verify` | `lekalo adoption verify [OPTIONS] --plan <FILE> --verification <FILE>` | [reference](adoption.md) |
 | `lekalo ai-lint` | `lekalo ai-lint [OPTIONS]` | [reference](ai-lint.md) |
 | `lekalo architecture-profile` | `lekalo architecture-profile [OPTIONS] <COMMAND>` | [reference](architecture-profile.md) |
 | `lekalo architecture-profile assess` | `lekalo architecture-profile assess [OPTIONS] <--module <MODULE>\|--all>` | [reference](architecture-profile.md) |
@@ -1185,6 +1194,7 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo expressions eval` | `lekalo expressions eval [OPTIONS] --vectors <FILE> <PATH>` | [reference](expressions.md) |
 | `lekalo expressions render` | `lekalo expressions render [OPTIONS] --target <TARGET> <PATH>` | [reference](expressions.md) |
 | `lekalo expressions validate` | `lekalo expressions validate [OPTIONS] <PATH>` | [reference](expressions.md) |
+| `lekalo format` | `lekalo format [OPTIONS] [PATH]` | [reference](format.md) |
 | `lekalo generate` | `lekalo generate [OPTIONS] [PROGRAM_ARGS]...` | [reference](orchestration.md) |
 | `lekalo graph` | `lekalo graph [OPTIONS] <COMMAND>` | [reference](graph.md) |
 | `lekalo graph callers` | `lekalo graph callers [OPTIONS] <SYMBOL>` | [reference](graph.md) |
@@ -1212,6 +1222,16 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo inspect` | `lekalo inspect [OPTIONS] <SYMBOL>` | [reference](inspect.md) |
 | `lekalo load` | `lekalo load [OPTIONS]` | [reference](loader.md) |
 | `lekalo lock` | `lekalo lock [OPTIONS] [PROGRAM_ARGS]...` | [reference](lockfile.md) |
+| `lekalo managed` | `lekalo managed [OPTIONS] <COMMAND>` | [reference](managed-mode.md) |
+| `lekalo managed apply` | `lekalo managed apply [OPTIONS] --plan <FILE> --coverage <FILE> --ownership <FILE>` | [reference](managed-mode.md) |
+| `lekalo managed authority` | `lekalo managed authority [OPTIONS] --module <MODULE>` | [reference](managed-mode.md) |
+| `lekalo managed check` | `lekalo managed check [OPTIONS] --ownership <FILE>` | [reference](managed-mode.md) |
+| `lekalo managed equivalence` | `lekalo managed equivalence [OPTIONS] --evidence <FILE>` | [reference](managed-mode.md) |
+| `lekalo managed plan` | `lekalo managed plan [OPTIONS] --to <MODE> --ownership <FILE> --coverage <FILE> --module <MODULE> --target <TARGET>` | [reference](managed-mode.md) |
+| `lekalo managed recover` | `lekalo managed recover [OPTIONS]` | [reference](managed-mode.md) |
+| `lekalo managed resolve` | `lekalo managed resolve [OPTIONS] --path <PATH>` | [reference](managed-mode.md) |
+| `lekalo managed rollback` | `lekalo managed rollback [OPTIONS] --to <DIGEST>` | [reference](managed-mode.md) |
+| `lekalo managed upgrade-plan` | `lekalo managed upgrade-plan [OPTIONS] --module <MODULE> --target <TARGET> --ownership <FILE> --base <FILE> --candidate <FILE>` | [reference](managed-mode.md) |
 | `lekalo mcp` | `lekalo mcp [OPTIONS] <COMMAND>` | [reference](mcp.md) |
 | `lekalo mcp describe` | `lekalo mcp describe [OPTIONS]` | [reference](mcp.md) |
 | `lekalo mcp serve` | `lekalo mcp serve [OPTIONS]` | [reference](mcp.md) |
@@ -1220,6 +1240,14 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo metrics status` | `lekalo metrics status [OPTIONS] --scope <TOKEN> <EXPORT_ID>` | [reference](metrics-export.md) |
 | `lekalo migrate` | `lekalo migrate [OPTIONS]` | [reference](versioning.md) |
 | `lekalo module` | `lekalo module [OPTIONS] <COMMAND>` | [reference](bootstrap.md) |
+| `lekalo module api` | `lekalo module api [OPTIONS] <COMMAND>` | [reference](bootstrap.md) |
+| `lekalo module api check` | `lekalo module api check [OPTIONS] --api <PATH>` | [reference](bootstrap.md) |
+| `lekalo module api consumers` | `lekalo module api consumers [OPTIONS] --api <PATH> <MODULE>` | [reference](bootstrap.md) |
+| `lekalo module api context` | `lekalo module api context [OPTIONS] --consumer <MODULE> --uses <IDS> --budget <TOKENS> <PUBLIC>` | [reference](bootstrap.md) |
+| `lekalo module api diff` | `lekalo module api diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](bootstrap.md) |
+| `lekalo module api export` | `lekalo module api export [OPTIONS] --api <PATH> <MODULE>` | [reference](bootstrap.md) |
+| `lekalo module api lock` | `lekalo module api lock [OPTIONS] --api <PATH> --module <MODULE> --consumer <MODULE>` | [reference](bootstrap.md) |
+| `lekalo module api mapping` | `lekalo module api mapping [OPTIONS] --in-process <PATH> --service <PATH> <PUBLIC>` | [reference](bootstrap.md) |
 | `lekalo module new` | `lekalo module new [OPTIONS] <ID>` | [reference](bootstrap.md) |
 | `lekalo native` | `lekalo native [OPTIONS] <COMMAND>` | [reference](native-gates.md) |
 | `lekalo native run` | `lekalo native run [OPTIONS] <PLAN>` | [reference](native-gates.md) |
@@ -1245,6 +1273,10 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo openapi diff` | `lekalo openapi diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](openapi.md) |
 | `lekalo openapi inspect` | `lekalo openapi inspect [OPTIONS] --endpoint <SYMBOL> <PATH>` | [reference](openapi.md) |
 | `lekalo openapi render` | `lekalo openapi render [OPTIONS] <PATH>` | [reference](openapi.md) |
+| `lekalo pilot` | `lekalo pilot [OPTIONS] <COMMAND>` | [reference](m8/issue-51-implementation.md) |
+| `lekalo pilot admit` | `lekalo pilot admit [OPTIONS] <PATH> <COMPOSITION>` | [reference](m8/issue-51-implementation.md) |
+| `lekalo pilot validate` | `lekalo pilot validate [OPTIONS] <PATH>` | [reference](m8/issue-51-implementation.md) |
+| `lekalo portability` | `lekalo portability [OPTIONS]` | [reference](portability.md) |
 | `lekalo privacy` | `lekalo privacy [OPTIONS] <COMMAND>` | [reference](privacy-runtime.md) |
 | `lekalo privacy evaluate` | `lekalo privacy evaluate [OPTIONS] --decision <FILE>` | [reference](privacy-runtime.md) |
 | `lekalo privacy export` | `lekalo privacy export [OPTIONS] --destination <SPEC> <ARTIFACT>` | [reference](privacy-runtime.md) |
@@ -1283,6 +1315,12 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo storage-profile diff` | `lekalo storage-profile diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](storage-engine-profile.md) |
 | `lekalo storage-profile portability` | `lekalo storage-profile portability [OPTIONS] <BASE> <TARGET>` | [reference](storage-engine-profile.md) |
 | `lekalo storage-profile validate` | `lekalo storage-profile validate [OPTIONS] <PATH>` | [reference](storage-engine-profile.md) |
+| `lekalo task-links` | `lekalo task-links [OPTIONS] <COMMAND>` | [reference](task-external-links.md) |
+| `lekalo task-links execute` | `lekalo task-links execute [OPTIONS] <PATH>` | [reference](task-external-links.md) |
+| `lekalo task-links impact` | `lekalo task-links impact [OPTIONS] --attachment <PATH> <CONTRACT>` | [reference](task-external-links.md) |
+| `lekalo task-links inspect` | `lekalo task-links inspect [OPTIONS] --attachment <PATH> <SYMBOL>` | [reference](task-external-links.md) |
+| `lekalo task-links portability` | `lekalo task-links portability [OPTIONS] --from-profile <PATH> --to-profile <PATH> <PATH>` | [reference](task-external-links.md) |
+| `lekalo task-links validate` | `lekalo task-links validate [OPTIONS] <PATH>` | [reference](task-external-links.md) |
 | `lekalo trace` | `lekalo trace [OPTIONS] <COMMAND>` | [reference](trace-manifest.md) |
 | `lekalo trace assess` | `lekalo trace assess [OPTIONS] --evidence <PATH> <PATH>` | [reference](trace-manifest.md) |
 | `lekalo trace collect` | `lekalo trace collect [OPTIONS]` | [reference](trace-manifest.md) |

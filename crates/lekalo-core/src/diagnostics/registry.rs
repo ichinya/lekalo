@@ -22,11 +22,49 @@ pub const REGISTRY_BYTES: &[u8] =
 pub const SUCCESSOR_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.6.5.json");
 
+/// The issue #94 union successor: the current successor plus the closed
+/// `format.*` family. Predecessor producers keep their exact pins.
+///
+/// After the milestone integration merges this file also carries the
+/// issue #136 `adoption.*`, issue #19 `portability.*`, issue #51
+/// `worklog-changelog.*`, and issue #41 `managed.*` families (the
+/// grand union registry).
+pub const FORMAT_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
+pub const ADOPTION_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
+/// The issue #19 M8 union successor registry bytes (the same merged
+/// union registry as the other 0.8.0 family constants).
+pub const M8_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
+/// The issue #51 union successor bytes (the same merged union registry).
+pub const PILOT_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
+/// The issue #113 union successor bytes: the merged M8 union plus the
+/// `module-api.*` family. All family constants name the same merged
+/// registry document.
+pub const MODULE_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
+/// The issue #41 managed union successor bytes (the same merged union
+/// registry as the other 0.8.0 family constants).
+pub const MANAGED_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
+/// The issue #52 union successor bytes (the same merged union registry
+/// as the other 0.8.0 family constants).
+pub const TASKLINK_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
+/// The issue #33 MCP union successor bytes: the merged M8 union plus
+/// the `mcp.*` family. All family constants name the same merged
+/// registry document.
 pub const MCP_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
-/// Issue #94 and #136 share the same immutable 0.8.0 grand union.
-pub const FORMAT_REGISTRY_BYTES: &[u8] = MCP_REGISTRY_BYTES;
-pub const ADOPTION_REGISTRY_BYTES: &[u8] = MCP_REGISTRY_BYTES;
 
 /// Why the embedded registry could not be trusted.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -165,9 +203,108 @@ impl DiagnosticRegistry {
         REGISTRY.as_ref().map_err(Clone::clone)
     }
 
-    /// The independently admitted issue #33 MCP union successor: the
-    /// 0.6.5 union plus the closed `mcp.*` family, never a runtime
-    /// extension of an earlier pin.
+    /// The issue #94 union successor (successor + `format.*` family).
+    ///
+    /// After the milestone integration merges this registry also carries
+    /// the issue #136 `adoption.*`, issue #19 `portability.*`, issue #51
+    /// `worklog-changelog.*`, and issue #41 `managed.*` families.
+    pub fn format_successor() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    FORMAT_REGISTRY_BYTES,
+                    super::version::FORMAT_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
+    /// The issue #136 union successor (the merged format, adoption,
+    /// portability, and worklog-changelog registry since the milestone
+    /// integration merges).
+    /// The issue #136 union successor (the merged `format.*` + `adoption.*`
+    /// + `portability.*` + `worklog-changelog.*` + `managed.*` registry
+    ///   since the milestone integration merges).
+    pub fn adoption() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    ADOPTION_REGISTRY_BYTES,
+                    super::version::ADOPTION_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
+    /// The issue #19 M8 union successor: the merged registry plus the
+    /// `portability.*` family (LEK-PORT-001..009). The new producer
+    /// explicitly selects this registry; frozen predecessor outputs retain
+    /// their pinned registries.
+    pub fn m8() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    M8_REGISTRY_BYTES,
+                    super::version::M8_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
+    /// The issue #51 union successor, never a runtime extension.
+    pub fn pilot() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    PILOT_REGISTRY_BYTES,
+                    super::version::PILOT_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
+    /// The issue #113 union successor: the merged M8 union plus the
+    /// `module-api.*` family. All successor constants parse the same
+    /// merged registry bytes.
+    pub fn module_successor() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    MODULE_REGISTRY_BYTES,
+                    super::version::MODULE_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
+    /// The issue #41 managed union successor, never a runtime extension.
+    /// Parses the same merged 0.8.0 union registry bytes.
+    pub fn managed() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    MANAGED_REGISTRY_BYTES,
+                    super::version::MANAGED_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
+    /// The issue #52 union successor, never a runtime extension. Parses
+    /// the same merged 0.8.0 union registry bytes.
+    pub fn tasklink_successor() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    TASKLINK_REGISTRY_BYTES,
+                    super::version::TASKLINK_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
+    /// The issue #33 MCP union successor: the merged M8 union plus the
+    /// `mcp.*` family, never a runtime extension of an earlier pin.
     pub fn mcp_successor() -> Result<&'static Self, RegistryError> {
         static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
             LazyLock::new(|| {
@@ -179,21 +316,23 @@ impl DiagnosticRegistry {
         REGISTRY.as_ref().map_err(Clone::clone)
     }
 
-    /// The merged issue #94 format family reads the same 0.8.0 union.
-    pub fn format_successor() -> Result<&'static Self, RegistryError> {
-        Self::mcp_successor()
-    }
-
-    /// The merged issue #136 adoption family reads the same 0.8.0 union.
-    pub fn adoption() -> Result<&'static Self, RegistryError> {
-        Self::mcp_successor()
-    }
-
     pub fn for_version(version: &str) -> Result<&'static Self, RegistryError> {
         match version {
             REGISTRY_VERSION => Self::embedded(),
             super::version::SUCCESSOR_REGISTRY_VERSION => Self::successor(),
-            super::version::MCP_REGISTRY_VERSION => Self::mcp_successor(),
+            // All eight family constants name the merged 0.8.0 union
+            // registry; either accessor parses the same bytes.
+            v if v == super::version::FORMAT_REGISTRY_VERSION
+                || v == super::version::ADOPTION_REGISTRY_VERSION
+                || v == super::version::M8_REGISTRY_VERSION
+                || v == super::version::PILOT_REGISTRY_VERSION
+                || v == super::version::MODULE_REGISTRY_VERSION
+                || v == super::version::MANAGED_REGISTRY_VERSION
+                || v == super::version::TASKLINK_REGISTRY_VERSION
+                || v == super::version::MCP_REGISTRY_VERSION =>
+            {
+                Self::module_successor()
+            }
             _ => Err(RegistryError::Unsupported),
         }
     }
@@ -342,5 +481,80 @@ impl EntryWire {
             allowed_fix_ids,
             lifecycle,
         })
+    }
+}
+
+#[cfg(test)]
+mod tasklink_tests {
+    use super::*;
+
+    #[test]
+    fn the_tasklink_successor_is_an_exact_union_of_the_084_successor() {
+        let mid = DiagnosticRegistry::successor().unwrap();
+        let new = DiagnosticRegistry::tasklink_successor().unwrap();
+        // The merged union registry also carries the format, adoption,
+        // portability, worklog-changelog, and managed families, so the
+        // exact-size assertion counts every landed family.
+        let tasklink_count = new
+            .entries()
+            .filter(|entry| entry.id().starts_with("tasklink."))
+            .count();
+        assert_eq!(tasklink_count, 8);
+        for entry in mid.entries() {
+            assert_eq!(new.entry(entry.id()), Some(entry));
+        }
+        for code in [
+            "LEK-TASKLINK-001",
+            "LEK-TASKLINK-002",
+            "LEK-TASKLINK-003",
+            "LEK-TASKLINK-004",
+            "LEK-TASKLINK-005",
+            "LEK-TASKLINK-006",
+            "LEK-TASKLINK-007",
+            "LEK-TASKLINK-008",
+        ] {
+            assert!(
+                new.entries().any(|entry| entry.code() == code),
+                "missing {code}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_registry_chain_resolves_every_accepted_version() {
+        assert_eq!(
+            DiagnosticRegistry::for_version("0.6.4")
+                .unwrap()
+                .registry_version(),
+            "0.6.4"
+        );
+        assert_eq!(
+            DiagnosticRegistry::for_version("0.6.5")
+                .unwrap()
+                .registry_version(),
+            "0.6.5"
+        );
+        assert_eq!(
+            DiagnosticRegistry::for_version("0.8.0")
+                .unwrap()
+                .registry_version(),
+            "0.8.0"
+        );
+        assert!(DiagnosticRegistry::for_version("0.9.0").is_err());
+    }
+
+    #[test]
+    fn a_tasklink_rule_builds_through_the_chain_and_keeps_its_pin() {
+        let data = crate::diagnostics::DataObject::new();
+        let diagnostic = crate::diagnostics::normalize::build(
+            "tasklink.relation-identity-invalid",
+            None,
+            None,
+            data,
+        )
+        .unwrap();
+        assert_eq!(diagnostic.registry_version, "0.8.0");
+        assert_eq!(diagnostic.code(), "LEK-TASKLINK-001");
+        assert_eq!(diagnostic.category(), crate::diagnostics::Category::Model);
     }
 }

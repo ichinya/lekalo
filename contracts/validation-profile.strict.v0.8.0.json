@@ -1,0 +1,158 @@
+{
+  "schema_version": "lekalo/validation-profile/v0.8.0",
+  "identity": "dev.lekalo.validation-profile@0.8.0",
+  "profile_id": "strict",
+  "version": "0.8.0",
+  "diagnostic_registry_version": "0.8.0",
+  "scope": "project",
+  "rules": [
+    {
+      "id": "module-api.consumer-incompatible",
+      "enabled": true
+    },
+    {
+      "id": "module-api.cross-module-write-forbidden",
+      "enabled": true
+    },
+    {
+      "id": "module-api.dependency-cycle",
+      "enabled": true
+    },
+    {
+      "id": "module-api.deprecation-window-violation",
+      "enabled": true
+    },
+    {
+      "id": "module-api.evidence-incomplete",
+      "enabled": true
+    },
+    {
+      "id": "module-api.import-undeclared",
+      "enabled": true
+    },
+    {
+      "id": "module-api.input-invalid",
+      "enabled": true
+    },
+    {
+      "id": "module-api.lock-stale",
+      "enabled": true
+    },
+    {
+      "id": "module-api.policy-denied",
+      "enabled": true
+    },
+    {
+      "id": "module-api.public-private-exposure",
+      "enabled": true
+    },
+    {
+      "id": "module-api.public-target-exposure",
+      "enabled": true
+    },
+    {
+      "id": "module-api.symbol-not-exported",
+      "enabled": true
+    },
+    {
+      "id": "module-api.version-policy-violation",
+      "enabled": true
+    },
+    {
+      "id": "module-api.version-unsupported",
+      "enabled": true
+    },
+    {
+      "id": "semantic.command-effect-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.command-effect-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.effect-emits-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.effect-emits-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.effect-resource-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.effect-resource-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.endpoint-operation-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.endpoint-operation-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.entity-identity-field-missing",
+      "enabled": true
+    },
+    {
+      "id": "semantic.policy-operation-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.policy-operation-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.portable-target-reference",
+      "enabled": true
+    },
+    {
+      "id": "semantic.public-output-private-type",
+      "enabled": true
+    },
+    {
+      "id": "semantic.query-read-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.query-read-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.scenario-operation-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.type-recursion",
+      "enabled": true
+    },
+    {
+      "id": "semantic.type-ref-kind-mismatch",
+      "enabled": true
+    },
+    {
+      "id": "semantic.type-ref-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "semantic.visibility-boundary-violation",
+      "enabled": true
+    },
+    {
+      "id": "validate.module-unresolved",
+      "enabled": true
+    },
+    {
+      "id": "validate.profile-invalid",
+      "enabled": true
+    },
+    {
+      "id": "validate.span-unavailable",
+      "enabled": true
+    }
+  ]
+}

@@ -56,11 +56,55 @@ pub const REGISTRY_VERSION: &str = "0.6.4";
 /// Opt-in issue #84 union successor. Predecessor producers keep their exact pins.
 pub const SUCCESSOR_REGISTRY_VERSION: &str = "0.6.5";
 
-/// The shared 0.8.0 grand union of the M8 `format.*`, `adoption.*`, and
-/// issue #33 `mcp.*` families. Existing producer pins remain unchanged.
+/// Issue #94 union successor: the 0.6.5 successor plus the closed
+/// `format.*` family (LEK-FORMAT-001..009). Predecessor producers keep
+/// their exact pins.
+pub const FORMAT_REGISTRY_VERSION: &str = "0.8.0";
+
+/// Opt-in issue #136 union successor: the brownfield adoption service's
+/// nine `adoption.*` rules join the full 0.6.5 union. Predecessor
+/// producer pins (the 0.6.4 default and the 0.6.5 architecture union)
+/// are preserved verbatim; the diagnostic item wire stays 0.2.16.
+///
+/// After the milestone integration merges, this is the same merged
+/// `format.*` + `adoption.*` + `portability.*` + `worklog-changelog.*`
+/// + `managed.*` + `tasklink.*` union registry as the other 0.8.0
+///   family constants.
+pub const ADOPTION_REGISTRY_VERSION: &str = "0.8.0";
+
+/// Issue #19 M8 union successor: the merged registry plus the nine
+/// `portability.*` diagnostics (LEK-PORT-001..009). The new producer
+/// explicitly selects this registry; frozen predecessor outputs retain
+/// their pinned registries.
+pub const M8_REGISTRY_VERSION: &str = "0.8.0";
+
+/// Issue #51 union successor: the pilot composition family
+/// (`worklog-changelog.*`, LEK-WC-001..007) on top of the merged union.
+/// Predecessor producers keep their exact pins.
+pub const PILOT_REGISTRY_VERSION: &str = "0.8.0";
+
+/// Issue #113 union successor: the accepted M8 union (`format.*` +
+/// `adoption.*` + `portability.*` + `worklog-changelog.*` + `managed.*`) plus the
+/// fourteen `module-api.*` rules (`LEK-MODULE-001..014`). Predecessor
+/// producers keep their exact pins; the union is additive end to end and
+/// names the same merged registry bytes as the other 0.8.0 family
+/// constants.
+pub const MODULE_REGISTRY_VERSION: &str = "0.8.0";
+
+/// Issue #41 managed union successor: the full integrated allocation union
+/// plus the closed `managed.*` family. Predecessor producer pins are
+/// unchanged; managed producers pin this registry.
+pub const MANAGED_REGISTRY_VERSION: &str = "0.8.0";
+
+/// The issue #52 union successor: the merged union plus the eight
+/// `tasklink.*` declarations (LEK-TASKLINK-001..008) of the task-links
+/// pilot. Earlier producers keep their exact registry pins end to end.
+pub const TASKLINK_REGISTRY_VERSION: &str = "0.8.0";
+
+/// The issue #33 MCP union successor: the merged M8 union plus the
+/// eleven `mcp.*` diagnostics (LEK-MCP-001..011) of the read-only MCP
+/// server. Earlier producers keep their exact registry pins end to end.
 pub const MCP_REGISTRY_VERSION: &str = "0.8.0";
-pub const FORMAT_REGISTRY_VERSION: &str = MCP_REGISTRY_VERSION;
-pub const ADOPTION_REGISTRY_VERSION: &str = MCP_REGISTRY_VERSION;
 
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,0 +1,399 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.managed-coverage-schema@0.8.0",
+  "title": "Lekalo managed-coverage 0.8.0",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/managed-coverage/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.managed-coverage@0.8.0"
+    },
+    "module": {
+      "$ref": "#/$defs/moduleRef"
+    },
+    "target": {
+      "$ref": "#/$defs/targetRef"
+    },
+    "recipe": {
+      "$ref": "#/$defs/reference"
+    },
+    "adapter": {
+      "$ref": "#/$defs/adapter"
+    },
+    "authority": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "model": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                "ir": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                "lock": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "model",
+                "ir",
+                "lock"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "absent"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/requirement"
+      },
+      "maxItems": 4096,
+      "minItems": 0
+    },
+    "extensions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/extensionCheck"
+      },
+      "maxItems": 64,
+      "minItems": 0
+    },
+    "complete": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "module",
+    "target",
+    "recipe",
+    "adapter",
+    "authority",
+    "requirements",
+    "extensions",
+    "complete"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "adapter": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "packageDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "protocol": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "entry",
+        "packageDigest",
+        "protocol"
+      ],
+      "additionalProperties": false
+    },
+    "extensionCheck": {
+      "type": "object",
+      "properties": {
+        "symbol": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "binding": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "contractDigest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "validated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "symbol",
+        "binding",
+        "contractDigest",
+        "validated"
+      ],
+      "additionalProperties": false
+    },
+    "moduleRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:/@-]+$",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "requirement": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.:/@-]+$",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "kind": {
+          "enum": [
+            "assertion",
+            "command",
+            "effect",
+            "entity",
+            "event",
+            "expression",
+            "invariant",
+            "job",
+            "policy",
+            "port",
+            "query",
+            "scenario",
+            "transaction"
+          ]
+        },
+        "support": {
+          "enum": [
+            "full",
+            "partial",
+            "unsupported",
+            "unknown"
+          ]
+        },
+        "witness": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "absent"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "projection": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.:/@-]+$",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "to": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.:/@-]+$",
+                "minLength": 1,
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "from",
+              "to"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 64,
+          "minItems": 0
+        },
+        "sample": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "object",
+                  "properties": {
+                    "input": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "maxProperties": 32
+                    },
+                    "output": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "maxProperties": 32
+                    }
+                  },
+                  "required": [
+                    "input",
+                    "output"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "const": "absent"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "support",
+        "witness",
+        "projection",
+        "sample"
+      ],
+      "additionalProperties": false
+    },
+    "targetRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:/@-]+$",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  }
+}

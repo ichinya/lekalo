@@ -8,6 +8,7 @@
 
 import { createRequire } from "node:module";
 import { readdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -153,7 +154,15 @@ for (const [name, identity] of [
 
 // ---- The diagnostic-registry union successor. -----------------------------
 
-const registry064 = read("contracts/diagnostic-registry.v0.6.4.json");
+// The 0.8.0 allocation is the M8 grand union: every landed family
+// (#94 format, #136 adoption, #19 portability, #51 worklog-changelog,
+// #41 managed, #113 module-api, #52 tasklink) plus #33's own mcp.*
+// additions — never a stale predecessor+own subset (r6 F6/omp F1:
+// `registry065.length + 31` pinned a pre-merge state and went stale).
+// The union guard mirrors `scripts/check-registry-union.mjs`: against
+// every accessible live-line ref the registry keeps every base entry id
+// and every base family, so a merge that drops a landed family fails
+// this gate instead of waiting for review.
 const registry065 = read("contracts/diagnostic-registry.v0.6.5.json");
 const registry080 = read("contracts/diagnostic-registry.v0.8.0.json");
 const registrySchema = read("contracts/diagnostic-registry.schema.v0.8.0.json");
@@ -164,14 +173,75 @@ if (!validateRegistry(registry080)) {
 if (registry080.schema_version !== "lekalo/diagnostic-registry/v0.8.0") {
   fail("registry-discriminator", registry080.schema_version);
 }
-// The 0.8.0 allocation is the M8 grand union: #94 format (11), #136
-// adoption (9), and #33 MCP (11), not three competing versions.
-if (registry080.entries.length !== registry065.entries.length + 31) {
-  fail("registry-size", {
-    v064: registry064.entries.length,
-    v065: registry065.entries.length,
-    v080: registry080.entries.length,
-  });
+// Union completeness, part 1 — the closed landed-family set: every M8
+// family that has landed on the integration line must resolve here
+// with its exact landed size, and this issue's own family must be
+// present exactly once per allocation.
+const LANDED_FAMILY_SIZES = {
+  "format.": 11,
+  "adoption.": 9,
+  "portability.": 9,
+  "worklog-changelog.": 7,
+  "managed.": 12,
+  "module-api.": 14,
+  "tasklink.": 8,
+  "mcp.": 11,
+};
+const familySizes = {};
+for (const entry of registry080.entries) {
+  const family = `${entry.id.split(".")[0]}.`;
+  familySizes[family] = (familySizes[family] ?? 0) + 1;
+}
+for (const [family, size] of Object.entries(LANDED_FAMILY_SIZES)) {
+  if (familySizes[family] !== size) {
+    fail("registry-family", { family, expected: size, actual: familySizes[family] ?? 0 });
+  }
+}
+// Union completeness, part 2 — live-line monotonicity: against the
+// accessible integration refs (ichinya/M8 and every parent of HEAD)
+// the working-tree registry keeps every base entry id and every base
+// family (the check-registry-union.mjs failure mode, asserted here so
+// the mcp gate itself refuses a stale merge).
+const ids080 = new Set(registry080.entries.map((entry) => entry.id));
+const families080 = new Set(Object.keys(familySizes));
+const registryAt = (ref) => {
+  try {
+    const out = execFileSync("git", ["show", `${ref}:contracts/diagnostic-registry.v0.8.0.json`], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      maxBuffer: 1 << 26,
+    });
+    return JSON.parse(out);
+  } catch {
+    return null;
+  }
+};
+const unionRefs = ["ichinya/M8"];
+try {
+  unionRefs.push(
+    ...execFileSync("git", ["rev-list", "--parents", "-n", "1", "HEAD"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    })
+      .trim()
+      .split(" ")
+      .slice(1),
+  );
+} catch {
+  // no git metadata (source export): part 1 still polices the families
+}
+for (const ref of unionRefs) {
+  const base = registryAt(ref);
+  if (!base) continue;
+  const missingEntries = base.entries.filter((entry) => !ids080.has(entry.id));
+  if (missingEntries.length) {
+    fail("registry-union-gap", { ref, missing: missingEntries.length, first: missingEntries[0]?.id });
+  }
+  const missingFamilies = [...new Set(base.entries.map((entry) => `${entry.id.split(".")[0]}.`))]
+    .filter((family) => !families080.has(family));
+  if (missingFamilies.length) {
+    fail("registry-union-family-gap", { ref, missing: missingFamilies });
+  }
 }
 const byId065 = new Map(registry065.entries.map((entry) => [entry.id, entry]));
 for (const entry of registry080.entries) {

@@ -1531,7 +1531,7 @@ fn build_resource(
             // reachable from a read of this family without the explicit
             // changed-mode grant.
             let result = if session.catalog.core.admits_git_changed_mode() {
-                crate::run_status(project)
+                crate::run_status(project, None)
             } else {
                 crate::run_status_without_git(project)
             };

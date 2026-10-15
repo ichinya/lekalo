@@ -54,10 +54,14 @@ pub(crate) fn build(
     let registry = if predecessor.entry(id).is_some() {
         predecessor
     } else {
-        let union = DiagnosticRegistry::successor().map_err(|_| BuildError::Registry)?;
-        if union.entry(id).is_some() {
-            union
+        let successor = DiagnosticRegistry::successor().map_err(|_| BuildError::Registry)?;
+        if successor.entry(id).is_some() {
+            successor
         } else {
+            // The merged 0.8.0 union registry covers the format, adoption,
+            // portability, worklog-changelog, managed, module-api,
+            // tasklink, and mcp families; every family accessor parses
+            // the same bytes.
             DiagnosticRegistry::mcp_successor().map_err(|_| BuildError::Registry)?
         }
     };

@@ -1,0 +1,14 @@
+{
+  "scenarioId": "tasklinks.scenario.identity_collision",
+  "issueVerbatim": "same external object cannot bind two tasks silently;",
+  "origin": "mock",
+  "steps": [
+    { "command": "tasklinks.attach_link", "actor": "identity.user", "identityTuple": "ws|inst-a|github-issues|issue|42", "task": "task-1" },
+    { "command": "tasklinks.attach_link", "actor": "identity.user", "identityTuple": "ws|inst-a|github-issues|issue|42", "task": "task-2", "expectError": "tasklinks.error.identity_already_bound" }
+  ],
+  "expects": [
+    { "kind": "error-code", "value": "tasklinks.error.identity_already_bound" },
+    { "kind": "link-count", "value": 1, "note": "no second link was created" },
+    { "kind": "positive-control", "note": "a different installation with the same external id stays distinct" }
+  ]
+}

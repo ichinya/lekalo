@@ -1,0 +1,313 @@
+{
+  "schemaVersion": "lekalo/task-links-integration/v0.8.0",
+  "identity": "dev.lekalo.task-links-integration@0.8.0",
+  "attachmentRevision": "sha256:8b608eac6d4a86357073b64c49fb526565eeb78fb6ae23358074d078b8aae6fb",
+  "projectId": "tasklinks",
+  "modelRef": {
+    "schemaVersion": "0.8.0",
+    "irDigest": "sha256:1b57dac24ac877caf5779a324d459ab08fa13e641e9c7e51599df1b9e04f8525"
+  },
+  "irRef": {
+    "identity": "dev.lekalo.ir@0.8.0",
+    "digest": "sha256:1b57dac24ac877caf5779a324d459ab08fa13e641e9c7e51599df1b9e04f8525"
+  },
+  "ownerContractPins": [
+    {
+      "family": "authorization",
+      "identity": "dev.lekalo.authorization@0.2.16",
+      "digest": "sha256:198c817ab80c7c5d6329cb6a00cc6446db4d1acf2ba8150adf350b66d2aa6583"
+    },
+    {
+      "family": "extended-effects",
+      "identity": "dev.lekalo.extended-effects@0.8.0",
+      "digest": "sha256:53701216301940cb9f25b53ff1c75ea365e0f7c63bdae214c37d38e922aad456"
+    },
+    {
+      "family": "invariant-transition",
+      "identity": "dev.lekalo.invariant-transition@0.2.16",
+      "digest": "sha256:cd2ee41d9ac2be6ca5789c82a16aadaeecfea5f89822e0dbc9e7ea47fa19e350"
+    },
+    {
+      "family": "storage-projection",
+      "identity": "dev.lekalo.storage-projection@0.4.0",
+      "digest": "sha256:b2f301096129c21fc856f848544a46eede6d98c1ec236c3d4f3045244b366843"
+    },
+    {
+      "family": "transaction-concurrency",
+      "identity": "dev.lekalo.transaction-concurrency@0.8.0",
+      "digest": "sha256:1babb65786a181a0897c8f0ba7ef1c5c1be2e4c42cbb3138444928cc52139b03"
+    }
+  ],
+  "entities": [
+    {
+      "entity": "tasklinks.task_external_link",
+      "identity": [
+        "link_id"
+      ],
+      "externalIdentity": true,
+      "description": "The typed link aggregate with independent inbound/outbound cursors"
+    },
+    {
+      "entity": "planner.task",
+      "identity": [
+        "task_id"
+      ],
+      "description": "The bound local task; links refer to it 0..N times"
+    }
+  ],
+  "relations": [
+    {
+      "id": "tasklinks.rel.task_links",
+      "entity": "tasklinks.task_external_link",
+      "target": "planner.task",
+      "localFields": [
+        "task_id"
+      ],
+      "targetFields": [
+        "task_id"
+      ],
+      "min": 1,
+      "max": 1,
+      "ownership": "local",
+      "onDetach": "retain-history",
+      "onDelete": "restrict",
+      "description": "Every link refers to exactly one local Task (link-to-one-Task); detach preserves history and the external object"
+    },
+    {
+      "id": "tasklinks.rel.task_owns_links",
+      "entity": "planner.task",
+      "target": "tasklinks.task_external_link",
+      "localFields": [
+        "task_id"
+      ],
+      "targetFields": [
+        "task_id"
+      ],
+      "min": 0,
+      "max": null,
+      "ownership": "external",
+      "onDetach": "retain-history",
+      "onDelete": "restrict",
+      "description": "One task owns zero or more external links (Task 0..N links); the link aggregate is owned by the tasklinks module"
+    },
+    {
+      "id": "tasklinks.rel.link_outbox",
+      "entity": "tasklinks.outbox_item",
+      "target": "tasklinks.task_external_link",
+      "localFields": [
+        "link_id"
+      ],
+      "targetFields": [
+        "link_id"
+      ],
+      "min": 0,
+      "max": null,
+      "ownership": "local",
+      "onDetach": "retain-history",
+      "onDelete": "detach",
+      "description": "Outbox intents are aggregate children; cancelling never deletes the link"
+    }
+  ],
+  "uniqueConstraints": [
+    {
+      "id": "tasklinks.uq_external_identity",
+      "entity": "tasklinks.task_external_link",
+      "fields": [
+        "workspace_id",
+        "installation_id",
+        "provider_id",
+        "object_type",
+        "external_id"
+      ],
+      "comparison": "exact-text",
+      "scope": "workspace-installation-provider-object-external-id",
+      "description": "The exact five-part identity tuple; no prefix index or collation may stand in for it"
+    }
+  ],
+  "providerContracts": [
+    {
+      "contractId": "tasklinks.provider_contract.primary",
+      "providerId": "github-issues",
+      "objectType": "issue",
+      "upstreamPin": "github-rest/2022-11-28",
+      "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requestSchemaRef": "tasklinks.primary_request",
+      "responseSchemaRef": "tasklinks.primary_response",
+      "errorSchemaRef": "tasklinks.primary_error",
+      "revisionOrdering": "comparable-total",
+      "remoteDedup": "receipt-reconciliation",
+      "description": "Public provider snapshot metadata; verified upstream pin, synthetic fixtures only"
+    },
+    {
+      "contractId": "tasklinks.provider_contract.secondary",
+      "providerId": "mock-secondary",
+      "objectType": "issue",
+      "upstreamPin": "mock-secondary/1",
+      "revision": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "requestSchemaRef": "tasklinks.secondary_request",
+      "responseSchemaRef": "tasklinks.secondary_response",
+      "errorSchemaRef": "tasklinks.secondary_error",
+      "revisionOrdering": "incomparable-declared",
+      "remoteDedup": "idempotency-key",
+      "description": "Fully synthetic secondary mock provider"
+    }
+  ],
+  "linkCapabilityRequirements": [
+    {
+      "capabilityId": "tasklinks.cap.issue_read",
+      "contractId": "tasklinks.provider_contract.primary",
+      "requirement": "required",
+      "revision": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "capabilityId": "tasklinks.cap.issue_write",
+      "contractId": "tasklinks.provider_contract.primary",
+      "requirement": "required",
+      "revision": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    {
+      "capabilityId": "tasklinks.cap.issue_read",
+      "contractId": "tasklinks.provider_contract.secondary",
+      "requirement": "required",
+      "revision": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "capabilityId": "tasklinks.cap.issue_write",
+      "contractId": "tasklinks.provider_contract.secondary",
+      "requirement": "optional",
+      "revision": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  ],
+  "fieldPolicies": [
+    {
+      "policyId": "tasklinks.policy.fp.inbound_canonical_allow",
+      "entity": "planner.task",
+      "direction": "inbound",
+      "decision": "allow",
+      "fields": [
+        "state",
+        "planned_for"
+      ],
+      "actor": "provider.event",
+      "policyRef": "tasklinks.policy.inbound_canonical_fields",
+      "revision": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "description": "Inbound ownership permits selected canonical task fields only"
+    },
+    {
+      "policyId": "tasklinks.policy.fp.planning_deny",
+      "entity": "planner.task",
+      "direction": "inbound",
+      "decision": "deny",
+      "fields": [
+        "planned_for",
+        "position",
+        "focused_at",
+        "paused_at"
+      ],
+      "actor": "provider.event",
+      "policyRef": "tasklinks.policy.planning_fields_protected",
+      "revision": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "description": "Planner.user_task_planning fields are explicitly forbidden both live and in resolution"
+    },
+    {
+      "policyId": "tasklinks.policy.fp.outbound_allow",
+      "entity": "planner.task",
+      "direction": "outbound",
+      "decision": "allow",
+      "fields": [
+        "state",
+        "title"
+      ],
+      "actor": "identity.user",
+      "policyRef": "tasklinks.policy.request_action_member",
+      "revision": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "description": "Outbound payload construction is an allowlist projection after the decision"
+    }
+  ],
+  "actionPolicies": [
+    {
+      "policyId": "tasklinks.policy.ap.request_action",
+      "action": "tasklinks.request_action",
+      "decision": "allow",
+      "actor": "identity.user",
+      "capabilityRef": "tasklinks.cap.issue_write",
+      "policyRef": "tasklinks.policy.request_action_member",
+      "revision": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    {
+      "policyId": "tasklinks.policy.ap.ingest_event",
+      "action": "tasklinks.ingest_event",
+      "decision": "allow",
+      "actor": "provider.event",
+      "capabilityRef": "tasklinks.cap.issue_read",
+      "policyRef": "tasklinks.policy.inbound_canonical_fields",
+      "revision": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    {
+      "policyId": "tasklinks.policy.ap.resolve_conflict",
+      "action": "tasklinks.resolve_conflict",
+      "decision": "allow",
+      "actor": "identity.user",
+      "policyRef": "tasklinks.policy.resolve_conflict_member",
+      "revision": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  ],
+  "operationBindings": [
+    {
+      "operation": "tasklinks.request_action",
+      "action": "tasklinks.request_action",
+      "capabilityRef": "tasklinks.cap.issue_write",
+      "actionPolicyRef": "tasklinks.policy.ap.request_action",
+      "effectRef": "tasklinks.effect.write_outbox",
+      "classification": "public",
+      "timeoutMs": 5000,
+      "retryGuarantee": "idempotency-key"
+    },
+    {
+      "operation": "tasklinks.ingest_event",
+      "action": "tasklinks.ingest_event",
+      "capabilityRef": "tasklinks.cap.issue_read",
+      "actionPolicyRef": "tasklinks.policy.ap.ingest_event",
+      "effectRef": "tasklinks.effect.record_receipt",
+      "classification": "public",
+      "timeoutMs": 5000,
+      "retryGuarantee": "idempotency-key"
+    },
+    {
+      "operation": "tasklinks.resolve_conflict",
+      "action": "tasklinks.resolve_conflict",
+      "capabilityRef": "tasklinks.cap.issue_read",
+      "actionPolicyRef": "tasklinks.policy.ap.resolve_conflict",
+      "effectRef": "tasklinks.effect.resolve_conflict",
+      "classification": "internal",
+      "timeoutMs": 5000,
+      "retryGuarantee": "idempotency-key"
+    }
+  ],
+  "deliveryRules": {
+    "outboxStates": [
+      "pending",
+      "leased",
+      "accepted_pending_ack",
+      "delivered",
+      "retry_wait",
+      "conflicted",
+      "cancelled",
+      "dead_letter",
+      "unknown_delivery"
+    ],
+    "maxAttempts": 5,
+    "backoffMs": 100,
+    "leaseMs": 30000,
+    "networkInsideTransaction": false,
+    "externalDeleteImplicit": false,
+    "uncertaintyPolicy": "report-unknown-reconcile"
+  },
+  "contributions": {
+    "graph": true,
+    "impact": true,
+    "inspect": true,
+    "scenarios": true,
+    "effectTrace": true
+  }
+}

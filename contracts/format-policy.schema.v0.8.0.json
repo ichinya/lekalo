@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.format-policy-schema@0.8.0",
+  "title": "Lekalo format-policy 0.8.0",
+  "description": "Issue #94: the closed, deterministic canonical-source policy. Built-in pinned policy; no user style configuration exists in the first increment.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/format-policy/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.format-policy@0.8.0"
+    },
+    "encoding": {
+      "const": "utf-8-no-bom"
+    },
+    "lineEnding": {
+      "const": "lf"
+    },
+    "finalNewline": {
+      "const": true
+    },
+    "indent": {
+      "type": "object",
+      "properties": {
+        "style": { "const": "space" },
+        "width": { "const": 2 }
+      },
+      "required": ["style", "width"],
+      "additionalProperties": false
+    },
+    "quotes": {
+      "const": "double"
+    },
+    "scalars": {
+      "type": "object",
+      "properties": {
+        "booleans": { "const": "lowercase" },
+        "null": { "const": "lowercase" },
+        "integers": { "const": "base10" },
+        "strings": { "const": "double-quoted-escaped" }
+      },
+      "required": ["booleans", "null", "integers", "strings"],
+      "additionalProperties": false
+    },
+    "collections": {
+      "type": "object",
+      "properties": {
+        "style": { "const": "block" },
+        "empty": { "const": "json-inline-or-refuse" },
+        "sequenceMappingEntry": { "const": "dash-aligned" }
+      },
+      "required": ["style", "empty", "sequenceMappingEntry"],
+      "additionalProperties": false
+    },
+    "ordering": {
+      "type": "object",
+      "properties": {
+        "mappingKeys": { "const": "utf8-bytes-within-groups" },
+        "definitions": { "const": "semantic-id-within-groups" },
+        "setLists": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "member": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "ordering": { "const": "utf8-bytes" }
+            },
+            "required": ["member", "ordering"],
+            "additionalProperties": false
+          },
+          "maxItems": 16
+        },
+        "groupPartition": { "const": "blank-line-run" }
+      },
+      "required": ["mappingKeys", "definitions", "setLists", "groupPartition"],
+      "additionalProperties": false
+    },
+    "trivia": {
+      "type": "object",
+      "properties": {
+        "comments": { "const": "preserve-or-refuse" },
+        "blankRuns": { "const": "collapse-to-one" },
+        "headerFooter": { "const": "document-owned" }
+      },
+      "required": ["comments", "blankRuns", "headerFooter"],
+      "additionalProperties": false
+    },
+    "paths": {
+      "type": "object",
+      "properties": {
+        "canonicalFields": { "const": "owner-declared-only" },
+        "repair": { "const": "never" }
+      },
+      "required": ["canonicalFields", "repair"],
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "maxFiles": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+        "maxCandidateTotalBytes": { "type": "integer", "minimum": 1, "maximum": 1073741824 },
+        "maxLossRows": { "type": "integer", "minimum": 1, "maximum": 4096 },
+        "maxDocumentBytes": { "type": "integer", "minimum": 1, "maximum": 1073741824 }
+      },
+      "required": ["maxFiles", "maxCandidateTotalBytes", "maxLossRows", "maxDocumentBytes"],
+      "additionalProperties": false
+    },
+    "modelVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "digestRecipe": {
+      "type": "object",
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "input": { "const": "canonical-compact-json-excluding-policyDigest" }
+      },
+      "required": ["algorithm", "input"],
+      "additionalProperties": false
+    },
+    "policyDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "schema_version",
+    "identity",
+    "encoding",
+    "lineEnding",
+    "finalNewline",
+    "indent",
+    "quotes",
+    "scalars",
+    "collections",
+    "ordering",
+    "trivia",
+    "paths",
+    "limits",
+    "modelVersion",
+    "digestRecipe",
+    "policyDigest"
+  ],
+  "additionalProperties": false
+}

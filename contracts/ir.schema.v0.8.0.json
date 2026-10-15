@@ -1,0 +1,1138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.ir-schema@0.8.0",
+  "title": "Lekalo compiled-IR schema v1 (0.8.0 successor)",
+  "description": "The explicit closed schema of the canonical compiled IR for Model 0.8.0 sources (contract dev.lekalo.ir@0.8.0): compact JSON, byte-sorted object keys, semantic-ID-ordered definitions and modules, and the successor's typed relation and secondary-uniqueness facts carried on entity definitions. Every definition kind is a closed union member: exactly the members its compiler emits, no fewer and no more. A 0.2.16 source never produces this contract: its IR stays dev.lekalo.ir@0.2.16 with byte-identical canonical bytes and no relation or uniqueness members. No alias under 0.2.16 exists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "definitions",
+    "modelVersion",
+    "modules"
+  ],
+  "properties": {
+    "contract": {
+      "const": "dev.lekalo.ir@0.8.0"
+    },
+    "modelVersion": {
+      "const": "0.8.0"
+    },
+    "definitions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/definition"
+      }
+    },
+    "modules": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/module"
+      }
+    },
+    "project": {
+      "$ref": "#/$defs/project"
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,2}$",
+      "minLength": 3,
+      "maxLength": 191
+    },
+    "moduleId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "projectId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "fieldName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "targetName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+    },
+    "boundedText": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "typeExpression": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ref"
+          ],
+          "properties": {
+            "ref": {
+              "$ref": "#/$defs/semanticId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "list"
+          ],
+          "properties": {
+            "list": {
+              "$ref": "#/$defs/typeExpression"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "optional"
+          ],
+          "properties": {
+            "optional": {
+              "$ref": "#/$defs/typeExpression"
+            }
+          }
+        }
+      ]
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "description": {
+          "$ref": "#/$defs/boundedText"
+        },
+        "name": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "required": {
+          "const": true
+        },
+        "type": {
+          "$ref": "#/$defs/typeExpression"
+        }
+      }
+    },
+    "enumValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "description": {
+          "$ref": "#/$defs/boundedText"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "target",
+        "localFields",
+        "targetFields",
+        "min",
+        "max",
+        "ownership",
+        "onDetach",
+        "onDelete"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,3}$",
+          "minLength": 3,
+          "maxLength": 255
+        },
+        "target": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "localFields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/fieldName"
+          }
+        },
+        "targetFields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/fieldName"
+          }
+        },
+        "min": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "max": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "The member is required in the source document and carried in the IR; null is the explicit unbounded spelling."
+        },
+        "ownership": {
+          "enum": [
+            "local",
+            "external",
+            "shared"
+          ]
+        },
+        "onDetach": {
+          "enum": [
+            "retain-history",
+            "forbid"
+          ]
+        },
+        "onDelete": {
+          "enum": [
+            "restrict",
+            "detach"
+          ]
+        },
+        "description": {
+          "$ref": "#/$defs/boundedText"
+        }
+      }
+    },
+    "uniqueConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "fields",
+        "comparison",
+        "scope"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,3}$",
+          "minLength": 3,
+          "maxLength": 255
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/fieldName"
+          }
+        },
+        "comparison": {
+          "enum": [
+            "exact-text",
+            "declared-normalization"
+          ]
+        },
+        "normalizationRef": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "description": {
+          "$ref": "#/$defs/boundedText"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "comparison": {
+                "const": "declared-normalization"
+              }
+            },
+            "required": [
+              "comparison"
+            ]
+          },
+          "then": {
+            "properties": {
+              "normalizationRef": {
+                "$ref": "#/$defs/semanticId"
+              }
+            },
+            "required": [
+              "normalizationRef"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "normalizationRef"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "definitionCommon": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "$ref": "#/$defs/boundedText"
+        },
+        "derived_from": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z0-9][A-Z0-9._-]{0,127}$"
+          }
+        },
+        "portability": {
+          "enum": [
+            "target-specific",
+            "portable"
+          ]
+        },
+        "renamed_from": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "visibility": {
+          "enum": [
+            "project",
+            "module",
+            "public"
+          ]
+        }
+      }
+    },
+    "definition": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/irScalar"
+        },
+        {
+          "$ref": "#/$defs/irEnum"
+        },
+        {
+          "$ref": "#/$defs/irValueObject"
+        },
+        {
+          "$ref": "#/$defs/irEntity"
+        },
+        {
+          "$ref": "#/$defs/irCommand"
+        },
+        {
+          "$ref": "#/$defs/irQuery"
+        },
+        {
+          "$ref": "#/$defs/irPolicy"
+        },
+        {
+          "$ref": "#/$defs/irEvent"
+        },
+        {
+          "$ref": "#/$defs/irEffect"
+        },
+        {
+          "$ref": "#/$defs/irEndpoint"
+        },
+        {
+          "$ref": "#/$defs/irScenario"
+        },
+        {
+          "$ref": "#/$defs/irTargetBinding"
+        }
+      ]
+    },
+    "irScalar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "base",
+        "id",
+        "kind",
+        "version"
+      ],
+      "properties": {
+        "base": {
+          "enum": [
+            "string",
+            "number",
+            "boolean",
+            "date",
+            "datetime",
+            "uuid",
+            "uri"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "scalar"
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    },
+    "irEnum": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "values",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "enum"
+        },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/enumValue"
+          }
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    },
+    "irValueObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fields",
+        "id",
+        "kind",
+        "version"
+      ],
+      "properties": {
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "value-object"
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    },
+    "irEntity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fields",
+        "id",
+        "identity",
+        "kind",
+        "version"
+      ],
+      "properties": {
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "identity": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/fieldName"
+          }
+        },
+        "kind": {
+          "const": "entity"
+        },
+        "relations": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/relation"
+          }
+        },
+        "uniqueConstraints": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/uniqueConstraint"
+          }
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    },
+    "irCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "version"
+      ],
+      "properties": {
+        "effects": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "input": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "kind": {
+          "const": "command"
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    },
+    "irQuery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "query"
+        },
+        "reads": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "returns": {
+          "$ref": "#/$defs/typeExpression"
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    },
+    "irPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "applies_to",
+        "decision",
+        "id",
+        "kind",
+        "version"
+      ],
+      "properties": {
+        "applies_to": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "policy"
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    },
+    "irEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "event"
+        },
+        "payload": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    },
+    "irEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entity",
+        "id",
+        "kind",
+        "operation",
+        "version"
+      ],
+      "properties": {
+        "emits": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "entity": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "effect"
+        },
+        "operation": {
+          "enum": [
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    },
+    "irEndpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "invokes",
+        "kind",
+        "method",
+        "path",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "invokes": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "endpoint"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 512,
+          "pattern": "^(/[a-z0-9:_{}-]+)+$"
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    },
+    "irScenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "summary",
+        "version"
+      ],
+      "properties": {
+        "covers": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "scenario"
+        },
+        "summary": {
+          "$ref": "#/$defs/boundedText"
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    },
+    "irTargetBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "target",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "target-binding"
+        },
+        "target": {
+          "$ref": "#/$defs/targetName"
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/moduleId"
+        },
+        "imports": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/moduleId"
+          }
+        },
+        "kind": {
+          "const": "module"
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    },
+    "renameHistoryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "definition_version",
+        "from",
+        "to"
+      ],
+      "properties": {
+        "definition_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "from": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "note": {
+          "$ref": "#/$defs/boundedText"
+        },
+        "same_identity": {
+          "const": true
+        },
+        "to": {
+          "$ref": "#/$defs/semanticId"
+        }
+      }
+    },
+    "tombstone": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "reason",
+            "replaced_by",
+            "since"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/semanticId"
+            },
+            "reason": {
+              "const": "replaced"
+            },
+            "replaced_by": {
+              "$ref": "#/$defs/semanticId"
+            },
+            "since": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "reason",
+            "since"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/semanticId"
+            },
+            "reason": {
+              "const": "deleted"
+            },
+            "since": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      ]
+    },
+    "idRegistry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rename_history": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/renameHistoryEntry"
+          }
+        },
+        "tombstones": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/tombstone"
+          }
+        }
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/projectId"
+        },
+        "id_registry": {
+          "$ref": "#/$defs/idRegistry"
+        },
+        "kind": {
+          "const": "project"
+        },
+        "description": {
+          "$ref": "#/$defs/definitionCommon/properties/description"
+        },
+        "derived_from": {
+          "$ref": "#/$defs/definitionCommon/properties/derived_from"
+        },
+        "portability": {
+          "$ref": "#/$defs/definitionCommon/properties/portability"
+        },
+        "renamed_from": {
+          "$ref": "#/$defs/definitionCommon/properties/renamed_from"
+        },
+        "version": {
+          "$ref": "#/$defs/definitionCommon/properties/version"
+        },
+        "visibility": {
+          "$ref": "#/$defs/definitionCommon/properties/visibility"
+        }
+      }
+    }
+  }
+}

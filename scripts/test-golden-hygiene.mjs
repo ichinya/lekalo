@@ -72,7 +72,9 @@ const patterns = [
   { name: "jwt", re: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/ },
   { name: "aws-access-key", re: /AKIA[0-9A-Z]{16}/ },
   { name: "private-key-block", re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
-  { name: "github-token", re: /gh[pousr]_[A-Za-z0-9]{20,}/ },
+  // Spelling-canonical (r6 codex F7): the `i` flag catches case-varied
+  // prefixes (GHP_…, GhS_…) the lowercase-only spelling used to miss.
+  { name: "github-token", re: /gh[pousr]_[A-Za-z0-9]{20,}/i },
   { name: "slug-url-credential", re: /https?:\/\/[^\s/:@]+:[^\s/@]+@[^\s/]+/ },
   // Host-anchored paths: the suite is repository-relative only.
   { name: "file-uri", re: /file:\/\// },

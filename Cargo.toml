@@ -17,6 +17,7 @@ publish = false
 # Cargo.lock also keeps clap_lex at 1.0.0; 1.1.0 requires Rust 1.85.
 clap = { version = "~4.5.61", features = ["derive"] }
 lekalo-core = { path = "crates/lekalo-core" }
+rusqlite = { version = "=0.32.1", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 saphyr-parser = "=0.0.8"

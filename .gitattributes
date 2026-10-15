@@ -21,3 +21,17 @@ adapters/php-laravel/adapter.php -whitespace
 # Generated Go clients are byte-compared by the client-SDK drift gate:
 # gofmt requires LF, so CRLF checkout conversion would flag the fixture.
 *.go text eol=lf
+
+# Issue #41: the managed lock and every managed fixture are byte-compared
+# custody artifacts (digest pins, plan/record/fixtures), so they must never
+# re-encode on checkout either. Appended; the rules above are predecessor
+# protections and stay verbatim.
+*.lock text eol=lf
+tests/fixtures/managed/planner/lekalo.lock text eol=lf
+tests/fixtures/** text eol=lf
+# SQLite snapshots are binary exact-byte custody, never text-normalized.
+tests/fixtures/**/*.sqlite -text !eol
+# Issue #94 formatter fixtures are byte-compared on every OS: the CRLF and
+# Unicode portability seeds must never re-encode on checkout or commit.
+# Kept last so it wins over the broader tests/fixtures/** text rule above.
+tests/fixtures/format/** -text

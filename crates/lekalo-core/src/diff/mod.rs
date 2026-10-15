@@ -418,11 +418,15 @@ fn bound_name(bound: usize) -> &'static str {
     }
 }
 
-/// Build the typed reference of one side.
+/// Build the typed reference of one side. The IR identity is
+/// SOURCE-DEPENDENT, never a constant: a 0.2.16 snapshot pins
+/// `dev.lekalo.ir@0.2.16` and a 0.8.0 snapshot pins
+/// `dev.lekalo.ir@0.8.0`, so the published identity and the pinned
+/// digest always describe the same document.
 fn project_ref(compiled: &CompiledProject, projection: &projection::Projection) -> ProjectRef {
     ProjectRef {
         model_version: compiled.model_version.as_str().to_owned(),
-        ir_identity: crate::ir::IDENTITY.to_owned(),
+        ir_identity: crate::ir::version::identity_for(compiled.model_version).to_owned(),
         ir_digest: format!(
             "sha256:{}",
             digest_hex(compiled.to_canonical_json().as_bytes())
@@ -547,10 +551,14 @@ fn diff_payload(
             Payload::Struct {
                 fields: base_fields,
                 identity: base_identity,
+                relations: base_relations,
+                constraints: base_constraints,
             },
             Payload::Struct {
                 fields: candidate_fields,
                 identity: candidate_identity,
+                relations: candidate_relations,
+                constraints: candidate_constraints,
             },
         ) => {
             diff_fields(subject, base_fields, candidate_fields, changes);
@@ -566,6 +574,32 @@ fn diff_payload(
                     )],
                 ));
             }
+            diff_typed_members(
+                subject,
+                "relations",
+                base_relations
+                    .iter()
+                    .map(|relation| (relation.id.as_str(), relation_row(relation)))
+                    .collect(),
+                candidate_relations
+                    .iter()
+                    .map(|relation| (relation.id.as_str(), relation_row(relation)))
+                    .collect(),
+                changes,
+            );
+            diff_typed_members(
+                subject,
+                "uniqueConstraints",
+                base_constraints
+                    .iter()
+                    .map(|constraint| (constraint.id.as_str(), constraint_row(constraint)))
+                    .collect(),
+                candidate_constraints
+                    .iter()
+                    .map(|constraint| (constraint.id.as_str(), constraint_row(constraint)))
+                    .collect(),
+                changes,
+            );
         }
         (
             Payload::Module {
@@ -1716,4 +1750,89 @@ fn derive_hints(changes: &[ChangeRecord]) -> Vec<MigrationHint> {
     }
     hints.sort();
     hints
+}
+
+/// Compare one typed 0.8.0 member set (relations or secondary
+/// uniqueness) by declared id. Every added, removed, or drifted member
+/// becomes one `type.shape-changed` record whose member names the exact
+/// row, so a breaking cardinality or uniqueness change is never
+/// invisible to comparison, impact, or consumers. Summaries are the
+/// compact canonical row renderings, bounded by the wire contract.
+fn diff_typed_members(
+    subject: &Subject,
+    member: &'static str,
+    base: Vec<(&str, String)>,
+    candidate: Vec<(&str, String)>,
+    changes: &mut Vec<ChangeRecord>,
+) {
+    let base_map: BTreeMap<&str, &String> = base.iter().map(|(id, row)| (*id, row)).collect();
+    let candidate_map: BTreeMap<&str, &String> =
+        candidate.iter().map(|(id, row)| (*id, row)).collect();
+    let mut changed = |name: &str, before: Summary, after: Summary, side: Side| {
+        changes.push(ChangeRecord::assemble(
+            ChangeKind::TypeShapeChanged,
+            side,
+            Subject::with_member(subject.family(), subject.id(), format!("{member}/{name}")),
+            before,
+            after,
+            vec![reason::kind_reason(ChangeKind::TypeShapeChanged.key())],
+        ));
+    };
+    for (id, row) in &base_map {
+        match candidate_map.get(id) {
+            None => changed(id, Summary::Text((*row).clone()), Summary::None, Side::Base),
+            Some(candidate_row) => {
+                if *candidate_row != *row {
+                    changed(
+                        id,
+                        Summary::Text((*row).clone()),
+                        Summary::Text((*candidate_row).clone()),
+                        Side::Both,
+                    );
+                }
+            }
+        }
+    }
+    for (id, row) in &candidate_map {
+        if !base_map.contains_key(id) {
+            changed(
+                id,
+                Summary::None,
+                Summary::Text((*row).clone()),
+                Side::Candidate,
+            );
+        }
+    }
+}
+
+/// The compact canonical rendering of one projected relation.
+fn relation_row(relation: &projection::RelationProjection) -> String {
+    format!(
+        "{}({} -> {}; {}..{}; {}; {}; {}; {} <- {})",
+        relation.id,
+        relation.target,
+        relation.local_fields.join(","),
+        relation.min,
+        relation
+            .max
+            .map(|max| max.to_string())
+            .unwrap_or_else(|| "N".to_owned()),
+        relation.ownership,
+        relation.on_detach,
+        relation.on_delete,
+        relation.target_fields.join(","),
+        relation.local_fields.join(","),
+    )
+}
+
+/// The compact canonical rendering of one projected constraint.
+fn constraint_row(constraint: &projection::ConstraintProjection) -> String {
+    format!(
+        "{}([{}]; {}; {}; scope={})",
+        constraint.id,
+        constraint.fields.join(","),
+        constraint.comparison,
+        constraint.normalization_ref.as_deref().unwrap_or("exact"),
+        constraint.scope,
+    )
 }

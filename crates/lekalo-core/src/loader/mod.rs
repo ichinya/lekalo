@@ -160,15 +160,30 @@ pub(crate) fn decode_document_bytes(
     decode(path, kind, &parsed)
 }
 
-/// Run phases 1-8 to completion and return the normalized aggregate, or the
+/// Terminal outcome of a loader phase: the normalized aggregate, or the
 /// terminal failure. No rendering happens here; `run` owns the envelope.
 pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, DomainResult> {
     load_with_snapshot(selection).map(|loaded| loaded.model)
 }
 
-/// Phase 1 only: resolve the selection to an absolute project root
-/// without reading model documents. The migration service uses this to
-/// recover a crashed transaction before the loader's fail-closed gate.
+/// The validated absolute project root of one selection (the public seam
+/// for project-bound attachment reads through the classified filesystem
+/// boundary; issue #113 r3).
+pub fn project_root(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
+    root_for_selection(selection)
+}
+
+/// Public phase-1 seam: resolve the selection to the absolute,
+/// alias-free project root without reading model documents. Commands
+/// that read project-relative artifacts after loading must bind those
+/// reads to this exact root — never to the raw invocation-relative
+/// selector, which resolves differently from another working directory.
+/// (The migration service keeps the `pub(crate)` spelling for its
+/// crash-recovery use.)
+pub fn resolve_selection_root(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
+    root_for_selection(selection)
+}
+
 pub(crate) fn root_for_selection(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
     let failure =
         |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
@@ -202,51 +217,57 @@ pub(crate) fn root_for_selection(selection: &LoadSelection) -> Result<PathBuf, D
 /// `normalize_model` plus the pinned snapshot the issue #9 migration
 /// planner consumes; the read path is byte-identical.
 pub(crate) fn load_with_snapshot(selection: &LoadSelection) -> Result<ProjectLoad, DomainResult> {
-    let failure =
-        |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
-
-    // Phase 1: selection/discovery.
-    let root: PathBuf = match &selection.project {
-        Some(selector) => {
-            if let Some(code) = crate::project_fs::selection_violation(selector) {
-                return failure(Status::Invalid, vec![Diagnostic::new(code)]);
-            }
-            match crate::project_fs::Fs::check_selection(
-                selector,
-                "structure.project-not-directory",
-            ) {
-                Ok(path) => path,
-                Err(outcome) => return Err(structure_failure(outcome)),
-            }
-        }
-        None => {
-            let cwd = match std::env::current_dir() {
-                Ok(cwd) => cwd,
-                Err(_) => {
-                    return failure(
-                        Status::Invalid,
-                        vec![Diagnostic::new("structure.root-unreadable")],
-                    )
-                }
-            };
-            match crate::project_fs::Fs::find_root(&cwd) {
-                Ok(Some(path)) => path,
-                Ok(None) => {
-                    return failure(
-                        Status::Invalid,
-                        vec![Diagnostic::new("structure.root-not-found")],
-                    )
-                }
-                Err(outcome) => return Err(structure_failure(outcome)),
-            }
-        }
-    };
+    let root = resolve_selection_root(selection)?;
     load_validated_root(root)
+}
+
+/// [`load_with_snapshot`] with one document's bytes overlaid before any
+/// parsing (finding r4 9): the editor's unsaved buffer is the authority
+/// for exactly its declared document, so a malformed saved copy must
+/// not fail the load before the buffer is formed. Every other document
+/// is still read, parsed, and validated; every filesystem, structure,
+/// and version boundary stays armed. The overlay only substitutes bytes
+/// for a path the confined inventory actually enumerates.
+pub(crate) fn load_with_snapshot_and_overlay(
+    selection: &LoadSelection,
+    overlay_path: &str,
+    overlay_bytes: &[u8],
+) -> Result<ProjectLoad, DomainResult> {
+    let root = resolve_selection_root(selection)?;
+    load_validated_root_opt_with_overlay(root, false, Some((overlay_path, overlay_bytes)))
 }
 
 /// Load an already-selected absolute root through phases 2-8 (the migration
 /// post-apply verification reuses the exact read path this way).
 pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainResult> {
+    load_validated_root_opt(root, false)
+}
+
+/// [`load_validated_root`] with the formatter recovery gate made
+/// journal-neutral: only the formatter's own post-restore semantic
+/// oracle may pass `true`, after it has already restored every pinned
+/// preimage and before it clears the journal (finding r4 5). The
+/// migration gate (2b) and every other phase stay armed; the option
+/// never widens any read — it only defers the one gate the recovering
+/// owner has already satisfied by construction.
+pub(crate) fn load_validated_root_opt(
+    root: PathBuf,
+    ignore_format_journal: bool,
+) -> Result<ProjectLoad, DomainResult> {
+    load_validated_root_opt_with_overlay(root, ignore_format_journal, None)
+}
+
+/// [`load_validated_root_opt`] with one document's bytes substituted
+/// before any parsing (finding r4 9). `document_overlay` names a path of
+/// the confined inventory; its bytes replace the saved copy for the read
+/// so a malformed saved document cannot fail the load before the editor
+/// buffer is formed. Existence semantics stay: a required document
+/// missing on disk is still an error even when overlaid.
+pub(crate) fn load_validated_root_opt_with_overlay(
+    root: PathBuf,
+    ignore_format_journal: bool,
+    document_overlay: Option<(&str, &[u8])>,
+) -> Result<ProjectLoad, DomainResult> {
     let failure =
         |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
 
@@ -282,6 +303,18 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
         return failure(Status::Invalid, vec![Diagnostic::new(code)]);
     }
 
+    // Phase 2c (issue #94): the same fail-closed rule for an interrupted
+    // formatter transaction; readers refuse, only an explicit mutating
+    // format recovers. The recovering owner's own post-restore oracle
+    // (finding r4 5) is journal-neutral by construction: it runs after
+    // every pinned preimage has been restored, while the journal that
+    // authorizes the restore is still in place.
+    if let Some(code) = crate::format::transaction::recovery_code(&fs) {
+        if !ignore_format_journal {
+            return failure(Status::Invalid, vec![Diagnostic::new(code)]);
+        }
+    }
+
     // Phase 3: capability-safe enumeration and reads.
     let mut sources: Vec<(String, DocKind)> =
         vec![("lekalo/project.yaml".to_owned(), DocKind::Project)];
@@ -310,8 +343,19 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
             .map(|(parent, _)| parent)
             .unwrap_or_default();
         let name = logical.rsplit('/').next().unwrap_or_default();
+        // The editor overlay (finding r4 9): the declared document's
+        // buffer replaces the saved bytes before any parse, so a
+        // malformed saved copy cannot block the load. Existence
+        // semantics stay: a required document missing on disk is an
+        // error even when overlaid; an optional kind document absent on
+        // disk is supplied by the overlay instead of being skipped.
+        let overlaid = matches!(document_overlay, Some((path, _)) if path == logical);
         match fs.read_file_opt(parent, name, MAX_DOCUMENT_BYTES) {
             Ok(Some(bytes)) => {
+                let bytes = match document_overlay {
+                    Some((_, overlay_bytes)) if overlaid => overlay_bytes.to_vec(),
+                    _ => bytes,
+                };
                 total_bytes += bytes.len();
                 if let Err(diagnostic) = check_total_limit(total_bytes) {
                     diagnostics.push(diagnostic.with_path(logical.clone()));
@@ -326,8 +370,18 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
                     bytes,
                 });
             }
-            // Absence is legal only for the seven optional kind files.
-            Ok(None) if *kind == DocKind::Symbol => {}
+            // Absence is legal only for the seven optional kind files —
+            // and for the overlaid document, whose buffer supplies it.
+            Ok(None) if *kind == DocKind::Symbol => {
+                if let Some((_, overlay_bytes)) = document_overlay {
+                    if overlaid {
+                        read_sources.push(Source {
+                            logical_path: logical.clone(),
+                            bytes: overlay_bytes.to_vec(),
+                        });
+                    }
+                }
+            }
             Ok(None) => {
                 diagnostics.push(
                     Diagnostic::new("loader.io")
@@ -857,6 +911,21 @@ fn render_load_output(model: &NormalizedModel, spans_requested: bool) -> DomainR
     );
 
     DomainResult::model(json, human)
+}
+
+/// The exact load-envelope success payload of one normalized aggregate
+/// without a source map — byte-identical to what `run` renders into its
+/// success envelope for a spans-free load. Authority derivations consume
+/// this so a single-snapshot derivation (r6, codex F11 / devin F8: one
+/// filesystem read produces the Model payload, the typed Model, and the
+/// source pins) pins the exact same digest the two-read derivation did.
+pub fn model_envelope_payload(model: &NormalizedModel) -> String {
+    let mut json = String::from("{\"status\":\"valid\",\"modelVersion\":");
+    json.push_str(&Canonical::Str(model.model_version.as_str().to_owned()).to_json());
+    json.push_str(",\"model\":");
+    json.push_str(&canonical_model_bytes(model));
+    json.push('}');
+    json
 }
 
 /// The exact canonical Model bytes of one normalized aggregate: compact

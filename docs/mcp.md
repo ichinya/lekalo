@@ -35,7 +35,7 @@ every preserved upstream contract keeps its frozen version.
 | `contracts/mcp-tool-<name>-output.schema.v0.8.0.json` | Seven closed result envelopes: `status: valid` carries the preserved core receipt, every other status a typed `failure` branch. |
 | `contracts/mcp-resource.schema.v0.8.0.json` | `dev.lekalo.mcp-resource@0.8.0`; the five resource families. |
 | `contracts/mcp-graph-query.schema.v0.8.0.json` | Describing schema for the frozen `graph show`/`callers`/`path` receipts. |
-| `contracts/diagnostic-registry.v0.8.0.json` | M8 grand union: the current M8 `format.*` and `adoption.*` families plus `mcp.*` (`LEK-MCP-001..011`) and every frozen predecessor entry; all three Rust accessors resolve this same 0.8.0 identity. |
+| `contracts/diagnostic-registry.v0.8.0.json` | M8 grand union: every landed M8 family (`format.*`, `adoption.*`, `portability.*`, `worklog-changelog.*`, `managed.*`, `module-api.*`, `tasklink.*`) plus `mcp.*` (`LEK-MCP-001..011`) and every frozen predecessor entry; all family Rust accessors resolve this same 0.8.0 identity, and the merge-time union guard (`scripts/check-registry-union.mjs`) refuses a registry that drops a landed family. |
 
 Tool output payloads stay byte-identical with the core contracts:
 inspect `0.2.16`, impact `0.2.16`, context `0.2.16`, graph `0.2.16`,

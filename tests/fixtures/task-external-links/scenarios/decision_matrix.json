@@ -1,0 +1,16 @@
+{
+  "scenarioId": "tasklinks.scenario.decision_matrix",
+  "issueVerbatim": "fan-out only for supported/allowed action;",
+  "origin": "mock",
+  "matrix": [
+    { "capability": "supported", "authorization": "allowed", "outcome": "allowed", "intent": true },
+    { "capability": "supported", "authorization": "denied", "outcome": "denied", "intent": false },
+    { "capability": "unsupported", "authorization": "allowed", "outcome": "unsupported", "intent": false },
+    { "capability": "unknown", "authorization": "allowed", "outcome": "indeterminate", "intent": false },
+    { "capability": "partial", "authorization": "allowed", "outcome": "allowed", "intent": true, "note": "explicit permitted subset only" }
+  ],
+  "expects": [
+    { "kind": "no-forbidden-intent", "value": true },
+    { "kind": "decision-rows", "note": "every recipient has an explicit decision row" }
+  ]
+}

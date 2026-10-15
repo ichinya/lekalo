@@ -28,6 +28,32 @@ pub(crate) struct FieldProjection {
     pub required: bool,
 }
 
+/// One projected typed relation: the exact declared cardinality and
+/// semantics between the declaring entity and its target.
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub(crate) struct RelationProjection {
+    pub id: String,
+    pub target: String,
+    pub local_fields: Vec<String>,
+    pub target_fields: Vec<String>,
+    pub min: u64,
+    /// `None` is the explicit unbounded spelling.
+    pub max: Option<u64>,
+    pub ownership: String,
+    pub on_detach: String,
+    pub on_delete: String,
+}
+
+/// One projected secondary-uniqueness declaration.
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub(crate) struct ConstraintProjection {
+    pub id: String,
+    pub fields: Vec<String>,
+    pub comparison: String,
+    pub normalization_ref: Option<String>,
+    pub scope: String,
+}
+
 /// The semantic payload of one projected definition, per family.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum Payload {
@@ -44,6 +70,12 @@ pub(crate) enum Payload {
     Struct {
         fields: Vec<FieldProjection>,
         identity: Vec<String>,
+        /// Typed relation declarations (0.8.0 successor). Sorted by
+        /// relation id; present only when declared, so 0.2.16 payload
+        /// bytes and every existing digest stay identical.
+        relations: Vec<RelationProjection>,
+        /// Typed secondary-uniqueness declarations (0.8.0 successor).
+        constraints: Vec<ConstraintProjection>,
     },
     Command {
         input: Vec<FieldProjection>,
@@ -196,6 +228,8 @@ pub(crate) fn project(compiled: &CompiledProject) -> Result<Projection, usize> {
             Definition::ValueObject(def) => Payload::Struct {
                 fields: fields(&def.fields),
                 identity: Vec::new(),
+                relations: Vec::new(),
+                constraints: Vec::new(),
             },
             Definition::Entity(def) => Payload::Struct {
                 fields: fields(&def.fields),
@@ -205,6 +239,47 @@ pub(crate) fn project(compiled: &CompiledProject) -> Result<Projection, usize> {
                         .map(|name| name.as_str().to_owned())
                         .collect(),
                 ),
+                relations: def
+                    .relations
+                    .iter()
+                    .map(|relation| RelationProjection {
+                        id: relation.id.as_str().to_owned(),
+                        target: relation.target.as_str().to_owned(),
+                        local_fields: relation
+                            .local_fields
+                            .iter()
+                            .map(|name| name.as_str().to_owned())
+                            .collect(),
+                        target_fields: relation
+                            .target_fields
+                            .iter()
+                            .map(|name| name.as_str().to_owned())
+                            .collect(),
+                        min: relation.min,
+                        max: relation.max,
+                        ownership: relation.ownership.as_str().to_owned(),
+                        on_detach: relation.on_detach.as_str().to_owned(),
+                        on_delete: relation.on_delete.as_str().to_owned(),
+                    })
+                    .collect(),
+                constraints: def
+                    .unique_constraints
+                    .iter()
+                    .map(|constraint| ConstraintProjection {
+                        id: constraint.id.as_str().to_owned(),
+                        fields: constraint
+                            .fields
+                            .iter()
+                            .map(|name| name.as_str().to_owned())
+                            .collect(),
+                        comparison: constraint.comparison.as_str().to_owned(),
+                        normalization_ref: constraint
+                            .normalization_ref
+                            .as_ref()
+                            .map(|id| id.as_str().to_owned()),
+                        scope: constraint.scope.as_str().to_owned(),
+                    })
+                    .collect(),
             },
             Definition::Command(def) => Payload::Command {
                 input: fields(&def.input),
@@ -332,11 +407,31 @@ fn payload_bytes(payload: &Payload) -> String {
         Payload::Enum { values } => {
             format!("{{\"kind\":\"enum\",\"values\":{}}}", string_array(values))
         }
-        Payload::Struct { fields, identity } => format!(
-            "{{\"fields\":{},\"identity\":{},\"kind\":\"struct\"}}",
-            field_array(fields),
-            string_array(identity)
-        ),
+        Payload::Struct {
+            fields,
+            identity,
+            relations,
+            constraints,
+        } => {
+            // The successor's typed members appear only when declared:
+            // 0.2.16 payloads keep their exact bytes and every existing
+            // semantic digest stays stable.
+            if relations.is_empty() && constraints.is_empty() {
+                format!(
+                    "{{\"fields\":{},\"identity\":{},\"kind\":\"struct\"}}",
+                    field_array(fields),
+                    string_array(identity)
+                )
+            } else {
+                format!(
+                    "{{\"constraints\":{},\"fields\":{},\"identity\":{},\"kind\":\"struct\",\"relations\":{}}}",
+                    constraint_array(constraints),
+                    field_array(fields),
+                    string_array(identity),
+                    relation_array(relations)
+                )
+            }
+        }
         Payload::Command { input, effects } => format!(
             "{{\"effects\":{},\"input\":{},\"kind\":\"command\"}}",
             string_array(effects),
@@ -430,6 +525,68 @@ fn field_array(values: &[FieldProjection]) -> String {
     json
 }
 
+/// The canonical bytes of the typed-relation array: present only when
+/// the entity declares any, in canonical relation-id order.
+fn relation_array(values: &[RelationProjection]) -> String {
+    if values.is_empty() {
+        return String::from("[]");
+    }
+    let mut ordered: Vec<&RelationProjection> = values.iter().collect();
+    ordered.sort_by(|left, right| left.id.cmp(&right.id));
+    let mut json = String::from("[");
+    for (index, relation) in ordered.iter().enumerate() {
+        if index > 0 {
+            json.push(',');
+        }
+        json.push_str(&format!(
+            "{{\"id\":{},\"localFields\":{},\"max\":{},\"min\":{},\"onDetach\":{},\"onDelete\":{},\"ownership\":{},\"target\":{},\"targetFields\":{}}}",
+            super::canonical::quote(&relation.id),
+            string_array(&relation.local_fields),
+            match relation.max {
+                Some(max) => max.to_string(),
+                None => String::from("null"),
+            },
+            relation.min,
+            super::canonical::quote(&relation.on_detach),
+            super::canonical::quote(&relation.on_delete),
+            super::canonical::quote(&relation.ownership),
+            super::canonical::quote(&relation.target),
+            string_array(&relation.target_fields),
+        ));
+    }
+    json.push(']');
+    json
+}
+
+/// The canonical bytes of the secondary-uniqueness array: present only
+/// when the entity declares any, in canonical constraint-id order.
+fn constraint_array(values: &[ConstraintProjection]) -> String {
+    if values.is_empty() {
+        return String::from("[]");
+    }
+    let mut ordered: Vec<&ConstraintProjection> = values.iter().collect();
+    ordered.sort_by(|left, right| left.id.cmp(&right.id));
+    let mut json = String::from("[");
+    for (index, constraint) in ordered.iter().enumerate() {
+        if index > 0 {
+            json.push(',');
+        }
+        json.push_str(&format!(
+            "{{\"comparison\":{},\"fields\":{},\"id\":{},\"normalizationRef\":{},\"scope\":{}}}",
+            super::canonical::quote(&constraint.comparison),
+            string_array(&constraint.fields),
+            super::canonical::quote(&constraint.id),
+            match &constraint.normalization_ref {
+                Some(reference) => super::canonical::quote(reference),
+                None => String::from("\"\""),
+            },
+            super::canonical::quote(&constraint.scope),
+        ));
+    }
+    json.push(']');
+    json
+}
+
 /// Rewrite every symbolic reference of one projection from `from` to
 /// `to`: type expressions and reference arrays follow a validated
 /// same-identity rename so that mechanical reference updates never
@@ -446,11 +603,32 @@ pub(crate) fn substitute_references(projection: &mut Projection, from: &str, to:
             Payload::Module { imports } => substitute_slice(imports, from, to),
             Payload::Scalar { .. } => {}
             Payload::Enum { .. } => {}
-            Payload::Struct { fields, identity } => {
+            Payload::Struct {
+                fields,
+                identity,
+                relations,
+                constraints,
+            } => {
                 for field in fields {
                     field.field_type = substitute_expression(&field.field_type, from, to);
                 }
                 substitute_slice(identity, from, to);
+                // A relation target and a normalization reference are
+                // symbolic references; a rename follows them so a
+                // mechanical rename never masquerades as a semantic
+                // relation change.
+                for relation in relations {
+                    if relation.target == from {
+                        relation.target = to.to_owned();
+                    }
+                }
+                for constraint in constraints {
+                    if let Some(reference) = &mut constraint.normalization_ref {
+                        if reference == from {
+                            *reference = to.to_owned();
+                        }
+                    }
+                }
             }
             Payload::Command { input, effects } => {
                 for field in input {

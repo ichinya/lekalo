@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "lekalo/module-api/v0.8.0",
+  "identity": "dev.lekalo.module-api@0.8.0",
+  "project": "tasks",
+  "modules": [
+    {
+      "moduleId": "tasks",
+      "apiVersion": "1.2.0",
+      "exports": [
+        { "export": "tasks.task_id", "kind": "scalar", "since": "1.0.0", "aliasOf": null },
+        { "export": "tasks.title", "kind": "scalar", "since": "1.0.0", "aliasOf": null },
+        { "export": "tasks.task_state", "kind": "enum", "since": "1.0.0", "aliasOf": null },
+        { "export": "tasks.task_view", "kind": "value-object", "since": "1.0.0", "aliasOf": null },
+        { "export": "tasks.create_task_cmd", "kind": "command", "since": "1.0.0", "aliasOf": null },
+        { "export": "tasks.complete_task_cmd", "kind": "command", "since": "1.0.0", "aliasOf": null },
+        { "export": "tasks.get_task", "kind": "query", "since": "1.0.0", "aliasOf": null },
+        { "export": "tasks.list_tasks", "kind": "query", "since": "1.0.0", "aliasOf": null },
+        { "export": "tasks.task_created", "kind": "event", "since": "1.0.0", "aliasOf": null }
+      ],
+      "consumers": [
+        { "consumer": "planner", "uses": ["tasks.task_view","tasks.get_task","tasks.task_id","tasks.title"], "mode": "source", "policy": { "type": "version-range", "lower": "1.0.0", "lowerInclusive": true, "upper": "2.0.0", "upperInclusive": false } }
+      ],
+      "ports": [],
+      "capabilities": [],
+      "grants": [],
+      "deprecations": [],
+      "operationErrors": [
+        { "operation": "tasks.complete_task_cmd", "errors": [] },
+        { "operation": "tasks.create_task_cmd", "errors": [] },
+        { "operation": "tasks.get_task", "errors": [] },
+        { "operation": "tasks.list_tasks", "errors": [] }
+      ],
+      "queryFacts": [
+        { "query": "tasks.get_task", "cardinality": "one", "consistency": "strong", "pagination": "none" },
+        { "query": "tasks.list_tasks", "cardinality": "list", "consistency": "strong", "pagination": "none" }
+      ]
+    },
+    {
+      "moduleId": "planner",
+      "apiVersion": null,
+      "exports": [],
+      "consumers": [],
+      "ports": [],
+      "capabilities": [],
+      "grants": [],
+      "deprecations": []
+    }
+  ]
+}

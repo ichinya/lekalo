@@ -1,0 +1,82 @@
+{
+  "evidence": {
+    "contractId": "tasklinks.provider_contract.primary",
+    "providerId": "github-issues",
+    "objectType": "issue",
+    "upstreamPin": "github-rest/2022-11-28",
+    "revision": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "origin": "synthetic",
+    "license": "synthetic-replay-fixtures",
+    "provenance": "Authored synthetic snapshots over the public provider contract metadata; no live fetch, no consumer repository, no private payload.",
+    "revisionOrdering": "comparable-total",
+    "remoteDedup": "receipt-reconciliation",
+    "fieldMap": {
+      "title": "task.title",
+      "state": "task.state"
+    },
+    "endpoints": {
+      "update": {
+        "method": "PATCH",
+        "pathShape": "/repos/{owner}/{repo}/issues/{number}",
+        "requestSchemaRef": "tasklinks.provider.primary_request",
+        "responseSchemaRef": "tasklinks.provider.primary_response",
+        "errorSchemaRef": "tasklinks.provider.primary_error",
+        "classification": "public"
+      }
+    }
+  },
+  "events": [
+    {
+      "eventIdentity": "evt-primary-0001",
+      "installationId": "inst-primary-1",
+      "providerId": "github-issues",
+      "objectType": "issue",
+      "externalId": "42",
+      "revision": "r7",
+      "causationId": "cause-primary-0001",
+      "attribution": "provider.event",
+      "allowedFields": ["title", "state"]
+    },
+    {
+      "eventIdentity": "evt-primary-0001",
+      "installationId": "inst-primary-1",
+      "providerId": "github-issues",
+      "objectType": "issue",
+      "externalId": "42",
+      "revision": "r7",
+      "causationId": "cause-primary-0001",
+      "attribution": "provider.event",
+      "allowedFields": ["title", "state"],
+      "note": "Exact duplicate for dedup assertion"
+    },
+    {
+      "eventIdentity": "evt-primary-0002",
+      "installationId": "inst-primary-1",
+      "providerId": "github-issues",
+      "objectType": "issue",
+      "externalId": "42",
+      "revision": "zz-unrelated",
+      "causationId": "cause-primary-0002",
+      "attribution": "provider.event",
+      "allowedFields": ["title", "state"],
+      "note": "Revision incomparable with the cursor; conflict outcome"
+    },
+    {
+      "eventIdentity": "evt-primary-echo",
+      "installationId": "inst-primary-1",
+      "providerId": "github-issues",
+      "objectType": "issue",
+      "externalId": "42",
+      "revision": "r8",
+      "causationId": "intent-primary-a-1",
+      "attribution": "system.echo",
+      "allowedFields": ["title", "state"],
+      "note": "Echo of our own outbound intent; must never create a fresh user intent"
+    }
+  ],
+  "responses": {
+    "ok": { "status": 200, "receipt": "rcpt-primary-1" },
+    "timeout": { "status": "timeout", "receipt": null },
+    "conflict": { "status": 409, "receipt": null }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "lekalo/portability-targets/v0.8.0",
+  "identity": "dev.lekalo.portability-targets@0.8.0",
+  "defaultSource": "ruby-rails",
+  "defaultDestinations": [
+    "go-service",
+    "php-laravel"
+  ],
+  "targets": [
+    {
+      "targetId": "node-typescript",
+      "profileDocumentRef": "config/profiles/node.json",
+      "profileRef": {
+        "id": "node-postgres-http",
+        "version": "0.2.16",
+        "sourceDigest": "sha256:c1801eabea9b7fb409df06baeb09571801d9d5005b2ec2910756b4bba92d9f55",
+        "resolvedDigest": "sha256:aaa568174b6c74fcfc80f93916fd58c8cb722dedee503b2a589097e018fb8866"
+      },
+      "adapterEvidenceRef": null,
+      "storageProfileRefs": []
+    },
+    {
+      "targetId": "php-laravel",
+      "profileDocumentRef": "config/profiles/laravel.json",
+      "profileRef": {
+        "id": "laravel-postgres-http",
+        "version": "0.2.16",
+        "sourceDigest": "sha256:a8b2cffad215df41742a766b6d88d25fab977b5d047cb51d765b4a478a30fbc4",
+        "resolvedDigest": "sha256:501c4672bdca8dbc6e812f21fc4eb38ab7380fef34c1ab5c6e2d74826601511f"
+      },
+      "adapterEvidenceRef": null,
+      "storageProfileRefs": []
+    },
+    {
+      "targetId": "go-service",
+      "profileDocumentRef": "config/profiles/go.json",
+      "profileRef": {
+        "id": "go-postgres-http",
+        "version": "0.2.16",
+        "sourceDigest": "sha256:1b25c8389cfa74d0fabe325490a31b365b76798f0727a9f88b4aabc73c607392",
+        "resolvedDigest": "sha256:545aff6a01a77cdccf3d6644c2bc1f77f049097ad5cd30a7bf7cbda884aedece"
+      },
+      "adapterEvidenceRef": null,
+      "storageProfileRefs": []
+    }
+  ]
+}

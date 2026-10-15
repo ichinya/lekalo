@@ -407,6 +407,13 @@ pub fn compose(
                         DomainResult::UnsupportedOperation { .. } => {
                             DomainResult::UnsupportedOperation { diagnostics: set }
                         }
+                        DomainResult::UnsupportedWithEvidence { json, human, .. } => {
+                            DomainResult::UnsupportedWithEvidence {
+                                diagnostics: set,
+                                json,
+                                human,
+                            }
+                        }
                         DomainResult::UnsupportedVersion { .. } => {
                             DomainResult::unsupported_version(set)
                         }

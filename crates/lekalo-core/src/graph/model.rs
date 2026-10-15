@@ -396,6 +396,10 @@ pub enum ReferenceRole {
     EffectEmits,
     /// A requirement provenance reference.
     DerivedFrom,
+    /// One typed entity relation target (Model 0.8.0 successor). The
+    /// declaring entity references its relation target entity with the
+    /// exact declared ordinal.
+    EntityRelationTarget,
 }
 
 impl ReferenceRole {
@@ -416,6 +420,7 @@ impl ReferenceRole {
             Self::EndpointInvokes => "endpoint-invokes",
             Self::EffectEmits => "effect-emits",
             Self::DerivedFrom => "derived-from",
+            Self::EntityRelationTarget => "entity-relation-target",
         }
     }
 }

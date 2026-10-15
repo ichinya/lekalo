@@ -1,0 +1,14 @@
+{
+  "scenarioId": "tasklinks.scenario.two_providers",
+  "issueVerbatim": "one task linked to two providers;",
+  "origin": "mock",
+  "steps": [
+    { "command": "tasklinks.request_action", "actor": "identity.user", "links": ["link-a", "link-b"], "fields": ["state", "title"] },
+    { "command": "tasklinks.dispatch_outbox", "actor": "system.job", "outcomes": { "link-a": "delivered", "link-b": "delivered" } }
+  ],
+  "expects": [
+    { "kind": "intent-count", "value": 2, "note": "two independently attributed intents" },
+    { "kind": "distinct-attribution", "providers": ["github-issues", "mock-secondary"] },
+    { "kind": "idempotency-key-scope", "scope": "per-recipient-intent" }
+  ]
+}

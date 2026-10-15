@@ -1,0 +1,30 @@
+{
+  "apiVersion": "1.0.0",
+  "capabilities": [],
+  "deprecations": [],
+  "digest": "sha256:b88e983dda6f7ead7ea47b4eacaded98f5feac7979a978bb737ac576c1249a41",
+  "exports": [
+    {
+      "base": "uuid",
+      "export": "shared.task_id",
+      "kind": "scalar",
+      "since": "1.0.0",
+      "version": 1
+    }
+  ],
+  "identity": "dev.lekalo.module-public-contract@0.8.0",
+  "pins": {
+    "irDigest": "sha256:0209a69be282b93222073cad215b6af0243e4a34bcfd7391b918e8d62d6cc44e",
+    "modelVersion": "0.2.16",
+    "sourceRevision": {
+      "state": "unknown"
+    }
+  },
+  "ports": [],
+  "producer": {
+    "module": "shared",
+    "project": "tasks"
+  },
+  "publicDependencies": [],
+  "schemaVersion": "lekalo/module-public-contract/v0.8.0"
+}

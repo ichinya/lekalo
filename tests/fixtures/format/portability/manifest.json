@@ -1,0 +1,14 @@
+{
+  "manifestId": "dev.lekalo.format-portability-manifest",
+  "note": "Issue #94 cross-platform byte equality: fresh lekalo format output must match these reviewed bytes on every OS.",
+  "files": [
+    {
+      "path": "tests/fixtures/format/portability/crlf-expected/lekalo/project.yaml",
+      "sha256": "a719d4fe20d5a35ded63614601997a23291d5789d95900edbd0f48539033d57c"
+    },
+    {
+      "path": "tests/fixtures/format/portability/unicode-expected/lekalo/project.yaml",
+      "sha256": "9d9792906bfb486357ef00ea36900216f99677d71771df0c1e0f544594e81ddd"
+    }
+  ]
+}

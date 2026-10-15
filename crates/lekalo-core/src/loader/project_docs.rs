@@ -4,10 +4,18 @@
 use super::error::{Diagnostic, Span};
 use super::frontends::{Node, Scalar, Value};
 
-/// The current Model contract recognized by the loader.
+/// The accepted Model contracts recognized by the loader.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ModelVersion {
+    /// Model 0.2.16: the baseline contract. Documents carry no typed
+    /// relation or secondary-uniqueness constructs, and their compiled
+    /// IR stays `dev.lekalo.ir@0.2.16` with byte-identical canonical
+    /// output.
     Current,
+    /// Model 0.8.0: the typed relation and secondary-uniqueness
+    /// successor. Entity definitions may carry `relations` and
+    /// `unique_constraints`; no alias under 0.2.16 exists.
+    Successor,
 }
 
 impl ModelVersion {
@@ -15,21 +23,29 @@ impl ModelVersion {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Current => "0.2.16",
+            Self::Successor => "0.8.0",
         }
+    }
+
+    /// Whether this version accepts the typed entity relation and
+    /// secondary-uniqueness constructs (the 0.8.0 successor only).
+    pub const fn relations_supported(self) -> bool {
+        matches!(self, Self::Successor)
     }
 
     /// Exhaustive literal dispatch; no ranges, no prerelease forms.
     pub fn parse_exact(literal: &str) -> Option<Self> {
         match literal {
             "0.2.16" => Some(Self::Current),
+            "0.8.0" => Some(Self::Successor),
             _ => None,
         }
     }
 
     /// The module-ID grammar of the active Model version.
     ///
-    /// Model 0.2.16 module names allow hyphens
-    /// (`^[a-z][a-z0-9_-]{0,62}$`); Model 0.2.16 semantic module IDs do not
+    /// Both accepted versions allow hyphens in module names
+    /// (`^[a-z][a-z0-9_-]{0,62}$`); semantic module IDs do not
     /// (`^[a-z][a-z0-9_]{0,62}$`). Reserved words are the #6 validator's
     /// concern and are accepted here.
     pub fn module_id_valid(self, id: &str) -> bool {
@@ -40,9 +56,8 @@ impl ModelVersion {
         if !first.is_ascii_lowercase() || bytes.len() > 63 {
             return false;
         }
-        rest.iter().all(|byte| match self {
-            Self::Current => byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_',
-        })
+        rest.iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_')
     }
 }
 
@@ -189,12 +204,25 @@ mod tests {
     }
 
     #[test]
-    fn exact_version_dispatch_recognizes_only_the_two_literals() {
+    fn exact_version_dispatch_recognizes_only_the_accepted_literals() {
         assert_eq!(
             ModelVersion::parse_exact("0.2.16"),
             Some(ModelVersion::Current)
         );
-        for bogus in ["v1", "1", "1.x.0", "2.0.0", "0.2.16-rc1", "0.1", "01.0.0"] {
+        assert_eq!(
+            ModelVersion::parse_exact("0.8.0"),
+            Some(ModelVersion::Successor)
+        );
+        for bogus in [
+            "v1",
+            "1",
+            "1.x.0",
+            "2.0.0",
+            "0.2.16-rc1",
+            "0.1",
+            "01.0.0",
+            "0.9.0",
+        ] {
             assert_eq!(ModelVersion::parse_exact(bogus), None, "{bogus}");
         }
     }

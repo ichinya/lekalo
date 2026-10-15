@@ -1048,6 +1048,7 @@ fn run(
                 base: base_ref.clone(),
                 head: head_ref.clone(),
                 worktree: *worktree,
+                adoption: None,
                 depth: depth.unwrap_or(3),
                 module: module.clone(),
                 target: target.clone(),
@@ -1238,7 +1239,7 @@ fn run_target_status(
     let result = if doctor {
         crate::run_doctor_for_mcp(project, catalog.core.admits_git_changed_mode())
     } else if catalog.core.admits_git_changed_mode() {
-        crate::run_status(project)
+        crate::run_status(project, None)
     } else {
         crate::run_status_without_git(project)
     };

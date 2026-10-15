@@ -1,0 +1,53 @@
+schema_version: "0.2.16"
+definitions:
+  - id: tasks.task_id
+    kind: scalar
+    version: 1
+    description: "Stable task identifier"
+    base: uuid
+    visibility: project
+  - id: tasks.title
+    kind: scalar
+    version: 1
+    description: "Human-readable task title"
+    base: string
+  - id: tasks.task_state
+    kind: enum
+    version: 1
+    description: "Task lifecycle state"
+    values:
+      - value: open
+        description: "Not started"
+      - value: active
+        description: "In progress"
+      - value: done
+        description: "Completed"
+  - id: tasks.task_view
+    kind: value-object
+    version: 2
+    description: "The public task view consumers read"
+    fields:
+      - name: task_id
+        type: "tasks.task_id"
+        required: true
+      - name: title
+        type: "tasks.title"
+        required: true
+  - id: tasks.task
+    kind: entity
+    version: 1
+    description: "A manageable task"
+    fields:
+      - name: task_id
+        type: "tasks.task_id"
+        required: true
+      - name: title
+        type: "tasks.title"
+        required: true
+      - name: state
+        type: "tasks.task_state"
+        required: true
+      - name: internal_note
+        type: "tasks.title"
+    identity:
+      - task_id

@@ -1,0 +1,30 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.task_id
+    kind: scalar
+    version: 1
+    base: uuid
+    description: "Task identity"
+  - id: planner.boolean
+    kind: scalar
+    version: 1
+    base: boolean
+    description: "Boolean flag"
+  - id: planner.text
+    kind: scalar
+    version: 1
+    base: string
+    description: "Free text"
+  - id: planner.task
+    kind: entity
+    version: 1
+    description: "One task"
+    fields:
+      - name: id
+        type: task_id
+        required: true
+      - name: title
+        type: text
+        required: true
+    identity:
+      - id

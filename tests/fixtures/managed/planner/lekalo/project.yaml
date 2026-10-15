@@ -1,0 +1,6 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner_fixture
+    kind: project
+    version: 1
+    description: "Managed-lane planner fixture model (issue #41)"

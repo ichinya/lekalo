@@ -9,11 +9,6 @@
       "origin": "synthetic"
     },
     {
-      "family": "architecture-profile",
-      "origin": "synthetic",
-      "note": "Issue #84: authored architecture policy, resolution, scope, lock, diff, baseline and adoption goldens over the synthetic context-budget planner. No native runtime or AI task outcome claims."
-    },
-    {
       "family": "adapter-manifest",
       "origin": "synthetic"
     },
@@ -24,6 +19,11 @@
     {
       "family": "adopt",
       "origin": "synthetic"
+    },
+    {
+      "family": "adoption",
+      "origin": "synthetic",
+      "note": "Issue #136: authored synthetic brownfield taskboard app, scanner, refactor candidates, verification spec and invalid inputs; no private code or executed application behavior claims."
     },
     {
       "family": "ai-lint",
@@ -59,6 +59,11 @@
       "family": "ai-workspace",
       "origin": "synthetic",
       "note": "issue #37 ai-workspace integration: the reviewed routing-manifest example and the change-event envelope example are exclusively synthetic, authored in-repo from public contract identities and neutral role aliases; no private checkout content"
+    },
+    {
+      "family": "architecture-profile",
+      "origin": "synthetic",
+      "note": "Issue #84: authored architecture policy, resolution, scope, lock, diff, baseline and adoption goldens over the synthetic context-budget planner. No native runtime or AI task outcome claims."
     },
     {
       "family": "artifacts",
@@ -143,6 +148,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "format",
+      "origin": "synthetic",
+      "note": "Issue #94: authored noncanonical seeds, reviewed canonical golden bytes, negative and portability fixtures for the canonical YAML/JSON formatter. No private code or executed application behavior."
+    },
+    {
       "family": "framework-lift-arm",
       "origin": "synthetic",
       "note": "Issue #100: synthetic recorded evidence; no external model run, private code or prompt."
@@ -208,6 +218,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "managed",
+      "origin": "synthetic",
+      "note": "Issue #41: authored managed ownership/coverage wire documents, the planner project, deterministic expected outputs, committed custody records, and hostile controls. No native runtime outcome or private material."
+    },
+    {
       "family": "metrics-export",
       "origin": "synthetic",
       "note": "Issue #102: authored paired trial metadata, local recorder observations, aggregate/manifest/preview goldens and hostile lifecycle probes. No private consumer data or #100 evaluation claims."
@@ -219,6 +234,11 @@
     {
       "family": "model-v1",
       "origin": "synthetic"
+    },
+    {
+      "family": "module-api",
+      "origin": "synthetic",
+      "note": "Issue #113: authored module API attachment/public/consumer/lock/context fixture corpus with synthetic tasks/planner/provider projects, boundary violation and valid-control variants, populated foreign public dependency pins through nested Task views/locks/context, and committed goldens; no private inputs or executed application behavior."
     },
     {
       "family": "nfr",
@@ -265,6 +285,11 @@
       "family": "pilot",
       "origin": "synthetic",
       "note": "issue #49 observed-mode pilot: the taskhub consumer fixture, its pinned scan document, and its native gate plan are exclusively synthetic; issue #118 adds the brownfield-ts workspace fixture (Hono + Drizzle sqliteTable + vitest), equally authored in-repo Issue #105 adds the separate brownfield-mysql Hono/Drizzle/MySQL 8.4 fixture, authored synthetic; its actual-package native tests and authored offline declarations are distinct from the unchanged SQLite pilot."
+    },
+    {
+      "family": "portability",
+      "origin": "synthetic",
+      "note": "Issue #19: authored planner workload, target/profile pins, evidence manifest, invalid controls, and production CLI goldens over synthetic receipts. No private code, native runtime execution, or equivalence claims."
     },
     {
       "family": "privacy",
@@ -334,6 +359,11 @@
     {
       "family": "target-protocol",
       "origin": "synthetic"
+    },
+    {
+      "family": "task-external-links",
+      "origin": "synthetic",
+      "note": "Issue #52 multi-provider TaskExternalLink pilot: authored synthetic planner/tasklinks model, integration attachment, mock provider snapshots, scenario docs and evidence; the GitHub-Issues provider row is public-contract metadata with a reviewed upstream pin and synthetic fixtures only. No consumer application name, repository URL, token, or private payload."
     },
     {
       "family": "trace",

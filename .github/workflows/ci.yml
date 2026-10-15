@@ -70,11 +70,13 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-context-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-semantic-diff-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-transaction-concurrency-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-format-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-authorization-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-error-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-client-sdk-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-extended-effects-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-invariant-transition-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-task-links-contracts.mjs --schema-only
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-reference-evaluation-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-projection-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-engine-profile-contracts.mjs
@@ -101,6 +103,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-provider-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-boundaries.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-contracts.mjs
       - name: Execute protocol semantic vectors through production Rust decoding
         run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites
@@ -108,6 +111,7 @@ jobs:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
         run: |
           node scripts/check-contract-versions.mjs --base HEAD^
+          node scripts/check-registry-union.mjs
           node scripts/test-contract-versions.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-workspace-hook.mjs
           node scripts/check-authority.mjs
@@ -237,12 +241,27 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/test-mcp-host.mjs
+      - name: Run the live portability contract gate (issue #19)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-portability-contracts.mjs
       - name: Run neutral trace evidence and assessment contracts (issue #35)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
         run: |
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-evidence-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-assessment-contracts.mjs --require-binary
+      - name: Run the graph contract gate against the live binary (issue #52)
+        # The Ajv job validates golden self-consistency without a build;
+        # here the built CLI re-exports every pinned golden's owning
+        # fixture and byte-compares the canonical rendering against the
+        # pinned bytes, so a stale-but-schema-valid golden fails the Node
+        # gate at the same commit the Rust golden tests would catch it.
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-graph-contracts.mjs --require-binary
       - name: Run the CI report smoke and gate (issue #103)
         # Dogfood the closed report surface on every OS: validate over a
         # fixture with all four report formats, the blocked readiness
@@ -329,6 +348,12 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-coupling-contracts.mjs
+      - name: Run the module API boundary gate (issue #113)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-module-api-contracts.mjs
       - name: Run every Framework Lift family live gate (issue #100)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
@@ -349,6 +374,27 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-architecture-profile-contracts.mjs
+      - name: Run the canonical formatter gates (issue #94)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-format-contracts.mjs
+          node scripts/test-format-cli.mjs
+          node scripts/test-format-atomic.mjs
+          node scripts/test-format-portability.mjs
+          node scripts/check-unix-compile.mjs
+          cargo test --locked -p lekalo-core --test format
+          cargo test --locked -p lekalo-cli --test format
+      - name: Run the managed ownership, custody and planner gates (issue #41)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/gen-managed-contracts.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-managed-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-managed-cli.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-managed-planner-e2e.mjs
       - name: Run the public metrics contract and live CLI gates (issue #102)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
@@ -363,6 +409,34 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-provider-contracts.mjs
+      - name: Provision the planner fixture vendor tree per the committed lock (issues #52/#56)
+        # Explicit setup, before both maintained-native and later adapter gates.
+        # Runtime/compile processes never install packages or run lifecycle scripts.
+        timeout-minutes: 15
+        run: composer install --no-interaction --prefer-dist --no-scripts --working-dir tests/fixtures/php-laravel/planner
+      - name: Run the task-links pilot gates (issue #52)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-task-links-contracts.mjs
+          node scripts/test-task-links-scenarios.mjs
+          node scripts/test-task-links-outbox.mjs
+          node scripts/test-task-links-impact-portability.mjs
+          node scripts/test-task-links-native.mjs
+          node scripts/test-task-links-public-evidence.mjs
+      - name: Run the provisioned task-links native gate (issue #52)
+        # Executes the Rust/SQLite battery and the locked maintained Laravel
+        # port in synchronized/killed/restarted worker processes. Only the live
+        # owner can qualify its matching implementation/build/profile;
+        # exported files/DB rows never authenticate a past native execution.
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          LEKALO_TASKLINKS_NATIVE=1 \
+            LEKALO_TASKLINKS_NATIVE_DB="$RUNNER_TEMP/tasklinks-native/provisioned.sqlite" \
+            node scripts/test-task-links-native.mjs
+          test -f "$RUNNER_TEMP/tasklinks-native/provisioned.sqlite.qualified.json"
       - name: Run the privacy evaluator parity gate (issue #119)
         run: node scripts/test-privacy-evaluator-parity.mjs
       - name: Run the privacy runtime CLI gate (issue #119)
@@ -415,6 +489,24 @@ jobs:
           node scripts/test-golden-diagnostic-coverage.mjs
           node scripts/test-golden-planner-e2e.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-golden-update-policy.mjs
+      - name: Run the issue-136 adoption gates against the real binary
+        # The contracts gate (schemas + registry + live read-only
+        # flows), the selective-refactor gate (verified apply with
+        # real baseline/candidate runs, negatives, exact rollback,
+        # forged-custody/drift/confinement/version probes, receipt
+        # obstruction recovery, rollback preflight, temp hygiene), the
+        # hybrid gate (three-mode conformed fixture, live conformance
+        # freshness, executed provenance joins, recovery deferral), and
+        # the tutorial replay (the documented walkthrough runs
+        # verbatim). All need the binary built above.
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        timeout-minutes: 20
+        run: |
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-adoption-contracts.mjs
+          node scripts/test-adoption-refactor.mjs
+          node scripts/test-adoption-hybrid.mjs
+          node scripts/test-adoption-tutorial.mjs
       - name: Replay portable documentation commands in disposable copies (issue #105)
         timeout-minutes: 15
         env:
@@ -476,12 +568,6 @@ jobs:
         # decoder, the analysis states, and the strict-profile gates run
         # against the committed artifact with injected fakes.
         run: node scripts/test-mago-integration.mjs --fake
-      - name: Provision the planner fixture vendor tree per the committed lock (issue #56)
-        # A provisioning step: install from the committed composer.lock,
-        # never inside a compiler or adapter process, no lifecycle
-        # scripts. The runtime gates stay offline afterwards.
-        timeout-minutes: 15
-        run: composer install --no-interaction --prefer-dist --no-scripts --working-dir tests/fixtures/php-laravel/planner
       - name: Run the Laratesto scenario E2E gate (issue #56)
         timeout-minutes: 10
         run: node scripts/test-php-laravel-scenario-tests.mjs
@@ -699,3 +785,34 @@ jobs:
         # gates, with the violating negative control proving the rules
         # ran. A missing tool fails this leg, never a silent skip.
         run: node scripts/test-php-laravel-type-roundtrip.mjs --require-mago
+
+  worklog-changelog-pilot:
+    name: Worklog-changelog pilot binary gates (issue #51)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+      - name: Build the locked CLI and provision the exact schema validator
+        run: |
+          set -euo pipefail
+          cargo build -p lekalo-cli --locked
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.17.1" --ignore-scripts --no-audit --no-fund --no-save ajv@8.17.1
+      - name: Run the pilot harness, impact, and neutrality gates
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target php --profile strict --case all
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target go --profile strict --case all --expect-denied
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target go --profile permissive --case all
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-impact.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-admission.mjs
+          node scripts/test-worklog-changelog-neutrality.mjs

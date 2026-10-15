@@ -1,0 +1,338 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.managed-transaction-schema@0.8.0",
+  "title": "Lekalo managed-transaction 0.8.0",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/managed-transaction/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.managed-transaction@0.8.0"
+    },
+    "transactionId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.:/@-]+$",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "state": {
+      "enum": [
+        "prepared",
+        "publishing",
+        "committed",
+        "restoring",
+        "recovered",
+        "abandoned"
+      ]
+    },
+    "action": {
+      "enum": [
+        "apply",
+        "rollback",
+        "resolve"
+      ]
+    },
+    "planDigest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "absent"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "generationDigest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "generationDigest": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "generationDigest"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "absent"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "beforeManifestDigest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "absent"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "afterManifestDigest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "absent"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "pending": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/pendingOp"
+      },
+      "maxItems": 8192,
+      "minItems": 0
+    },
+    "affectedFiles": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
+        "minLength": 1,
+        "maxLength": 512
+      },
+      "maxItems": 8192,
+      "minItems": 0
+    },
+    "conflict": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    {
+                      "type": "string",
+                      "const": ".lekalo/generated/manifests/ownership.json"
+                    }
+                  ]
+                },
+                "reason": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_.:/@-]+$",
+                  "minLength": 1,
+                  "maxLength": 256
+                }
+              },
+              "required": [
+                "path",
+                "reason"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "absent"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "beforeDigest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "state",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "state": {
+              "const": "absent"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "transactionId",
+    "state",
+    "action",
+    "planDigest",
+    "generationDigest",
+    "beforeManifestDigest",
+    "afterManifestDigest",
+    "pending",
+    "affectedFiles",
+    "conflict",
+    "beforeDigest"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "pendingOp": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            {
+              "type": "string",
+              "const": ".lekalo/generated/manifests/ownership.json"
+            }
+          ]
+        },
+        "op": {
+          "enum": [
+            "publish",
+            "delete",
+            "restore"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "op"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
