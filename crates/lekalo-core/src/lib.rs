@@ -39,6 +39,7 @@ pub mod loader;
 pub mod lockfile;
 pub mod managed;
 pub mod metrics_export;
+pub mod module_api;
 pub mod native_gate;
 pub mod nfr;
 pub mod observed;

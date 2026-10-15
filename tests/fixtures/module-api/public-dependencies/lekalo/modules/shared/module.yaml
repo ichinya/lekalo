@@ -1,0 +1,6 @@
+schema_version: "0.2.16"
+definitions:
+  - id: shared
+    kind: module
+    version: 1
+    description: "The public identifier provider"

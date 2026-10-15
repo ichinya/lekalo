@@ -72,16 +72,24 @@ pub const FORMAT_REGISTRY_VERSION: &str = "0.8.0";
 ///   family constants.
 pub const ADOPTION_REGISTRY_VERSION: &str = "0.8.0";
 
-/// The issue #19 M8 union successor: the merged registry plus the nine
+/// Issue #19 M8 union successor: the merged registry plus the nine
 /// `portability.*` diagnostics (LEK-PORT-001..009). The new producer
 /// explicitly selects this registry; frozen predecessor outputs retain
 /// their pinned registries.
 pub const M8_REGISTRY_VERSION: &str = "0.8.0";
 
-/// The issue #51 union successor: the pilot composition family
+/// Issue #51 union successor: the pilot composition family
 /// (`worklog-changelog.*`, LEK-WC-001..007) on top of the merged union.
 /// Predecessor producers keep their exact pins.
 pub const PILOT_REGISTRY_VERSION: &str = "0.8.0";
+
+/// Issue #113 union successor: the accepted M8 union (`format.*` +
+/// `adoption.*` + `portability.*` + `worklog-changelog.*` + `managed.*`) plus the
+/// fourteen `module-api.*` rules (`LEK-MODULE-001..014`). Predecessor
+/// producers keep their exact pins; the union is additive end to end and
+/// names the same merged registry bytes as the other 0.8.0 family
+/// constants.
+pub const MODULE_REGISTRY_VERSION: &str = "0.8.0";
 
 /// Issue #41 managed union successor: the full integrated allocation union
 /// plus the closed `managed.*` family. Predecessor producer pins are

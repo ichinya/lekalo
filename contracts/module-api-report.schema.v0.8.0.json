@@ -1,0 +1,310 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/module-api-report.schema.v0.8.0.json",
+  "title": "Module API boundary report 0.8.0",
+  "description": "Closed boundary assessment report (issue #113): input pins, resolved export/import/consumer sets, typed boundary findings with graph witnesses, coverage states, and explicit completeness. Successful and denied projections retain the same evidence shape.",
+  "$ref": "#/$defs/report",
+  "$defs": {
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": "lekalo/module-api-report/v0.8.0" },
+        "identity": { "const": "dev.lekalo.module-api-report@0.8.0" },
+        "assessment": { "enum": ["pass", "fail", "indeterminate"] },
+        "command": { "enum": ["check"] },
+        "strict": { "type": "boolean" },
+        "moduleFilter": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[a-z][a-z0-9-]*$"
+            }
+          ]
+        },
+        "pins": { "$ref": "#/$defs/pins" },
+        "modules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/moduleSummary" },
+          "maxItems": 2000
+        },
+        "findings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/finding" },
+          "maxItems": 4096
+        },
+        "cycles": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/cycleWitness" },
+          "maxItems": 1024
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "complete": { "type": "boolean" }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "assessment",
+        "command",
+        "strict",
+        "moduleFilter",
+        "pins",
+        "modules",
+        "findings",
+        "cycles",
+        "gaps",
+        "complete"
+      ]
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "pins": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "modelVersion": { "const": "0.2.16" },
+        "irDigest": { "$ref": "#/$defs/digest" },
+        "attachmentDigest": { "$ref": "#/$defs/digest" },
+        "registryVersion": { "const": "0.8.0" }
+      },
+      "required": [
+        "project",
+        "modelVersion",
+        "irDigest",
+        "attachmentDigest",
+        "registryVersion"
+      ]
+    },
+    "moduleSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "moduleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "apiVersion": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        },
+        "attachment": { "type": "boolean" },
+        "exports": { "type": "integer", "minimum": 0 },
+        "imports": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 192,
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "consumers": { "type": "integer", "minimum": 0 },
+        "publicDigest": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/digest" }
+          ]
+        }
+      },
+      "required": [
+        "moduleId",
+        "apiVersion",
+        "attachment",
+        "exports",
+        "imports",
+        "consumers",
+        "publicDigest"
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rule": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9.-]*$"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^LEK-[A-Z]+-[0-9]{3}$"
+        },
+        "severity": { "enum": ["info", "warning", "error"] },
+        "category": {
+          "enum": [
+            "compatibility",
+            "infrastructure",
+            "semantic",
+            "security",
+            "privacy"
+          ]
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "consumer": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[a-z][a-z0-9-]*$"
+            }
+          ]
+        },
+        "producer": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[a-z][a-z0-9-]*$"
+            }
+          ]
+        },
+        "export": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 192,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+            }
+          ]
+        },
+        "member": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+            }
+          ]
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#|-]*$"
+          },
+          "maxItems": 256
+        },
+        "expected": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "minLength": 1, "maxLength": 192 }
+          ]
+        },
+        "actual": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "minLength": 1, "maxLength": 192 }
+          ]
+        }
+      },
+      "required": [
+        "rule",
+        "code",
+        "severity",
+        "category",
+        "subject",
+        "detail",
+        "consumer",
+        "producer",
+        "export",
+        "member",
+        "path",
+        "expected",
+        "actual"
+      ]
+    },
+    "cycleWitness": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projection": { "enum": ["imports", "public"] },
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 192,
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "minItems": 1,
+          "maxItems": 2000
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#|-]*$"
+          },
+          "minItems": 1,
+          "maxItems": 4096
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#|<>-]*$"
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["projection", "members", "path", "edges"]
+    }
+  }
+}

@@ -1,0 +1,36 @@
+schema_version: "0.2.16"
+definitions:
+  - id: tasks.create_task
+    kind: effect
+    version: 1
+    description: "Creates a task"
+    operation: create
+    entity: "tasks.task"
+    emits:
+      - "tasks.task_created"
+  - id: tasks.complete_task
+    kind: effect
+    version: 1
+    description: "Completes a task"
+    operation: update
+    entity: "tasks.task"
+  - id: tasks.create_task_cmd
+    kind: command
+    version: 1
+    description: "Create one task"
+    input:
+      - name: title
+        type: "tasks.title"
+        required: true
+    effects:
+      - "tasks.create_task"
+  - id: tasks.complete_task_cmd
+    kind: command
+    version: 1
+    description: "Complete one task"
+    input:
+      - name: task_id
+        type: "tasks.task_id"
+        required: true
+    effects:
+      - "tasks.complete_task"

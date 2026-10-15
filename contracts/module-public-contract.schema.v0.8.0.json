@@ -1,0 +1,927 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/module-public-contract.schema.v0.8.0.json",
+  "title": "Module public contract 0.8.0",
+  "description": "Standalone public bundle of one semantic module (issue #113): exported signatures with their portable type closure, public errors, events, ports, capabilities, effect obligations, exact public dependency pins, and deprecation metadata. Usable without the producer's private source project.",
+  "$ref": "#/$defs/bundle",
+  "$defs": {
+    "bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/module-public-contract/v0.8.0"
+        },
+        "identity": {
+          "const": "dev.lekalo.module-public-contract@0.8.0"
+        },
+        "producer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+            },
+            "module": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[a-z][a-z0-9-]*$"
+            }
+          },
+          "required": [
+            "project",
+            "module"
+          ]
+        },
+        "apiVersion": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "pins": {
+          "$ref": "#/$defs/pins"
+        },
+        "exports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/export"
+          },
+          "maxItems": 4096
+        },
+        "publicDependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/publicDependency"
+          },
+          "maxItems": 256
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/port"
+          },
+          "maxItems": 256
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/capability"
+          },
+          "maxItems": 256
+        },
+        "deprecations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/deprecation"
+          },
+          "maxItems": 1024
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "producer",
+        "apiVersion",
+        "digest",
+        "pins",
+        "exports",
+        "publicDependencies",
+        "ports",
+        "capabilities",
+        "deprecations"
+      ]
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "pins": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "modelVersion": {
+          "const": "0.2.16"
+        },
+        "irDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "sourceRevision": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 8,
+                  "maxLength": 64,
+                  "pattern": "^[0-9a-f]+$"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "unknown"
+                }
+              },
+              "required": [
+                "state"
+              ]
+            }
+          ]
+        }
+      },
+      "required": [
+        "modelVersion",
+        "irDigest",
+        "sourceRevision"
+      ]
+    },
+    "export": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/typeExport"
+        },
+        {
+          "$ref": "#/$defs/commandExport"
+        },
+        {
+          "$ref": "#/$defs/queryExport"
+        },
+        {
+          "$ref": "#/$defs/eventExport"
+        },
+        {
+          "$ref": "#/$defs/errorExport"
+        },
+        {
+          "$ref": "#/$defs/referenceExport"
+        }
+      ]
+    },
+    "typeExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "enum": [
+            "scalar",
+            "enum",
+            "value-object",
+            "entity"
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "base": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "string",
+                "number",
+                "boolean",
+                "date",
+                "datetime",
+                "uuid",
+                "uri"
+              ]
+            }
+          ]
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 192
+          },
+          "maxItems": 1024,
+          "uniqueItems": true
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "maxItems": 1024
+        },
+        "identity": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 192,
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "maxItems": 64
+        },
+        "aliasOf": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "since": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*).(0|[1-9][0-9]*).(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        }
+      },
+      "required": [
+        "export",
+        "kind",
+        "version"
+      ]
+    },
+    "commandExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "command"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "maxItems": 1024
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/effectObligation"
+          },
+          "maxItems": 256
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "maxItems": 1024,
+          "uniqueItems": true
+        },
+        "aliasOf": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "since": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*).(0|[1-9][0-9]*).(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        }
+      },
+      "required": [
+        "export",
+        "kind",
+        "version",
+        "errors"
+      ]
+    },
+    "queryExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "query"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "returns": {
+          "$ref": "#/$defs/typeExpr"
+        },
+        "reads": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "maxItems": 1024,
+          "uniqueItems": true
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "maxItems": 1024,
+          "uniqueItems": true
+        },
+        "cardinality": {
+          "enum": ["one", "optional", "list", "page", "stream"]
+        },
+        "consistency": {
+          "enum": ["strong", "bounded", "stale-ok"]
+        },
+        "pagination": {
+          "enum": ["none", "offset", "cursor"]
+        },
+        "aliasOf": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "since": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*).(0|[1-9][0-9]*).(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        }
+      },
+      "required": [
+        "export",
+        "kind",
+        "version",
+        "errors",
+        "cardinality",
+        "consistency",
+        "pagination"
+      ]
+    },
+    "eventExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "event"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "payload": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "maxItems": 1024
+        },
+        "aliasOf": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "since": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*).(0|[1-9][0-9]*).(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        }
+      },
+      "required": [
+        "export",
+        "kind",
+        "version"
+      ]
+    },
+    "errorExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "const": "error"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "payload": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "maxItems": 1024
+        },
+        "aliasOf": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "since": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*).(0|[1-9][0-9]*).(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        }
+      },
+      "required": [
+        "export",
+        "kind",
+        "version"
+      ]
+    },
+    "referenceExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "enum": [
+            "policy",
+            "effect",
+            "endpoint"
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "maxItems": 1024,
+          "uniqueItems": true
+        },
+        "invokes": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "method": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ]
+            }
+          ]
+        },
+        "path": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^/"
+            }
+          ]
+        },
+        "decision": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "allow",
+                "deny"
+              ]
+            }
+          ]
+        },
+        "operation": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "create",
+                "update",
+                "delete"
+              ]
+            }
+          ]
+        },
+        "entity": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "emits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "maxItems": 1024,
+          "uniqueItems": true
+        },
+        "aliasOf": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "since": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*).(0|[1-9][0-9]*).(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        }
+      },
+      "required": [
+        "export",
+        "kind",
+        "version"
+      ]
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "type": {
+          "$ref": "#/$defs/typeExpr"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "required"
+      ]
+    },
+    "typeExpr": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ref": {
+              "$ref": "#/$defs/semanticId"
+            }
+          },
+          "required": [
+            "ref"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "list": {
+              "$ref": "#/$defs/typeExpr"
+            }
+          },
+          "required": [
+            "list"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "optional": {
+              "$ref": "#/$defs/typeExpr"
+            }
+          },
+          "required": [
+            "optional"
+          ]
+        }
+      ]
+    },
+    "effectObligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "operation": {
+          "enum": [
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "emits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "maxItems": 1024,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "entity",
+        "operation",
+        "emits"
+      ]
+    },
+    "publicDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "moduleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "apiVersion": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        },
+        "exports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "minItems": 1,
+          "maxItems": 4096,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "moduleId",
+        "digest",
+        "apiVersion",
+        "exports"
+      ]
+    },
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "minItems": 1,
+          "maxItems": 4096,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "port",
+        "operations"
+      ]
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "capability": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9._-]*$"
+        },
+        "obligation": {
+          "enum": [
+            "required",
+            "optional"
+          ]
+        },
+        "owner": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+            }
+          ]
+        },
+        "version": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+            }
+          ]
+        }
+      },
+      "required": [
+        "capability",
+        "obligation",
+        "owner",
+        "version"
+      ]
+    },
+    "deprecation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "introducedIn": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+          "maxLength": 32
+        },
+        "removedIn": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        },
+        "replacement": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/semanticId"
+            }
+          ]
+        },
+        "hint": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "export",
+        "introducedIn",
+        "removedIn",
+        "replacement",
+        "hint"
+      ]
+    }
+  }
+}

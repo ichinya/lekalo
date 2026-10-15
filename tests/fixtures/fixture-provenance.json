@@ -236,6 +236,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "module-api",
+      "origin": "synthetic",
+      "note": "Issue #113: authored module API attachment/public/consumer/lock/context fixture corpus with synthetic tasks/planner/provider projects, boundary violation and valid-control variants, populated foreign public dependency pins through nested Task views/locks/context, and committed goldens; no private inputs or executed application behavior."
+    },
+    {
       "family": "nfr",
       "origin": "synthetic"
     },

@@ -1,0 +1,24 @@
+schema_version: "0.2.16"
+definitions:
+  - id: tasks.title
+    kind: scalar
+    version: 1
+    description: "Human-readable task title"
+    base: string
+  - id: tasks.secret
+    kind: scalar
+    version: 1
+    description: "A module-private symbol that must never cross the boundary"
+    base: string
+    visibility: module
+  - id: tasks.boxed
+    kind: value-object
+    version: 1
+    description: "An exported shape whose field reaches the private symbol"
+    fields:
+      - name: title
+        type: "tasks.title"
+        required: true
+      - name: secret
+        type: "tasks.secret"
+        required: true

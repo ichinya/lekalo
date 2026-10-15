@@ -72,7 +72,9 @@ if (recipe.schemaVersion !== "lekalo/portability-recipe/v0.8.0") fail("recipe-ve
 if (recipe.classification.precedence[0] !== "unsupported") fail("recipe-precedence", recipe.classification.precedence);
 
 // 3. The committed diagnostic union: the complete 0.6.5 predecessor plus
-//    exactly the nine registered portability codes, sorted, unique codes.
+//    the nine registered portability codes, sorted, unique codes. The
+//    union may carry the other landed 0.8.0 families (`format.*`,
+//    `adoption.*`, `worklog-changelog.*`, `module-api.*`) additively.
 const predecessor = read("contracts/diagnostic-registry.v0.6.5.json");
 const union = read("contracts/diagnostic-registry.v0.8.0.json");
 if (!validate.registry(union)) fail("registry-instance", validate.registry.errors);
@@ -80,8 +82,11 @@ if (union.identity !== "dev.lekalo.diagnostic-registry@0.8.0") fail("registry-id
 if (union.registry_version !== "0.8.0") fail("registry-version", union.registry_version);
 const predecessorIds = new Set(predecessor.entries.map((entry) => entry.id));
 const unionIds = new Set(union.entries.map((entry) => entry.id));
-if (union.entries.length !== predecessor.entries.length + 9) {
-  fail("registry-size", `${union.entries.length} vs ${predecessor.entries.length} + 9`);
+if (union.entries.length !== unionIds.size) {
+  fail("registry-size", `${union.entries.length} entries vs ${unionIds.size} unique ids`);
+}
+if ([...predecessorIds].some((id) => !unionIds.has(id))) {
+  fail("registry-size", "union dropped a predecessor id");
 }
 for (const entry of predecessor.entries) {
   if (!unionIds.has(entry.id)) fail("registry-dropped", entry.id);

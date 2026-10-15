@@ -7442,6 +7442,473 @@
       "lifecycle": "active"
     },
     {
+      "id": "module-api.consumer-incompatible",
+      "code": "LEK-MODULE-009",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "module-api.consumer-incompatible",
+      "default_message": "A declared consumer resolution is incompatible with the public change.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "consumer",
+          "type": "token"
+        },
+        {
+          "name": "producer",
+          "type": "token"
+        },
+        {
+          "name": "policy",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "module-api.cross-module-write-forbidden",
+      "code": "LEK-MODULE-007",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "module-api.cross-module-write-forbidden",
+      "default_message": "An actual direct cross-owner effect exceeds every valid explicit shared-aggregate grant.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "operation",
+          "type": "token"
+        },
+        {
+          "name": "resource",
+          "type": "token"
+        },
+        {
+          "name": "effect",
+          "type": "token"
+        },
+        {
+          "name": "grant",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "module-api.dependency-cycle",
+      "code": "LEK-MODULE-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "module-api.dependency-cycle",
+      "default_message": "The boundary dependency projection contains a strongly connected component.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "cycle",
+          "type": "list"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "module-api.deprecation-window-violation",
+      "code": "LEK-MODULE-011",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "module-api.deprecation-window-violation",
+      "default_message": "A public removal happens before the declared deprecation window or breaks a replacement obligation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "token"
+        },
+        {
+          "name": "actual",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "module-api.evidence-incomplete",
+      "code": "LEK-MODULE-012",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "unavailable"
+      ],
+      "message_id": "module-api.evidence-incomplete",
+      "default_message": "Required public closure, consumer, adapter, or provider evidence is missing, stale, or bounded.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "gaps",
+          "type": "list"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "module-api.import-undeclared",
+      "code": "LEK-MODULE-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "module-api.import-undeclared",
+      "default_message": "A resolved cross-module dependency lacks the declared import or selected public use.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "producer",
+          "type": "token"
+        },
+        {
+          "name": "export",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "module-api.input-invalid",
+      "code": "LEK-MODULE-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "module-api.input-invalid",
+      "default_message": "The module API input violates the closed contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "module-api.lock-stale",
+      "code": "LEK-MODULE-013",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "module-api.lock-stale",
+      "default_message": "The supplied consumer lock disagrees with the exact current public resolution.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "token"
+        },
+        {
+          "name": "actual",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "module-api.policy-denied",
+      "code": "LEK-MODULE-014",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "module-api.policy-denied",
+      "default_message": "Otherwise valid module API declarations fail the selected boundary policy.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "findings",
+          "type": "list"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "module-api.public-private-exposure",
+      "code": "LEK-MODULE-005",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "module-api.public-private-exposure",
+      "default_message": "An exported public signature closure reaches a private or non-exported type.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "export",
+          "type": "token"
+        },
+        {
+          "name": "member",
+          "type": "token"
+        },
+        {
+          "name": "path",
+          "type": "list"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "module-api.public-target-exposure",
+      "code": "LEK-MODULE-006",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "module-api.public-target-exposure",
+      "default_message": "A portable public closure reaches a target-specific class, type, or implementation mapping.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "export",
+          "type": "token"
+        },
+        {
+          "name": "member",
+          "type": "token"
+        },
+        {
+          "name": "path",
+          "type": "list"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "module-api.symbol-not-exported",
+      "code": "LEK-MODULE-003",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "valid",
+        "invalid"
+      ],
+      "message_id": "module-api.symbol-not-exported",
+      "default_message": "A cross-module reference resolves to a symbol the producer does not export.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "consumer",
+          "type": "token"
+        },
+        {
+          "name": "producer",
+          "type": "token"
+        },
+        {
+          "name": "export",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "module-api.version-policy-violation",
+      "code": "LEK-MODULE-010",
+      "category": "compatibility",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "module-api.version-policy-violation",
+      "default_message": "The changed public API lacks the required independent version bump or digest resolution.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "expected",
+          "type": "token"
+        },
+        {
+          "name": "actual",
+          "type": "token"
+        },
+        {
+          "name": "policy",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "module-api.version-unsupported",
+      "code": "LEK-MODULE-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "module-api.version-unsupported",
+      "default_message": "The module API contract version is outside the accepted registry.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "version",
+          "type": "token"
+        },
+        {
+          "name": "state",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "native-gate.approval-missing",
       "code": "LEK-NGT-005",
       "category": "adapter",

@@ -151,6 +151,7 @@ const expectedNew = [
   "worklog-changelog.evidence-incomplete",
 ];
 const actualNew = registry.entries
+  .filter((entry) => entry.id.startsWith("worklog-changelog."))
   .filter((entry) => !predecessor655.entries.some((candidate) => candidate.id === entry.id))
   .map((entry) => entry.id)
   .sort();

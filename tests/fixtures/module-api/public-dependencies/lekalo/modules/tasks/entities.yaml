@@ -1,0 +1,18 @@
+schema_version: "0.2.16"
+definitions:
+  - id: tasks.task_view
+    kind: value-object
+    version: 1
+    description: "A public view referencing the shared identifier"
+    fields:
+      - name: task_id
+        type: "shared.task_id"
+        required: true
+  - id: tasks.task_envelope
+    kind: value-object
+    version: 1
+    description: "A nested public view consumed by the planner"
+    fields:
+      - name: task
+        type: "tasks.task_view"
+        required: true

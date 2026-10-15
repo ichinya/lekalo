@@ -1,0 +1,18 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.focus_task
+    kind: command
+    version: 1
+    description: "Focus one task through the public tasks API"
+    input:
+      - name: title
+        type: "tasks.title"
+        required: true
+    effects:
+      - "planner.persist_focus"
+  - id: planner.persist_focus
+    kind: effect
+    version: 1
+    description: "Persists the focus decision"
+    operation: create
+    entity: "planner.focus"

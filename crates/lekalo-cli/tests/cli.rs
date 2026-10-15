@@ -339,7 +339,7 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
         .as_array()
         .expect("CLI dependencies")
         .iter()
-        .filter(|dependency| dependency["kind"].is_null())
+        .filter(|dependency| dependency["kind"].is_null() && dependency["target"].is_null())
         .map(|dependency| dependency["name"].as_str().expect("dependency name"))
         .collect::<Vec<_>>();
     cli_normal_dependencies.sort_unstable();
@@ -352,6 +352,17 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
         cli_normal_dependencies,
         ["clap", "lekalo-core", "rusqlite", "serde_json"]
     );
+    // The only target-scoped dependency is the unix process-control
+    // surface (issue #94 formatting custody on the M8 line); nothing else
+    // may leak past the two-crate boundary.
+    let cli_target_dependencies = cli["dependencies"]
+        .as_array()
+        .expect("CLI dependencies")
+        .iter()
+        .filter(|dependency| dependency["kind"].is_null() && !dependency["target"].is_null())
+        .map(|dependency| dependency["name"].as_str().expect("dependency name"))
+        .collect::<Vec<_>>();
+    assert_eq!(cli_target_dependencies, ["rustix"]);
     assert!(cli["targets"]
         .as_array()
         .expect("CLI targets")

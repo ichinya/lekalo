@@ -166,6 +166,13 @@ pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, Dom
     load_with_snapshot(selection).map(|loaded| loaded.model)
 }
 
+/// The validated absolute project root of one selection (the public seam
+/// for project-bound attachment reads through the classified filesystem
+/// boundary; issue #113 r3).
+pub fn project_root(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
+    root_for_selection(selection)
+}
+
 /// Public phase-1 seam: resolve the selection to the absolute,
 /// alias-free project root without reading model documents. Commands
 /// that read project-relative artifacts after loading must bind those

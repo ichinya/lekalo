@@ -58,11 +58,11 @@ pub(crate) fn build(
         if successor.entry(id).is_some() {
             successor
         } else {
-            // The merged 0.8.0 union registry covers the format,
-            // adoption, portability, worklog-changelog, managed, and
+            // The merged 0.8.0 union registry covers the format, adoption,
+            // portability, worklog-changelog, managed, module-api, and
             // tasklink families; every family accessor parses the same
             // bytes.
-            DiagnosticRegistry::format_successor().map_err(|_| BuildError::Registry)?
+            DiagnosticRegistry::module_successor().map_err(|_| BuildError::Registry)?
         }
     };
     let entry = registry

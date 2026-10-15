@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:f00368506bd6e1ebdaa4daa44acbc1c666952da675b81f201cec49a1604bf2d2",
+  "cliSourceDigest": "sha256:5da049529ffe9fb3ef18afcc78e2e60a10fc9c8a64f258811a0273995b6df8ff",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1272,9 +1272,97 @@
       "kind": "command",
       "command": "module",
       "usage": "lekalo module [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:c264b4e0b002a3f1cb48903677077fdaaea5d0e6c7d9c6d1558d8c17ca57d1f6",
+      "helpDigest": "sha256:ff90e6cd9d8a868dd7555e4b87b567ef144157508c388bd13d14f7c189529b8b",
       "summary": "Create one additional empty module in an initialized project (issue #97)",
       "leaf": false,
+      "owner": "docs/bootstrap.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:module api",
+      "kind": "command",
+      "command": "module api",
+      "usage": "lekalo module api [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:82970e45a318407d258d08b47049027b2595cf5bc50ed4951a5f15497595d689",
+      "summary": "The public API boundary family (issue #113): check, export, consumers, lock, and context over the exact attachment and typed compilation. Read-only: no file, lock, cache, or Git writes and no adapter or network activity",
+      "leaf": false,
+      "owner": "docs/bootstrap.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:module api check",
+      "kind": "command",
+      "command": "module api check",
+      "usage": "lekalo module api check [OPTIONS] --api <PATH>",
+      "helpDigest": "sha256:240ed1da7061387d4eff2d08bdd0c11ab1173f191daa28fa6a3b89fab5ffa75b",
+      "summary": "Validate the whole bound project against the attachment: imports, export closures, applicable obligations, effects, and consumers",
+      "leaf": true,
+      "owner": "docs/bootstrap.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:module api consumers",
+      "kind": "command",
+      "command": "module api consumers",
+      "usage": "lekalo module api consumers [OPTIONS] --api <PATH> <MODULE>",
+      "helpDigest": "sha256:50d75772d9a40fdf5cc85356a8bdd36b59f85c27b79d8e6319a38190b850f8c3",
+      "summary": "Emit the immutable declared and resolved consumer snapshot of one producer revision",
+      "leaf": true,
+      "owner": "docs/bootstrap.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:module api context",
+      "kind": "command",
+      "command": "module api context",
+      "usage": "lekalo module api context [OPTIONS] --consumer <MODULE> --uses <IDS> --budget <TOKENS> <PUBLIC>",
+      "helpDigest": "sha256:6ca105436e7c5fcc53cc2a7271e8433eace62832fea19d786d1e16f89d054869",
+      "summary": "Plan a bounded consumer capsule from one standalone public bundle only. No project, attachment, provider checkout, cache, or network",
+      "leaf": true,
+      "owner": "docs/bootstrap.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:module api diff",
+      "kind": "command",
+      "command": "module api diff",
+      "usage": "lekalo module api diff [OPTIONS] <BASE> <CANDIDATE>",
+      "helpDigest": "sha256:61fd77eb6037c5c7fe354e5fd6ec4a2301e42272e9de5de0a5f74407d452128d",
+      "summary": "Compare two exact public bundles of the same semantic module with the optional consumer snapshot pair",
+      "leaf": true,
+      "owner": "docs/bootstrap.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:module api export",
+      "kind": "command",
+      "command": "module api export",
+      "usage": "lekalo module api export [OPTIONS] --api <PATH> <MODULE>",
+      "helpDigest": "sha256:ae812a506ae88f251e455600f4d224dcfe400b0e2e50608355e067fdbfd898ee",
+      "summary": "Emit the complete public bundle for one exact module id. An incomplete or illegal closure never produces a certified bundle",
+      "leaf": true,
+      "owner": "docs/bootstrap.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:module api lock",
+      "kind": "command",
+      "command": "module api lock",
+      "usage": "lekalo module api lock [OPTIONS] --api <PATH> --module <MODULE> --consumer <MODULE>",
+      "helpDigest": "sha256:647504d86bde11ba2f01bf6d2b0260579c21dbf8dde9713a895d1a84d1103738",
+      "summary": "Print a candidate consumer lock payload (never a file), or check an existing lock against the current resolution",
+      "leaf": true,
+      "owner": "docs/bootstrap.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:module api mapping",
+      "kind": "command",
+      "command": "module api mapping",
+      "usage": "lekalo module api mapping [OPTIONS] --in-process <PATH> --service <PATH> <PUBLIC>",
+      "helpDigest": "sha256:b3f21c57de77326aad3b8d7edcddaa520a011fcebba9bf408335aa33c2d1e34d",
+      "summary": "Prove the in-process and extracted-service mapping conformance of one public bundle from two independently authored evidence documents (issue #113 AC7)",
+      "leaf": true,
       "owner": "docs/bootstrap.md",
       "status": "implemented"
     },
@@ -2218,7 +2306,7 @@
       "kind": "command",
       "command": "validate",
       "usage": "lekalo validate [OPTIONS]",
-      "helpDigest": "sha256:7b34141c47e78df5a3f2a1e24f4e3b7d2668616b41874b79f95a67e7f98fc27d",
+      "helpDigest": "sha256:efd529e34822ff2ffc70145609a4265509e16e2847b74cae346a4f67a2ab5a3e",
       "summary": "Validate the semantic layer of a Lekalo project over the typed IR",
       "leaf": true,
       "owner": "docs/validation.md",
@@ -2820,7 +2908,7 @@
       "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
-      "sourceDigest": "sha256:5210950a6de4e50ac6a7ca4cc566a2c8b807cb5f3dc1e30f29726f86154d408b",
+      "sourceDigest": "sha256:9fe4f700c4bce769385c32d536a3f00ca7d5d045f9e3f8ac9378c032df95dfb7",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2865,7 +2953,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.8.0.json",
-      "sourceDigest": "sha256:b4823f3a0ef69e17a527affae5725541423318a0a21cec68cd218e90d7640381",
+      "sourceDigest": "sha256:e1d5df53abe183b7a2b536a4fbd1085a1567d09df9d8cd55db05a4dd172d871d",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3263,6 +3351,78 @@
       "source": "contracts/model.schema.v0.8.0.json",
       "sourceDigest": "sha256:f811ce758c7eb0be88c08a7f52a1490b14482876dc2eec44581b3da958dc9ec6",
       "owner": "docs/model.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/module-api-consumers.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/module-api-consumers.schema.v0.8.0.json",
+      "sourceDigest": "sha256:9382e3025fb5e10ba07515d478946d47bf9c677f74250a04ae485f798cbec26f",
+      "owner": "docs/module-api.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/module-api-diff.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/module-api-diff.schema.v0.8.0.json",
+      "sourceDigest": "sha256:e0abd305dcf5f4cca99d6ef82ebcda0f899ae1a1b2c99467fc83c8a029e0a0d6",
+      "owner": "docs/module-api.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/module-api-lock.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/module-api-lock.schema.v0.8.0.json",
+      "sourceDigest": "sha256:f14be4d4e02e08454b94d3385abb8cf2df341f3eb99039af6c0fad0b258dbad6",
+      "owner": "docs/module-api.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/module-api-report.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/module-api-report.schema.v0.8.0.json",
+      "sourceDigest": "sha256:401c50213ddd83f4e5c55eefd852567d759377b680a632b53c23eb8e8213fb0d",
+      "owner": "docs/module-api.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/module-api.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/module-api.schema.v0.8.0.json",
+      "sourceDigest": "sha256:773b7b7daf5f3f9cc5fd477a1052389be1c6b0bdde759c30d431e388c9cdbb79",
+      "owner": "docs/module-api.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/module-consumer-context.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/module-consumer-context.schema.v0.8.0.json",
+      "sourceDigest": "sha256:3d180cb4e917b273b795a8e319f39ab2761a031c59ea6ca13ea9d7364de1e00b",
+      "owner": "docs/module-api.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/module-mapping-evidence.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/module-mapping-evidence.schema.v0.8.0.json",
+      "sourceDigest": "sha256:a1f12e89e348b921f2a5f0971ad2ce607a96445a6ca229c0c299cbbbbf937444",
+      "owner": "docs/module-api.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/module-public-contract.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/module-public-contract.schema.v0.8.0.json",
+      "sourceDigest": "sha256:e1605c8ed5cd2161e0a334c043ec17f88a56487470fa5b9d77eb71b3ca8e3c31",
+      "owner": "docs/module-api.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
@@ -3978,6 +4138,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/validation-profile.default.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/validation-profile.default.v0.8.0.json",
+      "sourceDigest": "sha256:498f0b071678df44a0ebf586b1cf050964f667b851b81d405f93180ce0bf758e",
+      "owner": "docs/validation.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/validation-profile.schema.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/validation-profile.schema.v0.6.4.json",
@@ -3996,10 +4165,28 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/validation-profile.strict.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/validation-profile.strict.v0.8.0.json",
+      "sourceDigest": "sha256:88eb35ef4267152ccfafdec7150575fcd30327fe1709cda758cbc4c559e765a1",
+      "owner": "docs/validation.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/validation-report.schema.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/validation-report.schema.v0.6.4.json",
       "sourceDigest": "sha256:81d63d55a3f69f73f7bd6208cb795e1f4270e5ef4599207d5e0a7fc4ffee3ec5",
+      "owner": "docs/validation.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/validation-report.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/validation-report.schema.v0.8.0.json",
+      "sourceDigest": "sha256:b0c27ab7d6c783f384f552252fc759b1d17a6feb2f4b8adb012ec4439f414962",
       "owner": "docs/validation.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

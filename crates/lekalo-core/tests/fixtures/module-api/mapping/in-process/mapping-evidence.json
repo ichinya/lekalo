@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "lekalo/module-mapping-evidence/v0.8.0",
+  "identity": "dev.lekalo.module-mapping-evidence@0.8.0",
+  "implementation": "in-process",
+  "port": "tasks.inprocess",
+  "producer": {
+    "project": "tasks",
+    "module": "tasks"
+  },
+  "publicDigest": "sha256:0c595c2b61babe2533d798f0067635b9a53775637bc607e691750429471cd8f2",
+  "observations": [
+    {
+      "operation": "tasks.get_task",
+      "kind": "query",
+      "inputs": [],
+      "results": {
+        "ref": "tasks.task_view"
+      },
+      "errors": [],
+      "effects": [],
+      "access": "read",
+      "capabilities": []
+    },
+    {
+      "operation": "tasks.list_tasks",
+      "kind": "query",
+      "inputs": [],
+      "results": {
+        "list": {
+          "ref": "tasks.task_view"
+        }
+      },
+      "errors": [],
+      "effects": [],
+      "access": "read",
+      "capabilities": []
+    },
+    {
+      "operation": "tasks.create_task_cmd",
+      "kind": "command",
+      "inputs": [
+        {
+          "name": "title",
+          "required": true,
+          "type": {
+            "ref": "tasks.title"
+          }
+        }
+      ],
+      "results": null,
+      "errors": [],
+      "effects": [
+        {
+          "entity": "tasks.task",
+          "operation": "create",
+          "emits": [
+            "tasks.task_created"
+          ]
+        }
+      ],
+      "access": "write",
+      "capabilities": []
+    },
+    {
+      "operation": "tasks.complete_task_cmd",
+      "kind": "command",
+      "inputs": [
+        {
+          "name": "task_id",
+          "required": true,
+          "type": {
+            "ref": "tasks.task_id"
+          }
+        }
+      ],
+      "results": null,
+      "errors": [],
+      "effects": [
+        {
+          "entity": "tasks.task",
+          "operation": "update",
+          "emits": []
+        }
+      ],
+      "access": "write",
+      "capabilities": []
+    }
+  ],
+  "unsupported": [],
+  "digest": "sha256:3a77bf9e93c2b8a09f57844975eff93556a4b913d87cb507424fa4e7a571684a"
+}

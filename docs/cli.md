@@ -1237,6 +1237,14 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo metrics status` | `lekalo metrics status [OPTIONS] --scope <TOKEN> <EXPORT_ID>` | [reference](metrics-export.md) |
 | `lekalo migrate` | `lekalo migrate [OPTIONS]` | [reference](versioning.md) |
 | `lekalo module` | `lekalo module [OPTIONS] <COMMAND>` | [reference](bootstrap.md) |
+| `lekalo module api` | `lekalo module api [OPTIONS] <COMMAND>` | [reference](bootstrap.md) |
+| `lekalo module api check` | `lekalo module api check [OPTIONS] --api <PATH>` | [reference](bootstrap.md) |
+| `lekalo module api consumers` | `lekalo module api consumers [OPTIONS] --api <PATH> <MODULE>` | [reference](bootstrap.md) |
+| `lekalo module api context` | `lekalo module api context [OPTIONS] --consumer <MODULE> --uses <IDS> --budget <TOKENS> <PUBLIC>` | [reference](bootstrap.md) |
+| `lekalo module api diff` | `lekalo module api diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](bootstrap.md) |
+| `lekalo module api export` | `lekalo module api export [OPTIONS] --api <PATH> <MODULE>` | [reference](bootstrap.md) |
+| `lekalo module api lock` | `lekalo module api lock [OPTIONS] --api <PATH> --module <MODULE> --consumer <MODULE>` | [reference](bootstrap.md) |
+| `lekalo module api mapping` | `lekalo module api mapping [OPTIONS] --in-process <PATH> --service <PATH> <PUBLIC>` | [reference](bootstrap.md) |
 | `lekalo module new` | `lekalo module new [OPTIONS] <ID>` | [reference](bootstrap.md) |
 | `lekalo native` | `lekalo native [OPTIONS] <COMMAND>` | [reference](native-gates.md) |
 | `lekalo native run` | `lekalo native run [OPTIONS] <PLAN>` | [reference](native-gates.md) |

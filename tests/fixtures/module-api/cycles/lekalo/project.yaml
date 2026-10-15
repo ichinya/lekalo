@@ -1,0 +1,8 @@
+schema_version: "0.2.16"
+definitions:
+  - id: cycle
+    kind: project
+    version: 1
+    description: "Issue #113 module API reference project"
+    derived_from:
+      - "TASKS-REQ-001"

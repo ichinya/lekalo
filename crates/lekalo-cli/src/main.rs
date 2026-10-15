@@ -34,6 +34,7 @@ mod format;
 mod git_input;
 mod managed;
 mod metrics_export;
+mod module_api;
 mod pilot_battery;
 mod portability;
 mod report_git;
@@ -202,6 +203,15 @@ enum Commands {
         /// Select the strict built-in validation profile.
         #[arg(long)]
         strict: bool,
+        /// The issue #113 boundary seam: validate the project against this
+        /// module API attachment after the accepted base validation. With
+        /// `--strict`, exact semantic boundary violations invalidate.
+        #[arg(long, value_name = "PATH")]
+        module_api: Option<String>,
+        /// Check this consumer lock against the current public
+        /// resolution (requires --module-api).
+        #[arg(long, value_name = "PATH", requires = "module_api")]
+        module_api_lock: Option<String>,
         /// Write the closed CI report to this file (a side channel; the
         /// status-owned stream and exit class stay stable).
         #[arg(long, value_name = "PATH")]
@@ -925,7 +935,8 @@ enum NfrCommands {
     },
 }
 
-/// The `module` subcommands: the module-authoring surface (issue #97).
+/// The `module` subcommands: the module-authoring surface (issue #97) plus
+/// the issue #113 public API boundary family (`module api`).
 #[derive(Debug, Subcommand)]
 enum ModuleCommands {
     /// Create one additional empty module: the module manifest and
@@ -943,6 +954,14 @@ enum ModuleCommands {
         /// Print the plan without writing anything.
         #[arg(long)]
         dry_run: bool,
+    },
+    /// The public API boundary family (issue #113): check, export,
+    /// consumers, lock, and context over the exact attachment and typed
+    /// compilation. Read-only: no file, lock, cache, or Git writes and no
+    /// adapter or network activity.
+    Api {
+        #[command(subcommand)]
+        command: module_api::ApiCommands,
     },
 }
 
@@ -2538,6 +2557,8 @@ fn runtime() -> u8 {
                 project,
                 module,
                 strict,
+                module_api,
+                module_api_lock,
                 report_file,
                 report_format,
                 ci_policy,
@@ -2551,6 +2572,22 @@ fn runtime() -> u8 {
                 };
                 if let Err(result) = request.validate() {
                     return emit(result, json_requested);
+                }
+                if let Some(attachment) = module_api {
+                    let seam_result = module_api::run_validate_seam(module_api::ValidateSeam {
+                        project: project.clone(),
+                        module: module.clone(),
+                        strict,
+                        attachment,
+                        lock: module_api_lock,
+                    });
+                    // The seam honors the CI report flags: a finished
+                    // validate-family result is reported exactly like the
+                    // base path (finding 22: silently dropped flags).
+                    return emit(
+                        report_finished_result(seam_result, &request, &project, &module, strict),
+                        json_requested,
+                    );
                 }
                 run_validate_reported(project, module, strict, cli.no_cache, &request)
             }
@@ -2896,16 +2933,33 @@ fn run_validate_reported(
     no_cache: bool,
     request: &crate::report_output::ReportRequest,
 ) -> DomainResult {
-    use lekalo_core::ci_report::{
-        CheckDraft, CommandName, CommandOutcome, FailureClass, SourceOutcome,
-    };
     if !request.is_requested() {
         return run_validate(project, module.clone(), strict, no_cache);
     }
-    let selection = selection_for(&project);
+    let result = run_validate(project.clone(), module.clone(), strict, no_cache);
+    report_finished_result(result, request, &project, &module, strict)
+}
+
+/// The CI report projection of one finished validate-family result (the
+/// base validation and the `--module-api` seam share the projection): the
+/// normalized diagnostics ride the report, the check row carries the
+/// verdict, and the provenance snapshot pins the exact revisions. The
+/// report never changes the status-owned stream; a report-write failure
+/// composes as the typed `ci.report-write-failed` unavailable result
+/// after a passing run and never masks a failing run.
+fn report_finished_result(
+    result: DomainResult,
+    request: &crate::report_output::ReportRequest,
+    project: &Option<String>,
+    module: &Option<String>,
+    strict: bool,
+) -> DomainResult {
+    use lekalo_core::ci_report::{
+        CheckDraft, CommandName, CommandOutcome, FailureClass, SourceOutcome,
+    };
+    let selection = selection_for(project);
     let project_root = lekalo_core::orchestration::project_root(&selection).ok();
     let git = crate::report_git::git_snapshot(&selection);
-    let result = run_validate(project, module.clone(), strict, no_cache);
     let provenance =
         match lekalo_core::ci_report::provenance::provenance_block(&selection, &git, strict) {
             Ok(provenance) => provenance,
@@ -2946,7 +3000,7 @@ fn run_validate_reported(
             "default".to_owned()
         },
         targets: Vec::new(),
-        modules: module.into_iter().collect(),
+        modules: module.clone().into_iter().collect(),
         locked: false,
         provenance,
         checks: vec![check],
@@ -3094,6 +3148,22 @@ fn run_validate(
     strict: bool,
     no_cache: bool,
 ) -> DomainResult {
+    run_validate_profiled(project, module, strict, no_cache, false)
+}
+
+/// The validate pipeline over one explicit profile family: the accepted
+/// legacy profiles everywhere, and the issue #113 boundary profiles when
+/// the `--module-api` seam owns the run (the boundary profile's only
+/// difference is the portability override handing that seam to
+/// LEK-MODULE-006, so the embedded 0.8.0 profiles are selected exactly
+/// where the boundary report is the authority).
+fn run_validate_profiled(
+    project: Option<String>,
+    module: Option<String>,
+    strict: bool,
+    no_cache: bool,
+    boundary: bool,
+) -> DomainResult {
     let selection = LoadSelection {
         project: project.or_else(|| std::env::var("LEKALO_PROJECT").ok()),
     };
@@ -3101,7 +3171,9 @@ fn run_validate(
         Err(result) => return result,
         Ok(pair) => pair,
     };
-    let profile = match if strict {
+    let profile = match if boundary {
+        lekalo_core::validator::ValidationProfile::embedded_boundary(strict)
+    } else if strict {
         lekalo_core::validator::ValidationProfile::embedded_strict()
     } else {
         lekalo_core::validator::ValidationProfile::embedded_default()
@@ -3508,18 +3580,22 @@ fn run_init(
 /// Run `lekalo module new`: the thin handoff to the core module
 /// creation service (issue #97).
 fn run_module(command: ModuleCommands) -> DomainResult {
-    let ModuleCommands::New {
-        id,
-        frontend,
-        project,
-        dry_run,
-    } = command;
-    lekalo_core::init::bootstrap::module_new(&lekalo_core::init::bootstrap::ModuleNewRequest {
-        project,
-        id,
-        frontend: frontend.core(),
-        dry_run,
-    })
+    match command {
+        ModuleCommands::New {
+            id,
+            frontend,
+            project,
+            dry_run,
+        } => lekalo_core::init::bootstrap::module_new(
+            &lekalo_core::init::bootstrap::ModuleNewRequest {
+                project,
+                id,
+                frontend: frontend.core(),
+                dry_run,
+            },
+        ),
+        ModuleCommands::Api { command } => module_api::run(command),
+    }
 }
 
 /// The terminal output of `lekalo adapter test`: either the standard

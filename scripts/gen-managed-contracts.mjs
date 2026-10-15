@@ -164,7 +164,7 @@ const visit = value => {
   }
 };
 
-export function artifacts() {
+export function artifacts(union = read(`contracts/diagnostic-registry.v${version}.json`)) {
   const files = new Map();
   const predecessor = read('contracts/diagnostic-registry.v0.6.5.json');
   assert.ok(predecessor.entries.length >= 500, 'predecessor registry shrank');
@@ -206,17 +206,21 @@ export function artifacts() {
     allowed_fix_ids: [],
     lifecycle: 'active',
   }));
+  // This generator owns only managed.*. Compose that slice over the
+  // committed union, preserving every sibling family and frozen entry.
+  for (const entry of predecessor.entries) {
+    assert.deepEqual(union.entries.find(candidate => candidate.id === entry.id), entry, `predecessor entry changed: ${entry.id}`);
+  }
   const registry = {
-    ...predecessor,
+    ...union,
     schema_version: `lekalo/diagnostic-registry/v${version}`,
     identity: `dev.lekalo.diagnostic-registry@${version}`,
     registry_version: version,
-    entries: [...predecessor.entries, ...entries].sort((a, b) => (a.id < b.id ? -1 : 1)),
+    entries: [...union.entries.filter(entry => !entry.id.startsWith('managed.')), ...entries].sort((a, b) => (a.id < b.id ? -1 : 1)),
   };
-  const registrySchema = JSON.parse(JSON.stringify(read('contracts/diagnostic-registry.schema.v0.6.4.json')).replaceAll('0.6.4', version));
-  registrySchema.description = `Issue #41 additive union successor: the ${predecessor.entries.length} predecessor entries and entry grammar are preserved. Managed ownership adds twelve infrastructure diagnostics; wire diagnostics remain v0.2.16.`;
   files.set(`contracts/diagnostic-registry.v${version}.json`, pretty(registry));
-  files.set(`contracts/diagnostic-registry.schema.v${version}.json`, pretty(registrySchema));
+  // The shared registry schema (including the description of all landed
+  // families and their union grammar) is not owned by this generator.
   for (const [family, properties] of Object.entries(shapes)) {
     used.clear();
     const body = shape(family, properties);

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "lekalo/module-api/v0.8.0",
+  "identity": "dev.lekalo.module-api@0.8.0",
+  "project": "errors",
+  "modules": [
+    {
+      "moduleId": "planner",
+      "apiVersion": "1.0.0",
+      "exports": [
+        { "export": "planner.task_not_found", "kind": "error", "since": "1.0.0", "aliasOf": null }
+      ],
+      "consumers": [],
+      "ports": [],
+      "capabilities": [],
+      "grants": [],
+      "deprecations": []
+    }
+  ]
+}
