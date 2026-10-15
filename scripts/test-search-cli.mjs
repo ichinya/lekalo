@@ -691,14 +691,16 @@ rmSync(join(project, "evidence/diag-ghost.json"), { force: true });
 rmSync(join(project, "evidence/diag-conflict.json"), { force: true });
 
 // ---------------------------------------------------------------------------
-// Scale envelope (issue #93 r6): the r5 review measured the warm/query
-// paths at ~47 s per cached query and ~45 s `status` at ~4k cards
-// (superlinear derivation), invisible at the 36-card fixture scale.
-// This gate synthesizes a ~1.7k-card project and enforces a generous
-// per-invocation deadline on the warm paths (linear lexer + memoized
-// derivation finish in ~1-2 s at this scale in debug builds; the
-// quadratic/pre-memo mechanism measured ~21 s warm and ~13 s status on
-// the same machine). Measured seconds are recorded in the summary so
+// Scale envelope (issue #93 r6/r8): the r5 review measured the
+// warm/query paths at ~47 s per cached query and ~45 s `status` at
+// ~4k cards (superlinear derivation), invisible at the 36-card fixture
+// scale. This gate synthesizes a ~1.7k-card project and enforces a
+// generous per-invocation deadline on the warm paths. Mechanism since
+// r7 (memo removed): linear duplicate-key lexer + always-decisive full
+// derivation proof, ~2-3 s at this scale in debug builds; the
+// quadratic/pre-lexer mechanism measured ~21 s warm and ~13 s status
+// on the same machine. No cache sidecar is trusted — warm queries
+// always re-derive. Measured seconds are recorded in the summary so
 // the envelope stays auditable, not gamed.
 // ---------------------------------------------------------------------------
 let scaleProject = mkdtempSync(join(tmpdir(), "lekalo-search-cli-scale-"));
