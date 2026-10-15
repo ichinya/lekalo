@@ -22,7 +22,9 @@ pub const REGISTRY_BYTES: &[u8] =
 pub const SUCCESSOR_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.6.5.json");
 
-/// The issue #93 union successor: the 0.6.5 union plus the `search.*` family.
+/// The issue #93 union successor bytes (the same merged union registry
+/// as the other 0.8.0 family constants; this branch pins the 0.6.5
+/// union plus the eight `search.*` rules).
 pub const SEARCH_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
 

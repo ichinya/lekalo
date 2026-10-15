@@ -178,8 +178,9 @@ the recomputed snapshot are byte-identical. The same partition pins
 (`update`'s no-op reuse path and the warm query path) make `update`
 a genuine partition reuse: when the Model digest, every producer
 pin, and the admission config all re-verify, the immutable generation
-is republished as-is without re-decoding producers or recomputing
-the projection.
+is republished as-is — reuse avoids rewriting the durable store, not
+re-decoding producers or recomputing the projection, and the
+derivation proof stays decisive on every path.
 
 Implemented: the pure core (`lekalo_core::search`), the CLI surface,
 the durable generation store, the diagnostic family, the four wire

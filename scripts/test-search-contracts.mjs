@@ -66,8 +66,9 @@ const validateResult = validators.result;
 const validateIndex = validators.index;
 const validateInputs = validators.inputs;
 
-// 2. The registry union successor validates against its own schema and
-//    preserves every accepted 0.6.5 entry byte-for-byte.
+// 2. The registry union successor validates against its own schema,
+//    preserves every accepted 0.6.5 entry byte-for-byte, and scopes
+//    its additions by family (union-aware, issue #93 r9).
 const predecessor = read("contracts/diagnostic-registry.v0.6.5.json");
 const successor = read("contracts/diagnostic-registry.v0.8.0.json");
 const validateRegistry = compile("contracts/diagnostic-registry.schema.v0.8.0.json");
@@ -81,12 +82,6 @@ for (const entry of successor.entries) {
   if (JSON.stringify(previous) !== JSON.stringify(entry)) {
     fail("predecessor-entry-drift", entry.id);
   }
-}
-if (successor.entries.length !== predecessor.entries.length + 8) {
-  fail("registry-union-size", {
-    predecessor: predecessor.entries.length,
-    successor: successor.entries.length,
-  });
 }
 // The eight search.* rules are registered with the exact code block.
 const searchCodes = new Map(
@@ -106,6 +101,86 @@ const expected = [
 ];
 for (const [id, code] of expected) {
   if (searchCodes.get(id) !== code) fail("search-family-code", { id, code: searchCodes.get(id) });
+}
+// Union-aware family scope (issue #93 r9, mirroring the #52 gate fix
+// in 0099a3f8): the 0.8.0 successor is the merged grand union — the
+// milestone integration carries the adoption, format, managed,
+// portability, tasklink, and worklog-changelog families alongside
+// this issue's rules (module-api follows from #113), so a raw
+// total-size assertion over 0.6.5 + 8 fails on the merged tree and
+// invites dropping the other families' entries. The invariant is
+// family-scoped instead: every addition beyond the pinned predecessor
+// must belong to a known landed family, and the search family must
+// carry exactly its eight rules (erosion control).
+const landedFamilies = [
+  "adoption.",
+  "format.",
+  "managed.",
+  "module-api.",
+  "portability.",
+  "tasklink.",
+  "worklog-changelog.",
+  "search.",
+];
+const familyScopeVerdict = (registry) => {
+  const familyAdded = registry.entries.filter((entry) => !predecessorIds.has(entry.id));
+  const foreign = familyAdded.filter(
+    (entry) => !landedFamilies.some((family) => entry.id.startsWith(family)),
+  );
+  if (foreign.length) {
+    return {
+      ok: false,
+      reason: "registry-foreign-family-addition",
+      foreign: foreign.map((entry) => entry.id).slice(0, 4),
+      predecessor: predecessor.entries.length,
+      successor: registry.entries.length,
+    };
+  }
+  const searchFamily = registry.entries.filter((entry) => entry.id.startsWith("search.")).length;
+  if (searchFamily !== expected.length) {
+    return {
+      ok: false,
+      reason: "registry-union-size",
+      searchFamily,
+      expected: expected.length,
+    };
+  }
+  return { ok: true, reason: null };
+};
+const scope = familyScopeVerdict(successor);
+if (!scope.ok) fail(scope.reason, scope);
+// 2b. Union-growth regression for the family-scope invariant (r9): a
+//     simulated merged union where another landed family sits
+//     alongside the eight search.* rules must still pass (this is the
+//     586-entry tree this branch merges into), while a stray
+//     non-search addition outside every landed family must fail.
+{
+  const template = successor.entries.find((entry) => entry.id === "search.ambiguous");
+  const byId = (a, b) => (a.id < b.id ? -1 : 1);
+  const neighbors = ["adoption.", "tasklink.", "worklog-changelog."].map((family, index) => ({
+    ...template,
+    id: `${family}registry-union-sim-${index}`,
+    code: `LEK-SIM-${String(index).padStart(3, "0")}`,
+  }));
+  const mergedUnion = {
+    ...successor,
+    entries: [...successor.entries, ...neighbors].sort(byId),
+  };
+  const mergedVerdict = familyScopeVerdict(mergedUnion);
+  if (!mergedVerdict.ok) fail("registry-union-simulation-rejected", mergedVerdict);
+  const stray = {
+    ...template,
+    id: "bogus.registry-union-stray",
+    code: "LEK-SIM-999",
+  };
+  const strayUnion = {
+    ...mergedUnion,
+    entries: [...mergedUnion.entries, stray].sort(byId),
+  };
+  const strayVerdict = familyScopeVerdict(strayUnion);
+  if (strayVerdict.ok || strayVerdict.foreign?.[0] !== "bogus.registry-union-stray") {
+    fail("registry-union-simulation-stray-accepted", strayVerdict);
+  }
 }
 // Registry invariants JSON Schema cannot express.
 const ids = successor.entries.map((entry) => entry.id);
