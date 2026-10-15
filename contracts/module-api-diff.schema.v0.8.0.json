@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/module-api-diff.schema.v0.8.0.json",
+  "title": "Module API diff 0.8.0",
+  "description": "Closed comparison of two public bundles of the same semantic module (issue #113): per-change compatibility classes with exact reasons, the union before/after consumer inventory with affected/compatible/unaffected/unknown partition, version and deprecation policy decisions, and explicit coverage of what is unknown.",
+  "$ref": "#/$defs/diff",
+  "$defs": {
+    "diff": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": "lekalo/module-api-diff/v0.8.0" },
+        "identity": { "const": "dev.lekalo.module-api-diff@0.8.0" },
+        "before": { "$ref": "#/$defs/side" },
+        "after": { "$ref": "#/$defs/side" },
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/change" },
+          "maxItems": 8192
+        },
+        "consumers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/consumerImpact" },
+          "maxItems": 4096
+        },
+        "coverage": { "$ref": "#/$defs/coverage" },
+        "versionPolicy": { "$ref": "#/$defs/versionDecision" },
+        "verdict": { "enum": ["compatible", "breaking", "policy-denied"] }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "before",
+        "after",
+        "changes",
+        "consumers",
+        "coverage",
+        "versionPolicy",
+        "verdict"
+      ]
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "side": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "module": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "project": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "digest": { "$ref": "#/$defs/digest" },
+        "apiVersion": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+              "maxLength": 32
+            }
+          ]
+        }
+      },
+      "required": ["module", "project", "digest", "apiVersion"]
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+        },
+        "member": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[a-z][a-z0-9_]*$"
+            }
+          ]
+        },
+        "class": {
+          "enum": [
+            "additive",
+            "behavioral",
+            "source-breaking",
+            "wire-breaking",
+            "policy",
+            "unknown"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "before": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "minLength": 1, "maxLength": 192 }
+          ]
+        },
+        "after": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "minLength": 1, "maxLength": 192 }
+          ]
+        }
+      },
+      "required": ["export", "member", "class", "reason", "before", "after"]
+    },
+    "consumerImpact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "consumer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "status": { "enum": ["affected", "compatible", "unaffected", "unknown"] },
+        "presentIn": { "enum": ["before", "after", "both"] },
+        "policy": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9][a-z0-9-]*$"
+            }
+          ]
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+          },
+          "maxItems": 1024,
+          "uniqueItems": true
+        },
+        "witness": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#|-]*$"
+          },
+          "maxItems": 256
+        },
+        "reason": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z0-9][a-z0-9-]*$"
+            }
+          ]
+        }
+      },
+      "required": [
+        "consumer",
+        "status",
+        "presentIn",
+        "policy",
+        "changes",
+        "witness",
+        "reason"
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "known": { "type": "integer", "minimum": 0 },
+        "possible": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 192,
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "maxItems": 4096,
+          "uniqueItems": true
+        },
+        "unknownReasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        }
+      },
+      "required": ["known", "possible", "unknownReasons"]
+    },
+    "versionDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "decision": { "enum": ["compliant", "violation", "digest-only"] },
+        "expected": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "minLength": 1, "maxLength": 32 }
+          ]
+        },
+        "actual": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "minLength": 1, "maxLength": 32 }
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        }
+      },
+      "required": ["decision", "expected", "actual", "detail"]
+    }
+  }
+}

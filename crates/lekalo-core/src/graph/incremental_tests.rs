@@ -85,6 +85,8 @@ fn kind_changes_rebind_unchanged_inbound_sources() {
         common: scalar.common,
         fields: Vec::new(),
         identity: Vec::new(),
+        relations: Vec::new(),
+        unique_constraints: Vec::new(),
     });
     let (_, counts) = differential(&project, &old);
     assert_eq!(counts.emitted_units, 2); // target + planner.task's type site

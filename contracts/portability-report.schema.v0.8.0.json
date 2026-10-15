@@ -1,0 +1,1346 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/portability-report.schema.v0.8.0.json",
+  "title": "Portability report 0.8.0",
+  "description": "Issue #19 closed capability-based target-portability assessment: per-symbol four-dimension classifications with exact target/profile pins, requirement reasons, summaries with primary-class partitions, bounded migration-planning rows, and affected scenario/gate joins. Unsupported, untested, and unknown states never collapse into one another.",
+  "$ref": "#/$defs/report",
+  "$defs": {
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/portability-report/v0.8.0"
+        },
+        "identity": {
+          "const": "dev.lekalo.portability-report@0.8.0"
+        },
+        "recipeRef": {
+          "$ref": "#/$defs/recipeRef"
+        },
+        "projectRef": {
+          "$ref": "#/$defs/projectRef"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "destinations": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/destination"
+          }
+        },
+        "inputs": {
+          "$ref": "#/$defs/inputs"
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
+        "subjects": {
+          "type": "array",
+          "maxItems": 50000,
+          "items": {
+            "$ref": "#/$defs/subject"
+          }
+        },
+        "summaries": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/summary"
+          }
+        },
+        "migrationSurface": {
+          "$ref": "#/$defs/migrationSurface"
+        },
+        "affectedScenarios": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/affectedScenario"
+          }
+        },
+        "affectedGates": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/affectedGate"
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/reportDiagnostic"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "recipeRef",
+        "projectRef",
+        "scope",
+        "source",
+        "destinations",
+        "inputs",
+        "coverage",
+        "subjects",
+        "summaries",
+        "migrationSurface",
+        "affectedScenarios",
+        "affectedGates",
+        "diagnostics"
+      ],
+      "unevaluatedProperties": false
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "targetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "recipeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "const": "dev.lekalo.portability-recipe"
+        },
+        "version": {
+          "const": "0.8.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "unevaluatedProperties": false
+    },
+    "projectRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "modelVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "irDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "projectId",
+        "modelVersion",
+        "irDigest"
+      ],
+      "unevaluatedProperties": false
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "project",
+            "symbol",
+            "module"
+          ]
+        },
+        "selector": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/semanticId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "selector"
+      ],
+      "unevaluatedProperties": false
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "targetId": {
+          "$ref": "#/$defs/targetId"
+        },
+        "state": {
+          "enum": [
+            "pinned",
+            "derived",
+            "unknown"
+          ]
+        },
+        "profile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/profilePin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "targetId",
+        "state",
+        "profile"
+      ],
+      "unevaluatedProperties": false
+    },
+    "profilePin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sourceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "resolvedDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "componentVersions": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "axis": {
+                "type": "string",
+                "enum": [
+                  "runtime",
+                  "storage",
+                  "transport",
+                  "testing",
+                  "analysis",
+                  "deployment"
+                ]
+              },
+              "component": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[a-z][a-z0-9-]*$"
+              },
+              "definitionVersion": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32,
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+              }
+            },
+            "required": [
+              "axis",
+              "component",
+              "definitionVersion"
+            ],
+            "unevaluatedProperties": false
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+              },
+              "support": {
+                "enum": [
+                  "full",
+                  "partial",
+                  "none",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "support"
+            ],
+            "unevaluatedProperties": false
+          }
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "sourceDigest",
+        "resolvedDigest",
+        "componentVersions",
+        "capabilities"
+      ],
+      "unevaluatedProperties": false
+    },
+    "destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "targetId": {
+          "$ref": "#/$defs/targetId"
+        },
+        "state": {
+          "enum": [
+            "pinned",
+            "derived",
+            "unknown"
+          ]
+        },
+        "profile": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/profilePin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "adapter": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "enum": [
+                    "absent",
+                    "recorded"
+                  ]
+                },
+                "identity": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9.@/_-]*$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "version": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 32,
+                      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "protocol": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9.@/_-]*$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "capabilityDigest": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/digest"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "evidenceDigest": {
+                  "description": "Exact digest of the adapter evidence artifact read through the confined project filesystem, when the target binding named one; absent otherwise.",
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/digest"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "state",
+                "identity",
+                "version",
+                "protocol",
+                "capabilityDigest"
+              ],
+              "unevaluatedProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "storageProfileRefs": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 324,
+            "pattern": "^[a-z0-9](?:[a-z0-9._-]*/)*[a-z0-9][a-z0-9._-]*#sha256:[0-9a-f]{64}$",
+            "description": "A verified storage-profile reference: the exact project-relative path, '#' and the sha256 digest of the read bytes."
+          }
+        }
+      },
+      "required": [
+        "targetId",
+        "state",
+        "profile",
+        "adapter",
+        "storageProfileRefs"
+      ],
+      "unevaluatedProperties": false
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "targetsConfig": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "pinned"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                },
+                "digest": {
+                  "$ref": "#/$defs/digest"
+                }
+              },
+              "required": [
+                "state",
+                "path",
+                "digest"
+              ],
+              "unevaluatedProperties": false
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "derived"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "unevaluatedProperties": false
+            }
+          ]
+        },
+        "evidence": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "supplied"
+                },
+                "digest": {
+                  "$ref": "#/$defs/digest"
+                }
+              },
+              "required": [
+                "state",
+                "digest"
+              ],
+              "unevaluatedProperties": false
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "absent"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "unevaluatedProperties": false
+            }
+          ]
+        },
+        "lockDigest": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "$ref": "#/$defs/digest"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ],
+              "unevaluatedProperties": false
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "unreconciled"
+                },
+                "value": {
+                  "$ref": "#/$defs/digest"
+                }
+              },
+              "required": [
+                "state",
+                "value"
+              ],
+              "unevaluatedProperties": false
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "const": "absent"
+                }
+              },
+              "required": [
+                "state"
+              ],
+              "unevaluatedProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "targetsConfig",
+        "evidence",
+        "lockDigest"
+      ],
+      "unevaluatedProperties": false
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "eligibleSubjects": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "obligationRows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "nonApplicableRows": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "limits": {
+          "$ref": "#/$defs/limits"
+        }
+      },
+      "required": [
+        "eligibleSubjects",
+        "obligationRows",
+        "nonApplicableRows",
+        "complete",
+        "truncated",
+        "limits"
+      ],
+      "unevaluatedProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxSubjects": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50000
+        },
+        "maxTraversalDepth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "maxDependencyEdges": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 250000
+        },
+        "maxObligationRows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "maxReportBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 33554432
+        },
+        "maxWorkUnits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        }
+      },
+      "required": [
+        "maxSubjects",
+        "maxTraversalDepth",
+        "maxDependencyEdges",
+        "maxObligationRows",
+        "maxReportBytes",
+        "maxWorkUnits"
+      ],
+      "unevaluatedProperties": false
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "subject": {
+          "$ref": "#/$defs/typedId"
+        },
+        "member": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requirements": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/row"
+          }
+        }
+      },
+      "required": [
+        "subject",
+        "member",
+        "requirements",
+        "rows"
+      ],
+      "unevaluatedProperties": false
+    },
+    "typedId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 200,
+      "pattern": "^(scalar|enum|value-object|entity|command|query|policy|event|effect|endpoint|scenario):[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "$ref": "#/$defs/targetId"
+        },
+        "dimension": {
+          "enum": [
+            "structural",
+            "behavioral",
+            "storage",
+            "operational"
+          ]
+        },
+        "classification": {
+          "enum": [
+            "portable",
+            "supported-with-mapping",
+            "partial",
+            "target-specific",
+            "unsupported",
+            "unknown",
+            "non-applicable"
+          ]
+        },
+        "verification": {
+          "enum": [
+            "untested",
+            "recorded-pass",
+            "recorded-fail",
+            "not-applicable"
+          ]
+        },
+        "binding": {
+          "oneOf": [
+            {
+              "enum": [
+                "generated",
+                "custom",
+                "foreign",
+                "external",
+                "unsupported",
+                "missing"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "blocking": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "required": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/policy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offered": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/policy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "witnesses": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/typedId"
+          }
+        }
+      },
+      "required": [
+        "destination",
+        "dimension",
+        "classification",
+        "verification",
+        "binding",
+        "blocking",
+        "reason",
+        "required",
+        "offered",
+        "evidenceRefs",
+        "witnesses"
+      ],
+      "unevaluatedProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "decimal",
+            "isolation",
+            "ordering",
+            "null-handling",
+            "rounding"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "precision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "unevaluatedProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "destination": {
+          "$ref": "#/$defs/targetId"
+        },
+        "dimensions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "structural": {
+              "$ref": "#/$defs/dimensionSummary"
+            },
+            "behavioral": {
+              "$ref": "#/$defs/dimensionSummary"
+            },
+            "storage": {
+              "$ref": "#/$defs/dimensionSummary"
+            },
+            "operational": {
+              "$ref": "#/$defs/dimensionSummary"
+            }
+          },
+          "required": [
+            "structural",
+            "behavioral",
+            "storage",
+            "operational"
+          ],
+          "unevaluatedProperties": false
+        },
+        "blockers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknowns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "customObligations": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "destination",
+        "dimensions",
+        "blockers",
+        "unknowns",
+        "customObligations"
+      ],
+      "unevaluatedProperties": false
+    },
+    "dimensionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "portable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "supportedWithMapping": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "partial": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "targetSpecific": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unsupported": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknown": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "nonApplicable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "eligibleApplicable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "structuralPortable": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "numerator": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "denominator": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "numerator",
+                "denominator"
+              ],
+              "unevaluatedProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verification": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "untested": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "recordedPass": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "recordedFail": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "notApplicable": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "untested",
+            "recordedPass",
+            "recordedFail",
+            "notApplicable"
+          ],
+          "unevaluatedProperties": false
+        }
+      },
+      "required": [
+        "portable",
+        "supportedWithMapping",
+        "partial",
+        "targetSpecific",
+        "unsupported",
+        "unknown",
+        "nonApplicable",
+        "eligibleApplicable",
+        "structuralPortable",
+        "verification"
+      ],
+      "unevaluatedProperties": false
+    },
+    "migrationSurface": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "missingImplementations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mappedSymbols": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "storageReviews": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "affectedScenarios": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "affectedGates": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolvedObligations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "$ref": "#/$defs/planningRow"
+          }
+        }
+      },
+      "required": [
+        "missingImplementations",
+        "mappedSymbols",
+        "storageReviews",
+        "affectedScenarios",
+        "affectedGates",
+        "unresolvedObligations",
+        "complete",
+        "rows"
+      ],
+      "unevaluatedProperties": false
+    },
+    "planningRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "subject": {
+          "$ref": "#/$defs/typedId"
+        },
+        "member": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dimension": {
+          "enum": [
+            "structural",
+            "behavioral",
+            "storage",
+            "operational"
+          ]
+        },
+        "destination": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/targetId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "action": {
+          "enum": [
+            "implement-hook",
+            "replace-mapping",
+            "review-storage-policy",
+            "bind-target",
+            "verify-scenario",
+            "collect-evidence"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "requirement": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/semanticId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/policy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offered": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/policy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prerequisites": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "gates": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "evidenceNeeded": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9-]*$"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "member",
+        "dimension",
+        "destination",
+        "action",
+        "reason",
+        "requirement",
+        "required",
+        "offered",
+        "prerequisites",
+        "scenarios",
+        "gates",
+        "evidenceNeeded"
+      ],
+      "unevaluatedProperties": false
+    },
+    "affectedScenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scenario": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "state": {
+          "enum": [
+            "declared",
+            "planned",
+            "executed",
+            "failed",
+            "unknown"
+          ]
+        },
+        "subjects": {
+          "type": "array",
+          "maxItems": 1024,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/typedId"
+          }
+        }
+      },
+      "required": [
+        "scenario",
+        "state",
+        "subjects"
+      ],
+      "unevaluatedProperties": false
+    },
+    "affectedGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gate": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "state": {
+          "enum": [
+            "declared",
+            "planned",
+            "executed",
+            "failed",
+            "unknown"
+          ]
+        },
+        "scenarios": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        }
+      },
+      "required": [
+        "gate",
+        "state",
+        "scenarios"
+      ],
+      "unevaluatedProperties": false
+    },
+    "reportDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A bounded reason record joining the report finding to its registered diagnostic code; the envelope diagnostics array stays authoritative.",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+        },
+        "subject": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/semanticId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dimension": {
+          "oneOf": [
+            {
+              "enum": [
+                "structural",
+                "behavioral",
+                "storage",
+                "operational"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        }
+      },
+      "required": [
+        "code",
+        "subject",
+        "dimension",
+        "detail"
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

@@ -418,3 +418,95 @@ fn profile_terms_reject_unknown_and_empty_terms() {
         lekalo_core::diff::parse_profile_terms("advisory, source-consumer").expect("valid terms");
     assert_eq!(parsed, vec![ProfileId::Advisory, ProfileId::SourceConsumer]);
 }
+
+/// A Model 0.8.0 relation/cardinality change is a visible semantic
+/// change: the digests differ and an exact `type.shape-changed` record
+/// names the drifted relation. The same bodies with equal relations
+/// stay equal.
+#[test]
+fn successor_relation_cardinality_change_is_a_visible_semantic_change() {
+    with_workspace_root(|| {
+        let scalars = "schema_version: \"0.8.0\"\ndefinitions:\n  - id: alpha.thing\n    kind: scalar\n    version: 1\n    base: string\n";
+        let entity_template = |min: &str, max: &str| {
+            format!(
+                "{scalars}  - id: alpha.left\n    kind: entity\n    version: 1\n    fields:\n      - name: id\n        type: alpha.thing\n        required: true\n    identity:\n      - id\n    relations:\n      - id: \"alpha.rel.thing\"\n        target: \"alpha.right\"\n        localFields:\n          - id\n        targetFields:\n          - id\n        min: {min}\n        max: {max}\n        ownership: local\n        onDetach: retain-history\n        onDelete: restrict\n  - id: alpha.right\n    kind: entity\n    version: 1\n    fields:\n      - name: id\n        type: alpha.thing\n        required: true\n    identity:\n      - id\n"
+            )
+        };
+        let write = |name: &str, body: &str| {
+            let root = workspace_root().join("target/ir-diff").join(name);
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(root.join("lekalo/modules/alpha")).expect("dirs");
+            std::fs::write(
+                root.join("lekalo/project.yaml"),
+                "schema_version: \"0.8.0\"\ndefinitions:\n  - id: alpha\n    kind: project\n    version: 1\n",
+            )
+            .expect("project");
+            std::fs::write(
+                root.join("lekalo/modules/alpha/module.yaml"),
+                "schema_version: \"0.8.0\"\ndefinitions:\n  - id: alpha\n    kind: module\n    version: 1\n",
+            )
+            .expect("module");
+            std::fs::write(root.join("lekalo/modules/alpha/entities.yaml"), body)
+                .expect("entities");
+            format!("target/ir-diff/{name}")
+        };
+        let base_project = write("cardinality-base", &entity_template("0", "null"));
+        let changed_project = write("cardinality-changed", &entity_template("1", "1"));
+        let load = |selector: &str| {
+            lekalo_core::loader::normalize_model(&lekalo_core::loader::LoadSelection {
+                project: Some(selector.to_owned()),
+            })
+            .map(|model| {
+                lekalo_core::ir::compile(&model)
+                    .map(|compilation| compilation.project)
+                    .map_err(|failure| {
+                        failure
+                            .diagnostics
+                            .iter()
+                            .map(|diagnostic| diagnostic.code.clone())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    })
+            })
+            .map(|compiled| compiled.expect("compile"))
+            .expect("load")
+        };
+        let base = load(&base_project);
+        let changed = load(&changed_project);
+        let request = lekalo_core::diff::DiffRequest::new();
+        let result = lekalo_core::diff::compare(&base, &changed, &request).expect("compare");
+        let canonical = result.to_canonical_json().expect("canonical bytes");
+        assert!(
+            canonical.contains("\"equal\":false"),
+            "a relation cardinality change must break equality"
+        );
+        assert!(!result.changes().is_empty());
+        assert!(
+            result
+                .changes()
+                .iter()
+                .any(|change| change.kind().key() == "type.shape-changed"
+                    && change
+                        .subject()
+                        .member()
+                        .is_some_and(|member| member.contains("relations/alpha.rel.thing"))),
+            "the drifted relation must be named: {:?}",
+            result
+                .changes()
+                .iter()
+                .map(|change| (
+                    change.kind().key(),
+                    change.subject().member().map(str::to_owned)
+                ))
+                .collect::<Vec<_>>()
+        );
+
+        // The equal-relation control stays equal.
+        let base_again = load(&base_project);
+        let request = lekalo_core::diff::DiffRequest::new();
+        let equal = lekalo_core::diff::compare(&base, &base_again, &request).expect("compare");
+        let equal_bytes = equal.to_canonical_json().expect("canonical bytes");
+        assert!(equal_bytes.contains("\"equal\":true"));
+        assert!(equal.changes().is_empty());
+    });
+}

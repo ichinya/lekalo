@@ -255,6 +255,7 @@ fn detected_effects_attach_without_mutating_the_canonical_model() {
         evidence_digest: format!("sha256:{}", "a".repeat(64)),
         source_revision: "planner".to_owned(),
         trust: TrustState::Extracted,
+        transactions: Vec::new(),
         entries: vec![
             EvidenceEntry {
                 operation: operation("planner.edit_task_cmd"),
@@ -269,6 +270,7 @@ fn detected_effects_attach_without_mutating_the_canonical_model() {
                 trust: None,
                 transaction_group: None,
                 sensitivity: None,
+                partial_failure: None,
             },
             EvidenceEntry {
                 operation: operation("planner.focus_task"),
@@ -281,6 +283,7 @@ fn detected_effects_attach_without_mutating_the_canonical_model() {
                 trust: Some(TrustState::Stale),
                 transaction_group: None,
                 sensitivity: None,
+                partial_failure: None,
             },
         ],
     };
@@ -314,6 +317,7 @@ fn malformed_evidence_envelopes_fail_closed() {
         evidence_digest: format!("sha256:{}", "a".repeat(64)),
         source_revision: "planner".to_owned(),
         trust: TrustState::Extracted,
+        transactions: Vec::new(),
         entries: Vec::new(),
     };
     let outcome = attach_detected(&graph, &base);
@@ -337,6 +341,7 @@ fn malformed_evidence_envelopes_fail_closed() {
 
     // An illegal kind/subject pair inside an entry is a fatal input.
     let illegal = EvidenceEnvelope {
+        transactions: Vec::new(),
         entries: vec![EvidenceEntry {
             operation: operation("planner.focus_task"),
             kind: EffectKind::WriteField {
@@ -347,6 +352,7 @@ fn malformed_evidence_envelopes_fail_closed() {
             trust: None,
             transaction_group: None,
             sensitivity: None,
+            partial_failure: None,
         }],
         ..base.clone()
     };
@@ -363,6 +369,7 @@ fn the_comparison_classifies_declared_versus_detected() {
         evidence_digest: format!("sha256:{}", "b".repeat(64)),
         source_revision: "planner".to_owned(),
         trust: TrustState::Verified,
+        transactions: Vec::new(),
         entries: vec![
             // Matches the declared create.
             EvidenceEntry {
@@ -373,6 +380,7 @@ fn the_comparison_classifies_declared_versus_detected() {
                 trust: None,
                 transaction_group: None,
                 sensitivity: None,
+                partial_failure: None,
             },
             // Same resource, different action: action-mismatch.
             EvidenceEntry {
@@ -383,6 +391,7 @@ fn the_comparison_classifies_declared_versus_detected() {
                 trust: None,
                 transaction_group: None,
                 sensitivity: None,
+                partial_failure: None,
             },
             // A field-scoped update against the entity-wide declaration:
             // scope-mismatch.
@@ -397,6 +406,7 @@ fn the_comparison_classifies_declared_versus_detected() {
                 trust: None,
                 transaction_group: None,
                 sensitivity: None,
+                partial_failure: None,
             },
             // Never declared anywhere: detected-only.
             EvidenceEntry {
@@ -410,6 +420,7 @@ fn the_comparison_classifies_declared_versus_detected() {
                 trust: None,
                 transaction_group: None,
                 sensitivity: None,
+                partial_failure: None,
             },
         ],
     };

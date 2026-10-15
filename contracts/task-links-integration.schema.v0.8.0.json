@@ -1,0 +1,697 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.task-links-integration-schema@0.8.0",
+  "title": "Lekalo task-links integration schema v1",
+  "description": "Closed attachment for the multi-provider TaskExternalLink pilot (issue #52): typed relations and identity constraints for the synthetic tasklinks model, first-class capability and policy decisions, operation bindings with explicit effect refs, and delivery rules whose intents stay durable and externally atomic. The attachment carries requirements, decisions, and bindings only; credentials, provider runtime objects, and raw payloads are forbidden. Same-revision digest pins bind the attachment to one accepted Model/IR compilation and to the accepted owner contracts (authorization, transaction-concurrency, extended-effects, invariant-transition, storage-projection) without widening them.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/task-links-integration/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.task-links-integration@0.8.0"
+    },
+    "attachmentRevision": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 71
+    },
+    "projectId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "modelRef": {
+      "$ref": "#/$defs/modelRef"
+    },
+    "irRef": {
+      "$ref": "#/$defs/digestRef"
+    },
+    "ownerContractPins": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/ownerPin"
+      }
+    },
+    "entities": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/entityBinding"
+      }
+    },
+    "relations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/relation"
+      }
+    },
+    "uniqueConstraints": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/uniqueConstraint"
+      }
+    },
+    "providerContracts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/providerContract"
+      }
+    },
+    "linkCapabilityRequirements": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/capabilityRequirement"
+      }
+    },
+    "fieldPolicies": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/fieldPolicy"
+      }
+    },
+    "actionPolicies": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/actionPolicy"
+      }
+    },
+    "operationBindings": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/operationBinding"
+      }
+    },
+    "deliveryRules": {
+      "$ref": "#/$defs/deliveryRules"
+    },
+    "contributions": {
+      "$ref": "#/$defs/contributions"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "attachmentRevision",
+    "projectId",
+    "modelRef",
+    "irRef",
+    "ownerContractPins",
+    "entities",
+    "relations",
+    "uniqueConstraints",
+    "providerContracts",
+    "linkCapabilityRequirements",
+    "fieldPolicies",
+    "actionPolicies",
+    "operationBindings",
+    "deliveryRules",
+    "contributions"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "qualifiedSymbol": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,3}$",
+      "maxLength": 191
+    },
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "digestRef": {
+      "type": "object",
+      "properties": {
+        "identity": {
+          "const": "dev.lekalo.ir@0.8.0"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "identity",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "modelRef": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "0.8.0"
+        },
+        "irDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "irDigest"
+      ],
+      "additionalProperties": false
+    },
+    "ownerPin": {
+      "type": "object",
+      "properties": {
+        "family": {
+          "enum": [
+            "authorization",
+            "transaction-concurrency",
+            "extended-effects",
+            "invariant-transition",
+            "storage-projection"
+          ]
+        },
+        "identity": {
+          "type": "string",
+          "pattern": "^dev\\.lekalo\\.((authorization|invariant-transition)@0\\.2\\.16|(transaction-concurrency|extended-effects)@(0\\.2\\.16|0\\.8\\.0)|storage-projection@0\\.4\\.0)$"
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "family",
+        "identity",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "entityBinding": {
+      "type": "object",
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "identity": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/token"
+          }
+        },
+        "externalIdentity": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "entity",
+        "identity"
+      ],
+      "additionalProperties": false
+    },
+    "relation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "entity": {
+          "$ref": "#/$defs/qualifiedSymbol",
+          "description": "The declaring entity that owns this relation in the Model; the runtime join resolves the relation id through this owner."
+        },
+        "target": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "localFields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/token"
+          }
+        },
+        "targetFields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/token"
+          },
+          "description": "Ordered target-side identity fields; length must equal localFields."
+        },
+        "min": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "max": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "The member is required; `null` is the explicit unbounded spelling (runtime/schema parity)."
+        },
+        "ownership": {
+          "enum": [
+            "local",
+            "external",
+            "shared"
+          ]
+        },
+        "onDetach": {
+          "enum": [
+            "retain-history",
+            "forbid"
+          ]
+        },
+        "onDelete": {
+          "enum": [
+            "restrict",
+            "detach"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "id",
+        "entity",
+        "target",
+        "localFields",
+        "targetFields",
+        "min",
+        "max",
+        "ownership",
+        "onDetach",
+        "onDelete"
+      ],
+      "additionalProperties": false
+    },
+    "uniqueConstraint": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "entity": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/token"
+          }
+        },
+        "comparison": {
+          "enum": [
+            "exact-text",
+            "declared-normalization"
+          ]
+        },
+        "normalizationRef": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "scope": {
+          "enum": [
+            "workspace-installation-provider-object-external-id",
+            "declared"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "id",
+        "entity",
+        "fields",
+        "comparison",
+        "scope"
+      ],
+      "additionalProperties": false
+    },
+    "providerContract": {
+      "type": "object",
+      "properties": {
+        "contractId": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "providerId": {
+          "$ref": "#/$defs/token"
+        },
+        "objectType": {
+          "$ref": "#/$defs/token"
+        },
+        "upstreamPin": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._/@-]{0,127}$"
+        },
+        "revision": {
+          "$ref": "#/$defs/digest"
+        },
+        "requestSchemaRef": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "responseSchemaRef": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "errorSchemaRef": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "revisionOrdering": {
+          "enum": [
+            "comparable-total",
+            "incomparable-declared"
+          ]
+        },
+        "remoteDedup": {
+          "enum": [
+            "idempotency-key",
+            "receipt-reconciliation",
+            "none-declared"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "contractId",
+        "providerId",
+        "objectType",
+        "upstreamPin",
+        "revision",
+        "requestSchemaRef",
+        "responseSchemaRef",
+        "errorSchemaRef",
+        "revisionOrdering",
+        "remoteDedup"
+      ],
+      "additionalProperties": false
+    },
+    "capabilityRequirement": {
+      "type": "object",
+      "properties": {
+        "capabilityId": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "contractId": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "requirement": {
+          "enum": [
+            "required",
+            "optional"
+          ]
+        },
+        "revision": {
+          "$ref": "#/$defs/digest"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "capabilityId",
+        "contractId",
+        "requirement",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "fieldPolicy": {
+      "type": "object",
+      "properties": {
+        "policyId": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "entity": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "direction": {
+          "enum": [
+            "inbound",
+            "outbound"
+          ]
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/token"
+          }
+        },
+        "actor": {
+          "enum": [
+            "identity.user",
+            "system.job",
+            "provider.event"
+          ]
+        },
+        "policyRef": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "revision": {
+          "$ref": "#/$defs/digest"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "policyId",
+        "entity",
+        "direction",
+        "decision",
+        "fields",
+        "actor",
+        "policyRef",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "actionPolicy": {
+      "type": "object",
+      "properties": {
+        "policyId": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "action": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "actor": {
+          "enum": [
+            "identity.user",
+            "system.job",
+            "provider.event"
+          ]
+        },
+        "capabilityRef": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "policyRef": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "revision": {
+          "$ref": "#/$defs/digest"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2000
+        }
+      },
+      "required": [
+        "policyId",
+        "action",
+        "decision",
+        "actor",
+        "policyRef",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "operationBinding": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "action": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "capabilityRef": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "actionPolicyRef": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "effectRef": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "classification": {
+          "enum": [
+            "public",
+            "internal"
+          ]
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600000
+        },
+        "retryGuarantee": {
+          "enum": [
+            "idempotency-key",
+            "at-most-once",
+            "none-declared"
+          ]
+        }
+      },
+      "required": [
+        "operation",
+        "action",
+        "capabilityRef",
+        "actionPolicyRef",
+        "effectRef",
+        "classification",
+        "timeoutMs",
+        "retryGuarantee"
+      ],
+      "additionalProperties": false
+    },
+    "deliveryRules": {
+      "type": "object",
+      "properties": {
+        "outboxStates": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "pending",
+              "leased",
+              "accepted_pending_ack",
+              "delivered",
+              "retry_wait",
+              "conflicted",
+              "cancelled",
+              "dead_letter",
+              "unknown_delivery"
+            ]
+          },
+          "description": "The canonical nine-state machine in canonical order: the seven durable delivery states plus the two uncertainty states the engine implements (accepted_pending_ack, unknown_delivery); the wire layer enforces exact order."
+        },
+        "maxAttempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "backoffMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600000
+        },
+        "leaseMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600000
+        },
+        "networkInsideTransaction": {
+          "const": false
+        },
+        "externalDeleteImplicit": {
+          "const": false
+        },
+        "uncertaintyPolicy": {
+          "enum": [
+            "report-unknown-reconcile",
+            "receipt-reconciliation"
+          ]
+        }
+      },
+      "required": [
+        "outboxStates",
+        "maxAttempts",
+        "backoffMs",
+        "leaseMs",
+        "networkInsideTransaction",
+        "externalDeleteImplicit",
+        "uncertaintyPolicy"
+      ],
+      "additionalProperties": false
+    },
+    "contributions": {
+      "type": "object",
+      "properties": {
+        "graph": {
+          "type": "boolean"
+        },
+        "impact": {
+          "type": "boolean"
+        },
+        "inspect": {
+          "type": "boolean"
+        },
+        "scenarios": {
+          "type": "boolean"
+        },
+        "effectTrace": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "graph",
+        "impact",
+        "inspect",
+        "scenarios",
+        "effectTrace"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

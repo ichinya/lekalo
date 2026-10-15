@@ -667,6 +667,7 @@ dependencies = [
  "clap",
  "lekalo-core",
  "notify",
+ "rusqlite",
  "rustix",
  "serde_json",
  "tempfile",

@@ -8,11 +8,11 @@
 
 | pin | value |
 | --- | --- |
-| git commit | `4a52eccdb9cd478cc1cfd1e199c1e89a0ac97ec3` |
+| git commit | `8c4e102fc1191e33db06b519b7588e1732774b84` |
 | git dirty | `true` |
 | model | `0.2.16` |
 | ir | `0.2.16` |
 | lock | `unknown/absent` |
 | profile validation-profile.default | `sha256:15940a3eb98e181593b180d62f8d1005402e062cfb8c51e245b49a2257a463c7` |
 
-report digest: `sha256:53f673978866926f4f42284950e5bb792d865508e79400715c4434190d290435`
+report digest: `sha256:dd53d85574a0f6e9827f088e3130bc80fb2c951c70bc033e34093fb6082613ed`

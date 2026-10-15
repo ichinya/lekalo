@@ -1,0 +1,8 @@
+{"schema_version":"0.2.16","definitions":[
+{"id":"worklog.endpoint_complete_task","kind":"endpoint","version":1,"description":"HTTP entry point for local task completion","invokes":"worklog.complete_task","method":"POST","path":"/tasks/complete"},
+{"id":"worklog.endpoint_write_worklog","kind":"endpoint","version":1,"description":"HTTP entry point for private worklog writes","invokes":"worklog.write_worklog","method":"POST","path":"/worklogs"},
+{"id":"worklog.endpoint_edit_worklog","kind":"endpoint","version":1,"description":"HTTP entry point for private worklog edits","invokes":"worklog.edit_worklog","method":"PATCH","path":"/worklogs/{worklog_id}"},
+{"id":"worklog.endpoint_request_provider_comment","kind":"endpoint","version":1,"description":"HTTP entry point for the explicit provider comment request","invokes":"worklog.request_provider_comment","method":"POST","path":"/worklogs/provider-comments"},
+{"id":"changelog.endpoint_public_entry","kind":"endpoint","version":1,"description":"Public HTTP entry point serving one published snapshot payload","invokes":"changelog.public_entry","method":"GET","path":"/changelog/{entry_id}"},
+{"id":"changelog.endpoint_public_entries","kind":"endpoint","version":1,"description":"Public HTTP entry point listing published snapshot payloads","invokes":"changelog.public_entries","method":"GET","path":"/changelog"}
+]}

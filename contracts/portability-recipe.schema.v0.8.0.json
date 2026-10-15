@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/portability-recipe.schema.v0.8.0.json",
+  "title": "Portability recipe 0.8.0",
+  "description": "Issue #19 reviewed requirement-extraction recipe: the four dimension assignments, the eligible-definition denominator, deterministic aggregation and precedence, bounded work limits, and reviewed semantic mapping definitions. Evidence cannot author arbitrary executable extraction logic or redefine requirements through this contract.",
+  "$ref": "#/$defs/document",
+  "$defs": {
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/portability-recipe/v0.8.0"
+        },
+        "identity": {
+          "const": "dev.lekalo.portability-recipe@0.8.0"
+        },
+        "dimensions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "structural": {
+              "$ref": "#/$defs/dimension"
+            },
+            "behavioral": {
+              "$ref": "#/$defs/dimension"
+            },
+            "storage": {
+              "$ref": "#/$defs/dimension"
+            },
+            "operational": {
+              "$ref": "#/$defs/dimension"
+            }
+          },
+          "required": [
+            "structural",
+            "behavioral",
+            "storage",
+            "operational"
+          ],
+          "unevaluatedProperties": false
+        },
+        "excludedFromDenominator": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "project",
+              "module",
+              "target-binding"
+            ]
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/limits"
+        },
+        "classification": {
+          "$ref": "#/$defs/classification"
+        },
+        "semanticMappings": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/semanticMapping"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "dimensions",
+        "excludedFromDenominator",
+        "limits",
+        "classification",
+        "semanticMappings"
+      ],
+      "unevaluatedProperties": false
+    },
+    "dimension": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "definitionKinds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/definitionKind"
+          }
+        },
+        "decision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 .,:;/()_-]*$"
+        }
+      },
+      "required": [
+        "definitionKinds",
+        "decision"
+      ],
+      "unevaluatedProperties": false
+    },
+    "definitionKind": {
+      "enum": [
+        "scalar",
+        "enum",
+        "value-object",
+        "entity",
+        "command",
+        "query",
+        "policy",
+        "event",
+        "effect",
+        "endpoint",
+        "scenario"
+      ]
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxSubjects": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50000
+        },
+        "maxTraversalDepth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "maxDependencyEdges": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 250000
+        },
+        "maxObligationRows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "maxReportBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 33554432
+        },
+        "maxWorkUnits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        }
+      },
+      "required": [
+        "maxSubjects",
+        "maxTraversalDepth",
+        "maxDependencyEdges",
+        "maxObligationRows",
+        "maxReportBytes",
+        "maxWorkUnits"
+      ],
+      "unevaluatedProperties": false
+    },
+    "classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "precedence": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "unsupported",
+              "partial",
+              "target-specific",
+              "supported-with-mapping",
+              "portable",
+              "unknown"
+            ]
+          }
+        },
+        "denominatorBasis": {
+          "const": "eligible-applicable-subjects"
+        },
+        "ratioBasis": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dimension": {
+              "const": "structural"
+            },
+            "formula": {
+              "const": "portable/eligibleApplicableSubjects"
+            }
+          },
+          "required": [
+            "dimension",
+            "formula"
+          ],
+          "unevaluatedProperties": false
+        },
+        "rounding": {
+          "const": "none-integer-ratio"
+        }
+      },
+      "required": [
+        "precedence",
+        "denominatorBasis",
+        "ratioBasis",
+        "rounding"
+      ],
+      "unevaluatedProperties": false
+    },
+    "semanticMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requirement": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+        },
+        "capability": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+        },
+        "definitionVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "preconditions": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9-]*$"
+          }
+        },
+        "destinationPreconditions": {
+          "description": "The reviewed precondition set per destination target: a mapping record on a keyed destination must declare exactly this set. A destination without a keyed set can never carry the bridge's credit.",
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 64,
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9-]*$": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[a-z][a-z0-9-]*$"
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "requirement",
+        "capability",
+        "definitionVersion",
+        "preconditions",
+        "destinationPreconditions"
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

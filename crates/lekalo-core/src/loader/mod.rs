@@ -160,7 +160,7 @@ pub(crate) fn decode_document_bytes(
     decode(path, kind, &parsed)
 }
 
-/// Run phases 1-8 to completion and return the normalized aggregate, or the
+/// Terminal outcome of a loader phase: the normalized aggregate, or the
 /// terminal failure. No rendering happens here; `run` owns the envelope.
 pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, DomainResult> {
     load_with_snapshot(selection).map(|loaded| loaded.model)
@@ -172,6 +172,24 @@ pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, Dom
 /// policy and must not be translated to this seam before selection.
 pub fn normalize_captured_root(root: &Path) -> Result<NormalizedModel, DomainResult> {
     load_validated_root(root.to_owned()).map(|loaded| loaded.model)
+}
+
+/// The validated absolute project root of one selection (the public seam
+/// for project-bound attachment reads through the classified filesystem
+/// boundary; issue #113 r3).
+pub fn project_root(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
+    root_for_selection(selection)
+}
+
+/// Public phase-1 seam: resolve the selection to the absolute,
+/// alias-free project root without reading model documents. Commands
+/// that read project-relative artifacts after loading must bind those
+/// reads to this exact root — never to the raw invocation-relative
+/// selector, which resolves differently from another working directory.
+/// (The migration service keeps the `pub(crate)` spelling for its
+/// crash-recovery use.)
+pub fn resolve_selection_root(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
+    root_for_selection(selection)
 }
 
 /// Phase 1 only: resolve the selection to an absolute project root
@@ -228,37 +246,6 @@ pub(crate) fn load_with_snapshot_and_overlay(
 ) -> Result<ProjectLoad, DomainResult> {
     let root = resolve_selection_root(selection)?;
     load_validated_root_opt_with_overlay(root, false, Some((overlay_path, overlay_bytes)))
-}
-
-/// The shared phase-1 root resolution of [`load_with_snapshot`].
-fn resolve_selection_root(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
-    let failure =
-        |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
-    match &selection.project {
-        Some(selector) => {
-            if let Some(code) = crate::project_fs::selection_violation(selector) {
-                return failure(Status::Invalid, vec![Diagnostic::new(code)]);
-            }
-            crate::project_fs::Fs::check_selection(selector, "structure.project-not-directory")
-                .map_err(structure_failure)
-        }
-        None => {
-            let cwd = std::env::current_dir().map_err(|_| {
-                diagnostic::failure(
-                    Status::Invalid,
-                    vec![Diagnostic::new("structure.root-unreadable")],
-                )
-            })?;
-            match crate::project_fs::Fs::find_root(&cwd) {
-                Ok(Some(path)) => Ok(path),
-                Ok(None) => failure(
-                    Status::Invalid,
-                    vec![Diagnostic::new("structure.root-not-found")],
-                ),
-                Err(outcome) => Err(structure_failure(outcome)),
-            }
-        }
-    }
 }
 
 /// Load an already-selected absolute root through phases 2-8 (the migration
@@ -947,6 +934,21 @@ fn render_load_output(model: &NormalizedModel, spans_requested: bool) -> DomainR
     );
 
     DomainResult::model(json, human)
+}
+
+/// The exact load-envelope success payload of one normalized aggregate
+/// without a source map — byte-identical to what `run` renders into its
+/// success envelope for a spans-free load. Authority derivations consume
+/// this so a single-snapshot derivation (r6, codex F11 / devin F8: one
+/// filesystem read produces the Model payload, the typed Model, and the
+/// source pins) pins the exact same digest the two-read derivation did.
+pub fn model_envelope_payload(model: &NormalizedModel) -> String {
+    let mut json = String::from("{\"status\":\"valid\",\"modelVersion\":");
+    json.push_str(&Canonical::Str(model.model_version.as_str().to_owned()).to_json());
+    json.push_str(",\"model\":");
+    json.push_str(&canonical_model_bytes(model));
+    json.push('}');
+    json
 }
 
 /// The exact canonical Model bytes of one normalized aggregate: compact

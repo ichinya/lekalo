@@ -1,0 +1,8 @@
+schema_version: "0.2.16"
+definitions:
+  - id: errors
+    kind: project
+    version: 1
+    description: "Issue #113 review probe: typed #62 error exports cross the boundary"
+    derived_from:
+      - "TASKS-REQ-001"

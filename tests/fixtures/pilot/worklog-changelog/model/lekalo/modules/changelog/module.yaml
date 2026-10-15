@@ -1,0 +1,1 @@
+{"schema_version":"0.2.16","definitions":[{"id":"changelog","kind":"module","version":1,"description":"Opt-in public changelog module","imports":["worklog"]}]}

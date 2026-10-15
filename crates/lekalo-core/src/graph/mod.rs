@@ -43,9 +43,10 @@ pub use model::{
 pub use slice::{GraphSlice, ModuleBoundary, SliceSpec, TruncationReason};
 pub use traverse::{Direction, EdgeFilter, Path, PathSpec, Traversal, TraversalSpec};
 pub use version::{
-    FAMILY, IDENTITY, MAX_DEPTH, MAX_EDGES, MAX_EXPORT_BYTES, MAX_FILTER_TERMS, MAX_NODES,
-    MAX_PATH_NODES, MAX_PROVENANCE_RECORDS, MAX_RESULT_EDGES, MAX_RESULT_NODES, SCHEMA_VERSION,
-    VERSION,
+    identity_for, schema_version_for, FAMILY, IDENTITY, MAX_DEPTH, MAX_EDGES, MAX_EXPORT_BYTES,
+    MAX_FILTER_TERMS, MAX_NODES, MAX_PATH_NODES, MAX_PROVENANCE_RECORDS, MAX_RESULT_EDGES,
+    MAX_RESULT_NODES, SCHEMA_VERSION, SUCCESSOR_IDENTITY, SUCCESSOR_SCHEMA_VERSION,
+    SUCCESSOR_VERSION, VERSION,
 };
 
 pub use build::{build, build_with_registry};
@@ -102,14 +103,16 @@ impl DependencyGraph {
         }
     }
 
-    /// The graph contract identity (`dev.lekalo.graph@0.2.16`).
-    pub const fn identity(&self) -> &'static str {
-        IDENTITY
+    /// The graph contract identity: negotiated from the exact source
+    /// Model version, never a constant (`dev.lekalo.graph@0.8.0` for
+    /// successor sources).
+    pub fn identity(&self) -> &'static str {
+        version::identity_for(self.model_version)
     }
 
-    /// The graph contract discriminator (`lekalo/graph/v0.2.16`).
-    pub const fn schema_version(&self) -> &'static str {
-        SCHEMA_VERSION
+    /// The graph contract discriminator, negotiated the same way.
+    pub fn schema_version(&self) -> &'static str {
+        version::schema_version_for(self.model_version)
     }
 
     /// The exact source Model version the IR was compiled from.

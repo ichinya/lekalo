@@ -96,8 +96,8 @@ export function attachments(env) {
 export function golden(name,value,update) {
   const family=['report','evidence','config','waivers','comparison'].find(f=>name===f||name.startsWith(f+'-'));
   const legacyPath=family?join(root,'tests/fixtures',`ai-lint-${family}`,'golden',name+'.json'):join(fixture,'golden',name+'.json');
-  const qualified=product==='0.6.5' && productPinnedGoldens.has(name);
-  const path=qualified?legacyPath.replace(/\.json$/,'.product-0.6.5.json'):legacyPath;
+  const qualified=productPinnedGoldens.has(name)&&(product==='0.6.5'||product==='0.8.0');
+  const path=qualified?legacyPath.replace(/\.json$/,`.product-${product}.json`):legacyPath;
   if(qualified) schema(family,JSON.parse(readFileSync(legacyPath,'utf8')));
   if(update) {mkdirSync(dirname(path),{recursive:true});writeFileSync(path,canonical(value)+'\n');}
   else assert.equal(readFileSync(path,'utf8'),canonical(value)+'\n',`golden drift: ${name}`);

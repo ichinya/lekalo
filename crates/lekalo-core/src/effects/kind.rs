@@ -126,6 +126,30 @@ pub(crate) const EFFECT_KIND_KEYS: [&str; 14] = [
 ];
 
 impl EffectKind {
+    /// The exact kind for one closed wire key, or `None` when the key
+    /// is outside the v1 vocabulary (`write-field` folds its action
+    /// into a sibling field, so it never round-trips through a bare
+    /// key).
+    pub fn from_key(key: &str) -> Option<Self> {
+        let kind = match key {
+            "read" => Self::Read,
+            "create" => Self::Create,
+            "update" => Self::Update,
+            "delete" => Self::Delete,
+            "emit-event" => Self::EmitEvent,
+            "enqueue-job" => Self::EnqueueJob,
+            "external-call" => Self::ExternalCall,
+            "cache-read" => Self::CacheRead,
+            "cache-write" => Self::CacheWrite,
+            "cache-invalidate" => Self::CacheInvalidate,
+            "publish-output" => Self::PublishOutput,
+            "audit-log" => Self::AuditLog,
+            "transaction-boundary" => Self::TransactionBoundary,
+            _ => return None,
+        };
+        Some(kind)
+    }
+
     /// The registry rank; the primary kind sort key.
     pub const fn rank(self) -> u8 {
         match self {

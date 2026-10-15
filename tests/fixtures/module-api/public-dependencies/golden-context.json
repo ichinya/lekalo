@@ -1,0 +1,62 @@
+{
+  "apiVersion": "1.2.0",
+  "budget": 4000,
+  "consumer": "planner",
+  "dependencies": [
+    {
+      "apiVersion": "1.0.0",
+      "digest": "sha256:b88e983dda6f7ead7ea47b4eacaded98f5feac7979a978bb737ac576c1249a41",
+      "exports": [
+        "shared.task_id"
+      ],
+      "moduleId": "shared"
+    }
+  ],
+  "digest": "sha256:f3201b1317a07b9593cd1b4828cfd560e8badd3db46d4aaf131136f445b6275b",
+  "estimator": {
+    "id": "module-context-estimator",
+    "recipe": "public-facts-chars4/1",
+    "version": "1"
+  },
+  "exports": [
+    {
+      "apiVersion": "1.2.0",
+      "capabilities": [],
+      "deprecation": null,
+      "effects": [],
+      "errors": [],
+      "export": "tasks.task_envelope",
+      "kind": "value-object",
+      "signature": "value-object { task!: tasks.task_view }"
+    },
+    {
+      "apiVersion": "1.2.0",
+      "capabilities": [],
+      "deprecation": null,
+      "effects": [],
+      "errors": [],
+      "export": "tasks.task_view",
+      "kind": "value-object",
+      "signature": "value-object { task_id!: shared.task_id }"
+    }
+  ],
+  "fits": true,
+  "gaps": [
+    "foreign-signature-not-materialized"
+  ],
+  "identity": "dev.lekalo.module-consumer-context@0.8.0",
+  "omissions": [
+    {
+      "reason": "dependency-signature-not-in-bundle",
+      "subject": "shared.task_id"
+    }
+  ],
+  "producer": {
+    "module": "tasks",
+    "project": "tasks"
+  },
+  "producerDigest": "sha256:0b9bf8814fb334b2a7460f88bcea2e7069852c662ba5fd02f79db9e0286ae7b3",
+  "requiredCost": 132,
+  "schemaVersion": "lekalo/module-consumer-context/v0.8.0",
+  "selectedCost": 132
+}

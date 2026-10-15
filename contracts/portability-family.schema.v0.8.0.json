@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/portability-family.schema.v0.8.0.json",
+  "title": "Portability family artifact 0.8.0",
+  "description": "Issue #19 closed owner envelope for declared-complete evidence-family artifacts (storage, extended-effects, scenario, trace). A complete-family artifact is never an arbitrary JSON object: it carries the exact project pin and, for the storage family, the complete declared storage inventory the assessment reconciles against the manifest. The implementation family keeps its own producer contract.",
+  "$ref": "#/$defs/document",
+  "$defs": {
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/portability-family/v0.8.0"
+        },
+        "identity": {
+          "const": "dev.lekalo.portability-family@0.8.0"
+        },
+        "family": {
+          "enum": [
+            "storage",
+            "extended-effects",
+            "scenario",
+            "trace"
+          ]
+        },
+        "projectRef": {
+          "$ref": "#/$defs/projectRef"
+        },
+        "storageRequired": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/storageRequirement"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "family",
+        "projectRef"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "storage"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "storageRequired"
+            ],
+            "properties": {
+              "storageRequired": true
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "storageRequired"
+              ],
+              "properties": {
+                "storageRequired": true
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "projectRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "modelVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "irDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "projectId",
+        "modelVersion",
+        "irDigest"
+      ],
+      "unevaluatedProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "decimal",
+            "isolation",
+            "ordering",
+            "null-handling",
+            "rounding"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "precision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "unevaluatedProperties": false
+    },
+    "storageRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "subject": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "policy": {
+          "$ref": "#/$defs/policy"
+        }
+      },
+      "required": [
+        "subject",
+        "policy"
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

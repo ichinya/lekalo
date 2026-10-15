@@ -1,0 +1,341 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.task-links-evidence-schema@0.8.0",
+  "title": "Lekalo task-links evidence schema v1",
+  "description": "Closed normalized execution evidence for the task-links pilot (issue #52). One document is the bounded, canonical result of one deterministic mock or native scenario run against one exact attachment and Model/IR pin. Every step carries source attribution (origin, provider, installation, event identity, causation); every outcome names its observed state tokens. The document never carries provider tokens, raw private payloads, or consumer application names; conflicting classified values stay in local storage and appear here only as digests.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/task-links-evidence/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.task-links-evidence@0.8.0"
+    },
+    "evidenceId": {
+      "$ref": "#/$defs/qualifiedSymbol"
+    },
+    "origin": {
+      "enum": [
+        "mock",
+        "reference",
+        "native"
+      ]
+    },
+    "scenarioId": {
+      "$ref": "#/$defs/qualifiedSymbol"
+    },
+    "attachmentRevision": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "modelRef": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "0.8.0"
+        },
+        "irDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "irDigest"
+      ],
+      "additionalProperties": false
+    },
+    "clock": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "enum": [
+            "injected",
+            "wall-clock-native"
+          ]
+        },
+        "startMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "policy",
+        "startMs"
+      ],
+      "additionalProperties": false
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    },
+    "observations": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/observation"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "evidenceId",
+    "origin",
+    "scenarioId",
+    "attachmentRevision",
+    "modelRef",
+    "clock",
+    "steps"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "qualifiedSymbol": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,3}$",
+      "maxLength": 191
+    },
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "step": {
+      "type": "object",
+      "properties": {
+        "stepId": {
+          "$ref": "#/$defs/token"
+        },
+        "command": {
+          "enum": [
+            "tasklinks.attach_link",
+            "tasklinks.import_link",
+            "tasklinks.ingest_event",
+            "tasklinks.request_action",
+            "tasklinks.detach_link",
+            "tasklinks.resolve_conflict",
+            "tasklinks.dispatch_outbox",
+            "tasklinks.ack_delivery"
+          ]
+        },
+        "attribution": {
+          "$ref": "#/$defs/attribution"
+        },
+        "intent": {
+          "$ref": "#/$defs/intentRef"
+        },
+        "decision": {
+          "$ref": "#/$defs/decisionRef"
+        },
+        "outcome": {
+          "enum": [
+            "applied",
+            "replayed",
+            "conflict",
+            "denied",
+            "unsupported",
+            "indeterminate",
+            "unknown_delivery",
+            "rejected"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "stepId",
+        "command",
+        "outcome"
+      ],
+      "additionalProperties": false
+    },
+    "attribution": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/token"
+        },
+        "installationId": {
+          "$ref": "#/$defs/token"
+        },
+        "providerId": {
+          "$ref": "#/$defs/token"
+        },
+        "objectType": {
+          "$ref": "#/$defs/token"
+        },
+        "externalId": {
+          "$ref": "#/$defs/token"
+        },
+        "eventIdentity": {
+          "$ref": "#/$defs/token"
+        },
+        "causationId": {
+          "$ref": "#/$defs/token"
+        },
+        "correlationId": {
+          "$ref": "#/$defs/token"
+        },
+        "sourceRevision": {
+          "$ref": "#/$defs/token"
+        },
+        "actor": {
+          "enum": [
+            "identity.user",
+            "system.job",
+            "provider.event"
+          ]
+        }
+      },
+      "required": [
+        "workspaceId",
+        "actor"
+      ],
+      "additionalProperties": false
+    },
+    "intentRef": {
+      "type": "object",
+      "properties": {
+        "intentId": {
+          "$ref": "#/$defs/token"
+        },
+        "linkId": {
+          "$ref": "#/$defs/token"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/token"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "leased",
+            "accepted_pending_ack",
+            "delivered",
+            "retry_wait",
+            "conflicted",
+            "cancelled",
+            "dead_letter",
+            "unknown_delivery"
+          ],
+          "description": "The outbox state at the step; the closed nine-state engine vocabulary including the uncertainty states."
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 64
+        },
+        "leaseToken": {
+          "$ref": "#/$defs/token"
+        },
+        "receiptDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "intentId",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "decisionRef": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/qualifiedSymbol"
+        },
+        "outcome": {
+          "enum": [
+            "allowed",
+            "denied",
+            "unsupported",
+            "indeterminate"
+          ]
+        },
+        "capabilityOutcome": {
+          "enum": [
+            "supported",
+            "partial",
+            "unsupported",
+            "unknown"
+          ]
+        },
+        "authorizationOutcome": {
+          "enum": [
+            "allowed",
+            "denied"
+          ]
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/token"
+          }
+        },
+        "policyRevision": {
+          "$ref": "#/$defs/digest"
+        },
+        "capabilityRevision": {
+          "$ref": "#/$defs/digest"
+        },
+        "permittedFields": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/token"
+          },
+          "description": "The explicitly witnessed permitted subset; required exactly when capabilityOutcome is partial and the decision is allowed."
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "additionalProperties": false
+    },
+    "observation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "link_state",
+            "outbox_state",
+            "inbox_receipt",
+            "conflict_state",
+            "audit_event",
+            "cursor_state",
+            "coverage"
+          ]
+        },
+        "subject": {
+          "$ref": "#/$defs/token"
+        },
+        "value": {
+          "$ref": "#/$defs/token"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "kind",
+        "subject"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

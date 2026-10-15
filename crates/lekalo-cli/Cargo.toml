@@ -22,6 +22,7 @@ lekalo-core.workspace = true
 [dependencies]
 clap.workspace = true
 lekalo-core.workspace = true
+rusqlite.workspace = true
 serde_json.workspace = true
 notify.workspace = true
 tempfile.workspace = true

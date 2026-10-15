@@ -1,0 +1,12 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.focus
+    kind: entity
+    version: 1
+    description: "One focus decision"
+    fields:
+      - name: title
+        type: "tasks.title"
+        required: true
+    identity:
+      - title

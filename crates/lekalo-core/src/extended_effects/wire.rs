@@ -102,10 +102,33 @@ pub(crate) fn from_value(json: &Json) -> Result<ExtendedEffectsAttachment, Diagn
             return Err(diagnostic::input_invalid("missing-field", Some(required)));
         }
     }
-    if object.get("schemaVersion").and_then(Json::as_str) != Some(version::SCHEMA_VERSION) {
+    let successor = object.get("schemaVersion").and_then(Json::as_str)
+        == Some("lekalo/extended-effects/v0.8.0");
+    let (discriminator, identity, model_version, ir_identity) = if successor {
+        (
+            "lekalo/extended-effects/v0.8.0",
+            "dev.lekalo.extended-effects@0.8.0",
+            "0.8.0",
+            "dev.lekalo.ir@0.8.0",
+        )
+    } else {
+        (
+            version::SCHEMA_VERSION,
+            version::IDENTITY,
+            "0.2.16",
+            "dev.lekalo.ir@0.2.16",
+        )
+    };
+    if object.get("schemaVersion").and_then(Json::as_str) != Some(discriminator) {
         return Err(diagnostic::input_invalid("schema-version", None));
     }
-    if object.get("identity").and_then(Json::as_str) != Some(version::IDENTITY) {
+    if object.get("identity").and_then(Json::as_str) != Some(identity)
+        || object
+            .get("modelRef")
+            .and_then(|pin| pin.get("modelVersion"))
+            .and_then(Json::as_str)
+            != Some(model_version)
+    {
         return Err(diagnostic::input_invalid("contract-identity", None));
     }
     let project_id = SemanticId::parse_root(
@@ -124,7 +147,7 @@ pub(crate) fn from_value(json: &Json) -> Result<ExtendedEffectsAttachment, Diagn
         object
             .get("irRef")
             .ok_or_else(|| diagnostic::input_invalid("ir-ref", None))?,
-        "dev.lekalo.ir@0.2.16",
+        ir_identity,
         "ir-ref",
     )?;
     let effect_graph = match object.get("effectGraphRef") {
@@ -208,10 +231,8 @@ fn model_pin(json: &Json) -> Result<ModelPin, DiagnosticSet> {
         .get("modelVersion")
         .and_then(Json::as_str)
         .ok_or_else(|| diagnostic::input_invalid("model-version", None))?;
-    let pin = match version {
-        "0.2.16" => crate::scenario::ModelPin::Current,
-        _ => return Err(diagnostic::input_invalid("model-version", Some(version))),
-    };
+    let pin = crate::loader::ModelVersion::parse_exact(version)
+        .ok_or_else(|| diagnostic::input_invalid("model-version", Some(version)))?;
     let digest = Sha256Digest::parse(
         object
             .get("digest")

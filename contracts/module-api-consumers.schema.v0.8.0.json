@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/module-api-consumers.schema.v0.8.0.json",
+  "title": "Module API consumer snapshot 0.8.0",
+  "description": "Immutable declared and actual-use consumer inventory for one producer module revision (issue #113): consumer module IDs, version policy, exact symbol and member uses with original edge keys, direct/transitive distinction, evidence origin, and the explicit completeness domain.",
+  "$ref": "#/$defs/snapshot",
+  "$defs": {
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": { "const": "lekalo/module-api-consumers/v0.8.0" },
+        "identity": { "const": "dev.lekalo.module-api-consumers@0.8.0" },
+        "producer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+            },
+            "module": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[a-z][a-z0-9-]*$"
+            }
+          },
+          "required": ["project", "module"]
+        },
+        "pins": { "$ref": "#/$defs/pins" },
+        "consumers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/consumer" },
+          "maxItems": 4096
+        },
+        "complete": { "type": "boolean" },
+        "digest": { "$ref": "#/$defs/digest" }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "producer",
+        "pins",
+        "consumers",
+        "complete",
+        "digest"
+      ]
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "pins": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "project": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "modelVersion": { "const": "0.2.16" },
+        "irDigest": { "$ref": "#/$defs/digest" },
+        "apiDigest": { "$ref": "#/$defs/digest" }
+      },
+      "required": ["project", "modelVersion", "irDigest", "apiDigest"]
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+    },
+    "consumer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "consumer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "declared": { "type": "boolean" },
+        "mode": {
+          "oneOf": [
+            { "type": "null" },
+            { "enum": ["source", "wire"] }
+          ]
+        },
+        "policy": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": { "const": "exact-digest" },
+                    "digest": { "$ref": "#/$defs/digest" }
+                  },
+                  "required": ["type", "digest"]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": { "const": "exact-version" },
+                    "version": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+                      "maxLength": 32
+                    }
+                  },
+                  "required": ["type", "version"]
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": { "const": "version-range" },
+                    "lower": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+                      "maxLength": 32
+                    },
+                    "lowerInclusive": { "type": "boolean" },
+                    "upper": {
+                      "oneOf": [
+                        { "type": "null" },
+                        {
+                          "type": "string",
+                          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+                          "maxLength": 32
+                        }
+                      ]
+                    },
+                    "upperInclusive": { "type": "boolean" }
+                  },
+                  "required": ["type", "lower", "lowerInclusive", "upper", "upperInclusive"]
+                }
+              ]
+            }
+          ]
+        },
+        "uses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/use" },
+          "maxItems": 8192
+        }
+      },
+      "required": ["consumer", "declared", "mode", "policy", "uses"]
+    },
+    "use": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "export": { "$ref": "#/$defs/semanticId" },
+        "member": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[a-z][a-z0-9_]*$"
+            }
+          ]
+        },
+        "origin": { "enum": ["declared", "resolved"] },
+        "sensitivity": { "enum": ["whole-shape", "member"] },
+        "transitive": { "type": "boolean" },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#|<>-]*$"
+          },
+          "maxItems": 256
+        }
+      },
+      "required": ["export", "member", "origin", "sensitivity", "transitive", "edges"]
+    }
+  }
+}

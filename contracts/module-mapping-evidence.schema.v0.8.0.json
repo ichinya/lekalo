@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/module-mapping-evidence.schema.v0.8.0.json",
+  "title": "Module mapping evidence 0.8.0",
+  "description": "Independently authored mapping evidence of one implementation (issue #113): a single in-process or extracted-service implementation states, per public operation of one mapped port, the exact IDs, input/result shapes, error unions, effect obligations, read/write meaning, and capability demands it observes against one pinned public digest, plus the capabilities it explicitly cannot provide. Two such documents against one public digest are the AC7 conformance proof.",
+  "$ref": "#/$defs/evidence",
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/module-mapping-evidence/v0.8.0"
+        },
+        "identity": {
+          "const": "dev.lekalo.module-mapping-evidence@0.8.0"
+        },
+        "implementation": {
+          "enum": ["in-process", "extracted-service"]
+        },
+        "port": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "producer": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "project": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+            },
+            "module": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 192,
+              "pattern": "^[a-z][a-z0-9-]*$"
+            }
+          },
+          "required": ["project", "module"]
+        },
+        "publicDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "observations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/observation"
+          },
+          "maxItems": 4096
+        },
+        "unsupported": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "maxItems": 256,
+          "uniqueItems": true
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "implementation",
+        "port",
+        "producer",
+        "publicDigest",
+        "observations",
+        "unsupported",
+        "digest"
+      ]
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "enum": ["command", "query"]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "maxItems": 1024
+        },
+        "results": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/typeExpr"
+            }
+          ]
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "maxItems": 1024,
+          "uniqueItems": true
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/effectObligation"
+          },
+          "maxItems": 256
+        },
+        "access": {
+          "enum": ["read", "write"]
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          },
+          "maxItems": 256,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "operation",
+        "kind",
+        "inputs",
+        "results",
+        "errors",
+        "effects",
+        "access",
+        "capabilities"
+      ]
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "type": {
+          "$ref": "#/$defs/typeExpr"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "required": ["name", "type", "required"]
+    },
+    "typeExpr": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ref": {
+              "$ref": "#/$defs/semanticId"
+            }
+          },
+          "required": ["ref"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "list": {
+              "$ref": "#/$defs/typeExpr"
+            }
+          },
+          "required": ["list"]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "optional": {
+              "$ref": "#/$defs/typeExpr"
+            }
+          },
+          "required": ["optional"]
+        }
+      ]
+    },
+    "effectObligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "entity": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "operation": {
+          "enum": ["create", "update", "delete"]
+        },
+        "emits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          },
+          "maxItems": 1024,
+          "uniqueItems": true
+        }
+      },
+      "required": ["entity", "operation", "emits"]
+    }
+  }
+}

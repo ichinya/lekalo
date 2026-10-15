@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/portability-adapter-snapshot.schema.v0.8.0.json",
+  "title": "Portability adapter snapshot 0.8.0",
+  "description": "Issue #19 closed custody artifact for a recorded adapter snapshot. The snapshot binds the exact target, the adapter identity, version, protocol, and capability digest, and the destination's verified profile pin. A recorded adapter record in the evidence manifest qualifies only when it reconciles exactly with this artifact, so recorded provenance cannot be fabricated from manifest fields alone.",
+  "$ref": "#/$defs/document",
+  "$defs": {
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/portability-adapter-snapshot/v0.8.0"
+        },
+        "identity": {
+          "const": "dev.lekalo.portability-adapter-snapshot@0.8.0"
+        },
+        "targetId": {
+          "$ref": "#/$defs/targetId"
+        },
+        "adapter": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "identity": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9.@/_-]*$"
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+            },
+            "protocol": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9.@/_-]*$"
+            },
+            "capabilityDigest": {
+              "$ref": "#/$defs/digest"
+            }
+          },
+          "required": [
+            "identity",
+            "version",
+            "protocol",
+            "capabilityDigest"
+          ],
+          "unevaluatedProperties": false
+        },
+        "profileRef": {
+          "$ref": "#/$defs/profileRef"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "targetId",
+        "adapter",
+        "profileRef"
+      ],
+      "unevaluatedProperties": false
+    },
+    "targetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "profileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "resolvedDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "resolvedDigest"
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

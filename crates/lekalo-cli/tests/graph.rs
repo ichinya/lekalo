@@ -306,3 +306,65 @@ fn version_reports_the_prospective_product_version() {
         "{\n  \"status\": \"valid\",\n  \"version\": \"0.8.0\"\n}"
     );
 }
+
+/// The successor negotiation: a Model 0.8.0 project exports the
+/// `dev.lekalo.graph@0.8.0` contract, byte-identical across runs, and
+/// matching the pinned successor golden with the typed relation-target
+/// references present. The 0.2.16 bytes and identity are untouched.
+#[test]
+fn successor_export_is_negotiated_and_matches_the_golden() {
+    let project = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../")
+        .join("tests/fixtures/task-external-links/project");
+    let first = export(&project, &[]);
+    assert_eq!(exit_code(&first), 0, "{}", stderr_text(&first));
+    let second = export(&project, &[]);
+    assert_eq!(exit_code(&second), 0);
+    assert_eq!(stdout_text(&first), stdout_text(&second));
+
+    let golden = std::fs::read_to_string(workspace_path(
+        "tests/fixtures/graph/golden/tasklinks.graph.json",
+    ))
+    .expect("successor golden graph");
+    let document: serde_json::Value =
+        serde_json::from_str(stdout_text(&first).trim()).expect("envelope json");
+    assert_eq!(document["status"], "valid");
+    assert_eq!(document["graph"]["identity"], "dev.lekalo.graph@0.8.0");
+    assert_eq!(document["graph"]["schemaVersion"], "lekalo/graph/v0.8.0");
+    assert_eq!(document["graph"]["modelVersion"], "0.8.0");
+    let rendered = serde_json::to_string(&document["graph"]).expect("graph bytes");
+    assert_eq!(rendered, golden, "export must match the pinned golden");
+
+    // The typed relation targets are exactly the declared joins.
+    let edges = document["graph"]["edges"].as_array().expect("edges");
+    let relation_edges: Vec<serde_json::Value> = edges
+        .iter()
+        .filter(|edge| edge["provenance"]["referenceRole"] == "entity-relation-target")
+        .cloned()
+        .collect();
+    // Both aggregate directions are declared relations since the r4
+    // fixture direction fix: link -> task, task -> links, and the
+    // outbox child -> link join — three declared relation targets.
+    assert_eq!(relation_edges.len(), 3, "every declared relation target");
+    assert!(
+        relation_edges.iter().any(|edge| {
+            edge["from"] == "entity:tasklinks.task_external_link"
+                && edge["to"] == "entity:planner.task"
+        }),
+        "link -> task join"
+    );
+    assert!(
+        relation_edges.iter().any(|edge| {
+            edge["from"] == "entity:planner.task"
+                && edge["to"] == "entity:tasklinks.task_external_link"
+        }),
+        "task -> links join (the declared aggregate direction)"
+    );
+    assert!(
+        relation_edges.iter().any(|edge| {
+            edge["from"] == "entity:tasklinks.outbox_item"
+                && edge["to"] == "entity:tasklinks.task_external_link"
+        }),
+        "outbox child -> link join"
+    );
+}

@@ -1,0 +1,18 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.edit_task
+    kind: effect
+    version: 1
+    description: "Cross-owner edit of the tasks aggregate"
+    operation: update
+    entity: "tasks.task"
+  - id: planner.edit_task_cmd
+    kind: command
+    version: 1
+    description: "Edit a task from the planner"
+    input:
+      - name: task_id
+        type: "tasks.task_id"
+        required: true
+    effects:
+      - "planner.edit_task"

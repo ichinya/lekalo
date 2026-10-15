@@ -1,0 +1,46 @@
+{
+  "evidence": {
+    "contractId": "tasklinks.provider_contract.secondary",
+    "providerId": "mock-secondary",
+    "objectType": "issue",
+    "upstreamPin": "mock-secondary/1",
+    "revision": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "origin": "synthetic",
+    "license": "synthetic-replay-fixtures",
+    "provenance": "Fully synthetic secondary mock; every field, event, and response is authored in-repo.",
+    "revisionOrdering": "incomparable-declared",
+    "remoteDedup": "idempotency-key",
+    "fieldMap": {
+      "title": "task.title",
+      "state": "task.state"
+    },
+    "endpoints": {
+      "update": {
+        "method": "PUT",
+        "pathShape": "/mock/{installation}/issues/{external_id}",
+        "requestSchemaRef": "tasklinks.provider.secondary_request",
+        "responseSchemaRef": "tasklinks.provider.secondary_response",
+        "errorSchemaRef": "tasklinks.provider.secondary_error",
+        "classification": "public"
+      }
+    }
+  },
+  "events": [
+    {
+      "eventIdentity": "evt-secondary-0001",
+      "installationId": "inst-secondary-1",
+      "providerId": "mock-secondary",
+      "objectType": "issue",
+      "externalId": "42",
+      "revision": "2026-10-06T00:00:07Z",
+      "causationId": "cause-secondary-0001",
+      "attribution": "provider.event",
+      "allowedFields": ["title", "state"]
+    }
+  ],
+  "responses": {
+    "ok": { "status": 200, "receipt": "rcpt-secondary-1" },
+    "timeout": { "status": "timeout", "receipt": null },
+    "conflict": { "status": 409, "receipt": null }
+  }
+}

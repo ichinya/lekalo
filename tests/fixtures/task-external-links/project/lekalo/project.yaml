@@ -1,0 +1,6 @@
+schema_version: "0.8.0"
+definitions:
+  - id: tasklinks
+    kind: project
+    version: 1
+    description: "Synthetic multi-provider TaskExternalLink pilot project (issue #52)"
