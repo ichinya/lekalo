@@ -85,8 +85,15 @@ for (const [name, path] of Object.entries(schemas)) {
   }
 }
 
-// 2. Registry union invariants: 0.8.0 = 0.6.5 + exactly the eight new
-//    tasklink entries, sorted, unique codes, exact categories.
+// 2. Registry union invariants: the 0.8.0 successor is the merged
+//    grand union — the milestone integration carries the format,
+//    adoption, portability, worklog-changelog, managed, and module-api
+//    families alongside this issue's tasklink rules — so additions
+//    beyond the pinned 0.6.5 predecessor must all belong to landed
+//    families (never a foreign family) and the eight tasklink rules
+//    must be present with their exact shapes (union-aware since the
+//    r8 reconciliation; the raw added-count over 0.6.5 counts every
+//    landed family, not just this one).
 {
   const predecessor = read("contracts/diagnostic-registry.v0.6.5.json");
   const successor = read("contracts/diagnostic-registry.v0.8.0.json");
@@ -98,6 +105,19 @@ for (const [name, path] of Object.entries(schemas)) {
     }
   }
   const added = successor.entries.filter((entry) => !predecessorIds.has(entry.id));
+  const landedFamilies = [
+    "format.",
+    "adoption.",
+    "portability.",
+    "worklog-changelog.",
+    "managed.",
+    "tasklink.",
+    "module-api.",
+  ];
+  const foreign = added.filter(
+    (entry) => !landedFamilies.some((family) => entry.id.startsWith(family)),
+  );
+  if (foreign.length) fail("foreign-family-addition", foreign.map((entry) => entry.id).slice(0, 4).join(", "));
   const expected = [
     ["tasklink.conflict-resolution-invalid", "LEK-TASKLINK-005", "semantic"],
     ["tasklink.decision-incomplete", "LEK-TASKLINK-002", "security"],
@@ -108,7 +128,8 @@ for (const [name, path] of Object.entries(schemas)) {
     ["tasklink.relation-identity-invalid", "LEK-TASKLINK-001", "model"],
     ["tasklink.required-guarantee-unsupported", "LEK-TASKLINK-007", "adapter"],
   ];
-  if (added.length !== expected.length) fail("added-count", added.length);
+  const tasklinkCount = successor.entries.filter((entry) => entry.id.startsWith("tasklink.")).length;
+  if (tasklinkCount !== expected.length) fail("added-count", tasklinkCount);
   const ids = successor.entries.map((entry) => entry.id);
   if (JSON.stringify(ids) !== JSON.stringify([...ids].sort())) fail("entries-not-sorted");
   for (const [id, code, category] of expected) {
