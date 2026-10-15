@@ -1,0 +1,14 @@
+{
+  "scenarioId": "tasklinks.scenario.duplicate_import",
+  "issueVerbatim": "duplicate link/import is idempotent;",
+  "origin": "mock",
+  "steps": [
+    { "command": "tasklinks.import_link", "actor": "identity.user", "identityTuple": "ws|inst-a|github-issues|issue|42", "task": "task-1" },
+    { "command": "tasklinks.import_link", "actor": "identity.user", "identityTuple": "ws|inst-a|github-issues|issue|42", "task": "task-1", "note": "exact repeat with the same idempotency key" }
+  ],
+  "expects": [
+    { "kind": "link-count", "value": 1 },
+    { "kind": "replayed-result", "value": true },
+    { "kind": "unchanged-history", "value": true }
+  ]
+}

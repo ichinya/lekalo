@@ -1,0 +1,93 @@
+{
+  "adapterId": "tasklinks/engine",
+  "targetId": "tasklinks/outbox-worker",
+  "protocolVersion": "0.2.16",
+  "evidenceDigest": "sha256:5f54d401f5a9105b854c577da9d3cdaa2f00dc115681a6748d071c7d9800b722",
+  "sourceRevision": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "trust": "verified",
+  "transactions": [
+    {
+      "groupId": "tasklinks/tx-intent-dispatch",
+      "members": [
+        {
+          "operation": "tasklinks.dispatch_outbox",
+          "kind": "enqueue-job",
+          "subject": "job:tasklinks.queue/outbox"
+        }
+      ]
+    },
+    {
+      "groupId": "tasklinks/tx-intent-local",
+      "members": [
+        {
+          "operation": "tasklinks.request_action",
+          "kind": "update",
+          "subject": "canonical:planner.task"
+        },
+        {
+          "operation": "tasklinks.request_action",
+          "kind": "create",
+          "subject": "canonical:tasklinks.outbox_item"
+        }
+      ]
+    },
+    {
+      "groupId": "tasklinks/tx-intent-ack",
+      "members": [
+        {
+          "operation": "tasklinks.ack_delivery",
+          "kind": "emit-event",
+          "subject": "event:tasklinks.delivery_recorded"
+        }
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "occurrence": 0,
+      "kind": "external-call",
+      "operation": "tasklinks.dispatch_outbox",
+      "subject": "external-service:tasklinks.provider/github-issues",
+      "trust": "verified"
+    },
+    {
+      "occurrence": 1,
+      "kind": "enqueue-job",
+      "operation": "tasklinks.dispatch_outbox",
+      "subject": "job:tasklinks.queue/outbox",
+      "transactionGroup": "tasklinks/tx-intent-dispatch",
+      "trust": "verified"
+    },
+    {
+      "occurrence": 2,
+      "kind": "update",
+      "operation": "tasklinks.request_action",
+      "subject": "canonical:planner.task",
+      "transactionGroup": "tasklinks/tx-intent-local",
+      "trust": "verified"
+    },
+    {
+      "occurrence": 3,
+      "kind": "create",
+      "operation": "tasklinks.request_action",
+      "subject": "canonical:tasklinks.outbox_item",
+      "transactionGroup": "tasklinks/tx-intent-local",
+      "trust": "verified"
+    },
+    {
+      "occurrence": 4,
+      "kind": "emit-event",
+      "operation": "tasklinks.ack_delivery",
+      "subject": "event:tasklinks.delivery_recorded",
+      "transactionGroup": "tasklinks/tx-intent-ack",
+      "trust": "verified"
+    },
+    {
+      "occurrence": 5,
+      "kind": "external-call",
+      "operation": "tasklinks.ack_delivery",
+      "subject": "external-service:tasklinks.provider/github-issues",
+      "trust": "current"
+    }
+  ]
+}

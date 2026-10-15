@@ -76,6 +76,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-client-sdk-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-extended-effects-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-invariant-transition-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-task-links-contracts.mjs --schema-only
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-reference-evaluation-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-projection-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-engine-profile-contracts.mjs
@@ -235,6 +236,15 @@ jobs:
         run: |
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-evidence-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-assessment-contracts.mjs --require-binary
+      - name: Run the graph contract gate against the live binary (issue #52)
+        # The Ajv job validates golden self-consistency without a build;
+        # here the built CLI re-exports every pinned golden's owning
+        # fixture and byte-compares the canonical rendering against the
+        # pinned bytes, so a stale-but-schema-valid golden fails the Node
+        # gate at the same commit the Rust golden tests would catch it.
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-graph-contracts.mjs --require-binary
       - name: Run the CI report smoke and gate (issue #103)
         # Dogfood the closed report surface on every OS: validate over a
         # fixture with all four report formats, the blocked readiness
@@ -382,6 +392,34 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-provider-contracts.mjs
+      - name: Provision the planner fixture vendor tree per the committed lock (issues #52/#56)
+        # Explicit setup, before both maintained-native and later adapter gates.
+        # Runtime/compile processes never install packages or run lifecycle scripts.
+        timeout-minutes: 15
+        run: composer install --no-interaction --prefer-dist --no-scripts --working-dir tests/fixtures/php-laravel/planner
+      - name: Run the task-links pilot gates (issue #52)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-task-links-contracts.mjs
+          node scripts/test-task-links-scenarios.mjs
+          node scripts/test-task-links-outbox.mjs
+          node scripts/test-task-links-impact-portability.mjs
+          node scripts/test-task-links-native.mjs
+          node scripts/test-task-links-public-evidence.mjs
+      - name: Run the provisioned task-links native gate (issue #52)
+        # Executes the Rust/SQLite battery and the locked maintained Laravel
+        # port in synchronized/killed/restarted worker processes. Only the live
+        # owner can qualify its matching implementation/build/profile;
+        # exported files/DB rows never authenticate a past native execution.
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          LEKALO_TASKLINKS_NATIVE=1 \
+            LEKALO_TASKLINKS_NATIVE_DB="$RUNNER_TEMP/tasklinks-native/provisioned.sqlite" \
+            node scripts/test-task-links-native.mjs
+          test -f "$RUNNER_TEMP/tasklinks-native/provisioned.sqlite.qualified.json"
       - name: Run the privacy evaluator parity gate (issue #119)
         run: node scripts/test-privacy-evaluator-parity.mjs
       - name: Run the privacy runtime CLI gate (issue #119)
@@ -513,12 +551,6 @@ jobs:
         # decoder, the analysis states, and the strict-profile gates run
         # against the committed artifact with injected fakes.
         run: node scripts/test-mago-integration.mjs --fake
-      - name: Provision the planner fixture vendor tree per the committed lock (issue #56)
-        # A provisioning step: install from the committed composer.lock,
-        # never inside a compiler or adapter process, no lifecycle
-        # scripts. The runtime gates stay offline afterwards.
-        timeout-minutes: 15
-        run: composer install --no-interaction --prefer-dist --no-scripts --working-dir tests/fixtures/php-laravel/planner
       - name: Run the Laratesto scenario E2E gate (issue #56)
         timeout-minutes: 10
         run: node scripts/test-php-laravel-scenario-tests.mjs

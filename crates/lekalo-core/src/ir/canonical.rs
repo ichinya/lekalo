@@ -14,16 +14,19 @@
 use super::{
     CommandDef, Common, CompiledProject, Definition, EffectDef, EndpointDef, EntityDef, EnumDef,
     EnumValue, EventDef, Field, IdRegistry, Module, ModuleId, PolicyDef, Project, QueryDef,
-    RenameHistoryEntry, RequirementId, ScalarDef, ScenarioDef, SymbolId, TargetBindingDef, Text,
-    Tombstone, TypeRef, ValueObjectDef, IDENTITY,
+    RelationDef, RenameHistoryEntry, RequirementId, ScalarDef, ScenarioDef, SymbolId,
+    TargetBindingDef, Text, Tombstone, TypeRef, UniqueConstraintDef, ValueObjectDef,
 };
 use crate::loader::canonical::write_json_string;
 
 impl CompiledProject {
     /// The canonical IR bytes: one deterministic compact JSON document.
+    /// The contract identity follows the exact source Model version:
+    /// 0.2.16 sources keep `dev.lekalo.ir@0.2.16` with byte-identical
+    /// output, 0.8.0 sources compile to the successor identity.
     pub fn to_canonical_json(&self) -> String {
         let mut fields: Vec<(&'static str, String)> = Vec::new();
-        fields.push(("contract", string(IDENTITY)));
+        fields.push(("contract", string(self.contract_identity())));
         fields.push((
             "definitions",
             sorted_by(&self.definitions, Definition::write_json, |definition| {
@@ -41,6 +44,12 @@ impl CompiledProject {
             fields.push(("project", project.write_json()));
         }
         object(&mut fields)
+    }
+
+    /// The exact contract identity of this compilation: one IR
+    /// contract version per accepted source Model version.
+    pub fn contract_identity(&self) -> &'static str {
+        super::version::identity_for(self.model_version)
     }
 }
 
@@ -280,6 +289,80 @@ impl EntityDef {
             array(self.identity.iter().map(|name| string(name.as_str()))),
         ));
         fields.push(pair("kind", literal("entity")));
+        // The successor's typed constructs appear only when declared,
+        // so 0.2.16-parsed entities keep byte-identical canonical
+        // output and every existing digest stays stable.
+        fields.extend(present_list(
+            "relations",
+            sorted_by(&self.relations, RelationDef::write_json, |relation| {
+                relation.id.as_str()
+            }),
+        ));
+        fields.extend(present_list(
+            "uniqueConstraints",
+            sorted_by(
+                &self.unique_constraints,
+                UniqueConstraintDef::write_json,
+                |constraint| constraint.id.as_str(),
+            ),
+        ));
+        object(&mut fields)
+    }
+}
+
+impl RelationDef {
+    fn write_json(&self) -> String {
+        let mut fields: Vec<(&'static str, String)> = Vec::new();
+        fields.extend(optional(
+            "description",
+            self.description.as_ref().map(text_value),
+        ));
+        fields.push(pair("id", symbol(&self.id)));
+        fields.push(pair(
+            "localFields",
+            array(self.local_fields.iter().map(|name| string(name.as_str()))),
+        ));
+        // `max` is a required IR member: `null` is the explicit unbounded
+        // spelling, so an unbounded relation serializes `"max":null` and
+        // every emitted document satisfies the published schema.
+        fields.push(pair(
+            "max",
+            match self.max {
+                Some(max) => number(max),
+                None => String::from("null"),
+            },
+        ));
+        fields.push(pair("min", number(self.min)));
+        fields.push(pair("onDetach", literal(self.on_detach.as_str())));
+        fields.push(pair("onDelete", literal(self.on_delete.as_str())));
+        fields.push(pair("ownership", literal(self.ownership.as_str())));
+        fields.push(pair("target", symbol(&self.target)));
+        fields.push(pair(
+            "targetFields",
+            array(self.target_fields.iter().map(|name| string(name.as_str()))),
+        ));
+        object(&mut fields)
+    }
+}
+
+impl UniqueConstraintDef {
+    fn write_json(&self) -> String {
+        let mut fields: Vec<(&'static str, String)> = Vec::new();
+        fields.push(pair("comparison", literal(self.comparison.as_str())));
+        fields.extend(optional(
+            "description",
+            self.description.as_ref().map(text_value),
+        ));
+        fields.push(pair("id", symbol(&self.id)));
+        fields.extend(optional(
+            "normalizationRef",
+            self.normalization_ref.as_ref().map(symbol),
+        ));
+        fields.push(pair(
+            "fields",
+            array(self.fields.iter().map(|name| string(name.as_str()))),
+        ));
+        fields.push(pair("scope", text_value(&self.scope)));
         object(&mut fields)
     }
 }

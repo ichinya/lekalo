@@ -11,13 +11,19 @@
 pub const FAMILY: &str = "dev.lekalo.inspect";
 
 /// The exact inspect contract version.
-pub const VERSION: &str = "0.2.16";
+///
+/// The 0.8.0 successor admits Model 0.8.0 sources (typed relation and
+/// secondary-uniqueness invariants in the invariants section) while
+/// keeping every 0.2.16 source inspectable unchanged: the modelVersion
+/// member stays source-dependent and the predecessor schema stays
+/// frozen byte-for-byte.
+pub const VERSION: &str = "0.8.0";
 
 /// The exact contract identity: family and version joined with `@`.
-pub const IDENTITY: &str = "dev.lekalo.inspect@0.2.16";
+pub const IDENTITY: &str = "dev.lekalo.inspect@0.8.0";
 
 /// The exact wire discriminator of the inspect contract.
-pub const SCHEMA_VERSION: &str = "lekalo/inspect/v0.2.16";
+pub const SCHEMA_VERSION: &str = "lekalo/inspect/v0.8.0";
 
 /// The maximum number of items one bounded section may return.
 pub const MAX_SECTION_ITEMS: usize = 256;
@@ -48,8 +54,8 @@ mod tests {
     fn identity_is_family_and_version() {
         assert_eq!(IDENTITY, format!("{FAMILY}@{VERSION}"));
         assert_eq!(FAMILY, "dev.lekalo.inspect");
-        assert_eq!(VERSION, "0.2.16");
-        assert_eq!(SCHEMA_VERSION, "lekalo/inspect/v0.2.16");
+        assert_eq!(VERSION, "0.8.0");
+        assert_eq!(SCHEMA_VERSION, "lekalo/inspect/v0.8.0");
     }
 
     #[test]

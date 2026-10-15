@@ -361,6 +361,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "task-external-links",
+      "origin": "synthetic",
+      "note": "Issue #52 multi-provider TaskExternalLink pilot: authored synthetic planner/tasklinks model, integration attachment, mock provider snapshots, scenario docs and evidence; the GitHub-Issues provider row is public-contract metadata with a reviewed upstream pin and synthetic fixtures only. No consumer application name, repository URL, token, or private payload."
+    },
+    {
       "family": "trace",
       "origin": "synthetic"
     },

@@ -40,6 +40,7 @@ pub mod canonical;
 pub mod decode;
 pub mod diagnostic;
 pub mod grammar;
+pub(crate) mod semantics;
 pub mod version;
 
 use crate::loader::{ModelVersion, NormalizedModel, SourceMapEntry};
@@ -48,7 +49,7 @@ use diagnostic::IrFailure;
 pub use diagnostic::{
     DUPLICATE_MEMBER, KIND_PLACEMENT, KIND_UNKNOWN, MISSING_FIELD, UNKNOWN_FIELD, VALUE_INVALID,
 };
-pub use version::{FAMILY, IDENTITY, VERSION};
+pub use version::{FAMILY, IDENTITY, SUCCESSOR_IDENTITY, SUCCESSOR_VERSION, VERSION};
 
 /// The maximum `list`/`optional` nesting of a [`TypeRef`], leaf included —
 /// exactly the accepted Model type-expression depth.
@@ -89,7 +90,7 @@ pub fn compile(model: &NormalizedModel) -> Result<Compilation, IrFailure> {
 
 /// The bounded human-readable text surface: `description`, `summary`, and
 /// rename `note` values (1-2000 Unicode scalars).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Text(String);
 
 impl Text {
@@ -408,6 +409,131 @@ pub struct EntityDef {
     pub common: Common,
     pub fields: Vec<Field>,
     pub identity: Vec<FieldName>,
+    /// Typed relation declarations (Model 0.8.0 successor only;
+    /// always empty for 0.2.16 sources, keeping their canonical bytes
+    /// and digests unchanged).
+    pub relations: Vec<RelationDef>,
+    /// Typed secondary-uniqueness declarations (Model 0.8.0 successor
+    /// only; always empty for 0.2.16 sources).
+    pub unique_constraints: Vec<UniqueConstraintDef>,
+}
+
+/// One typed relation declaration owned by the Model/IR: cardinality
+/// (including the exact `max`, `None` being the explicit unbounded
+/// spelling), ownership, and detach/delete semantics between the
+/// declaring entity and its target.
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct RelationDef {
+    /// Stable relation id (a qualified symbol).
+    pub id: SymbolId,
+    /// The referenced entity.
+    pub target: SymbolId,
+    /// Ordered local-side fields.
+    pub local_fields: Vec<FieldName>,
+    /// Ordered target-side fields (same arity as `local_fields`).
+    pub target_fields: Vec<FieldName>,
+    /// Minimum cardinality.
+    pub min: u64,
+    /// Maximum cardinality; `None` is the explicit unbounded spelling.
+    pub max: Option<u64>,
+    /// Which side owns the association.
+    pub ownership: RelationOwnership,
+    /// Detach behavior (history-preserving only).
+    pub on_detach: DetachPolicy,
+    /// Delete behavior (never an external delete).
+    pub on_delete: DeletePolicy,
+    /// Bounded human-readable description.
+    pub description: Option<Text>,
+}
+
+/// The closed relation-ownership enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum RelationOwnership {
+    Local,
+    External,
+    Shared,
+}
+
+impl RelationOwnership {
+    /// The exact source literal.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::External => "external",
+            Self::Shared => "shared",
+        }
+    }
+}
+
+/// The closed detach-policy enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum DetachPolicy {
+    RetainHistory,
+    Forbid,
+}
+
+impl DetachPolicy {
+    /// The exact source literal.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RetainHistory => "retain-history",
+            Self::Forbid => "forbid",
+        }
+    }
+}
+
+/// The closed delete-policy enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum DeletePolicy {
+    Restrict,
+    Detach,
+}
+
+impl DeletePolicy {
+    /// The exact source literal.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Restrict => "restrict",
+            Self::Detach => "detach",
+        }
+    }
+}
+
+/// One typed secondary-uniqueness declaration owned by the Model/IR:
+/// ordered constrained fields, an exact or explicitly pinned
+/// normalization comparison, and a declared scope.
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct UniqueConstraintDef {
+    /// Stable constraint id (a qualified symbol).
+    pub id: SymbolId,
+    /// Ordered constrained fields.
+    pub fields: Vec<FieldName>,
+    /// The comparison rule.
+    pub comparison: ConstraintComparison,
+    /// The pinned normalization reference, required exactly when
+    /// `comparison` is declared-normalization.
+    pub normalization_ref: Option<SymbolId>,
+    /// The declared scope (a bounded token).
+    pub scope: Text,
+    /// Bounded human-readable description.
+    pub description: Option<Text>,
+}
+
+/// The closed constraint-comparison enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum ConstraintComparison {
+    ExactText,
+    DeclaredNormalization,
+}
+
+impl ConstraintComparison {
+    /// The exact source literal.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ExactText => "exact-text",
+            Self::DeclaredNormalization => "declared-normalization",
+        }
+    }
 }
 
 /// The `command` definition.

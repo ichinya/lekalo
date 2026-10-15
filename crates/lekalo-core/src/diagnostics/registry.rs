@@ -55,6 +55,11 @@ pub const MODULE_REGISTRY_BYTES: &[u8] =
 pub const MANAGED_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
 
+/// The issue #52 union successor bytes (the same merged union registry
+/// as the other 0.8.0 family constants).
+pub const TASKLINK_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
 /// Why the embedded registry could not be trusted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RegistryError {
@@ -279,18 +284,32 @@ impl DiagnosticRegistry {
         REGISTRY.as_ref().map_err(Clone::clone)
     }
 
+    /// The issue #52 union successor, never a runtime extension. Parses
+    /// the same merged 0.8.0 union registry bytes.
+    pub fn tasklink_successor() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    TASKLINK_REGISTRY_BYTES,
+                    super::version::TASKLINK_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
     pub fn for_version(version: &str) -> Result<&'static Self, RegistryError> {
         match version {
             REGISTRY_VERSION => Self::embedded(),
             super::version::SUCCESSOR_REGISTRY_VERSION => Self::successor(),
-            // All six family constants name the merged 0.8.0 union
+            // All seven family constants name the merged 0.8.0 union
             // registry; either accessor parses the same bytes.
             v if v == super::version::FORMAT_REGISTRY_VERSION
                 || v == super::version::ADOPTION_REGISTRY_VERSION
                 || v == super::version::M8_REGISTRY_VERSION
                 || v == super::version::PILOT_REGISTRY_VERSION
                 || v == super::version::MODULE_REGISTRY_VERSION
-                || v == super::version::MANAGED_REGISTRY_VERSION =>
+                || v == super::version::MANAGED_REGISTRY_VERSION
+                || v == super::version::TASKLINK_REGISTRY_VERSION =>
             {
                 Self::module_successor()
             }
@@ -442,5 +461,80 @@ impl EntryWire {
             allowed_fix_ids,
             lifecycle,
         })
+    }
+}
+
+#[cfg(test)]
+mod tasklink_tests {
+    use super::*;
+
+    #[test]
+    fn the_tasklink_successor_is_an_exact_union_of_the_084_successor() {
+        let mid = DiagnosticRegistry::successor().unwrap();
+        let new = DiagnosticRegistry::tasklink_successor().unwrap();
+        // The merged union registry also carries the format, adoption,
+        // portability, worklog-changelog, and managed families, so the
+        // exact-size assertion counts every landed family.
+        let tasklink_count = new
+            .entries()
+            .filter(|entry| entry.id().starts_with("tasklink."))
+            .count();
+        assert_eq!(tasklink_count, 8);
+        for entry in mid.entries() {
+            assert_eq!(new.entry(entry.id()), Some(entry));
+        }
+        for code in [
+            "LEK-TASKLINK-001",
+            "LEK-TASKLINK-002",
+            "LEK-TASKLINK-003",
+            "LEK-TASKLINK-004",
+            "LEK-TASKLINK-005",
+            "LEK-TASKLINK-006",
+            "LEK-TASKLINK-007",
+            "LEK-TASKLINK-008",
+        ] {
+            assert!(
+                new.entries().any(|entry| entry.code() == code),
+                "missing {code}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_registry_chain_resolves_every_accepted_version() {
+        assert_eq!(
+            DiagnosticRegistry::for_version("0.6.4")
+                .unwrap()
+                .registry_version(),
+            "0.6.4"
+        );
+        assert_eq!(
+            DiagnosticRegistry::for_version("0.6.5")
+                .unwrap()
+                .registry_version(),
+            "0.6.5"
+        );
+        assert_eq!(
+            DiagnosticRegistry::for_version("0.8.0")
+                .unwrap()
+                .registry_version(),
+            "0.8.0"
+        );
+        assert!(DiagnosticRegistry::for_version("0.9.0").is_err());
+    }
+
+    #[test]
+    fn a_tasklink_rule_builds_through_the_chain_and_keeps_its_pin() {
+        let data = crate::diagnostics::DataObject::new();
+        let diagnostic = crate::diagnostics::normalize::build(
+            "tasklink.relation-identity-invalid",
+            None,
+            None,
+            data,
+        )
+        .unwrap();
+        assert_eq!(diagnostic.registry_version, "0.8.0");
+        assert_eq!(diagnostic.code(), "LEK-TASKLINK-001");
+        assert_eq!(diagnostic.category(), crate::diagnostics::Category::Model);
     }
 }

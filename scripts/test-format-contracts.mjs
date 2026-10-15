@@ -90,7 +90,7 @@ if (registry.registry_version !== "0.8.0") fail("registry-version");
 if (registry.closed !== true) fail("registry-not-closed");
 const byId = new Map(predecessor.entries.map((entry) => [entry.id, entry]));
 const formatEntries = registry.entries.filter((entry) => entry.id.startsWith("format."));
-const landedFamilies = ["format.", "adoption.", "portability.", "worklog-changelog.", "managed.", "module-api."];
+const landedFamilies = ["format.", "adoption.", "portability.", "worklog-changelog.", "managed.", "module-api.", "tasklink."];
 const additions = registry.entries.filter((entry) => !byId.has(entry.id));
 if (registry.entries.length !== predecessor.entries.length + additions.length || additions.length === 0) {
   fail("registry-not-a-union");

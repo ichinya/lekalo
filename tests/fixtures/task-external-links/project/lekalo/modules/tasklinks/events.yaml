@@ -1,0 +1,40 @@
+schema_version: "0.8.0"
+definitions:
+  - id: tasklinks.link_attached
+    kind: event
+    version: 1
+    description: "One external identity was bound to one task"
+    payload:
+      - name: link_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+  - id: tasklinks.link_detached
+    kind: event
+    version: 1
+    description: "One link was detached with history retained"
+    payload:
+      - name: link_id
+        type: "tasklinks.link_id"
+        required: true
+  - id: tasklinks.conflict_recorded
+    kind: event
+    version: 1
+    description: "One conflict entered the explicit resolution flow"
+    payload:
+      - name: conflict_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: link_id
+        type: "tasklinks.link_id"
+        required: true
+  - id: tasklinks.delivery_recorded
+    kind: event
+    version: 1
+    description: "One outbox outcome was recorded"
+    payload:
+      - name: intent_id
+        type: "tasklinks.link_id"
+        required: true

@@ -78,8 +78,8 @@ fn formatting_only_cases_answer_equal_with_empty_facts() {
     assert_eq!(diff["complete"], true);
     assert_eq!(diff["changes"].as_array().expect("changes").len(), 0);
     assert_eq!(diff["affectedSeeds"].as_array().expect("seeds").len(), 0);
-    assert_eq!(diff["schemaVersion"], "lekalo/semantic-diff/v0.2.16");
-    assert_eq!(diff["identity"], "dev.lekalo.semantic-diff@0.2.16");
+    assert_eq!(diff["schemaVersion"], "lekalo/semantic-diff/v0.8.0");
+    assert_eq!(diff["identity"], "dev.lekalo.semantic-diff@0.8.0");
     assert_eq!(diff["base"]["irIdentity"], "dev.lekalo.ir@0.2.16");
 }
 
@@ -222,7 +222,7 @@ fn unsupported_model_version_rejects_without_partial_output() {
     assert_eq!(exit_code(&output), 5, "{}", stderr_text(&output));
     let text = stderr_text(&output);
     assert!(text.contains("versioning.unsupported-version"), "{text}");
-    assert!(!text.contains("semantic-diff/v0.2.16"), "no partial result");
+    assert!(!text.contains("semantic-diff/v0.8.0"), "no partial result");
 }
 
 /// The version custody probe: the binary prints the prospective product

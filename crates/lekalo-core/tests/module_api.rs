@@ -3099,16 +3099,17 @@ fn r4_review_mapping_roles_bind_to_their_positional_argument() {
 #[test]
 fn r4_review_union_registry_and_boundary_rule_set_are_pinned() {
     // r4 review F1: the 0.8.0 successor must be the union of the live M8
-    // format/adoption/portability/worklog-changelog/managed registry and
-    // this issue's module-api family. Every successor accessor parses the
-    // same merged bytes and every landed family resolves, so neither side
-    // of the merge can drop a pin (r7 devin F1: 584 = 570 + 14).
+    // format/adoption/portability/worklog-changelog/managed/tasklink
+    // registry and this issue's module-api family. Every successor
+    // accessor parses the same merged bytes and every landed family
+    // resolves, so neither side of the merge can drop a pin
+    // (r8: 592 = 578 + 14 = 570 + 8 + 14).
     let module = lekalo_core::diagnostics::DiagnosticRegistry::module_successor().unwrap();
     let format = lekalo_core::diagnostics::DiagnosticRegistry::format_successor().unwrap();
     let adoption = lekalo_core::diagnostics::DiagnosticRegistry::adoption().unwrap();
     let m8 = lekalo_core::diagnostics::DiagnosticRegistry::m8().unwrap();
     let pilot = lekalo_core::diagnostics::DiagnosticRegistry::pilot().unwrap();
-    assert_eq!(module.len(), 584);
+    assert_eq!(module.len(), 592);
     assert_eq!(format.len(), module.len());
     assert_eq!(adoption.len(), module.len());
     assert_eq!(m8.len(), module.len());
@@ -3120,6 +3121,7 @@ fn r4_review_union_registry_and_boundary_rule_set_are_pinned() {
         "portability.",
         "worklog-changelog.",
         "managed.",
+        "tasklink.",
     ] {
         assert!(
             module.entries().any(|entry| entry.id().starts_with(family)),

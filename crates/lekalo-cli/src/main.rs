@@ -39,6 +39,8 @@ mod pilot_battery;
 mod portability;
 mod report_git;
 pub(crate) mod report_output;
+mod task_links;
+mod task_links_native;
 mod waivers;
 
 const PROGRAM_NAME: &str = "lekalo";
@@ -314,6 +316,11 @@ enum Commands {
     ArchitectureProfile {
         #[command(subcommand)]
         command: architecture_profile::Command,
+    },
+    /// The read-only multi-provider TaskExternalLink pilot surface (issue #52).
+    TaskLinks {
+        #[command(subcommand)]
+        command: task_links::Command,
     },
     /// Validate preregistered Framework Lift protocols and compare local recorded evidence.
     /// Never launches an agent/provider or exports private artifacts (issue #100).
@@ -2382,6 +2389,22 @@ enum EffectsCommands {
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
+        /// One typed detected-evidence envelope to join before
+        /// projection: external calls, worker jobs, receipt events,
+        /// partial-failure paths, and explicit transaction groups become
+        /// visible public edges. The envelope's source revision must be
+        /// the exact live compilation's IR digest, or the join refuses.
+        #[arg(long, value_name = "PATH")]
+        evidence: Option<String>,
+        /// Execute the task-links mock owner and join authoritative effect contracts.
+        #[arg(long, value_name = "PATH", requires_all = ["transactions", "extended_effects"], conflicts_with = "evidence")]
+        task_links_attachment: Option<String>,
+        /// Same-compilation transaction-concurrency owner attachment.
+        #[arg(long, value_name = "PATH", requires = "task_links_attachment")]
+        transactions: Option<String>,
+        /// Same-compilation extended-effects owner attachment.
+        #[arg(long, value_name = "PATH", requires = "task_links_attachment")]
+        extended_effects: Option<String>,
     },
     /// Report which operations write (or read with `--readers`) one
     /// resource or exact field.
@@ -2587,6 +2610,7 @@ fn runtime() -> u8 {
             } => run_context(symbol, changed, budget, spans, &project),
             Commands::Coupling { args } => coupling::run(args),
             Commands::ArchitectureProfile { command } => architecture_profile::run(command),
+            Commands::TaskLinks { command } => task_links::run(command),
             Commands::Evaluation { command } => evaluation::run(command),
             Commands::Portability {
                 project,
@@ -5099,11 +5123,34 @@ fn render_ir_success(
 /// renders, and maps exits.
 fn run_effects(command: EffectsCommands, no_cache: bool) -> DomainResult {
     match command {
-        EffectsCommands::Show { operation, project } => {
-            with_effects(&project, no_cache, |project, graph| {
-                effects_show(project, graph, &operation)
-            })
-        }
+        EffectsCommands::Show {
+            operation,
+            project,
+            evidence,
+            task_links_attachment,
+            transactions,
+            extended_effects,
+        } => with_effects(&project, no_cache, |compiled, graph| {
+            if let Some(path) = &task_links_attachment {
+                let executed = match task_links::executed_graph(
+                    &project,
+                    path,
+                    transactions.as_deref().unwrap_or_default(),
+                    extended_effects.as_deref().unwrap_or_default(),
+                ) {
+                    Ok(graph) => graph,
+                    Err(result) => return result,
+                };
+                if executed.ir_digest() != graph.ir_digest() {
+                    return DomainResult::invalid(
+                        lekalo_core::effects::diagnostic::input_invalid_detail("effects-stale-pin"),
+                    );
+                }
+                effects_show(compiled, &executed, &operation, None)
+            } else {
+                effects_show(compiled, graph, &operation, evidence.as_deref())
+            }
+        }),
         EffectsCommands::Writers {
             resource,
             readers,
@@ -5642,11 +5689,110 @@ fn effects_selector(
 /// `lekalo effects show OPERATION`: the operation's declared and
 /// detected edges; an unknown operation is an explicit
 /// `graph.unknown-node` failure, never an empty success.
+/// One bounded no-follow read of a detected-evidence envelope operand:
+/// every path component is checked for links (a junctioned ancestor can
+/// no more redirect the read than a linked leaf), and the leaf is opened
+/// without following any final reparse point. Oversized documents are
+/// refused, never buffered.
+fn read_envelope_bounded(path: &str) -> Result<Vec<u8>, DomainResult> {
+    use std::io::Read;
+    const MAX_ENVELOPE_BYTES: u64 = 4 * 1024 * 1024;
+    let refused = || {
+        DomainResult::invalid(lekalo_core::effects::diagnostic::input_invalid_detail(
+            "envelope-unreadable",
+        ))
+    };
+    let is_link = |metadata: &std::fs::Metadata| -> bool {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            metadata.file_attributes() & 0x0400 != 0
+        }
+        #[cfg(unix)]
+        {
+            metadata.file_type().is_symlink()
+        }
+    };
+    let operand = std::path::Path::new(path);
+    for ancestor in operand.ancestors() {
+        if ancestor.as_os_str().is_empty() {
+            continue;
+        }
+        let metadata = std::fs::symlink_metadata(ancestor).map_err(|_| refused())?;
+        if is_link(&metadata) {
+            return Err(refused());
+        }
+    }
+    let metadata = std::fs::symlink_metadata(path).map_err(|_| refused())?;
+    if is_link(&metadata) || !metadata.is_file() {
+        return Err(refused());
+    }
+    if metadata.len() > MAX_ENVELOPE_BYTES {
+        return Err(DomainResult::invalid(
+            lekalo_core::effects::diagnostic::input_invalid_detail("envelope-oversized"),
+        ));
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        const O_NOFOLLOW: i32 = 0o200_000;
+        options.custom_flags(O_NOFOLLOW);
+    }
+    let file = options.open(path).map_err(|_| refused())?;
+    let mut bytes = Vec::new();
+    file.take(MAX_ENVELOPE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| refused())?;
+    if bytes.len() as u64 > MAX_ENVELOPE_BYTES {
+        return Err(DomainResult::invalid(
+            lekalo_core::effects::diagnostic::input_invalid_detail("envelope-oversized"),
+        ));
+    }
+    Ok(bytes)
+}
+
 fn effects_show(
     project: &lekalo_core::ir::CompiledProject,
     graph: &lekalo_core::effects::EffectGraph,
     operation: &str,
+    evidence: Option<&str>,
 ) -> DomainResult {
+    // The detected-evidence envelope joins before projection: a declared
+    // plus detected graph is the honest public view when one is
+    // supplied. The join is pin-checked (the envelope's source revision
+    // must equal the live compilation's IR digest) and fails closed.
+    let joined_graph;
+    let graph = match evidence {
+        None => graph,
+        Some(path) => {
+            let bytes = match read_envelope_bounded(path) {
+                Ok(bytes) => bytes,
+                Err(result) => return result,
+            };
+            let envelope = match lekalo_core::effects::envelope::from_json(&bytes) {
+                Ok(envelope) => envelope,
+                Err(set) => return DomainResult::invalid(set),
+            };
+            if envelope.source_revision != graph.ir_digest() {
+                return DomainResult::invalid(
+                    lekalo_core::effects::diagnostic::input_invalid_detail("effects-stale-pin"),
+                );
+            }
+            joined_graph = match graph.with_detected_evidence(&envelope) {
+                Ok(joined) => joined,
+                Err(set) => return DomainResult::invalid(set),
+            };
+            &joined_graph
+        }
+    };
     let Some(operation) = operation_id(operation) else {
         return DomainResult::invalid(lekalo_core::effects::unknown_subject_set(operation));
     };

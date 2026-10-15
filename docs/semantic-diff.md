@@ -8,10 +8,15 @@ consumers, storage, and targets. The implementation is a pure, read-only,
 two-project comparison service in `lekalo-core` (`crate::diff`) with a
 thin `lekalo diff` handoff in the CLI.
 
-- Contract: `contracts/semantic-diff.schema.v0.2.16.json`
-- Wire discriminator: `lekalo/semantic-diff/v0.2.16`
-- Contract identity: `dev.lekalo.semantic-diff@0.2.16`
-- Profiles: `lekalo/diff-profile/v0.2.16`, policy revision `diff-policy/v1`
+- Contract: `contracts/semantic-diff.schema.v0.8.0.json` (the 0.8.0
+  successor; the frozen `contracts/semantic-diff.schema.v0.2.16.json`
+  stays in place byte-for-byte for predecessor consumers)
+- Wire discriminator: `lekalo/semantic-diff/v0.8.0`
+- Contract identity: `dev.lekalo.semantic-diff@0.8.0`
+- Profiles: `lekalo/diff-profile/v0.8.0`, policy revision `diff-policy/v1`
+- Snapshots: each side pins its own source-dependent IR identity
+  (`dev.lekalo.ir@0.2.16` for Model 0.2.16 sources,
+  `dev.lekalo.ir@0.8.0` for Model 0.8.0 sources) and model version
 - Diagnostics: the `diff.*` rule family (`LEK-DIFF-001..008`) through the
   #11 registry, added as the wire-shape-preserving registry minor
   increment 1.4.0 → 1.5.0

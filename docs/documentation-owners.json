@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:5453cf5bad671e571e9324dcd926a806ac6140c06535013828362a6bdd0ec21b",
+  "cliSourceDigest": "sha256:5da049529ffe9fb3ef18afcc78e2e60a10fc9c8a64f258811a0273995b6df8ff",
   "p0Pages": [
     {
       "page": "README.md",
@@ -678,7 +678,7 @@
       "kind": "command",
       "command": "effects show",
       "usage": "lekalo effects show [OPTIONS] <OPERATION>",
-      "helpDigest": "sha256:10a254da468af7345d55a7687da00dae47c58af881d05d096e26f1c304eb512f",
+      "helpDigest": "sha256:6346541ae599d984db931cacc70586e79676c5a592cbdfe84e4cfad4c069d26c",
       "summary": "Show one operation's declared and detected effects",
       "leaf": true,
       "owner": "docs/effect-graph.md",
@@ -2104,6 +2104,72 @@
       "status": "implemented"
     },
     {
+      "id": "cli:task-links",
+      "kind": "command",
+      "command": "task-links",
+      "usage": "lekalo task-links [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:c561554f49eb779c1539ac3ec795542428f837ffad6f35d2b5586fa23944db29",
+      "summary": "The read-only multi-provider TaskExternalLink pilot surface (issue #52)",
+      "leaf": false,
+      "owner": "docs/task-external-links.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:task-links execute",
+      "kind": "command",
+      "command": "task-links execute",
+      "usage": "lekalo task-links execute [OPTIONS] <PATH>",
+      "helpDigest": "sha256:accf847b7fa3e1c1b802b78fd9378abe54956f0c03953f291918ba4a1c64e4c4",
+      "summary": "Execute the deterministic mock battery locally and export an owner receipt",
+      "leaf": true,
+      "owner": "docs/task-external-links.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:task-links impact",
+      "kind": "command",
+      "command": "task-links impact",
+      "usage": "lekalo task-links impact [OPTIONS] --attachment <PATH> <CONTRACT>",
+      "helpDigest": "sha256:ee1788329e4a6825d6338f250cbd4121e1cbf2657d5269c36c1bee03fb695019",
+      "summary": "Derive the reverse impact of one provider contract: every capability, binding, policy, command, effect, and verification scenario that consumes it, derived from the attachment and the live compilation — never a prewritten list",
+      "leaf": true,
+      "owner": "docs/task-external-links.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:task-links inspect",
+      "kind": "command",
+      "command": "task-links inspect",
+      "usage": "lekalo task-links inspect [OPTIONS] --attachment <PATH> <SYMBOL>",
+      "helpDigest": "sha256:980400dc122fc15ad93bc6b01af1b73a45ac4d19f21ca161aebcb17e9756939b",
+      "summary": "Display typed relations, decisions, effects, and admitted evidence for the requested symbol; missing evidence stays unavailable. An unknown symbol is a typed not-found refusal",
+      "leaf": true,
+      "owner": "docs/task-external-links.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:task-links portability",
+      "kind": "command",
+      "command": "task-links portability",
+      "usage": "lekalo task-links portability [OPTIONS] --from-profile <PATH> --to-profile <PATH> <PATH>",
+      "helpDigest": "sha256:a84c6f172ed5da974d962bf9714a939bce74f6022be237c4cb1a303cec7e1981",
+      "summary": "Join resolved target/component profiles and provider contract requirements into the closed portability projection",
+      "leaf": true,
+      "owner": "docs/task-external-links.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:task-links validate",
+      "kind": "command",
+      "command": "task-links validate",
+      "usage": "lekalo task-links validate [OPTIONS] <PATH>",
+      "helpDigest": "sha256:a94f9a418021c3e5dfc4c51f47ea9c2be97b34f3be631c5d72909d1de3165959",
+      "summary": "Join the attachment to the current compilation and report the static obligations",
+      "leaf": true,
+      "owner": "docs/task-external-links.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:trace",
       "kind": "command",
       "command": "trace",
@@ -2842,7 +2908,7 @@
       "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
-      "sourceDigest": "sha256:432c17a651d1d79a2f865a49b43b2a14d0622e24c5a16dc622726cf5368a0f05",
+      "sourceDigest": "sha256:9fe4f700c4bce769385c32d536a3f00ca7d5d045f9e3f8ac9378c032df95dfb7",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2887,7 +2953,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.8.0.json",
-      "sourceDigest": "sha256:fb1ac20e36b08d02b8989440ba36d2a9e4fec1bc1a49eeb9d3c84a7a5dc558ad",
+      "sourceDigest": "sha256:e1d5df53abe183b7a2b536a4fbd1085a1567d09df9d8cd55db05a4dd172d871d",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2992,6 +3058,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/extended-effects.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/extended-effects.schema.v0.8.0.json",
+      "sourceDigest": "sha256:53701216301940cb9f25b53ff1c75ea365e0f7c63bdae214c37d38e922aad456",
+      "owner": "docs/extended-effects.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/format-policy.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/format-policy.schema.v0.8.0.json",
@@ -3082,6 +3157,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/graph.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/graph.schema.v0.8.0.json",
+      "sourceDigest": "sha256:d55a4a4d4db2f06cebeb4569b40ccb1c3965366a01554d098f4033aa036b7aaf",
+      "owner": "docs/graph.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/impact.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/impact.schema.v0.2.16.json",
@@ -3109,11 +3193,29 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/inspect.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/inspect.schema.v0.8.0.json",
+      "sourceDigest": "sha256:d7be0d3812f3b3b426013cbb7ea6ee49f58521d250558315d0f4932ed0a47bf9",
+      "owner": "docs/inspect.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/invariant-transition.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/invariant-transition.schema.v0.2.16.json",
       "sourceDigest": "sha256:cd2ee41d9ac2be6ca5789c82a16aadaeecfea5f89822e0dbc9e7ea47fa19e350",
       "owner": "docs/invariant-transition.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ir.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/ir.schema.v0.8.0.json",
+      "sourceDigest": "sha256:a3a77a7bccb14cc596ead83a6a53c709895d5c8464866ca8f319dac0fe160483",
+      "owner": "docs/ir.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
@@ -3239,6 +3341,15 @@
       "kind": "contract",
       "source": "contracts/model.schema.v0.2.16.json",
       "sourceDigest": "sha256:0bf1d8274e6bc5501d68b55944e562ac999210803e10bdaf69e4cf14ab1ccba2",
+      "owner": "docs/model.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/model.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/model.schema.v0.8.0.json",
+      "sourceDigest": "sha256:f811ce758c7eb0be88c08a7f52a1490b14482876dc2eec44581b3da958dc9ec6",
       "owner": "docs/model.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3793,6 +3904,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/semantic-diff.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/semantic-diff.schema.v0.8.0.json",
+      "sourceDigest": "sha256:4a4caa560aef2f795dc4eddbc831192a525381bd2d7e6f3ffada26bc3cbe6778",
+      "owner": "docs/semantic-diff.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/semantic-ids.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/semantic-ids.v0.2.16.json",
@@ -3901,6 +4021,51 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/task-links-evidence.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/task-links-evidence.schema.v0.8.0.json",
+      "sourceDigest": "sha256:c36fb111d0d8d21043585ad3de61706e9c9bf1517abd687b07e3faffc45bde4b",
+      "owner": "docs/task-external-links.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/task-links-execution.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/task-links-execution.schema.v0.8.0.json",
+      "sourceDigest": "sha256:57c9131f584eb5bd36c1d58f7ee7c96c040ab13c1ae14725ac29b99aacb33dc1",
+      "owner": "docs/task-external-links.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/task-links-integration.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/task-links-integration.schema.v0.8.0.json",
+      "sourceDigest": "sha256:b9e1b799c4d89b005678994bc62384d70826212966de39833bbf6c3d1e614794",
+      "owner": "docs/task-external-links.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/task-links-portability.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/task-links-portability.schema.v0.8.0.json",
+      "sourceDigest": "sha256:b306220618d1836f6bc120761d10072b086b873c6cb6b3e567788608c2c8e9fb",
+      "owner": "docs/task-external-links.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/task-links-report.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/task-links-report.schema.v0.8.0.json",
+      "sourceDigest": "sha256:6018ea3a53cbe9b748c5b0fb34be89bacff707ed08e9af04e8cb35b459e88705",
+      "owner": "docs/task-external-links.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/test-port.schema.v0.4.0.json",
       "kind": "contract",
       "source": "contracts/test-port.schema.v0.4.0.json",
@@ -3941,6 +4106,15 @@
       "kind": "contract",
       "source": "contracts/transaction-concurrency.schema.v0.2.16.json",
       "sourceDigest": "sha256:b7c2b3a821d3d21f033fbc926a72c68d93e75d2489f27fbbfc04bcfae8304229",
+      "owner": "docs/transaction-concurrency.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/transaction-concurrency.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/transaction-concurrency.schema.v0.8.0.json",
+      "sourceDigest": "sha256:1babb65786a181a0897c8f0ba7ef1c5c1be2e4c42cbb3138444928cc52139b03",
       "owner": "docs/transaction-concurrency.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

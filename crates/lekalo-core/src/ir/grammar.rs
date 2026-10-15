@@ -65,7 +65,8 @@ pub(crate) fn is_requirement_id(text: &str) -> bool {
 /// `segment` parts with total length 3-191.
 pub(crate) fn is_symbol_id(version: ModelVersion, text: &str) -> bool {
     match version {
-        ModelVersion::Current => {
+        // Both accepted versions share the symbol-ID grammar.
+        ModelVersion::Current | ModelVersion::Successor => {
             if !(3..=191).contains(&text.chars().count()) {
                 return false;
             }
@@ -81,7 +82,7 @@ pub(crate) fn is_symbol_id(version: ModelVersion, text: &str) -> bool {
 /// exactly one `segment`.
 pub(crate) fn is_project_id(version: ModelVersion, text: &str) -> bool {
     match version {
-        ModelVersion::Current => is_segment(text),
+        ModelVersion::Current | ModelVersion::Successor => is_segment(text),
     }
 }
 

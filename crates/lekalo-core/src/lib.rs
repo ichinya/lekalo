@@ -64,6 +64,7 @@ pub mod storage_introspection;
 pub mod storage_projection;
 pub mod target_profile;
 pub mod target_protocol;
+pub mod task_links;
 pub mod trace;
 pub mod transaction_concurrency;
 pub mod transport_http;

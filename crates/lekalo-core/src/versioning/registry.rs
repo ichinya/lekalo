@@ -29,7 +29,7 @@ use super::version::{ContractVersion, VersionParseError};
 pub const REGISTRY_IDENTITY: &str = "dev.lekalo.version-registry";
 
 /// The exact embedded registry bytes.
-pub const REGISTRY_BYTES: &[u8] = include_bytes!("contracts/version-registry.v0.6.4.json");
+pub const REGISTRY_BYTES: &[u8] = include_bytes!("contracts/version-registry.v0.8.0.json");
 
 /// Why the embedded registry data was rejected.
 ///

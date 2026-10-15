@@ -1,0 +1,28 @@
+schema_version: "0.8.0"
+definitions:
+  - id: tasklinks.list_links
+    kind: query
+    version: 1
+    description: "List the links of one task"
+    reads:
+      - "tasklinks.task_external_link"
+    returns:
+      list:
+        ref: "tasklinks.task_external_link"
+  - id: tasklinks.list_conflicts
+    kind: query
+    version: 1
+    description: "List unresolved conflicts"
+    reads:
+      - "tasklinks.conflict"
+    returns:
+      list:
+        ref: "tasklinks.conflict"
+  - id: tasklinks.delivery_status
+    kind: query
+    version: 1
+    description: "Read the delivery status of one intent"
+    reads:
+      - "tasklinks.outbox_item"
+    returns:
+      ref: "tasklinks.outbox_state"
