@@ -109,6 +109,7 @@ jobs:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
         run: |
           node scripts/check-contract-versions.mjs --base HEAD^
+          node scripts/check-registry-union.mjs
           node scripts/test-contract-versions.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-workspace-hook.mjs
           node scripts/check-authority.mjs

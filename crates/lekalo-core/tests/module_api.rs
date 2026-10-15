@@ -2056,6 +2056,109 @@ fn r6_lock_admission_enforces_the_published_schema() {
 }
 
 #[test]
+fn r8_review_version_range_policy_upper_key_is_required_nullable() {
+    // r8 review finding 2 (MINOR): the `version-range` arm of the
+    // published versionPolicy grammar declares `upper` required-nullable,
+    // but `VersionPolicyWire::VersionRange.upper` decodes an absent key
+    // and an explicit `null` identically to `None`, so only the presence
+    // layer can enforce the schema's `required` list. A consumer
+    // declaration (attachment), a consumer snapshot, and a lock policy
+    // that omit `upper` must refuse with `required-member-missing` —
+    // never decode as an unbounded range.
+    use lekalo_core::module_api::{parse_lock, parse_snapshot, resolve};
+
+    let detail = |error: &lekalo_core::diagnostics::DiagnosticSet, want: &str| {
+        error.as_slice().iter().any(|diagnostic| {
+            diagnostic.id() == "module-api.input-invalid"
+                && matches!(
+                    diagnostic.data().get("detail"),
+                    Some(lekalo_core::diagnostics::DataValue::Token(found))
+                        if found == want
+                )
+        })
+    };
+
+    // Attachment seam: a declared consumer policy without `upper`.
+    let compilation = compile(REFERENCE);
+    let mut attachment: serde_json::Value =
+        serde_json::from_slice(&attachment(REFERENCE)).expect("attachment fixture");
+    attachment["modules"][0]["consumers"][0]["policy"] = serde_json::json!({
+        "type": "version-range", "lower": "1.0.0",
+        "lowerInclusive": true, "upperInclusive": false
+    });
+    let error = resolve(
+        &serde_json::to_vec(&attachment).expect("serializes"),
+        &compilation,
+    )
+    .expect_err("absent upper refuses");
+    assert!(
+        detail(&error, "required-member-missing"),
+        "expected required-member-missing: {:?}",
+        error.as_slice()
+    );
+    // Control: an explicitly present `upper` — null (unbounded) or a
+    // bound — is the schema's legal spelling and stays admitted.
+    for upper in [serde_json::Value::Null, serde_json::json!("2.0.0")] {
+        attachment["modules"][0]["consumers"][0]["policy"]["upper"] = upper;
+        resolve(
+            &serde_json::to_vec(&attachment).expect("serializes"),
+            &compilation,
+        )
+        .expect("present upper admits");
+    }
+
+    // Snapshot seam: a recorded consumer policy without `upper`.
+    let snapshot = std::fs::read("tests/fixtures/module-api/diff/golden-consumers-before.json")
+        .expect("snapshot fixture");
+    let mut mutated: serde_json::Value = serde_json::from_slice(&snapshot).expect("json");
+    assert!(parse_snapshot(&snapshot).is_ok(), "fixture control parses");
+    let policy = mutated["consumers"][0]["policy"]
+        .as_object_mut()
+        .expect("policy");
+    assert_eq!(
+        policy.get("type").and_then(|kind| kind.as_str()),
+        Some("version-range")
+    );
+    policy.remove("upper");
+    let error = parse_snapshot(&serde_json::to_vec(&mutated).expect("serializes"))
+        .expect_err("absent upper refuses");
+    assert!(
+        detail(&error, "required-member-missing"),
+        "expected required-member-missing: {:?}",
+        error.as_slice()
+    );
+
+    // Lock seam: the top-level lock policy without `upper`.
+    let mut lock = serde_json::json!({
+        "schemaVersion": "lekalo/module-api-lock/v0.8.0",
+        "identity": "dev.lekalo.module-api-lock@0.8.0",
+        "consumer": "planner",
+        "producer": { "project": "tasks", "module": "tasks" },
+        "apiVersion": null,
+        "digest": format!("sha256:{}", "a".repeat(64)),
+        "policy": {
+            "type": "version-range", "lower": "1.0.0",
+            "lowerInclusive": true, "upper": "2.0.0", "upperInclusive": false
+        },
+        "publicDependencies": [],
+        "selected": ["tasks.task_view"]
+    });
+    assert!(parse_lock(&serde_json::to_vec(&lock).expect("serializes")).is_ok());
+    lock["policy"]
+        .as_object_mut()
+        .expect("policy")
+        .remove("upper");
+    let error = parse_lock(&serde_json::to_vec(&lock).expect("serializes"))
+        .expect_err("absent upper refuses");
+    assert!(
+        detail(&error, "required-member-missing"),
+        "expected required-member-missing: {:?}",
+        error.as_slice()
+    );
+    lock["policy"]["upper"] = serde_json::Value::Null;
+    assert!(parse_lock(&serde_json::to_vec(&lock).expect("serializes")).is_ok());
+}
+#[test]
 fn locks_flag_policy_api_version_and_extra_pins() {
     // Finding 15: one freshness comparison — policy, selection, api
     // version, and symmetric dependency pins.

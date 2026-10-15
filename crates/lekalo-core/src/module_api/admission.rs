@@ -125,6 +125,23 @@ fn require(object: &serde_json::Value, keys: &[&str]) -> Result<(), DiagnosticSe
     Ok(())
 }
 
+/// The presence axis of the published `versionPolicy` grammar (r8 review
+/// finding 2): the `version-range` arm declares `upper` required-nullable,
+/// but `VersionPolicyWire::VersionRange.upper` decodes absent and `null`
+/// identically to `None`, so the missing key is invisible to the typed
+/// layer. When the policy takes the range shape, the `upper` key must be
+/// present exactly like the schema's `required` list (the same
+/// conditional-require idiom as `pins.sourceRevision` above).
+fn require_version_policy(policy: &serde_json::Value) -> Result<(), DiagnosticSet> {
+    if policy.get("type").and_then(|kind| kind.as_str()) == Some("version-range") {
+        require(
+            policy,
+            &["type", "lower", "lowerInclusive", "upper", "upperInclusive"],
+        )?;
+    }
+    Ok(())
+}
+
 /// The per-kind closed member sets of the public export surface (the
 /// discriminated `oneOf` branches of the published schema).
 fn kind_members(kind: &str) -> Option<&'static [&'static str]> {
@@ -772,7 +789,10 @@ pub(crate) fn admit_attachment_presence(raw: &serde_json::Value) -> Result<(), D
                 match key {
                     "exports" => require(item, &["export", "kind", "since", "aliasOf"])?,
                     "imports" => require(item, &["moduleId", "uses"])?,
-                    "consumers" => require(item, &["consumer", "uses", "mode", "policy"])?,
+                    "consumers" => {
+                        require(item, &["consumer", "uses", "mode", "policy"])?;
+                        require_version_policy(&item["policy"])?;
+                    }
                     "ports" => require(item, &["port", "operations"])?,
                     "capabilities" => {
                         require(item, &["capability", "obligation", "owner", "version"])?
@@ -834,6 +854,7 @@ pub(crate) fn admit_snapshot_presence(raw: &serde_json::Value) -> Result<(), Dia
             consumer,
             &["consumer", "declared", "mode", "policy", "uses"],
         )?;
+        require_version_policy(&consumer["policy"])?;
         for use_row in consumer["uses"].as_array().unwrap_or(&Vec::new()) {
             require(
                 use_row,
@@ -935,6 +956,7 @@ pub(crate) fn admit_lock_presence(raw: &serde_json::Value) -> Result<(), Diagnos
         ],
     )?;
     require(&raw["producer"], &["project", "module"])?;
+    require_version_policy(&raw["policy"])?;
     for dependency in raw["publicDependencies"].as_array().unwrap_or(&Vec::new()) {
         require(dependency, &["moduleId", "digest", "apiVersion", "exports"])?;
     }
