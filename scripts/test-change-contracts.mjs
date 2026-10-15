@@ -11,6 +11,7 @@ import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { LANDED_FAMILIES, unionSize } from "./lib/registry-union.mjs";
 
 const require = createRequire(import.meta.url);
 let Ajv2020;
@@ -246,24 +247,12 @@ if (successor.identity !== `dev.lekalo.diagnostic-registry@${IDENTITY}`) {
 }
 const predecessorIds = new Map(predecessor.entries.map((entry) => [entry.id, entry]));
 // The 0.8.0 successor is the MERGED milestone union: every 0.6.5 entry
-// plus the format.* family (11, issue #94), the adoption.* family (9,
-// issue #136), the portability.* family (9, issue #19), the
-// worklog-changelog.* family (7, issue #51), the managed.* family (12,
-// issue #41), and the change.* family (12, issue #73).
-const MERGED_FORMAT_CODES = 11;
-const MERGED_ADOPTION_CODES = 9;
-const MERGED_PORTABILITY_CODES = 9;
-const MERGED_WORKLOG_CODES = 7;
-const MERGED_MANAGED_CODES = 12;
+// plus the landed families (format, adoption, portability,
+// worklog-changelog, managed, change — r8, finding omp F7: the union
+// arithmetic lives once in scripts/lib/registry-union.mjs).
 if (
   successor.entries.length !==
-  predecessor.entries.length +
-    MERGED_FORMAT_CODES +
-    MERGED_ADOPTION_CODES +
-    MERGED_PORTABILITY_CODES +
-    MERGED_WORKLOG_CODES +
-    MERGED_MANAGED_CODES +
-    12
+  unionSize(predecessor.entries.length)
 ) {
   fail("registry-union-size", {
     predecessor: predecessor.entries.length,
@@ -284,22 +273,12 @@ for (const entry of successor.entries) {
 }
 const changeEntries = successor.entries.filter((entry) => entry.id.startsWith("change."));
 if (changeEntries.length !== 12) fail("registry-change-family-size", changeEntries.length);
-// The merged format.*, adoption.*, portability.*, and worklog-changelog.*
-// families ride along verbatim.
-if (successor.entries.filter((entry) => entry.code.startsWith("LEK-FORMAT-")).length !== MERGED_FORMAT_CODES) {
-  fail("registry-format-family-size");
-}
-if (successor.entries.filter((entry) => entry.code.startsWith("LEK-ADOPT-")).length !== MERGED_ADOPTION_CODES) {
-  fail("registry-adoption-family-size");
-}
-if (
-  successor.entries.filter((entry) => entry.code.startsWith("LEK-PORT-")).length !==
-  MERGED_PORTABILITY_CODES
-) {
-  fail("registry-portability-family-size");
-}
-if (successor.entries.filter((entry) => entry.code.startsWith("LEK-WC-")).length !== MERGED_WORKLOG_CODES) {
-  fail("registry-worklog-family-size");
+// The merged format.*, adoption.*, portability.*, worklog-changelog.*,
+// managed.*, and change.* families ride along verbatim; their sizes are
+// the shared union arithmetic (r8, finding omp F7).
+for (const { family, codePrefix, entries } of LANDED_FAMILIES) {
+  const carried = successor.entries.filter((entry) => entry.code.startsWith(codePrefix)).length;
+  if (carried !== entries) fail(`registry-${family}-family-size`, carried);
 }
 const expectedChange = [
   ["change.commit-failed", "LEK-CHANGE-009"],

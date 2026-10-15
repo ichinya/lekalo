@@ -593,6 +593,20 @@ impl MigrationService {
         // Resolve the project root exactly like a load; the shared
         // fail-closed journal gate applies here too.
         let loaded = crate::loader::load_with_snapshot(selection).map_err(PlanFailure::Loader)?;
+        // Shared cross-service writer serialization (r8, devin F1/F3 +
+        // omp F3): rollback is a MUTATING migration writer — it joins the
+        // one project-wide mutation lock for its whole preflight ->
+        // restore -> verify window, exactly like apply, so a change/
+        // format/generate/adoption writer can never interleave with the
+        // journaled restores. A sibling's interrupted transaction refuses
+        // under it with the registered serialized rule.
+        let _shared = match crate::project_writer::WriterLock::mutation(
+            &loaded.root,
+            crate::project_writer::MutationFamily::Migration,
+        ) {
+            Ok(lock) => lock,
+            Err(_) => return Err(PlanFailure::Versioning(VersioningFailure::Serialized)),
+        };
         let write = transaction::MigrationWrite::new(loaded.root.clone());
         let before_compiled = compile(&loaded.model)
             .map_err(|_| PlanFailure::Versioning(VersioningFailure::CommitFailed))?;

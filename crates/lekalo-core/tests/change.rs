@@ -79,12 +79,16 @@ impl Sandbox {
 }
 
 fn add_priority_request() -> Vec<u8> {
+    add_field_request("priority")
+}
+
+fn add_field_request(field: &str) -> Vec<u8> {
     serde_json::to_vec(&serde_json::json!({
         "schemaVersion": "lekalo/change-request/v0.8.0",
         "operations": [{
             "operation": "entity-field:add",
             "entity": "tasks.task",
-            "field": { "name": "priority", "type": { "ref": "tasks.priority" } }
+            "field": { "name": field, "type": { "ref": "tasks.priority" } }
         }]
     }))
     .expect("request serializes")
@@ -2479,19 +2483,16 @@ fn a_genuine_ledger_grafted_into_a_same_id_project_mints_no_replay_authority() {
         ),
         "got {error:?}"
     );
-    // The lookup surface refuses the same way.
-    let error = change::lookup_receipt(Some(&recipient.selection_str()), "graft-key-v1")
-        .expect_err("lookup refuses the graft");
-    assert!(
-        matches!(
-            error,
-            ChangeError::HistoryInvalid {
-                detail: "postcondition",
-                ..
-            }
-        ),
-        "got {error:?}"
-    );
+    // The lookup surface is EXEMPT from the postcondition (r8, devin F2
+    // + omp F2): a read-only receipt query mints no authority, and the
+    // contract keeps receipts usable after source drift — so it returns
+    // the grafted record's stored projection while the sources stay
+    // untouched and replay (the authority surface) still refuses.
+    let looked_up = change::lookup_receipt(Some(&recipient.selection_str()), "graft-key-v1")
+        .expect("lookup returns the stored read-only projection");
+    let looked_up = looked_up.expect("stored record");
+    assert_eq!(looked_up.state(), ReceiptState::Committed);
+    assert!(!looked_up.replayed, "a lookup never mints replay");
     // Nothing was written to the recipient's sources.
     assert_eq!(recipient.entities_bytes(), before, "recipient untouched");
     // A same-id project that DID carry the change still replays: apply
@@ -2520,6 +2521,362 @@ fn a_genuine_ledger_grafted_into_a_same_id_project_mints_no_replay_authority() {
         }
         Err(error) => panic!("unexpected error: {error:?}"),
     }
+}
+
+/// Re-forge one single-record donor ledger so its record's `files[]`
+/// entry names an attacker-chosen path with an attacker-chosen
+/// after-digest (the r7 review's edited-graft attack, devin F3 +
+/// omp F1): the record digest chain is recomputed exactly like the
+/// writer computes it, so the forged ledger is fully self-consistent —
+/// decode, project binding, and chain verification all pass, and only
+/// the postcondition's path grammar can stop it.
+fn forge_ledger_with_outside_path(
+    donor_bytes: &[u8],
+    outside_relative: &str,
+    outside_digest: &str,
+) -> Vec<u8> {
+    let mut document: serde_json::Value = serde_json::from_slice(donor_bytes).expect("ledger");
+    let project = document
+        .get("project")
+        .and_then(|value| value.as_str())
+        .expect("project")
+        .to_owned();
+    let records = document
+        .get_mut("records")
+        .expect("records")
+        .as_array_mut()
+        .expect("records array");
+    assert_eq!(records.len(), 1, "the donor ledger has one record");
+    let record = &mut records[0];
+    let intent = record
+        .get("intentDigest")
+        .and_then(|value| value.as_str())
+        .expect("intent")
+        .to_owned();
+    {
+        let receipt = record
+            .get_mut("receipt")
+            .expect("receipt")
+            .as_object_mut()
+            .expect("receipt object");
+        for entry in receipt
+            .get_mut("files")
+            .expect("receipt files")
+            .as_array_mut()
+            .expect("files array")
+            .iter_mut()
+        {
+            let entry = entry.as_object_mut().expect("file entry");
+            entry.insert("path".to_owned(), serde_json::json!(outside_relative));
+            entry.insert("afterDigest".to_owned(), serde_json::json!(outside_digest));
+        }
+    }
+    if let Some(record) = record.as_object_mut() {
+        record.insert(
+            "files".to_owned(),
+            serde_json::json!([outside_relative.to_owned()]),
+        );
+    }
+    // Recompute the record digest exactly like the writer: the chain
+    // anchor is the digest over previous anchor, project, intent, and
+    // the canonical receipt projection without its own recordDigest.
+    let mut projection = record.get("receipt").expect("receipt").clone();
+    projection
+        .get_mut("history")
+        .expect("history")
+        .as_object_mut()
+        .expect("history object")
+        .remove("recordDigest");
+    let canonical = serde_json::to_string(&projection).expect("canonical projection");
+    let previous = format!("sha256:{}", lekalo_core::digest::sha256_hex(b""));
+    let digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(
+            format!("{previous}\u{1f}{project}\u{1f}{intent}\u{1f}{canonical}").as_bytes()
+        )
+    );
+    record
+        .get_mut("receipt")
+        .expect("receipt")
+        .get_mut("history")
+        .expect("history")
+        .as_object_mut()
+        .expect("history object")
+        .insert("recordDigest".to_owned(), serde_json::json!(digest));
+    serde_json::to_vec_pretty(&document).expect("forged ledger serializes")
+}
+
+#[test]
+fn an_edited_graft_with_an_escaping_files_path_mints_no_replay_authority() {
+    // r7 review, finding devin F3 + omp F1 (HIGH): the r7 postcondition
+    // joined the serde-decoded `receipt.files[].path` onto the project
+    // root and followed links, so a hand-forged (fully chain-consistent)
+    // ledger whose single files[] entry named an EXISTING OUTSIDE file
+    // with known bytes satisfied the ANY-match and minted replay
+    // authority on a project that never received the change. The r8
+    // postcondition validates every recorded path against the closed
+    // project-relative grammar BEFORE anything is read: `..`, absolute,
+    // drive, and separator forms refuse as `postcondition-path`, and the
+    // read itself is no-follow.
+    let donor = Sandbox::new("graft-escape-donor");
+    let request = add_priority_request();
+    apply_request(&donor, &request, "graft-escape-v1", false).expect("donor commits");
+    let donor_ledger = std::fs::read(donor.history_path()).expect("donor ledger");
+    // The outside victim: a file OUTSIDE the project whose exact bytes
+    // the attacker knows, so its digest genuinely matches the forged
+    // afterDigest — under the r7 ANY-match this entry alone vouched for
+    // the whole record.
+    let outside = std::env::current_dir()
+        .expect("cwd")
+        .join("target/change-core")
+        .join(format!("outside-victim-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&outside);
+    std::fs::create_dir_all(&outside).expect("outside dir");
+    let victim = outside.join("victim.yaml");
+    std::fs::write(&victim, b"known attacker bytes\n").expect("victim");
+    let victim_digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(b"known attacker bytes\n")
+    );
+    for (tag, escaping) in [
+        ("parent", "../outside-victim.yaml"),
+        ("absolute", "/etc/known-file"),
+        ("drive", "c:/known-file"),
+        ("backslash", "..\\outside-victim.yaml"),
+    ] {
+        let recipient = Sandbox::new("graft-escape-recipient");
+        let before = recipient.entities_bytes();
+        let forged = forge_ledger_with_outside_path(&donor_ledger, escaping, &victim_digest);
+        std::fs::write(recipient.history_path(), &forged).expect("graft forged ledger");
+        // Same key + same request: every durable binding matches, the
+        // forged chain verifies, but the path grammar refuses before any
+        // read — no arbitrary-file digest oracle, no replay authority.
+        let error = apply_request(&recipient, &request, "graft-escape-v1", false)
+            .expect_err("escaping files[] path must refuse");
+        assert!(
+            matches!(
+                &error,
+                ChangeError::HistoryInvalid {
+                    detail: "postcondition-path",
+                    ..
+                }
+            ),
+            "{tag}: got {error:?}"
+        );
+        assert_eq!(recipient.entities_bytes(), before, "{tag}: untouched");
+    }
+    let _ = std::fs::remove_dir_all(&outside);
+}
+
+#[test]
+fn a_superseded_record_still_replays_and_its_receipt_survives_drift() {
+    // r7 review, finding devin F2 + omp F2 (MEDIUM): the r7 ANY-record
+    // postcondition made committed replay AND receipt lookup unreachable
+    // after any later legitimate commit touching the same file. The r8
+    // postcondition binds each recorded path to the digest the ledger's
+    // per-file chain ENDS at: a record superseded by a later committed
+    // record in the same chain still replays, manual drift (no later
+    // committed record explains it) still refuses, and the read-only
+    // receipt lookup is exempt from the postcondition entirely.
+    let sandbox = Sandbox::new("superseded");
+    let first_request = add_field_request("priority");
+    let second_request = add_field_request("escalation");
+    apply_request(&sandbox, &first_request, "batch-key-1", false).expect("first commit");
+    apply_request(&sandbox, &second_request, "batch-key-2", false).expect("second commit");
+    // The earlier record's own after-digest no longer matches the file
+    // (the successor replaced it); the chain endpoint does.
+    let after_second = sandbox.entities_bytes();
+    let replayed = apply_request(&sandbox, &first_request, "batch-key-1", false)
+        .expect("a superseded record replays through its chain endpoint");
+    assert_eq!(replayed.state(), ReceiptState::Replayed);
+    assert!(replayed.replayed);
+    assert_eq!(
+        sandbox.entities_bytes(),
+        after_second,
+        "replay mutates nothing"
+    );
+    // The read-only receipt surface survives even MANUAL drift: it
+    // reports the original committed provenance and mints no authority.
+    std::fs::write(sandbox.entities_path(), b"# manual drift\n").expect("drift");
+    let receipt = change::lookup_receipt(Some(&sandbox.selection_str()), "batch-key-1")
+        .expect("receipt lookup survives drift")
+        .expect("stored record");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    // Replay after manual drift still refuses: no later committed record
+    // explains the current bytes, so this is indistinguishable from a
+    // graft and fails closed.
+    let error = apply_request(&sandbox, &first_request, "batch-key-1", false)
+        .expect_err("manual drift is not supersession");
+    assert!(
+        matches!(
+            &error,
+            ChangeError::HistoryInvalid {
+                detail: "postcondition",
+                ..
+            }
+        ),
+        "got {error:?}"
+    );
+}
+
+#[test]
+fn a_link_at_the_history_sidecar_is_refused_not_followed() {
+    // r7 review, finding devin F5 + omp F6 residual (LOW): the ledger and
+    // apply pin reads used std::fs::read. The r8 reads route through the
+    // shared no-follow Fs: a link planted at the history sidecar is an
+    // unconfined read and refuses as corruption instead of following to
+    // foreign bytes (even byte-identical foreign bytes).
+    let sandbox = Sandbox::new("sidecar-link");
+    let request = add_priority_request();
+    apply_request(&sandbox, &request, "sidecar-link-v1", false).expect("commit");
+    let ledger = std::fs::read(sandbox.history_path()).expect("ledger");
+    // An outside copy of the exact ledger bytes: following the link would
+    // decode successfully and mint a replay — refusing must not depend on
+    // the target being foreign content.
+    let outside = sandbox
+        .root
+        .parent()
+        .expect("parent")
+        .join(format!("foreign-ledger-{}", std::process::id()));
+    std::fs::create_dir_all(&outside).expect("outside dir");
+    let foreign = outside.join("ledger.json");
+    std::fs::write(&foreign, &ledger).expect("foreign ledger");
+    std::fs::remove_file(sandbox.history_path()).expect("remove sidecar");
+    #[cfg(unix)]
+    let linked = std::os::unix::fs::symlink(&foreign, sandbox.history_path()).is_ok();
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_file(&foreign, sandbox.history_path()).is_ok();
+    if !linked {
+        // No symlink privilege on this host: the junction custody flow of
+        // the CLI gate pins the same no-follow evidence on Windows.
+        eprintln!("skipped: symlink privilege unavailable");
+        let _ = std::fs::remove_dir_all(&outside);
+        return;
+    }
+    let error = apply_request(&sandbox, &request, "sidecar-link-v1", false)
+        .expect_err("a linked sidecar must refuse, not follow");
+    assert!(
+        matches!(&error, ChangeError::HistoryInvalid { detail: "read", .. }),
+        "got {error:?}"
+    );
+    let _ = std::fs::remove_dir_all(&outside);
+}
+
+#[test]
+fn a_planted_adoption_journal_serializes_sibling_writers() {
+    // r7 review, finding devin F1/F3 + omp F3 (MEDIUM): the adoption
+    // recovery journals were in NO barrier set — a stranded installation
+    // serialized against nothing. r8 registers a precise stranded
+    // predicate (journal with neither a completed receipt nor a
+    // completed recovery progress record) in the shared-writer sibling
+    // barrier: the change writer refuses under the lock with the
+    // adoption-journal detail until an explicit adoption recovery
+    // resolves the journal. Model readers stay open by contract (the
+    // loader's Phase 2c note states the rationale); the stranded
+    // predicate keeps completed work — which deliberately retains its
+    // journal — unblocked.
+    let sandbox = Sandbox::new("adoption-barrier");
+    let request = add_priority_request();
+    // Readers stay open: preparation loads normally while the journal
+    // is stranded (the barrier is a writer barrier, not a reader one).
+    prepare(&sandbox, &request).expect("readers stay open");
+    // Plant one stranded adoption journal home.
+    let home = sandbox
+        .root
+        .join(".lekalo/import/adoption/recovery")
+        .join("a".repeat(32))
+        .join("b".repeat(32));
+    std::fs::create_dir_all(&home).expect("recovery home");
+    std::fs::write(home.join("journal.json"), b"{}").expect("journal");
+    // The change writer refuses under the shared lock (sibling barrier)
+    // with the adoption-journal detail.
+    let error = apply_request(&sandbox, &request, "adoption-barrier-v1", false)
+        .expect_err("a stranded adoption journal serializes sibling writers");
+    assert!(
+        matches!(
+            &error,
+            ChangeError::PreconditionFailed {
+                subject,
+                detail: "adoption-journal",
+                ..
+            } if subject == "writer-lock"
+        ),
+        "got {error:?}"
+    );
+    assert!(!sandbox.history_path().exists(), "nothing committed");
+    // The predicate is precise: a completed receipt at the plan's
+    // receipts home means the journal is completed work's retained
+    // restoration material, not a strand — the change writer proceeds.
+    let receipts = sandbox
+        .root
+        .join(".lekalo/import/adoption/receipts")
+        .join("a".repeat(32));
+    std::fs::create_dir_all(&receipts).expect("receipts home");
+    std::fs::write(receipts.join(format!("{}.json", "b".repeat(32))), b"{}")
+        .expect("completed receipt");
+    apply_request(&sandbox, &request, "adoption-barrier-v2", false)
+        .expect("completed adoption work does not block sibling writers");
+}
+
+#[test]
+fn an_over_limit_file_diff_degrades_the_plan_envelope() {
+    // r7 review, finding omp F6 (LOW): the over-16-KiB `fileDiff`
+    // degradation was enumerated in the plan schema but pinned by no
+    // test. A document whose prospective bytes exceed
+    // `MAX_FILE_DIFF_BYTES` must degrade the plan envelope to
+    // `complete: false` with `completeReason: "change.file-diff-limit"`
+    // and omit that file's diff entry — never emit a truncated diff
+    // presented as complete, and never refuse the whole preparation
+    // (the semantic diff and every digest pin stay exact).
+    let sandbox = Sandbox::new("diff-limit");
+    // The SOURCE document itself exceeds the 16-KiB diff bound (a long
+    // preserved comment); the planned edit is small, so the degradation
+    // keys on the before side exactly like the after side.
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/commands.yaml"),
+        format!(
+            "schema_version: \"0.2.16\"\n# {}\ndefinitions:\n  - id: tasks.archive\n    kind: effect\n    version: 1\n    operation: update\n    entity: \"tasks.task\"\n  - id: tasks.audit\n    kind: effect\n    version: 1\n    operation: update\n    entity: \"tasks.task\"\n  - id: tasks.archive_task\n    kind: command\n    version: 1\n    effects:\n      - \"tasks.archive\"\n    input:\n      - name: task\n        type: \"tasks.task\"\n        required: true\n",
+            "c".repeat(17 * 1024)
+        ),
+    )
+    .expect("commands written");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{
+            "operation": "command-effect:add",
+            "command": "tasks.archive_task",
+            "effect": "tasks.audit"
+        }]
+    }))
+    .expect("serializes");
+    let prepared = prepare(&sandbox, &request).expect("preparation degrades, not refuses");
+    let exported = serde_json::from_slice::<serde_json::Value>(
+        prepared.to_json_string().expect("exports").as_bytes(),
+    )
+    .expect("plan wire parses");
+    assert_eq!(
+        exported.get("complete").and_then(|value| value.as_bool()),
+        Some(false)
+    );
+    assert_eq!(
+        exported
+            .get("completeReason")
+            .and_then(|value| value.as_str()),
+        Some("change.file-diff-limit")
+    );
+    let file_diff = exported
+        .get("fileDiff")
+        .and_then(|value| value.as_array())
+        .expect("fileDiff");
+    assert!(
+        file_diff
+            .iter()
+            .all(|entry| entry.get("path").and_then(|value| value.as_str())
+                != Some("lekalo/modules/tasks/commands.yaml")),
+        "the over-limit file's diff entry is omitted, not truncated: {file_diff:?}"
+    );
+    // The semantic projection stays complete and exact.
+    assert_eq!(prepared.file_diffs().len(), file_diff.len());
 }
 
 #[test]

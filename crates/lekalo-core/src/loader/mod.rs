@@ -316,6 +316,21 @@ pub(crate) fn load_validated_root_opt_with_overlay(
         }
     }
 
+    // NOTE (issue #73 r8, devin F1/F3 + omp F3): an interrupted adoption
+    // installation deliberately does NOT gate this reader path. The
+    // adoption journals are registered in the SHARED-WRITER sibling
+    // barrier (project_writer.rs) with a precise stranded predicate —
+    // every non-adoption mutating writer refuses until an explicit
+    // adoption recovery resolves the journal — while Model readers stay
+    // open by contract: adoption's compare-and-swap writes are per-file
+    // atomic renames (an interrupted apply leaves each file internally
+    // consistent, never a half-written document), and the family's own
+    // self-heal contract (pinned by test-adoption-refactor.mjs) requires
+    // its mutating entries — including re-apply and the root-resolved
+    // recovery surfaces — to stay reachable while a journal is stranded;
+    // a reader barrier here would strand the resolver behind the very
+    // state it exists to resolve.
+
     // Phase 3: capability-safe enumeration and reads.
     let mut sources: Vec<(String, DocKind)> =
         vec![("lekalo/project.yaml".to_owned(), DocKind::Project)];

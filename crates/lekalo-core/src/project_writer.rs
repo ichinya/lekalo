@@ -90,7 +90,15 @@ impl WriterLock {
             let format = (family != MutationFamily::Format)
                 .then(|| crate::format::transaction::recovery_code(fs))
                 .flatten();
-            migration.or(format)
+            // r8 (devin F1/F3 + omp F3): the adoption recovery journals
+            // join the sibling-barrier set — before r8 they were in NO
+            // barrier set, so a stranded installation serialized against
+            // nothing. The adoption family skips its own barrier
+            // (recovery is the resolver).
+            let adoption = (family != MutationFamily::Adoption)
+                .then(|| crate::adoption::recovery_barrier_code(fs))
+                .flatten();
+            migration.or(format).or(adoption)
         };
         match crate::project_fs::Fs::open(root).map(|fs| sibling(&fs)) {
             Ok(Some(code)) => return Err(MutationRefusal::SiblingJournal { code }),

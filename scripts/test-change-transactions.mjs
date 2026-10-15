@@ -15,7 +15,7 @@
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, openSync, closeSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -616,6 +616,128 @@ if (!readFileSync(join(sandbox, "lekalo/modules/tasks/entities.yaml")).equals(so
   fail("serialize-sources-mutated");
 }
 
+// 4d. Adoption journals join the shared-writer sibling barrier (r8,
+//     devin F1/F3 + omp F3): before r8 the `.lekalo/import/adoption/
+//     recovery` journals were in NO barrier set — a stranded
+//     installation serialized against nothing. A planted stranded
+//     journal (no receipt, no recovery progress) now refuses every
+//     non-adoption mutating writer under the shared lock; each family
+//     projects onto its own registered rule. Model readers stay open by
+//     contract (see the loader's Phase 2c note), and the adoption
+//     recovery view — the stranded-state diagnostic — stays reachable
+//     through its root-only resolution.
+freshSandbox("adoptbarrier");
+const strandedPlan = `sha256:${"a".repeat(32)}${"b".repeat(32)}`;
+const adoptionHome = join(sandbox, ".lekalo/import/adoption/recovery", "a".repeat(32), "b".repeat(32));
+mkdirSync(adoptionHome, { recursive: true });
+writeFileSync(
+  join(adoptionHome, "journal.json"),
+  JSON.stringify({
+    schema_version: "lekalo/adoption-journal/v0.8.0",
+    plan: strandedPlan,
+    phase: "apply",
+    steps: [],
+  }, null, 2),
+);
+const serializeRequest2 = join(sandbox, "adoptbarrier-request.json");
+writeFileSync(
+  serializeRequest2,
+  `${JSON.stringify(readJson("tests/fixtures/change/golden/request-add-field.json"))}\n`,
+);
+const changeBlockedByAdoption = run([
+  "change", "request", "--project", ".",
+  "--request", serializeRequest2,
+  "--apply", "--idempotency-key", "gate-adoptbar-01",
+  "--json",
+]);
+if (changeBlockedByAdoption.code !== 3) fail("change-ignored-adoption-journal", changeBlockedByAdoption.json);
+if (!changeBlockedByAdoption.json?.reasonCodes?.includes("change.precondition-failed")) {
+  fail("change-adoption-barrier-rule", changeBlockedByAdoption.json?.reasonCodes);
+}
+// The migration-rollback entry is one of the r8-serialized writers: it
+// joins the shared lock after its load and refuses with the serialized
+// rule while the adoption journal is stranded.
+const migrateRollbackBlockedByAdoption = run([
+  "migrate", "--project", ".", "--rollback", "e".repeat(64), "--json",
+]);
+if (
+  migrateRollbackBlockedByAdoption.code !== 1 ||
+  !migrateRollbackBlockedByAdoption.json?.reasonCodes?.includes("versioning.migration-in-progress")
+) {
+  fail("migrate-rollback-adoption-barrier", migrateRollbackBlockedByAdoption.json);
+}
+// The formatter joins the shared lock before its own load, so the
+// stranded journal refuses it under the sibling barrier — projected,
+// like every format writer refusal, onto the family's own denied-
+// allowed `format.locked` rule (exit 3).
+const formatBlockedByAdoption = run(["format", "--project", ".", "--json"]);
+if (
+  formatBlockedByAdoption.code !== 3 ||
+  !formatBlockedByAdoption.json?.reasonCodes?.includes("format.locked")
+) {
+  fail("format-adoption-barrier", formatBlockedByAdoption.json);
+}
+// The stranded-state diagnostic stays reachable (root-only resolution):
+// the view answers for the planted journal instead of being blocked by
+// the reader barrier its own resolution must pass.
+const adoptionView = run(["adoption", "recovery", "--digest", strandedPlan, "--project", ".", "--json"]);
+if (adoptionView.code !== 0) fail("adoption-view-blocked", adoptionView.json ?? adoptionView.stderr);
+// Resolving the journal (deleting it stands in for a completed adoption
+// recovery) restores every sibling writer.
+rmSync(join(adoptionHome, "journal.json"), { force: true });
+const changeAfterAdoptionRecovery = run([
+  "change", "request", "--project", ".",
+  "--request", serializeRequest2,
+  "--apply", "--idempotency-key", "gate-adoptbar-02",
+  "--json",
+]);
+if (changeAfterAdoptionRecovery.code !== 0) fail("change-blocked-after-adoption-recovery", changeAfterAdoptionRecovery.json);
+
+// 4e. The mutating adoption and migration-rollback entries join the
+//     shared mutation lock (r8, devin F1/F3 + omp F3), and the adoption
+//     busy rule is the family's own denied-allowed rule (r8, devin F4 +
+//     omp F4) — never a denied envelope carrying an invalid-only rule.
+//     A live holder of the shared leaf blocks `adoption recovery
+//     --restore` and `migrate --rollback` exactly like the change
+//     writer. The OS-held-lock leg runs where an open handle really
+//     excludes (Windows share modes); elsewhere it skips loudly like
+//     the junction-custody flow, and the Rust suites pin exclusivity.
+let heldLockFlow = "shared-writer-held-live (skipped: POSIX handle sharing does not exclude flock)";
+if (process.platform === "win32") {
+  heldLockFlow = "shared-writer-held-live";
+  freshSandbox("heldlock");
+  const lockLeaf = join(sandbox, ".lekalo/cache/writer.lock");
+  mkdirSync(dirname(lockLeaf), { recursive: true });
+  writeFileSync(lockLeaf, "");
+  const handle = openSync(lockLeaf, "r");
+  const adoptionUnderLock = run([
+    "adoption", "recovery", "--digest", `sha256:${"c".repeat(64)}`,
+    "--restore", "--project", ".", "--json",
+  ]);
+  if (adoptionUnderLock.code !== 3 || !adoptionUnderLock.json?.reasonCodes?.includes("adoption.writer-locked")) {
+    fail("adoption-restore-under-held-lock", adoptionUnderLock.json ?? adoptionUnderLock.stderr);
+  }
+  const migrateRollbackUnderLock = run([
+    "migrate", "--project", ".", "--rollback", "d".repeat(64), "--json",
+  ]);
+  if (
+    migrateRollbackUnderLock.code !== 1 ||
+    !migrateRollbackUnderLock.json?.reasonCodes?.includes("versioning.migration-in-progress")
+  ) {
+    fail("migrate-rollback-under-held-lock", migrateRollbackUnderLock.json ?? migrateRollbackUnderLock.stderr);
+  }
+  closeSync(handle);
+  // The lock was the refusal cause: without the holder the same restore
+  // reaches its own journal-missing refusal instead.
+  const adoptionAfterRelease = run([
+    "adoption", "recovery", "--digest", `sha256:${"c".repeat(64)}`,
+    "--restore", "--project", ".", "--json",
+  ]);
+  if (adoptionAfterRelease.code === 3 && adoptionAfterRelease.json?.reasonCodes?.includes("adoption.writer-locked")) {
+    fail("adoption-restore-still-locked-after-release", adoptionAfterRelease.json);
+  }
+}
+
 rmSync(sandbox, { recursive: true, force: true });
 process.stdout.write(`${JSON.stringify({
   ok: true,
@@ -635,5 +757,7 @@ process.stdout.write(`${JSON.stringify({
     "rollback-recovery-schema-valid",
     "cache-clear-custody",
     "shared-writer-serialization",
+    "adoption-journal-barriers",
+    heldLockFlow,
   ],
 }, null, 2)}\n`);

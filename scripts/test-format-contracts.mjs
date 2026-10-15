@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { familyCount } from "./lib/registry-union.mjs";
 
 const require = createRequire(import.meta.url);
 let Ajv2020;
@@ -111,11 +112,11 @@ if (
   fail("registry-not-a-union");
 }
 if (
-  adoptionEntries.length !== 9 ||
-  portabilityEntries.length !== 9 ||
-  worklogEntries.length !== 7 ||
-  managedEntries.length !== 12 ||
-  changeEntries.length !== 12
+  adoptionEntries.length !== familyCount("adoption") ||
+  portabilityEntries.length !== familyCount("portability") ||
+  worklogEntries.length !== familyCount("worklog-changelog") ||
+  managedEntries.length !== familyCount("managed") ||
+  changeEntries.length !== familyCount("change")
 ) {
   fail("registry-merged-family-drift", {
     adoption: adoptionEntries.length,

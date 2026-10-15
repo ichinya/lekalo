@@ -102,12 +102,16 @@ pub(crate) fn absent_digest() -> String {
 /// The exact bytes of the canonical history sidecar: `None` when the file
 /// does not exist. Any other read failure is corruption and fails closed
 /// (round 2, finding 8): an existing empty ledger is decoded by
-/// [`History::decode`] and refused there.
-fn read_history_bytes(root: &Path) -> Result<Option<Vec<u8>>, ChangeError> {
-    let path = root.join(version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR));
-    match std::fs::read(&path) {
-        Ok(bytes) => Ok(Some(bytes)),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+/// [`History::decode`] and refused there. The read itself is no-follow
+/// through the shared [`Fs`] (r8, omp F6 residual): a symlinked or
+/// junctioned ledger is an unconfined read, refused as `read` corruption
+/// instead of being followed.
+pub(crate) fn read_history_bytes(root: &Path) -> Result<Option<Vec<u8>>, ChangeError> {
+    let fs = crate::project_fs::Fs::open(root)
+        .map_err(|_| ChangeError::HistoryInvalid { detail: "read" })?;
+    match fs.read_logical(version::HISTORY_LOGICAL_PATH, receipt::MAX_HISTORY_BYTES) {
+        Ok(bytes) => Ok(bytes),
+        Err(crate::project_fs::FsErrorKind::NotFound) => Ok(None),
         Err(_) => Err(ChangeError::HistoryInvalid { detail: "read" }),
     }
 }
@@ -150,25 +154,11 @@ pub(crate) fn verify_history_project(root: &Path, history: &History) -> Result<(
     Ok(())
 }
 
-/// Prove that the model actually carries one record's committed semantic
-/// delta before the ledger may mint replay authority (r6, finding devin
-/// F1). The ledger is bound to the logical project id, so a GENUINE
-/// ledger file grafted into a different checkout of the SAME project id
-/// (a git clone, a template copy, a backup restore without its sibling
-/// sources) decodes and passes the project binding — replaying from it
-/// would mint a durable audit record for a change this project never
-/// received. The record's own receipt projection carries every replaced
-/// file's exact `afterDigest`: the committed postcondition. At least one
-/// non-history target must still carry its committed bytes; the history
-/// sidecar itself always matches (it IS the record being consulted), so
-/// it proves nothing about the sources. A no-op record carries no file
-/// and verifies only through its recorded absence of edits — the digest
-/// chain already binds it to the ledger it lives in.
-pub(crate) fn verify_record_postcondition(
-    root: &Path,
-    record: &HistoryRecord,
-) -> Result<(), ChangeError> {
-    let sources: Vec<receipt::FileOutcome> = record
+/// The recorded file outcomes of one history record's receipt projection,
+/// excluding the history sidecar itself (it is the record being consulted
+/// and proves nothing about the sources).
+fn record_source_outcomes(record: &HistoryRecord) -> Vec<receipt::FileOutcome> {
+    record
         .receipt
         .get("files")
         .and_then(Json::as_array)
@@ -176,26 +166,98 @@ pub(crate) fn verify_record_postcondition(
         .flatten()
         .filter_map(|item| serde_json::from_value::<receipt::FileOutcome>(item.clone()).ok())
         .filter(|outcome| outcome.path != version::HISTORY_LOGICAL_PATH)
-        .collect();
+        .collect()
+}
+
+/// The after-digest the ledger's chain ENDS at for one path, starting
+/// from one record: the last later committed record (by sequence) whose
+/// receipt files[] carries the path. `None` when no later record touched
+/// it — the record's own after-state is the endpoint. This is what
+/// distinguishes "superseded by later committed work in the same chain"
+/// from "the project never received these bytes" (r8, devin F2 + omp
+/// F2): replay stays reachable for the exact sequential-batch history
+/// the contract normalizes, while a grafted ledger — whose claimed edits
+/// the disk never carried — still fails the endpoint check below.
+fn chain_endpoint_after(history: &History, sequence: u64, path: &str) -> Option<String> {
+    let mut endpoint = None;
+    for record in &history.records {
+        if record.sequence <= sequence {
+            continue;
+        }
+        if let Some(after) = record_source_outcomes(record)
+            .into_iter()
+            .find(|outcome| outcome.path == path)
+            .map(|outcome| outcome.after_digest)
+        {
+            // Records are sequence-ordered (History::decode enforces it),
+            // so the last assignment wins.
+            endpoint = Some(after);
+        }
+    }
+    endpoint
+}
+
+/// Prove that the model actually carries one record's committed semantic
+/// delta before the ledger may mint replay authority (r6, finding devin
+/// F1; redesigned r8 for devin F3 + omp F1/F2). The ledger is bound to
+/// the logical project id, so a self-consistent ledger copied from
+/// another project must never mint replay authority — and a HAND-FORGED
+/// ledger must not either: the chain is unkeyed and recomputable, so the
+/// bytes on disk are the only witness. For every recorded source path,
+/// the current tree must carry the digest the ledger's per-file chain
+/// ENDS at — the record's own after-state when nothing later touched the
+/// file, or the last later committed record's after-state when later
+/// work in the same chain superseded it (an ALL-entries discipline: the
+/// r7 ANY-match let one satisfiable entry — including an entry naming a
+/// file outside the project — vouch for the whole record). Every
+/// recorded path is first validated against the closed project-relative
+/// grammar and then read no-follow through the shared [`Fs`], so a
+/// ledger-controlled `../`, absolute, drive, or link path can never
+/// turn the postcondition into an arbitrary-file digest oracle (r7
+/// review, devin F3 + omp F1). A no-op record carries no file and
+/// verifies only through its recorded absence of edits — the digest
+/// chain already binds it to the ledger it lives in. The read-only
+/// receipt lookup is exempt (it mints no authority): the contract keeps
+/// receipts usable after source drift.
+pub(crate) fn verify_record_postcondition(
+    root: &Path,
+    history: &History,
+    record: &HistoryRecord,
+) -> Result<(), ChangeError> {
+    let sources = record_source_outcomes(record);
     if sources.is_empty() {
         return Ok(());
     }
     for outcome in &sources {
-        let path = root.join(outcome.path.replace('/', std::path::MAIN_SEPARATOR_STR));
-        match std::fs::read(&path) {
-            Ok(bytes)
-                if format!("sha256:{}", crate::digest::sha256_hex(&bytes))
-                    == outcome.after_digest =>
-            {
-                // This source still carries the committed change.
-                return Ok(());
-            }
-            _ => {}
+        // The admitted project-relative grammar — the same component-wise
+        // closed set every journal target obeys. A serde-decoded path is
+        // untrusted ledger input: `..`, absolute, drive/UNC, separator,
+        // and case-alias forms are refused before anything is read.
+        if crate::project_fs::path_violation(&outcome.path).is_some() {
+            return Err(ChangeError::HistoryInvalid {
+                detail: "postcondition-path",
+            });
+        }
+        let expected = chain_endpoint_after(history, record.sequence, &outcome.path)
+            .unwrap_or_else(|| outcome.after_digest.clone());
+        let fs = crate::project_fs::Fs::open(root).map_err(|_| ChangeError::HistoryInvalid {
+            detail: "postcondition",
+        })?;
+        let current = fs
+            .read_logical(&outcome.path, crate::loader::source::MAX_DOCUMENT_BYTES)
+            .map_err(|_| ChangeError::HistoryInvalid {
+                detail: "postcondition",
+            })?;
+        let carries = current
+            .map(|bytes| format!("sha256:{}", crate::digest::sha256_hex(&bytes)))
+            .is_some_and(|digest| digest == expected);
+        if !carries {
+            return Err(ChangeError::HistoryInvalid {
+                detail: "postcondition",
+            });
         }
     }
-    Err(ChangeError::HistoryInvalid {
-        detail: "postcondition",
-    })
+    Ok(())
 }
 
 /// Whether one candidate symbol id satisfies the semantic-id grammar the
@@ -776,9 +838,10 @@ pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeErr
                 return Err(ChangeError::IdempotencyConflict);
             }
             // A genuine-but-grafted ledger never mints replay authority
-            // (r6, finding devin F1): the project must actually carry the
-            // record's committed semantic delta.
-            verify_record_postcondition(&root, record)?;
+            // (r6, finding devin F1; r8 chain-endpoint semantics): the
+            // project must actually carry the record's committed semantic
+            // delta or a later committed successor of it.
+            verify_record_postcondition(&root, &history, record)?;
             return replayed_receipt(record);
         }
     }
@@ -861,9 +924,8 @@ pub fn apply_prepared(
             return Err(ChangeError::IdempotencyConflict);
         }
         // A genuine-but-grafted ledger never mints replay authority
-        // (r6, finding devin F1): the project must actually carry the
-        // record's committed semantic delta.
-        verify_record_postcondition(&root, record)?;
+        // (r6, finding devin F1; r8 chain-endpoint semantics).
+        verify_record_postcondition(&root, &history, record)?;
         return replayed_receipt(record);
     }
 
@@ -877,9 +939,19 @@ pub fn apply_prepared(
                 Some(bytes) => format!("sha256:{}", crate::digest::sha256_hex(&bytes)),
             }
         } else {
-            match std::fs::read(root.join(pin.path.replace('/', std::path::MAIN_SEPARATOR_STR))) {
-                Ok(bytes) => format!("sha256:{}", crate::digest::sha256_hex(&bytes)),
-                Err(_) => {
+            // No-follow through the shared Fs (r8, omp F6 residual): the
+            // pin re-read is the apply CAS point, and a link swapped
+            // into any component must refuse instead of digesting
+            // foreign bytes.
+            match crate::project_fs::Fs::open(&root)
+                .map_err(|_| ChangeError::PreconditionFailed {
+                    subject: pin.path.clone(),
+                    detail: "input-digest",
+                })?
+                .read_logical(&pin.path, crate::loader::source::MAX_DOCUMENT_BYTES)
+            {
+                Ok(Some(bytes)) => format!("sha256:{}", crate::digest::sha256_hex(&bytes)),
+                Ok(None) | Err(_) => {
                     return Err(ChangeError::PreconditionFailed {
                         subject: pin.path.clone(),
                         detail: "input-digest",
@@ -960,7 +1032,16 @@ pub fn apply_prepared(
             let before = if creation {
                 Vec::new()
             } else {
-                std::fs::read(root.join(path.replace('/', std::path::MAIN_SEPARATOR_STR)))
+                // No-follow through the shared Fs (r8, omp F6 residual):
+                // the before-bytes read feeds the transaction's digest
+                // pins, and a link must refuse — never be followed.
+                crate::project_fs::Fs::open(&root)
+                    .and_then(|fs| {
+                        fs.read_logical(path, crate::loader::source::MAX_DOCUMENT_BYTES)
+                            .map_err(|_| crate::project_fs::FsErrorKind::Io)
+                    })
+                    .ok()
+                    .flatten()
                     .unwrap_or_default()
             };
             ReplacementPlan {
@@ -1194,12 +1275,14 @@ pub fn lookup_receipt(
     verify_history_project(&root, &history)?;
     let key = receipt::key_digest(idempotency_key);
     match history.by_key(&key) {
-        // The receipt projection is authority: it too requires the model
-        // to carry the record's committed delta (r6, finding devin F1).
-        Some(record) => {
-            verify_record_postcondition(&root, record)?;
-            stored_receipt(record).map(Some)
-        }
+        // The receipt projection is a read-only audit surface and mints
+        // no authority, so it is EXEMPT from the replay postcondition
+        // (r8, devin F2 + omp F2): the contract keeps receipts usable
+        // after source drift — including the drift later committed
+        // records and manual edits cause — reporting the original
+        // committed provenance. The project binding above still holds:
+        // a foreign ledger never answers a receipt lookup.
+        Some(record) => stored_receipt(record).map(Some),
         None => Ok(None),
     }
 }
@@ -3363,6 +3446,7 @@ fn change_mutation_refusal(refusal: crate::project_writer::MutationRefusal) -> C
                 subject: "writer-lock".to_owned(),
                 detail: match code {
                     "format.recovery-required" => "format-journal",
+                    "adoption.recovery-required" => "adoption-journal",
                     _ => "migration-journal",
                 },
             }

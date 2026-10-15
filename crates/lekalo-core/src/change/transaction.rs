@@ -98,6 +98,7 @@ pub(crate) const STATE_COMMITTED: &str = "committed";
 /// and the exact prospective bytes.
 struct StagedFile {
     target: PathBuf,
+    logical: String,
     backup: Option<PathBuf>,
     before_digest: String,
     after_bytes: Vec<u8>,
@@ -330,7 +331,7 @@ impl Transaction {
         plan: &ReplacementPlan,
     ) -> Result<(), ChangeError> {
         let target = validated_target(&self.root, &plan.logical)?;
-        let current = match std::fs::read(&target) {
+        let current = match read_target_bytes(&self.root, &plan.logical) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound && plan.creation => {
                 Vec::new()
@@ -369,6 +370,7 @@ impl Transaction {
         };
         self.staged.push(StagedFile {
             target,
+            logical: plan.logical.clone(),
             backup,
             before_digest: digest,
             after_bytes: plan.after_bytes.clone(),
@@ -396,7 +398,7 @@ impl Transaction {
             // point the research contract's step 7 requires): the staged
             // preimage must still be the disk bytes. A creation target
             // must still be absent.
-            let current = std::fs::read(&staged.target);
+            let current = read_target_bytes(&self.root, &staged.logical);
             let fresh = match (&staged.backup, current.as_deref()) {
                 // A creation must still find nothing to replace.
                 (None, Err(error)) if error.kind() == std::io::ErrorKind::NotFound => true,
@@ -438,7 +440,7 @@ impl Transaction {
             replaced += 1;
         }
         for staged in &self.staged {
-            let verified = std::fs::read(&staged.target).map(|bytes| {
+            let verified = read_target_bytes(&self.root, &staged.logical).map(|bytes| {
                 format!("sha256:{}", crate::digest::sha256_hex(&bytes)) == staged.after_digest
             });
             match verified {
@@ -833,14 +835,16 @@ fn verify_journal_provenance(root: &Path, journal: &Journal) -> Result<(), Chang
 /// Verify that the canonical history durably names one transaction as
 /// committed (round 5, finding 1): the receipt projection of some record
 /// carries the transaction's id with committed state. An absent,
-/// unreadable, or unverified ledger fails closed.
+/// unreadable, or unverified ledger fails closed. The read rides the
+/// shared no-follow ledger reader (r8, omp F6 residual).
 fn verify_history_custody(root: &Path, transaction: &str) -> Result<(), ChangeError> {
-    let bytes = std::fs::read(
-        root.join(super::version::HISTORY_LOGICAL_PATH.replace('/', std::path::MAIN_SEPARATOR_STR)),
-    )
-    .map_err(|_| ChangeError::RecoveryRequired {
-        transaction: transaction.to_owned(),
-    })?;
+    let bytes = super::read_history_bytes(root)
+        .map_err(|_| ChangeError::RecoveryRequired {
+            transaction: transaction.to_owned(),
+        })?
+        .ok_or_else(|| ChangeError::RecoveryRequired {
+            transaction: transaction.to_owned(),
+        })?;
     let history =
         super::receipt::History::decode(&bytes).map_err(|_| ChangeError::RecoveryRequired {
             transaction: transaction.to_owned(),
@@ -866,6 +870,24 @@ fn verify_history_custody(root: &Path, transaction: &str) -> Result<(), ChangeEr
         });
     }
     Ok(())
+}
+
+/// Read the current bytes of one journaled logical target through the
+/// shared no-follow [`Fs`] (r8, omp F6 residual): the validated target's
+/// components were checked when it was validated, and this read re-arms
+/// that check against the validate -> read race by never following a
+/// link at all. `NotFound` keeps its std spelling so the creation and
+/// freshness arms below stay exact.
+fn read_target_bytes(root: &Path, logical: &str) -> std::io::Result<Vec<u8>> {
+    let fs = crate::project_fs::Fs::open(root).map_err(|_| std::io::Error::other("fs"))?;
+    match fs.read_logical(logical, crate::loader::source::MAX_DOCUMENT_BYTES) {
+        Ok(Some(bytes)) => Ok(bytes),
+        Ok(None) | Err(crate::project_fs::FsErrorKind::NotFound) => Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "logical target absent",
+        )),
+        Err(_) => Err(std::io::Error::other("unconfined logical target")),
+    }
 }
 
 /// Validate one journaled logical path component-wise against the confined
@@ -1243,7 +1265,7 @@ pub(crate) fn require_durably_committed(root: &Path, transaction: &str) -> Resul
     }
     let restorations = restorations_of(root, &journal_dir, &journal)?;
     for restoration in &restorations {
-        let Some(digest) = target_digest(restoration) else {
+        let Some(digest) = target_digest(root, restoration) else {
             return Err(ChangeError::RecoveryRequired {
                 transaction: transaction.to_owned(),
             });
@@ -1266,7 +1288,7 @@ fn recover_staging(
     restorations: &[Restoration],
 ) -> Result<RecoveryResult, ChangeError> {
     for restoration in restorations {
-        let Some(digest) = target_digest(restoration) else {
+        let Some(digest) = target_digest(root, restoration) else {
             continue; // absent target: never replaced
         };
         if digest == restoration.after_digest {
@@ -1328,7 +1350,7 @@ fn recover_replacing(
     // does not own: recovery refuses with the journal and the reader
     // barrier retained, and no earlier restoration has been performed.
     for restoration in restorations {
-        let digest = target_digest(restoration);
+        let digest = target_digest(root, restoration);
         let explained = match (&restoration.backup, digest) {
             // A creation already removed (or never created).
             (None, None) => true,
@@ -1352,7 +1374,7 @@ fn recover_replacing(
     let mut failures = 0usize;
     for restoration in restorations {
         let outcome: std::io::Result<()> = match &restoration.backup {
-            None => match std::fs::read(&restoration.target) {
+            None => match read_target_bytes(root, &restoration.path) {
                 // Already removed by an earlier recovery attempt: nothing
                 // to do (idempotent, round 2 finding 4).
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -1372,7 +1394,7 @@ fn recover_replacing(
                     }
                 }
             },
-            Some(backup) => match std::fs::read(&restoration.target) {
+            Some(backup) => match read_target_bytes(root, &restoration.path) {
                 // Already restored by an earlier recovery attempt: the
                 // verified original is in place, nothing to do.
                 Ok(bytes) => {
@@ -1439,7 +1461,7 @@ fn recover_committed(
         // A committed transaction's every target must still carry the
         // exact committed bytes; a missing or drifted target is an
         // unknown state and fails closed with the barrier retained.
-        let Some(digest) = target_digest(restoration) else {
+        let Some(digest) = target_digest(root, restoration) else {
             return Err(ChangeError::RecoveryRequired {
                 transaction: transaction.to_owned(),
             });
@@ -1480,9 +1502,11 @@ fn recover_committed(
 }
 
 /// The digest of one restoration target's current bytes, or `None` when
-/// absent.
-fn target_digest(restoration: &Restoration) -> Option<String> {
-    let bytes = std::fs::read(&restoration.target).ok()?;
+/// absent. The read is no-follow through the shared [`Fs`] (r8, omp F6
+/// residual): journal-controlled paths never make recovery follow a
+/// link.
+fn target_digest(root: &Path, restoration: &Restoration) -> Option<String> {
+    let bytes = read_target_bytes(root, &restoration.path).ok()?;
     Some(format!("sha256:{}", crate::digest::sha256_hex(&bytes)))
 }
 

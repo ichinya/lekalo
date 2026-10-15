@@ -64,7 +64,8 @@ and the diagnostic registry takes the additive union successor `0.8.0`
 `format.*` (issue #94), `adoption.*` (issue #136), `portability.*`
 (issue #19), `worklog-changelog.*` (issue #51), and `managed.*`
 (issue #41) families — plus the twelve `change.*` rules
-`LEK-CHANGE-001..012` (582 entries);
+`LEK-CHANGE-001..012` and the denied-allowed shared-writer busy rule
+`adoption.writer-locked` (`LEK-ADOPT-010`, issue #73 r8) (583 entries);
 predecessor producers keep their exact pins, and registry selection is a
 three-step chain 0.6.4 → 0.6.5 → 0.8.0, never a version-string replacement).
 The canonical change history sidecar `lekalo/change-history.json` is admitted

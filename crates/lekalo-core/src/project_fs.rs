@@ -680,6 +680,24 @@ pub struct Fs {
 pub type FsResult<T> = Result<T, FsErrorKind>;
 
 impl Fs {
+    /// Read one full logical file path (for example `lekalo/project.yaml`)
+    /// with the same no-follow, link- and hardlink-refusing discipline as
+    /// [`Fs::read_file_opt`] (r8, devin F3 + omp F5/F6 residual: the
+    /// ledger, pin, and postcondition reads of the change family route
+    /// through here, so no serde-decoded or journaled path can ever make
+    /// the reader follow a link out of the root). `Err(NotFound)` when
+    /// the file does not exist; any other failure is fail-closed `Io`.
+    pub fn read_logical(&self, logical: &str, max: usize) -> Result<Option<Vec<u8>>, FsErrorKind> {
+        if crate::project_fs::path_violation(logical).is_some() {
+            return Err(FsErrorKind::Io);
+        }
+        let (directory, name) = match logical.rsplit_once('/') {
+            Some((directory, name)) => (directory, name),
+            None => ("", logical),
+        };
+        self.read_file_opt(directory, name, max)
+    }
+
     /// Reject every component of an absolute path that is a symlink, Windows
     /// reparse point, or (on Windows) an 8.3/case alias of a longer name.
     ///

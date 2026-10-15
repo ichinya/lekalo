@@ -162,7 +162,14 @@ with the duplicate-key-refusing parser, and a target is planned only
 when the lock actually locks it — invalid or absent locks, undecodable
 or unlocked targets, and the enumeration cap propagate as
 `complete: false`, never a complete-looking inventory over invalid
-evidence. The request digest
+evidence. The per-file `fileDiff` entries degrade the same way instead
+of refusing or truncating silently: when either side of one file's diff
+exceeds 16 KiB (`change.file-diff-limit`), or the line-level patch
+exceeds 512 rows, that file's diff entry is omitted and the plan
+envelope carries `complete: false` with `completeReason:
+"change.file-diff-limit"` — the plan stays schema-valid, the semantic
+diff and every digest pin stay exact, and only the human-readable
+patch projection is bounded. The request digest
 pins the request's canonical JSON: pretty and compact presentations of
 the same operation batch canonicalize to one digest (the digest pins
 the intent, not its bytes), so CLI sugar and an equivalent request
@@ -172,7 +179,9 @@ file produce the identical plan and idempotency binding.
 
 `change::apply_prepared` is the only writer. Under the shared
 project-wide mutation lock (`.lekalo/cache/writer.lock`, held across
-change/migrate/format/generate/adoption writers) it rechecks the
+the change, migration (apply and rollback), format, generate, and
+adoption (apply, confirm, rollback, and recovery) writers — every
+mutating entry of every family) it rechecks the
 durable ledger first (a repeated key with
 the same canonical request replays the original committed receipt
 without another mutation; a different intent conflicts,
@@ -185,7 +194,15 @@ digest, finalizes the canonical history in the same transaction, and
 removes the journal as the commit point. Ordinary failure restores all
 originals; a crash leaves a recoverable journal that blocks every
 project reader until explicit `lekalo change recover` succeeds
-(`change.recovery-required`, denied 3).
+(`change.recovery-required`, denied 3). The same shared lock carries
+the sibling barriers: a change writer refuses while a migration,
+format, or adoption journal is stranded (`change.precondition-failed`,
+denied 3, detail `migration-journal`/`format-journal`/
+`adoption-journal`) — the adoption barrier's stranded predicate ignores
+completed work, which deliberately retains its journals (the receipts
+and the recovery progress record disambiguate), and adoption's own
+mutating entries stay reachable while a journal is stranded because
+they are its resolvers.
 
 Journal provenance (round 5): a journal is recovery material only when
 a durable pending record — written under `.lekalo/pending-transactions.json`

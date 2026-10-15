@@ -435,3 +435,39 @@ pub(crate) fn compute_patch(before: &str, after: &str) -> (Vec<PatchLine>, bool)
     }
     (patch, complete)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // r7 review, finding omp F6 (LOW): the fileDiff degradation contract —
+    // an over-`MAX_PATCH_LINES` diff marks the plan envelope incomplete
+    // with `change.file-diff-limit` instead of presenting a truncated
+    // patch as complete — was enumerated in the plan schema but pinned by
+    // no test. These unit tests pin the patch-row bound; the integration
+    // suite pins the byte bound end to end.
+    #[test]
+    fn a_bounded_patch_is_complete() {
+        let before = "one\ntwo\nthree\n";
+        let after = "one\ntwo changed\nthree\nfour\n";
+        let (patch, complete) = compute_patch(before, after);
+        assert!(complete);
+        assert!(patch.len() < super::super::version::MAX_PATCH_LINES);
+        assert!(patch.iter().any(|line| line.kind == "insert"));
+        assert!(patch.iter().any(|line| line.kind == "delete"));
+    }
+
+    #[test]
+    fn an_over_limit_patch_degrades_to_incomplete_instead_of_truncating() {
+        // MAX_PATCH_LINES + 1 distinct inserted lines: the patch cannot
+        // fit, so the projection reports itself incomplete.
+        let before = "";
+        let after_lines: Vec<String> = (0..=super::super::version::MAX_PATCH_LINES)
+            .map(|index| format!("line-{index}"))
+            .collect();
+        let after = after_lines.join("\n");
+        let (patch, complete) = compute_patch(before, &after);
+        assert!(!complete, "an over-limit patch must self-report");
+        assert_eq!(patch.len(), super::super::version::MAX_PATCH_LINES);
+    }
+}

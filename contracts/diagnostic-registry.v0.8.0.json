@@ -666,6 +666,21 @@
       "lifecycle": "active"
     },
     {
+      "id": "adoption.writer-locked",
+      "code": "LEK-ADOPT-010",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adoption.writer-locked",
+      "default_message": "Another mutating writer holds the project-wide mutation lock; the adoption run was refused without any write.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "ai-lint.baseline-incomparable",
       "code": "LEK-AILINT-005",
       "category": "compatibility",

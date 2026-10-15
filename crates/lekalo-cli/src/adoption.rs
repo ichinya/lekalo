@@ -945,12 +945,16 @@ fn run_rollback(
 }
 
 fn run_recovery(plan_digest: &str, project: &Option<String>) -> DomainResult {
+    // Root-only resolution (r8, devin F1/omp F3): the view is the
+    // diagnostic surface for a stranded journal, and the reader barrier
+    // now fails Model loads closed while one exists — so the view must
+    // not depend on a full load.
     let selection = selection_for(project);
-    let context = match lekalo_core::adoption::context(&selection) {
-        Ok(context) => context,
+    let root = match lekalo_core::adoption::recovery_root(&selection) {
+        Ok(root) => root,
         Err(result) => return result,
     };
-    match lekalo_core::adoption::recovery_view(&context.root, plan_digest) {
+    match lekalo_core::adoption::recovery_view(&root, plan_digest) {
         Ok(view) => emit(
             serde_json::to_string_pretty(&view).expect("recovery view serializes"),
             format!(
@@ -969,12 +973,15 @@ fn run_recovery(plan_digest: &str, project: &Option<String>) -> DomainResult {
 /// a stranded apply/confirmation to its exact pre-state, independent of
 /// any completed receipt.
 fn run_recovery_restore(plan_digest: &str, project: &Option<String>) -> DomainResult {
+    // Root-only resolution (r8): the restore resolves the very journal
+    // the reader barrier blocks loads on; a full Model load here would
+    // deadlock recovery behind its own barrier.
     let selection = selection_for(project);
-    let context = match lekalo_core::adoption::context(&selection) {
-        Ok(context) => context,
+    let root = match lekalo_core::adoption::recovery_root(&selection) {
+        Ok(root) => root,
         Err(result) => return result,
     };
-    match lekalo_core::adoption::recover(&context.root, plan_digest) {
+    match lekalo_core::adoption::recover(&root, plan_digest) {
         Ok(outcome) => emit(
             serde_json::to_string_pretty(&outcome).expect("recovery outcome serializes"),
             format!(

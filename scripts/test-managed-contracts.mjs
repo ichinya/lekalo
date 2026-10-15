@@ -8,6 +8,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { root, version, generate, shapes } from './gen-managed-contracts.mjs';
+import { unionSize } from './lib/registry-union.mjs';
 
 const require = createRequire((process.env.LEKALO_AJV_NODE_PATH || join(root, 'scripts')) + '/');
 assert.equal(require('ajv/package.json').version, '8.17.1', 'exact Ajv gate dependency');
@@ -29,8 +30,9 @@ assert.equal(families.length, 7);
 const predecessor = read('contracts/diagnostic-registry.v0.6.5.json');
 const registry = read(`contracts/diagnostic-registry.v${version}.json`);
 // The 0.8.0 registry is the merged milestone union (format, adoption,
-// portability, worklog-changelog, managed, change).
-assert.equal(registry.entries.length, predecessor.entries.length + 11 + 9 + 9 + 7 + 12 + 12);
+// portability, worklog-changelog, managed, change — shared union
+// arithmetic in scripts/lib/registry-union.mjs).
+assert.equal(registry.entries.length, unionSize(predecessor.entries.length));
 for (const entry of predecessor.entries) {
   assert.deepEqual(registry.entries.find((candidate) => candidate.id === entry.id), entry, 'predecessor entry changed');
 }

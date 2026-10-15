@@ -187,6 +187,90 @@ pub(crate) fn recovery_home(root: &Path, plan_digest: &str) -> Option<RecoveryHo
     })
 }
 
+/// The writer-facing sibling barrier: `Some("adoption.recovery-required")`
+/// while a STRANDED apply/confirmation/rollback journal exists under the
+/// adoption recovery home (r8 review, devin F1/F3 + omp F3). Before r8
+/// the adoption journals were in NO barrier set: a stranded installation
+/// serialized against nothing, so a change/migration/format/generate
+/// writer could interleave its replacements with the stranded
+/// transaction's own journaled writes. Every non-adoption mutating
+/// writer now refuses under the shared lock until the journal resolves.
+/// The adoption family itself skips this barrier (its recovery,
+/// re-apply, and rollback entries are the resolvers).
+///
+/// The stranded predicate is precise because a resolved project KEEPS
+/// its journals: a completed installation retains the journal as the
+/// rollback surface's restoration material, and a completed recovery
+/// retains the original journal by design (R6 — it is the only complete
+/// restoration metadata). A home is stranded exactly when its journal
+/// has neither a completed receipt (any outcome — the same
+/// disambiguation [`recover`] applies) nor a completed recovery progress
+/// record (`recovery.json` whose every step is `restored` or
+/// `already-restored`).
+///
+/// Model READERS are deliberately not gated by this barrier — see the
+/// loader's Phase 2c note for the contractual rationale.
+pub fn recovery_barrier_code(fs: &crate::project_fs::Fs) -> Option<&'static str> {
+    use crate::project_fs::EntryType;
+    let heads = fs.entries(version::RECOVERY_DIR).ok()?;
+    for (head, entry_type) in heads {
+        if entry_type != EntryType::Directory {
+            continue;
+        }
+        let tails = fs
+            .entries(&format!("{}/{}", version::RECOVERY_DIR, head))
+            .ok()?;
+        for (tail, entry_type) in tails {
+            if entry_type != EntryType::Directory {
+                continue;
+            }
+            let home = format!("{}/{}/{}", version::RECOVERY_DIR, head, tail);
+            if !matches!(fs.entry_type(&home, "journal.json"), Ok(EntryType::File)) {
+                continue;
+            }
+            // The recovery home's two directory levels are the plan
+            // digest's halves, so the completed receipt — if any — is
+            // exactly `receipts/<head>/<tail>.json` (any outcome:
+            // completed apply, completed rollback).
+            let receipt = fs.entry_type(
+                &format!("{}/{}", version::RECEIPTS_DIR, head),
+                &format!("{tail}.json"),
+            );
+            if matches!(receipt, Ok(EntryType::File)) {
+                continue;
+            }
+            if recovery_progress_resolved(fs, &home) {
+                continue;
+            }
+            return Some("adoption.recovery-required");
+        }
+    }
+    None
+}
+
+/// Whether one home's `recovery.json` records a COMPLETED recovery:
+/// every step `restored` or `already-restored`. Anything else — absent,
+/// unreadable, malformed, or carrying a `restore-failed` step — is not a
+/// resolution (fail closed toward the barrier).
+fn recovery_progress_resolved(fs: &crate::project_fs::Fs, home: &str) -> bool {
+    let Ok(Some(bytes)) = fs.read_file_opt(home, "recovery.json", 64 * 1024) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return false;
+    };
+    let Some(steps) = value.get("steps").and_then(|steps| steps.as_array()) else {
+        return false;
+    };
+    !steps.is_empty()
+        && steps.iter().all(|step| {
+            matches!(
+                step.get("state").and_then(|state| state.as_str()),
+                Some("restored") | Some("already-restored")
+            )
+        })
+}
+
 /// Snapshot the exact current bytes of every intended write target
 /// (absent files included) and journal each completed capture. The
 /// snapshot home is created and every byte written through the
@@ -545,6 +629,19 @@ impl RestoreRecord {
 /// of vanishing (F6). A completed receipt for the same plan refuses:
 /// [`super::apply::rollback`] is the confirmed path for completed work.
 pub fn recover(root: &Path, plan_digest: &str) -> Outcome<RecoveryOutcome> {
+    // Shared cross-service writer serialization (r8, devin F1/F3 + omp
+    // F3): recovery is a MUTATING adoption writer — it joins the one
+    // project-wide mutation lock before any restore, so a change/
+    // migration/format/generate writer can never interleave with its
+    // journaled restorations. The adoption family's own journals are
+    // skipped by the sibling barrier (recovery IS their resolver).
+    let _shared = match crate::project_writer::WriterLock::mutation(
+        root,
+        crate::project_writer::MutationFamily::Adoption,
+    ) {
+        Ok(lock) => lock,
+        Err(refusal) => return Err(diagnostic::shared_writer_refusal(refusal)),
+    };
     let journal = load_journal(root, plan_digest)?;
     let Some(journal) = journal else {
         return Err(DomainResult::invalid(diagnostic::input_invalid_set(

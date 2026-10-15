@@ -16,7 +16,7 @@ use super::version;
 use crate::digest::sha256_hex;
 
 /// Maximum canonical history bytes accepted before decoding.
-const MAX_HISTORY_BYTES: usize = 4 * 1024 * 1024;
+pub(crate) const MAX_HISTORY_BYTES: usize = 4 * 1024 * 1024;
 
 /// The exact member count of one canonical history record.
 const RECORD_MEMBERS: usize = 8;

@@ -8,7 +8,7 @@
 use crate::diagnostics::normalize::build;
 use crate::diagnostics::types::{token_value, DataObject, DataValue, NestedValue, Scalar};
 use crate::diagnostics::DiagnosticSet;
-use crate::result::Status;
+use crate::result::{DomainResult, Status};
 
 /// One bounded `{ name: token }` record for `records`-typed fields.
 fn named_record(name: &str, value: &str) -> std::collections::BTreeMap<String, NestedValue> {
@@ -22,22 +22,69 @@ fn named_record(name: &str, value: &str) -> std::collections::BTreeMap<String, N
 
 /// The shared cross-service writer serialization refusal (r6, findings
 /// devin F2 + omp F2): another service's writer holds the project-wide
-/// mutation lock, or a sibling's interrupted transaction blocks mutation
-/// under it. The infrastructure in-progress rule is not an adoption rule,
-/// so it rides the closed passthrough set at the family's denied class.
+/// mutation lock. The r7 passthrough rode the closed `denied` envelope
+/// with the infrastructure in-progress rule the registry admits for
+/// `invalid` only — an envelope/rule combination no registry consumer
+/// can expect (r7 review, devin F4 + omp F4) — so the family now owns a
+/// dedicated denied-allowed busy rule, exactly like `format.locked`.
 pub(crate) fn writer_busy_set() -> DiagnosticSet {
-    match build(
-        "versioning.migration-in-progress",
-        None,
-        None,
-        DataObject::new(),
-    ) {
-        Ok(diagnostic) => match DiagnosticSet::try_from_unsorted(vec![diagnostic], Status::Invalid)
-        {
+    match build("adoption.writer-locked", None, None, DataObject::new()) {
+        Ok(diagnostic) => {
+            match DiagnosticSet::try_from_unsorted(vec![diagnostic], Status::Denied) {
+                Ok(set) => set,
+                Err(_) => crate::result::singleton_set("diagnostics.registry-invalid"),
+            }
+        }
+        Err(_) => crate::result::singleton_set("diagnostics.registry-invalid"),
+    }
+}
+
+/// A sibling service's interrupted transaction blocks mutation under the
+/// shared lock (r8, devin F1/F3 + omp F3): the sibling family's own
+/// recovery rule rides the closed passthrough set, emitted at the status
+/// its registry entry admits (`versioning.recovery-required`,
+/// `format.recovery-required`, and `adoption.recovery-required` are
+/// invalid-only; `change.recovery-required` is denied-only), so the
+/// envelope and the rule it carries never disagree.
+pub(crate) fn sibling_recovery_set(code: &str) -> DiagnosticSet {
+    let status = if code == "change.recovery-required" {
+        Status::Denied
+    } else {
+        Status::Invalid
+    };
+    match build(code, None, None, DataObject::new()) {
+        Ok(diagnostic) => match DiagnosticSet::try_from_unsorted(vec![diagnostic], status) {
             Ok(set) => set,
             Err(_) => crate::result::singleton_set("diagnostics.registry-invalid"),
         },
         Err(_) => crate::result::singleton_set("diagnostics.registry-invalid"),
+    }
+}
+
+/// Project one shared-writer refusal onto the adoption family's closed
+/// rules (r8): a held lock denies through the dedicated busy rule, a
+/// sibling's interrupted transaction refuses through that family's own
+/// recovery rule at its admitted status, and the change family's
+/// recovery rule keeps its bounded transaction token. Every mutating
+/// adoption entry (apply, confirmation, rollback, recovery) refuses
+/// through this one projection.
+pub(crate) fn shared_writer_refusal(
+    refusal: crate::project_writer::MutationRefusal,
+) -> DomainResult {
+    match refusal {
+        crate::project_writer::MutationRefusal::ChangeRecovery { transaction } => {
+            DomainResult::denied(
+                crate::change::ChangeError::RecoveryRequired { transaction }.diagnostic_set(),
+            )
+        }
+        crate::project_writer::MutationRefusal::LockHeld => DomainResult::denied(writer_busy_set()),
+        crate::project_writer::MutationRefusal::SiblingJournal { code } => {
+            if code == "change.recovery-required" {
+                DomainResult::denied(sibling_recovery_set(code))
+            } else {
+                DomainResult::invalid(sibling_recovery_set(code))
+            }
+        }
     }
 }
 
