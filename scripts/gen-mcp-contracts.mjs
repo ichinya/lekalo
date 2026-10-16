@@ -62,7 +62,7 @@ const bundleDocument = (source, prefix) => {
   }
   return { document, defs };
 };
-const INSPECT = upstream("inspect.schema.v0.2.16.json");
+const INSPECT = upstream("inspect.schema.v0.8.0.json");
 const IMPACT = upstream("impact.schema.v0.2.16.json");
 const CONTEXT = upstream("context-capsule.schema.v0.2.16.json");
 const GRAPH = upstream("graph.schema.v0.2.16.json");
@@ -396,7 +396,7 @@ out(
 // ---- The seven tool output schemas. ---------------------------------------
 
 const RESULT_BRANCHES = {
-  inspect: pinnedBranch("lekalo/inspect/v0.2.16", "dev.lekalo.inspect@0.2.16", "inspect", "inspect.Root"),
+  inspect: pinnedBranch("lekalo/inspect/v0.8.0", "dev.lekalo.inspect@0.8.0", "inspect", "inspect.Root"),
   impact: pinnedBranch("lekalo/impact/v0.2.16", "dev.lekalo.impact@0.2.16", "impact", "impact.Root"),
   context: pinnedBranch("lekalo/context/v0.2.16", "dev.lekalo.context@0.2.16", "context", "context.Root"),
   "target-status": pinnedBranch("lekalo/doctor/v0.3.2", "dev.lekalo.doctor@0.3.2", "doctor", "doctor.Root"),
@@ -449,7 +449,7 @@ const RESULT_BRANCHES = {
 };
 
 const toolPins = {
-  inspect: { inspect: idConst("0.2.16") },
+  inspect: { inspect: idConst("0.8.0") },
   impact: { impact: idConst("0.2.16") },
   context: { context: idConst("0.2.16") },
   graph: { graph: idConst("0.2.16") },
@@ -858,7 +858,7 @@ const resourceData = {
       required: ["modules"],
       additionalProperties: false,
     },
-    pinnedBranch("lekalo/inspect/v0.2.16", "dev.lekalo.inspect@0.2.16", "inspect", "inspect.Root"),
+    pinnedBranch("lekalo/inspect/v0.8.0", "dev.lekalo.inspect@0.8.0", "inspect", "inspect.Root"),
     pinnedBranch("lekalo/doctor/v0.3.2", "dev.lekalo.doctor@0.3.2", "doctor", "doctor.Root"),
     {
       type: "object",

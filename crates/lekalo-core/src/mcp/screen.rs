@@ -1,49 +1,50 @@
-//! The output screening pass (issue #33, F17/F15): one bounded,
-//! deterministic secret-shape sweep over every outgoing tool envelope.
+//! Deterministic, fail-closed output screening (issue #33, reviews r3–r6).
 //!
-//! The MCP surface claims sensitive-output refusal, so an envelope that
-//! would disclose a secret-shaped token refuses with the registered
-//! `mcp.sensitive-output` diagnostic (`LEK-MCP-003`) instead of shipping
-//! the bytes. The sweep is spelling-canonical (review r3 F1, r4 F1):
-//! every matcher runs over one ASCII-case-folded copy of the envelope,
-//! and the assignment scan runs over one separator-canonical form of
-//! that copy — `_` and `-` deleted from BOTH the key vocabulary and the
-//! scanned text, with a parallel record of which canonical bytes were
-//! contiguously alphanumeric in the original — so `PASSWORD`,
-//! `client_secret`, `client-secret`, and `clientSecret` are ONE
-//! spelling (`NotAPassword=x` stays safe: contiguous alphanumeric
-//! adjacency still suppresses a key match, whatever separators the
-//! original carried). Quote spellings are canonical too (r4 F1):
-//! `"`, `'`, and `\"` are quote equivalents around a value, so
-//! `password="x"`, `password='x'`, and an embedded `{"password":"x"}`
-//! all parse as assignments. Private absolute paths are matched by
-//! SHAPE, not by an enumerated segment list (r4 F1): any drive-letter
-//! path (`D:/...`, `c:\\...`) and boundary-rooted POSIX paths with a
-//! private-signal segment (`/srv/private/...`) refuse. The
-//! pass is otherwise deliberately conservative in both directions:
-//! only closed high-confidence secret shapes match (assigned
-//! credential assignments, PEM private-key blocks, bearer schemes), and
-//! diagnostics are never truncated into nonsense — a match refuses the
-//! whole output, it never redacts contract members silently. No
-//! filesystem, process, or network access.
+//! Credential stems are screened throughout assigned identifier keys,
+//! including plurals and compounds; `_`, `-`, and ASCII case are folded
+//! symmetrically. Compound `key` names refuse, but the bare JSON `key`
+//! member and the explicit negated pseudo-key `NotAPassword` stay safe.
+//! Non-empty scalar and composite credential values refuse; empty
+//! strings/arrays/objects carry no material. The one count exception is
+//! the quoted JSON `"tokens": <unsigned integer>` budget member, not
+//! numeric passwords, other compounds, or string-valued tokens.
+//!
+//! PEM markers, credential headers, bare bearer schemes, drive-letter
+//! and UNC paths, rooted POSIX directory spellings, home-relative paths,
+//! and common private dotfiles refuse. Numeric-index JSON pointers such
+//! as `/definitions/20` stay available; absolute API routes may refuse
+//! because bytes alone cannot distinguish them from host paths. Relative
+//! project paths and scheme-qualified URLs remain available.
+//!
+//! A closed Cyrillic/Greek lookalike map covers common homoglyph keys;
+//! this is NOT a general Unicode normalization or an exhaustive secret
+//! detector. Conservative lexical matches can refuse benign compounds,
+//! dotfile substrings, and `/home/`-style relative segments. A match
+//! refuses the whole envelope with `mcp.sensitive-output`, never silently
+//! redacts contract members. Time and auxiliary memory are linear in the
+//! caller-bounded response, with no filesystem, process, or network access.
 
 use crate::classification::DataKind;
 
-/// The upper bound on envelope bytes one sweep inspects; envelopes past
-/// the bound are screened by chunks (the matchers are byte-local), so
-/// the sweep itself is O(n) with a small closed constant.
+// The former chunk boundary is retained only for regression probes:
+// scanning the complete bounded envelope avoids splitting a long key,
+// structured value, rooted path, or UTF-8 homoglyph across chunks.
+#[cfg(test)]
 const SCREEN_CHUNK: usize = 64 * 1024;
 
 /// One closed secret-shape matcher: a byte-local needle (spelled in
-/// lowercase — the sweep matches over the ASCII-folded envelope, r3 F1)
-/// plus its closed disclosure reason.
-const NEEDLES: [(&str, &str); 7] = [
+/// lowercase — the sweep matches over the folded envelope, r3 F1)
+/// plus its closed disclosure reason. The bare `bearer ` scheme
+/// (r6 F7) needs no `authorization:` prefix — the token itself is the
+/// disclosure.
+const NEEDLES: [(&str, &str); 8] = [
     ("-----begin rsa private key-----", "private-key-block"),
     ("-----begin ec private key-----", "private-key-block"),
     ("-----begin openssh private key-----", "private-key-block"),
     ("-----begin private key-----", "private-key-block"),
     ("-----begin pgp private key block-----", "private-key-block"),
     ("authorization:", "credential-header"),
+    ("bearer ", "credential-header"),
     ("set-cookie:", "credential-header"),
 ];
 
@@ -56,10 +57,97 @@ const NEEDLES: [(&str, &str); 7] = [
 /// F9): `app/home/page.tsx` refuses too. That availability collateral is
 /// the accepted trade-off — the screen fails closed, and a relative
 /// segment spelling can never be proven harmless from bytes alone. The
-/// drive and user-profile spellings moved to the two SHAPE matchers
-/// below (`contains_drive_letter_path`, `contains_posix_root_path`,
-/// r4 F1), which the segment list could never cover.
-const PRIVATE_PATH_NEEDLES: [&str; 3] = ["/home/", "/root/", "/users/"];
+/// drive, UNC, and user-profile spellings moved to the SHAPE matchers
+/// below (`contains_drive_letter_path`, `contains_unc_path`,
+/// `contains_posix_root_path`, r4 F1/r6 F4), which the segment list
+/// could never cover.
+const PRIVATE_PATH_NEEDLES: [&str; 8] = [
+    "/home/", "/root/", "/users/",
+    // r6 F5: the canonical secret-bearing dotfile spellings refuse
+    // anywhere they appear — `.env` (and `.env.production`-style
+    // derivatives), `.ssh/`, `.aws/`, `.gnupg/`, and `.config/` trees.
+    // The same fail-closed trade-off as the segment needles above: a
+    // benign `.env`-shaped substring cannot be proven harmless from
+    // bytes alone.
+    ".env", ".ssh", ".aws", ".gnupg", ".config",
+];
+
+/// The closed confusable (homoglyph) fold (r6 F7): the Cyrillic and
+/// Greek letters whose glyphs are indistinguishable from an ASCII
+/// letter, mapped to that letter so `pаssword` (Cyrillic `а`) is the
+/// SAME key spelling as `password`. The map is closed and reviewed by
+/// hand — it is a spelling fold, not a Unicode normalization: every
+/// entry is a two-byte UTF-8 sequence whose replacement keeps the scan
+/// byte-local and deterministic.
+const CONFUSABLES: [([u8; 2], u8); 43] = [
+    // Cyrillic lowercase lookalikes.
+    ([0xd0, 0xb0], b'a'), // а U+0430
+    ([0xd0, 0xb5], b'e'), // е U+0435
+    ([0xd0, 0xbe], b'o'), // о U+043E
+    ([0xd1, 0x80], b'p'), // р U+0440
+    ([0xd1, 0x81], b'c'), // с U+0441
+    ([0xd1, 0x83], b'y'), // у U+0443
+    ([0xd1, 0x85], b'x'), // х U+0445
+    ([0xd1, 0x96], b'i'), // і U+0456
+    ([0xd1, 0x95], b's'), // ѕ U+0455
+    ([0xd1, 0x98], b'j'), // ј U+0458
+    ([0xd2, 0xbb], b'h'), // һ U+04BB
+    ([0xd4, 0x9b], b'q'), // ԛ U+051B
+    ([0xd4, 0x9d], b'w'), // ԝ U+051D
+    // Cyrillic uppercase lookalikes (fold straight to the lowercase
+    // ASCII letter — the sweep is case-insensitive).
+    ([0xd0, 0x90], b'a'), // А U+0410
+    ([0xd0, 0x95], b'e'), // Е U+0415
+    ([0xd0, 0x9e], b'o'), // О U+041E
+    ([0xd0, 0xa0], b'p'), // Р U+0420
+    ([0xd0, 0xa1], b'c'), // С U+0421
+    ([0xd0, 0xa3], b'y'), // У U+0423
+    ([0xd0, 0xa5], b'x'), // Х U+0425
+    ([0xd0, 0x86], b'i'), // І U+0406
+    ([0xd0, 0x85], b's'), // Ѕ U+0405
+    ([0xd0, 0x88], b'j'), // Ј U+0408
+    // Greek lowercase lookalikes.
+    ([0xce, 0xb1], b'a'), // α U+03B1
+    ([0xce, 0xb5], b'e'), // ε U+03B5
+    ([0xce, 0xb9], b'i'), // ι U+03B9
+    ([0xce, 0xba], b'k'), // κ U+03BA
+    ([0xce, 0xbd], b'n'), // ν U+03BD
+    ([0xce, 0xbf], b'o'), // ο U+03BF
+    ([0xcf, 0x81], b'p'), // ρ U+03C1
+    ([0xcf, 0x84], b't'), // τ U+03C4
+    ([0xcf, 0x85], b'u'), // υ U+03C5
+    ([0xcf, 0x87], b'x'), // χ U+03C7
+    // Greek uppercase lookalikes.
+    ([0xce, 0x91], b'a'), // Α U+0391
+    ([0xce, 0x95], b'e'), // Ε U+0395
+    ([0xce, 0x99], b'i'), // Ι U+0399
+    ([0xce, 0x9a], b'k'), // Κ U+039A
+    ([0xce, 0x9d], b'n'), // Ν U+039D
+    ([0xce, 0x9f], b'o'), // Ο U+039F
+    ([0xce, 0xa1], b'p'), // Ρ U+03A1
+    ([0xce, 0xa4], b't'), // Τ U+03A4
+    ([0xce, 0xa5], b'u'), // Υ U+03A5
+    ([0xce, 0xa7], b'x'), // Χ U+03A7
+];
+
+/// Translate the closed lookalike set to lowercase ASCII (r6 F7).
+/// Other UTF-8 bytes pass through untouched; no offset into the original
+/// envelope is used after this deterministic rewrite.
+fn fold_confusables(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let pair = [bytes[index], *bytes.get(index + 1).unwrap_or(&0)];
+        if let Some((_, letter)) = CONFUSABLES.iter().find(|(needle, _)| *needle == pair) {
+            out.push(*letter);
+            index += 2;
+        } else {
+            out.push(bytes[index]);
+            index += 1;
+        }
+    }
+    out
+}
 
 /// Whether one folded envelope position starts a drive-letter absolute
 /// path: a single `a-z` letter, a colon, and a `/` or `\` separator,
@@ -89,64 +177,159 @@ fn contains_drive_letter_path(folded: &[u8]) -> bool {
     false
 }
 
-/// Whether one folded envelope position starts a boundary-rooted POSIX
-/// absolute path: a `/` at the start of the envelope, after whitespace,
-/// or after a quote, followed by a rooted path with a private-signal
-/// segment (`/srv/private/finance.txt`, r4 F1). JSON pointers such as
-/// `/definitions/20` have the same rooted shape but no private signal;
-/// relative project paths, URIs and prose fractions stay available.
-fn contains_posix_root_path(folded: &[u8]) -> bool {
+/// Whether one folded envelope position starts a boundary-rooted UNC
+/// absolute path (r6 F4 / omp F2): a separator run of two or more `\`
+/// or `/` bytes at the envelope start, after whitespace, or after a
+/// quote (the JSON spelling doubles every backslash, so `\\server`
+/// serializes as a four-backslash run — the run is consumed whole),
+/// followed by a server segment, another separator run, and a share
+/// segment. UNC is absolute by construction, so ANY share content is a
+/// host-layout disclosure — `\\fileserver\hr\salaries.xlsx` and
+/// `//server/share/file.txt` refuse. Scheme-qualified URLs and prose
+/// fractions (`and//or`) sit behind non-boundary bytes and never match;
+/// a boundary-rooted protocol-relative URL refuses conservatively.
+fn contains_unc_path(folded: &[u8]) -> bool {
     for index in 0..folded.len() {
-        if folded[index] != b'/' {
+        let separator = |byte: Option<&u8>| matches!(byte, Some(&b'\\') | Some(&b'/'));
+        if !separator(folded.get(index)) || !separator(folded.get(index + 1)) {
             continue;
         }
         let at_boundary = index == 0
             || folded[index - 1].is_ascii_whitespace()
-            || folded[index - 1] == b'"'
-            || folded[index - 1] == b'\'';
+            || matches!(folded[index - 1], b'"' | b'\'');
         if !at_boundary {
             continue;
         }
-        // One path segment (no whitespace, no quote) and then a second
-        // separator: a rooted directory spelling.
-        let mut cursor = index + 1;
-        let mut segment = 0;
-        while cursor < folded.len() {
-            let byte = folded[cursor];
-            if byte == b'/' {
-                if segment > 0 {
-                    let mut end = cursor + 1;
-                    while end < folded.len()
-                        && !folded[end].is_ascii_whitespace()
-                        && !matches!(folded[end], b'"' | b'\'')
-                    {
-                        end += 1;
-                    }
-                    let path = &folded[index..end];
-                    // JSON pointers (`/definitions/20`) and API routes
-                    // have the same lexical shape as rooted paths. A
-                    // private-signal segment distinguishes disclosure
-                    // from benign contract members (r4 F1).
-                    if [
-                        b"/private/".as_slice(),
-                        b"/secret/",
-                        b"/finance/",
-                        b"/credentials/",
-                        b"/etc/passwd",
-                    ]
-                    .iter()
-                    .any(|needle| contains(path, needle))
-                    {
-                        return true;
-                    }
-                }
-                break;
-            }
-            if byte.is_ascii_whitespace() || byte == b'"' || byte == b'\'' {
-                break;
-            }
-            segment += 1;
+        let ordinary = |byte: Option<&u8>| {
+            byte.is_some_and(|byte| {
+                !matches!(byte, b'\\' | b'/' | b'"' | b'\'') && !byte.is_ascii_whitespace()
+            })
+        };
+        let mut cursor = index;
+        while separator(folded.get(cursor)) {
             cursor += 1;
+        }
+        let server_start = cursor;
+        while ordinary(folded.get(cursor)) {
+            cursor += 1;
+        }
+        if cursor == server_start {
+            continue;
+        }
+        if !separator(folded.get(cursor)) {
+            continue;
+        }
+        while separator(folded.get(cursor)) {
+            cursor += 1;
+        }
+        if ordinary(folded.get(cursor)) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Additional single-segment rooted-path signals. Multi-segment POSIX
+/// paths already refuse by shape, without an enumerable vocabulary.
+/// These also catch `/secret.conf` and `/credentials.json` directly.
+const POSIX_SIGNAL_STEMS: [&str; 14] = [
+    "private",
+    "secret",
+    "credential",
+    "finance",
+    "passwd",
+    "shadow",
+    "auth",
+    "key",
+    "ssh",
+    "pem",
+    "cert",
+    "db",
+    "backup",
+    "password",
+];
+
+/// Whether one path segment starts with a signal stem (with the
+/// optional plural `s` and a non-lowercase continuation byte).
+fn segment_carries_signal(segment: &[u8]) -> bool {
+    for stem in POSIX_SIGNAL_STEMS {
+        let stem = stem.as_bytes();
+        if segment.len() < stem.len() || &segment[..stem.len()] != stem {
+            continue;
+        }
+        let mut rest = &segment[stem.len()..];
+        if rest.first() == Some(&b's') {
+            rest = &rest[1..];
+        }
+        match rest.first() {
+            None => return true,
+            Some(byte) if !byte.is_ascii_lowercase() => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// The narrow lexical JSON-pointer exception: a public model/schema
+/// collection followed by a numeric index, with identifier-only suffix
+/// segments. No filename or arbitrary absolute directory is admitted.
+fn is_indexed_pointer(path: &[u8]) -> bool {
+    let mut segments = path.split(|byte| *byte == b'/').skip(1);
+    let Some(root) = segments.next() else {
+        return false;
+    };
+    if !matches!(
+        root,
+        b"definitions" | b"modules" | b"properties" | b"items" | b"targets"
+    ) {
+        return false;
+    }
+    let Some(index) = segments.next() else {
+        return false;
+    };
+    !index.is_empty()
+        && index.iter().all(u8::is_ascii_digit)
+        && segments.all(|segment| {
+            !segment.is_empty()
+                && segment
+                    .iter()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        })
+}
+
+/// A boundary-rooted multi-segment POSIX path fails closed regardless
+/// of vocabulary (r6/omp F3), except indexed JSON pointers. API routes
+/// have the same lexical shape and may refuse: the accepted availability
+/// collateral is preferable to leaking another unlisted host path.
+fn contains_posix_root_path(folded: &[u8]) -> bool {
+    let boundary = |index: usize| {
+        index == 0
+            || folded[index - 1].is_ascii_whitespace()
+            || matches!(folded[index - 1], b'"' | b'\'' | b'(' | b'[' | b'=')
+    };
+    for index in 0..folded.len() {
+        if folded[index] != b'/' {
+            continue;
+        }
+        let home_relative = index > 0 && folded[index - 1] == b'~' && boundary(index - 1);
+        if !boundary(index) && !home_relative {
+            continue;
+        }
+        let mut end = index + 1;
+        while end < folded.len()
+            && !folded[end].is_ascii_whitespace()
+            && !matches!(folded[end], b'"' | b'\'' | b')' | b']' | b',' | b'}')
+        {
+            end += 1;
+        }
+        let path = &folded[index..end];
+        let tail = &path[1..];
+        if !tail.is_empty()
+            && (home_relative
+                || (tail.contains(&b'/') && !is_indexed_pointer(path))
+                || segment_carries_signal(tail))
+        {
+            return true;
         }
     }
     false
@@ -157,27 +340,23 @@ fn contains_posix_root_path(folded: &[u8]) -> bool {
 /// every byte of the envelope (payload, diagnostics, and scope members)
 /// passes the same closed matchers.
 pub fn screen_envelope(envelope: &str) -> Result<(), &'static str> {
-    let bytes = envelope.as_bytes();
-    if bytes.len() <= SCREEN_CHUNK {
-        return screen_bytes(bytes);
-    }
-    // Chunked sweep with a small overlap so a needle spanning a chunk
-    // boundary still matches.
-    let mut start = 0;
-    while start < bytes.len() {
-        let end = (start + SCREEN_CHUNK).min(bytes.len());
-        let overlap_start = start.saturating_sub(64);
-        screen_bytes(&bytes[overlap_start..end])?;
-        start = end;
-    }
-    Ok(())
+    // The transport bounds response size. Scan its complete byte span:
+    // fixed overlap cannot preserve arbitrary compound keys/paths.
+    screen_bytes(envelope.as_bytes())
 }
 
 fn screen_bytes(bytes: &[u8]) -> Result<(), &'static str> {
-    // One ASCII-folded copy carries every matcher (r3 F1): folding is a
-    // byte-local, length-preserving map, so the chunked sweep and the
-    // assignment scan stay byte-aligned with the original envelope.
-    let folded: Vec<u8> = bytes.iter().map(|byte| byte.to_ascii_lowercase()).collect();
+    // One folded copy carries every matcher (r3 F1): the confusable
+    // fold (r6 F7) is applied before the case fold, so `pаssword`
+    // (Cyrillic `а`) and `authorization:` spelled with a homoglyph are
+    // the same bytes as their ASCII spellings for every matcher below.
+    // All matchers consume the same translated spelling; no raw-offset
+    // assumptions are made after a multi-byte lookalike is folded.
+    let translated = fold_confusables(bytes);
+    let folded: Vec<u8> = translated
+        .iter()
+        .map(|byte| byte.to_ascii_lowercase())
+        .collect();
     for (needle, reason) in NEEDLES {
         if contains(&folded, needle.as_bytes()) {
             return Err(reason);
@@ -188,12 +367,16 @@ fn screen_bytes(bytes: &[u8]) -> Result<(), &'static str> {
             return Err("private-absolute-path");
         }
     }
-    // r4 F1: private absolute paths are matched by shape too — every
-    // drive-letter path and boundary-rooted private-signal POSIX path.
-    if contains_drive_letter_path(&folded) || contains_posix_root_path(&folded) {
+    // r4 F1/r6 F4: private absolute paths are matched by shape too —
+    // every drive-letter path, boundary-rooted UNC path, and rooted
+    // POSIX directory spelling (with the indexed-pointer exception).
+    if contains_drive_letter_path(&folded)
+        || contains_unc_path(&folded)
+        || contains_posix_root_path(&folded)
+    {
         return Err("private-absolute-path");
     }
-    if contains_assigned_token(&folded) {
+    if contains_assigned_token(&translated) {
         return Err("assigned-credential");
     }
     Ok(())
@@ -208,21 +391,14 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
         .any(|window| window == needle)
 }
 
-/// The assignment spellings whose non-empty value counts as an assigned
-/// credential (r2 F15: a minimum length is not authorization to disclose
-/// — any non-empty token refuses, and an empty assignment is not a
-/// disclosure and ships),
-/// spelled in their SEPARATOR-CANONICAL form (r4 F1): `_` and `-`
-/// deleted, ASCII-folded — `client_secret`, `client-secret`, and
-/// `clientSecret` are one spelling here, exactly as they are one
-/// spelling in the canonical scan text. The compound forms are listed
-/// explicitly so their whole key matches at a word boundary even where
-/// a suffix key alone would be suppressed (`dbpassword`,
-/// `awssecretaccesskey`), and the suffix keys still match any compound
-/// the explicit list cannot foresee (`root_password`, `x-api-token`)
-/// because a deleted separator leaves a non-alphanumeric boundary at
-/// the suffix start.
-const ASSIGNMENT_KEYS: [&str; 18] = [
+/// Credential stems in separator-canonical form (ASCII-folded, `_` and
+/// `-` removed from identifier keys only). R6 matches these anywhere in
+/// an assigned identifier: plurals and arbitrary compound prefixes or
+/// tails no longer need enumeration. Historical explicit compounds are
+/// retained, including the reviewed AWS access-key-id spelling. Any
+/// non-empty assigned payload refuses; short values are not authorized
+/// for disclosure merely because they miss a minimum secret length.
+const ASSIGNMENT_KEYS: [&str; 21] = [
     "password",
     "passwd",
     "passphrase",
@@ -236,46 +412,15 @@ const ASSIGNMENT_KEYS: [&str; 18] = [
     "idtoken",
     "sessiontoken",
     "privatekey",
-    "credentials",
+    "credential",
     "accesskey",
     "clientsecret",
     "dbpassword",
     "awssecretaccesskey",
+    "rootpassword",
+    "secretvalue",
+    "awsaccesskeyid",
 ];
-
-/// The canonical scan text of one folded envelope (r4 F1): `_` and `-`
-/// deleted, with a parallel record per canonical byte of whether it was
-/// preceded CONTIGUOUSLY by an alphanumeric byte of the original text.
-/// A deleted separator clears the record, so the `p` of `password` in
-/// `root_password` and `x-api-token` carries a word boundary, while the
-/// `p` of `NotAPassword` does not — camelCase, kebab-case, and
-/// snake_case keys are one spelling, and only true alphanumeric
-/// adjacency suppresses a match.
-struct Canonical {
-    text: Vec<u8>,
-    preceded_alphanumeric: Vec<bool>,
-}
-
-impl Canonical {
-    fn of(folded: &[u8]) -> Self {
-        let mut text = Vec::with_capacity(folded.len());
-        let mut preceded_alphanumeric = Vec::with_capacity(folded.len());
-        let mut contiguous = false;
-        for byte in folded {
-            if *byte == b'_' || *byte == b'-' {
-                contiguous = false;
-                continue;
-            }
-            text.push(*byte);
-            preceded_alphanumeric.push(contiguous);
-            contiguous = byte.is_ascii_alphanumeric();
-        }
-        Self {
-            text,
-            preceded_alphanumeric,
-        }
-    }
-}
 
 /// Whether the canonical text at `index` opens a quote-equivalent
 /// spelling (r4 F1): `\"` (the JSON-escaped quote), `"`, or `'`. The
@@ -294,11 +439,13 @@ fn quote_equivalent(text: &[u8], index: usize) -> Option<usize> {
 /// with any later quote equivalent (`password="x"`, `password='x'`,
 /// `{"password":"x"}` — the escaped spellings serialize as `\"` and
 /// a lone backslash no longer breaks the scan, r4 F1); an unwrapped
-/// value needs at least one leading token character. A value that
-/// never closes before the frame ends carries no token at all —
-/// structural fragments are not assignments.
-fn carries_token(value: &str) -> bool {
-    let bytes = value.as_bytes();
+/// value needs a non-empty, non-structural leading byte, and a composite
+/// value (`[`, `{`) carries assigned material unless it is exactly
+/// empty (r6 F1: `{"password":["hunter2"]}` and
+/// `{"secrets":{"a":"x"}}` refuse; `[]`/`{}` mirror the empty-string
+/// rule and ship). A value that never closes before the frame ends
+/// carries no token at all — structural fragments are not assignments.
+fn carries_token(bytes: &[u8]) -> bool {
     if let Some(width) = quote_equivalent(bytes, 0) {
         let mut cursor = width;
         let mut span = 0;
@@ -311,50 +458,102 @@ fn carries_token(value: &str) -> bool {
         }
         return false;
     }
-    bytes
-        .first()
-        .is_some_and(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
+    match bytes.first() {
+        // r6 F1: structured credential payloads refuse — a matched key
+        // with an array/object value discloses every member.
+        Some(b'[') => bytes.get(1) != Some(&b']'),
+        Some(b'{') => bytes.get(1) != Some(&b'}'),
+        Some(byte) => !byte.is_ascii_whitespace() && !matches!(byte, b',' | b'}' | b']'),
+        None => false,
+    }
 }
 
-fn contains_assigned_token(folded: &[u8]) -> bool {
-    let canonical = Canonical::of(folded);
-    let text = match std::str::from_utf8(&canonical.text) {
-        Ok(text) => text,
-        Err(_) => return false,
-    };
-    let boundary = &canonical.preceded_alphanumeric;
-    for key in ASSIGNMENT_KEYS {
-        let mut from = 0;
-        while let Some(position) = text[from..].find(key) {
-            let key_start = from + position;
-            let mut cursor = key_start + key.len();
-            from = cursor;
-            // The match must start at a key boundary (r3 F1/r4 F1): only
-            // CONTIGUOUS alphanumeric adjacency suppresses the match.
-            // In the JSON spelling the byte before the key is the
-            // opening quote; in the canonical spelling a deleted `_` or
-            // `-` is a boundary exactly like that quote.
-            if boundary.get(key_start).copied().unwrap_or(false) {
-                continue;
-            }
-            // JSON spelling: the key closes with a quote equivalent
-            // (`\"` for the embedded-JSON spelling, r4 F1), then
-            // optional whitespace, then the separator. Config spelling:
-            // the key is followed by `=` or `:`. The separator may carry
-            // optional whitespace on BOTH sides in either spelling
-            // (`password = <token>`, `"secret" : "<token>"`).
-            if let Some(width) = quote_equivalent(text.as_bytes(), cursor) {
-                cursor += width;
-            }
-            cursor += text[cursor..].len() - text[cursor..].trim_start().len();
-            let separator_at = match text.as_bytes().get(cursor) {
-                Some(&b':') | Some(&b'=') => cursor,
-                _ => continue,
-            };
-            let value = &text[separator_at + 1..];
-            if carries_token(value.trim_start()) {
-                return true;
-            }
+/// Only the quoted JSON budget member `"tokens":35` is a count.
+/// Do not exempt numeric passwords, arbitrary compounds, quoted token
+/// strings, or config assignments such as `tokens=12345` (r6 F2).
+fn is_token_count(key: &[u8], quoted: bool, separator: u8, value: &[u8]) -> bool {
+    if key != b"tokens" || !quoted || separator != b':' {
+        return false;
+    }
+    let digits = value
+        .iter()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    digits > 0
+        && matches!(
+            trim_space(&value[digits..]).first(),
+            None | Some(b',' | b'}' | b']')
+        )
+}
+
+fn trim_space(mut bytes: &[u8]) -> &[u8] {
+    while bytes.first().is_some_and(u8::is_ascii_whitespace) {
+        bytes = &bytes[1..];
+    }
+    bytes
+}
+
+/// Whole-identifier admission avoids enumerating every compound or
+/// spelling (r6 F2/F3): a credential stem anywhere in an assigned key
+/// refuses. `mysecret`, `secret_value`, `db_passwords`, `rootpassword`,
+/// and every `*key` spelling therefore use one rule. The bare `key`
+/// member is not a credential, but a non-empty prefix before `key` is
+/// conservative credential evidence (even benign `monkey=x` may refuse).
+fn credential_key(key: &[u8], raw_key: &[u8]) -> bool {
+    // Preserve only the established contiguous, explicitly negated
+    // pseudo-key control, not separator-injected credential spellings.
+    if key == b"notapassword" && raw_key == key {
+        return false;
+    }
+    ASSIGNMENT_KEYS
+        .iter()
+        .any(|stem| contains(key, stem.as_bytes()))
+        || key.windows(3).skip(1).any(|part| part == b"key")
+}
+
+fn contains_assigned_token(translated: &[u8]) -> bool {
+    // Keep this a byte scan: unrelated non-ASCII text must not disable
+    // credential matching elsewhere in the envelope.
+    let text: Vec<u8> = translated.iter().map(u8::to_ascii_lowercase).collect();
+    let identifier = |byte: u8| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-');
+    let mut cursor = 0;
+    while cursor < text.len() {
+        if !identifier(text[cursor]) {
+            cursor += 1;
+            continue;
+        }
+        let start = cursor;
+        while cursor < text.len() && identifier(text[cursor]) {
+            cursor += 1;
+        }
+        let raw_key = &text[start..cursor];
+        // Canonicalize the identifier ONLY. Deleting separators from
+        // values would turn a real credential such as `"_"` into an
+        // empty string and silently exempt its non-empty payload.
+        let key: Vec<u8> = raw_key
+            .iter()
+            .filter(|byte| !matches!(byte, b'_' | b'-'))
+            .copied()
+            .collect();
+        if !credential_key(&key, raw_key) {
+            continue;
+        }
+        let closing_quote = quote_equivalent(&text, cursor);
+        let quoted = start > 0 && text[start - 1] == b'"' && closing_quote.is_some();
+        if let Some(width) = closing_quote {
+            cursor += width;
+        }
+        while text.get(cursor).is_some_and(u8::is_ascii_whitespace) {
+            cursor += 1;
+        }
+        let separator = match text.get(cursor) {
+            Some(byte @ (b':' | b'=')) => *byte,
+            _ => continue,
+        };
+        cursor += 1;
+        let value = trim_space(&text[cursor..]);
+        if !is_token_count(raw_key, quoted, separator, value) && carries_token(value) {
+            return true;
         }
     }
     false
@@ -507,6 +706,89 @@ mod tests {
     }
 
     #[test]
+    fn unc_absolute_paths_refuse() {
+        // r6 F4 / omp F2: a UNC path is absolute by construction — any
+        // server\share spelling refuses, whatever the share carries.
+        for envelope in [
+            "see \\\\fileserver\\hr\\salaries.xlsx now",
+            "//server/share/file.txt",
+            "{\"note\":\"\\\\\\\\fileserver\\\\hr\\\\salaries.xlsx\"}",
+            "log at //FILESERVER/ops/keys.pem",
+        ] {
+            assert_eq!(
+                screen_envelope(envelope),
+                Err("private-absolute-path"),
+                "the UNC spelling must refuse: {envelope}"
+            );
+        }
+        // Protocol-relative URLs sit behind a scheme colon and prose
+        // fractions behind a letter — neither is boundary-rooted.
+        assert_eq!(
+            screen_envelope("{\"url\":\"https://example.com/a\"}"),
+            Ok(())
+        );
+        assert_eq!(screen_envelope("{\"ratio\":\"and//or\"}"), Ok(()));
+    }
+
+    #[test]
+    fn widened_posix_private_signals_refuse() {
+        // r6/omp F3: the signal vocabulary covers the private-bearing
+        // segment spellings beyond the r4 five — plural forms, file
+        // extensions, auth/keys/cert/backup segments, and the `~/` home
+        // root.
+        for envelope in [
+            "{\"note\":\"/etc/shadow is world-readable\"}",
+            "{\"note\":\"keys at /srv/secrets/api.key\"}",
+            "{\"note\":\"config /opt/credentials.json leaked\"}",
+            "{\"note\":\"db at /var/lib/app/private.db\"}",
+            "{\"note\":\"see /usr/local/etc/secret.conf\"}",
+            "{\"note\":\"dump /mnt/backups/passwords.txt\"}",
+            "{\"note\":\"tail /var/log/auth.log weekly\"}",
+            "{\"note\":\"pem at /opt/company/keys/service.pem\"}",
+            "{\"note\":\"notes at ~/private/notes.txt\"}",
+        ] {
+            assert_eq!(
+                screen_envelope(envelope),
+                Err("private-absolute-path"),
+                "the private POSIX spelling must refuse: {envelope}"
+            );
+        }
+        // Numeric-index JSON pointers stay available, but an arbitrary
+        // rooted directory or API route has the same private-path shape.
+        assert_eq!(screen_envelope("{\"ptr\":\"/definitions/20\"}"), Ok(()));
+        assert_eq!(
+            screen_envelope("{\"ptr\":\"/definitions/20/fields\"}"),
+            Ok(())
+        );
+        for path in ["/api/v1/users", "/var/lib/app/data.sqlite", "~/notes.txt"] {
+            assert_eq!(screen_envelope(path), Err("private-absolute-path"));
+        }
+    }
+
+    #[test]
+    fn dotfile_spellings_refuse() {
+        // r6 F5: the canonical secret-bearing dotfile spellings refuse
+        // anywhere they appear.
+        for envelope in [
+            "reads /.env for secrets",
+            "config at .env.production",
+            "found in ~/.ssh/id_rsa",
+            "uses .aws/credentials profile",
+            "key at .ssh/id_rsa",
+            "ring at .gnupg/pubring.kbx",
+            "preset in .config/generic/app.toml",
+            r"found in .ssh\id_rsa",
+            r"uses .aws\credentials profile",
+        ] {
+            assert_eq!(
+                screen_envelope(envelope),
+                Err("private-absolute-path"),
+                "the dotfile spelling must refuse: {envelope}"
+            );
+        }
+    }
+
+    #[test]
     fn header_spellings_refuse() {
         assert_eq!(
             screen_envelope("{\"header\":\"Authorization: Bearer xyz\"}"),
@@ -524,6 +806,16 @@ mod tests {
         );
         assert_eq!(
             screen_envelope("{\"cookie\":\"Set-Cookie: session=abc\"}"),
+            Err("credential-header")
+        );
+        // r6 F7: a bare bearer scheme needs no `authorization:` prefix —
+        // the token itself is the disclosure.
+        assert_eq!(
+            screen_envelope("Bearer eyJhbGciOiJIUzI1NiJ9.sig.payload"),
+            Err("credential-header")
+        );
+        assert_eq!(
+            screen_envelope("{\"note\":\"bearer ghp_0123456789abcdef\"}"),
             Err("credential-header")
         );
     }
@@ -554,8 +846,9 @@ mod tests {
                 "the credential spelling must refuse: {envelope}"
             );
         }
-        // The safe adjacency class stays safe: contiguous alphanumeric
-        // adjacency still suppresses the key match, whatever the casing.
+        // The explicit contiguous negated pseudo-key control stays
+        // safe, whatever its ASCII casing. Other compound prefixes do
+        // not grant permission to disclose an assigned credential.
         assert_eq!(screen_envelope("NotAPassword=x"), Ok(()));
         assert_eq!(screen_envelope("NOTAPASSWORD=x"), Ok(()));
         assert_eq!(screen_envelope("{\"field\":\"NOTAPASSWORDVALUE\"}"), Ok(()));
@@ -567,13 +860,8 @@ mod tests {
 
     #[test]
     fn camelcase_and_kebab_credential_keys_refuse() {
-        // r4 F1: the separator-canonical scan folds `_`, `-`, and case
-        // on BOTH sides, so the camelCase and kebab-case spellings —
-        // the dominant forms of the JSON/JavaScript ecosystem — are the
-        // same key as their snake_case spelling, and the alphanumeric
-        // characters INSIDE a camelCase key no longer suppress the
-        // suffix match (only contiguous adjacency does, and a deleted
-        // separator is a boundary).
+        // Separator/case canonicalization gives snake/kebab/camel and
+        // unseparated spellings one identifier-key rule (r4/r6).
         for envelope in [
             "clientSecret=synthcamelsecret1",
             "accessToken=eyJhbGciOi.example",
@@ -595,6 +883,173 @@ mod tests {
         // Prose that merely contains the words is not an assignment.
         assert_eq!(screen_envelope("the client secret is rotated"), Ok(()));
         assert_eq!(screen_envelope("client-secret-name field"), Ok(()));
+    }
+
+    #[test]
+    fn structured_composite_credential_values_refuse() {
+        // r6 F1: a matched credential key with an array/object value
+        // discloses every member — the same detected key spelling must
+        // refuse the composite payload, not only scalar tokens.
+        for envelope in [
+            "{\"password\":[\"hunter2\"]}",
+            "{\"password\":{\"hash\":\"hunter2\"}}",
+            "secrets: {a: hunter2}",
+            "{\"credential\":{\"value\":\"hunter2\"}}",
+            "tokens=[ghp_0123456789abcdef]",
+            "{\"clientSecret\":{\"prod\":\"synthcamel9\"}}",
+            "{\"password\":\"_\"}",
+            "{\"password\":\"---\"}",
+            "password=___",
+            "password=@synthetic",
+            "password=$synthetic",
+        ] {
+            assert_eq!(
+                screen_envelope(envelope),
+                Err("assigned-credential"),
+                "the structured credential value must refuse: {envelope}"
+            );
+        }
+        // The empty composite mirrors the empty-string rule and ships.
+        assert_eq!(screen_envelope("{\"password\":[]}"), Ok(()));
+        assert_eq!(screen_envelope("{\"password\":{}}"), Ok(()));
+    }
+
+    #[test]
+    fn plural_and_compound_credential_keys_refuse() {
+        // r6 F2: plural spellings and letters-only compound tails still
+        // name the credential — the stem is the credential word, the
+        // tail is spelling.
+        for envelope in [
+            "secrets: hunter2hunter2",
+            "passwords= hunter2",
+            "db_passwords=list",
+            "secret_value=x",
+            "rootpassword=hunter2",
+            "mysecret=hunter2hunter2",
+            "arbitrarySecretSuffix=synthetic-r6",
+            "unlisted_tokens_value=x",
+            "mysecret2=123456",
+            "not_a_password=synthetic",
+            "passwords=123456",
+            "secrets: 7",
+            "tokens=123456",
+            "tokens:\"35\"",
+            "{\"tokens\":\"35\"}",
+            "{\"tokens\":123abc}",
+            "{\"passwords\":[\"hunter2\",\"hunter3\"]}",
+            "aws_access_key_ids=[AKIAIOSFODNN7EXAMPLE]",
+            "tokens: [ghp_0123456789abcdef]",
+        ] {
+            assert_eq!(
+                screen_envelope(envelope),
+                Err("assigned-credential"),
+                "the plural/compound credential spelling must refuse: {envelope}"
+            );
+        }
+        // The explicit NotAPassword pseudo-key and unassigned prose
+        // stay safe; generic compound prefixes are not exemptions.
+        assert_eq!(screen_envelope("NotAPassword=x"), Ok(()));
+        assert_eq!(screen_envelope("the passwordless flow"), Ok(()));
+        // A count under the plural spelling ships (r6 F2 live collateral:
+        // the pinned context-budget member `"tokens":35` is a quantity,
+        // not a credential payload); every other value shape refuses.
+        assert_eq!(
+            screen_envelope("{\"section\":\"symbol\",\"tokens\":35}"),
+            Ok(())
+        );
+        assert_eq!(screen_envelope("{\"tokens\":0}"), Ok(()));
+    }
+
+    #[test]
+    fn the_key_tail_family_refuses_in_every_separator_spelling() {
+        // r6 F3: `*_key`, `*-key`, and `*Key` are one credential-key
+        // family — underscore, kebab, and camel spellings covered
+        // symmetrically.
+        for envelope in [
+            "ssh-key: hunter2",
+            "master_key=m",
+            "signing_key=k",
+            "license_key=l",
+            "encryption-key=hunter2",
+            "sshKey=hunter2",
+            "masterKey=m2",
+            "client-key: synthkey1",
+            "{\"licenseKey\":\"synthkey2\"}",
+            "sshkey=hunter2",
+            "masterkey=m3",
+            "unlisted_key_name=x",
+            "unlistedKeyName=x",
+            "unlisted-key-name=x",
+            "unlistedkeyname=x",
+        ] {
+            assert_eq!(
+                screen_envelope(envelope),
+                Err("assigned-credential"),
+                "the *_key family spelling must refuse: {envelope}"
+            );
+        }
+        // The bare `key` member ships. Unseparated compounds share the
+        // same rule as snake/kebab/camel forms, including conservative
+        // collateral on otherwise benign `monkey`/`sortkey` assignments.
+        assert_eq!(screen_envelope("{\"key\":\"v\"}"), Ok(()));
+        assert_eq!(screen_envelope("{\"key\":\"monkeys\"}"), Ok(()));
+        assert_eq!(screen_envelope("monkey=x"), Err("assigned-credential"));
+        assert_eq!(screen_envelope("keystone=x"), Ok(()));
+        assert_eq!(
+            screen_envelope("{\"sortkey\":\"name\"}"),
+            Err("assigned-credential")
+        );
+    }
+
+    #[test]
+    fn aws_access_key_id_spellings_refuse() {
+        // omp F4: the AWS access-key-id pairing convention is credential
+        // material in every separator spelling.
+        for envelope in [
+            "aws_access_key_id=AKIAIOSFODNN7EXAMPLE",
+            "AWS-ACCESS-KEY-ID=AKIAIOSFODNN7EXAMPLE",
+            "{\"awsAccessKeyId\":\"AKIAIOSFODNN7EXAMPLE\"}",
+            "awsaccesskeyid=AKIAIOSFODNN7EXAMPLE",
+        ] {
+            assert_eq!(
+                screen_envelope(envelope),
+                Err("assigned-credential"),
+                "the aws access key id spelling must refuse: {envelope}"
+            );
+        }
+    }
+
+    #[test]
+    fn confusable_homoglyph_key_spellings_refuse() {
+        // r6 F7: Cyrillic/Greek lookalikes are the same key spelling as
+        // their ASCII letters — a homoglyph key can no longer smuggle a
+        // value past the fold.
+        let cyrillic_a = "p\u{0430}ssword=hunter2hunter2"; // pаssword
+        assert_eq!(
+            screen_envelope(cyrillic_a),
+            Err("assigned-credential"),
+            "the Cyrillic-а spelling must refuse"
+        );
+        let cyrillic_o = "t\u{043E}ken=ghp_0123456789"; // tоken
+        assert_eq!(
+            screen_envelope(cyrillic_o),
+            Err("assigned-credential"),
+            "the Cyrillic-о spelling must refuse"
+        );
+        let greek_alpha = "secret\u{03B1}value=x"; // secretαvalue — α folds to a
+        assert_eq!(
+            screen_envelope(greek_alpha),
+            Err("assigned-credential"),
+            "the Greek-α spelling must refuse"
+        );
+        let homoglyph_header = "\u{0430}uthorization: Bearer abc"; // аuthorization:
+        assert_eq!(
+            screen_envelope(homoglyph_header),
+            Err("credential-header"),
+            "the homoglyph header spelling must refuse"
+        );
+        // Ordinary non-ASCII text without a credential shape ships.
+        assert_eq!(screen_envelope("{\"note\":\"Привет, мир\"}"), Ok(()));
     }
 
     #[test]
@@ -673,6 +1128,24 @@ mod tests {
         clean.push_str(&filler);
         clean.push_str("\"}");
         assert_eq!(screen_envelope(&clean), Ok(()));
+    }
+
+    #[test]
+    fn long_shapes_and_utf8_survive_former_chunk_boundaries() {
+        for canary in [
+            format!("password{}=x", "s".repeat(256)),
+            format!("/opt/{}/data.sqlite", "a".repeat(256)),
+            "pаssword=hunter2".to_owned(),
+        ] {
+            let envelope = format!("{} {canary}", "a".repeat(SCREEN_CHUNK - 32));
+            assert!(screen_envelope(&envelope).is_err(), "long shape leaked");
+        }
+        let envelope = format!("{}pаssword=hunter2", " ".repeat(SCREEN_CHUNK - 2));
+        assert_eq!(screen_envelope(&envelope), Err("assigned-credential"));
+        assert_eq!(
+            screen_envelope("日本語 pаssword=hunter2"),
+            Err("assigned-credential")
+        );
     }
 
     #[test]

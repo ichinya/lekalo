@@ -6,10 +6,12 @@
 // startup path may reference the MCP lifecycle.
 
 import { readFileSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs")], { cwd: root });
 const fail = (reason, detail) => {
   process.stderr.write(`mcp-boundary ${reason}: ${JSON.stringify(detail ?? "")}\n`);
   process.exit(1);

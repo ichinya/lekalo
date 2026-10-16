@@ -1233,7 +1233,39 @@ fn registry_chain_keeps_pins_and_admits_tasklink_rules() {
     let tasklink = lekalo_core::diagnostics::DiagnosticRegistry::tasklink_successor().unwrap();
     assert_eq!(embedded.len(), 514);
     assert_eq!(successor.len(), embedded.len() + 8);
-    assert_eq!(tasklink.len(), successor.len() + 8);
+    // The 0.8.0 registry is the current M8 union, not 0.6.5 plus only
+    // this family's eight entries. Every landed family survives and all
+    // family accessors parse the same merged document (issue #33 r6).
+    assert_eq!(
+        tasklink.len(),
+        lekalo_core::diagnostics::DiagnosticRegistry::mcp_successor()
+            .unwrap()
+            .len()
+    );
+    assert_eq!(
+        tasklink
+            .entries()
+            .filter(|entry| entry.id().starts_with("tasklink."))
+            .count(),
+        8
+    );
+    for family in [
+        "format.",
+        "adoption.",
+        "portability.",
+        "worklog-changelog.",
+        "managed.",
+        "module-api.",
+        "tasklink.",
+        "mcp.",
+    ] {
+        assert!(
+            tasklink
+                .entries()
+                .any(|entry| entry.id().starts_with(family)),
+            "landed family {family} missing"
+        );
+    }
     for entry in embedded.entries() {
         assert_eq!(successor.entry(entry.id()), Some(entry));
         assert_eq!(tasklink.entry(entry.id()), Some(entry));

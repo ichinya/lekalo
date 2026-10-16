@@ -367,9 +367,11 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
             "serde_json"
         ]
     );
-    // The only target-scoped dependency is the unix process-control
-    // surface (issue #94 formatting custody on the M8 line); nothing else
-    // may leak past the two-crate boundary.
+    // The only target-scoped dependencies are the platform process-
+    // control surfaces: `rustix` (unix, issue #94 formatting custody on
+    // the M8 line) and `windows-sys` (Windows, the issue #33 MCP
+    // single-owner link-count read through GetFileInformationByHandle);
+    // nothing else may leak past the two-crate boundary.
     let cli_target_dependencies = cli["dependencies"]
         .as_array()
         .expect("CLI dependencies")
@@ -377,7 +379,7 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
         .filter(|dependency| dependency["kind"].is_null() && !dependency["target"].is_null())
         .map(|dependency| dependency["name"].as_str().expect("dependency name"))
         .collect::<Vec<_>>();
-    assert_eq!(cli_target_dependencies, ["rustix"]);
+    assert_eq!(cli_target_dependencies, ["rustix", "windows-sys"]);
     assert!(cli["targets"]
         .as_array()
         .expect("CLI targets")

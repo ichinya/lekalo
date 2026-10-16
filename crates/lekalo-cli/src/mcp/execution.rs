@@ -76,10 +76,13 @@ pub(crate) fn family_of(tool: &str) -> Family {
     };
     let (discriminator, identity, payload_key, pin) = match slug {
         "inspect" => (
-            "lekalo/inspect/v0.2.16",
-            "dev.lekalo.inspect@0.2.16",
+            // The #52 task-links line moved the core inspect contract to
+            // 0.8.0; the adapter pins the receipt version it actually
+            // preserves, including the successor definitions (r6 merge).
+            "lekalo/inspect/v0.8.0",
+            "dev.lekalo.inspect@0.8.0",
             "inspect",
-            ("inspect", "0.2.16"),
+            ("inspect", "0.8.0"),
         ),
         "impact" => (
             "lekalo/impact/v0.2.16",

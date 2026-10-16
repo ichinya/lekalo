@@ -31,13 +31,54 @@ mod tests {
     fn mcp_registry_is_the_grand_m8_union_of_the_0_6_5_successor() {
         let predecessor = DiagnosticRegistry::successor().expect("0.6.5");
         let union = DiagnosticRegistry::mcp_successor().expect("0.8.0");
-        assert_eq!(union.len(), predecessor.len() + 31);
-        assert!(std::ptr::eq(
-            union,
-            DiagnosticRegistry::format_successor().unwrap()
-        ));
-        assert!(std::ptr::eq(union, DiagnosticRegistry::adoption().unwrap()));
-        for id in ["format.diff", "adoption.plan-stale", "mcp.scope-denied"] {
+        // Union-aware admission: no fixed predecessor+own total can
+        // reject future landed families or hide dropped ones. Every
+        // accessor parses the same merged bytes, all predecessor entries
+        // remain identical, and each landed family must resolve below.
+        assert!(union.len() > predecessor.len());
+        assert_eq!(
+            DiagnosticRegistry::format_successor().unwrap().len(),
+            union.len()
+        );
+        assert_eq!(DiagnosticRegistry::adoption().unwrap().len(), union.len());
+        assert_eq!(DiagnosticRegistry::m8().unwrap().len(), union.len());
+        assert_eq!(DiagnosticRegistry::pilot().unwrap().len(), union.len());
+        assert_eq!(
+            DiagnosticRegistry::module_successor().unwrap().len(),
+            union.len()
+        );
+        assert_eq!(DiagnosticRegistry::managed().unwrap().len(), union.len());
+        assert_eq!(
+            DiagnosticRegistry::tasklink_successor().unwrap().len(),
+            union.len()
+        );
+        // A landed family that vanishes from the union is a stale-merge
+        // failure (the check-registry-union.mjs live-line invariant).
+        for family in [
+            "format.",
+            "adoption.",
+            "portability.",
+            "worklog-changelog.",
+            "managed.",
+            "module-api.",
+            "tasklink.",
+            "mcp.",
+        ] {
+            assert!(
+                union.entries().any(|entry| entry.id().starts_with(family)),
+                "family {family} missing from the union successor"
+            );
+        }
+        for id in [
+            "format.diff",
+            "adoption.plan-stale",
+            "portability.analysis-incomplete",
+            "worklog-changelog.input-invalid",
+            "managed.plan-stale",
+            "module-api.input-invalid",
+            "tasklink.evidence-invalid",
+            "mcp.scope-denied",
+        ] {
             assert!(union.entry(id).is_some(), "{id} must join the grand union");
         }
         for entry in predecessor.entries() {

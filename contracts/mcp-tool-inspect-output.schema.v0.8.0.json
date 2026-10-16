@@ -62,7 +62,7 @@
           "const": "2025-11-25"
         },
         "inspect": {
-          "const": "0.2.16"
+          "const": "0.8.0"
         }
       },
       "required": [
@@ -85,10 +85,10 @@
       "type": "object",
       "properties": {
         "schemaVersion": {
-          "const": "lekalo/inspect/v0.2.16"
+          "const": "lekalo/inspect/v0.8.0"
         },
         "identity": {
-          "const": "dev.lekalo.inspect@0.2.16"
+          "const": "dev.lekalo.inspect@0.8.0"
         },
         "inspect": {
           "$ref": "#/$defs/inspect.Root"
@@ -666,15 +666,15 @@
       "type": "object",
       "properties": {
         "schemaVersion": {
-          "const": "lekalo/inspect/v0.2.16"
+          "const": "lekalo/inspect/v0.8.0"
         },
         "identity": {
-          "const": "dev.lekalo.inspect@0.2.16"
+          "const": "dev.lekalo.inspect@0.8.0"
         },
         "modelVersion": {
           "enum": [
             "0.2.16",
-            "0.2.16"
+            "0.8.0"
           ]
         },
         "project": {
@@ -1341,25 +1341,180 @@
       ]
     },
     "inspect.invariantItem": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "type",
-        "fields"
-      ],
-      "properties": {
-        "type": {
-          "const": "identity"
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "fields"
+          ],
+          "properties": {
+            "type": {
+              "const": "identity"
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/inspect.fieldName"
+              },
+              "minItems": 1,
+              "maxItems": 256
+            }
+          }
         },
-        "fields": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/inspect.fieldName"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "relation",
+            "target",
+            "localFields",
+            "targetFields",
+            "min",
+            "max",
+            "ownership",
+            "onDetach",
+            "onDelete"
+          ],
+          "properties": {
+            "type": {
+              "const": "relation"
+            },
+            "relation": {
+              "$ref": "#/$defs/inspect.semanticId"
+            },
+            "target": {
+              "$ref": "#/$defs/inspect.semanticId"
+            },
+            "localFields": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/inspect.fieldName"
+              },
+              "minItems": 1,
+              "maxItems": 16
+            },
+            "targetFields": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/inspect.fieldName"
+              },
+              "minItems": 1,
+              "maxItems": 16
+            },
+            "min": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ownership": {
+              "enum": [
+                "local",
+                "external",
+                "shared"
+              ]
+            },
+            "onDetach": {
+              "enum": [
+                "retain-history",
+                "forbid"
+              ]
+            },
+            "onDelete": {
+              "enum": [
+                "restrict",
+                "detach"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "constraint",
+            "fields",
+            "scope",
+            "comparison",
+            "normalizationRef"
+          ],
+          "properties": {
+            "type": {
+              "const": "unique-constraint"
+            },
+            "constraint": {
+              "$ref": "#/$defs/inspect.semanticId"
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/inspect.fieldName"
+              },
+              "minItems": 1,
+              "maxItems": 8
+            },
+            "scope": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "comparison": {
+              "enum": [
+                "exact-text",
+                "declared-normalization"
+              ]
+            },
+            "normalizationRef": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/inspect.semanticId"
+                }
+              ]
+            }
           },
-          "minItems": 1,
-          "maxItems": 256
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "comparison": {
+                    "const": "exact-text"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "normalizationRef": {
+                    "type": "null"
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "normalizationRef": {
+                    "$ref": "#/$defs/inspect.semanticId"
+                  }
+                }
+              }
+            }
+          ]
         }
-      }
+      ]
     },
     "inspect.policyItem": {
       "type": "object",

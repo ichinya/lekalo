@@ -148,7 +148,7 @@ function inventory(base, logicalBase=relative(ROOT,base).replaceAll("\\","/")) {
   walk(base);
   return result;
 }
-const INPUTS=["scripts","adapters","contracts","tests/fixtures","docs","README.md","Cargo.toml","Cargo.lock","crates"];
+const INPUTS=[".gitattributes","scripts","adapters","contracts","tests/fixtures","docs","README.md","Cargo.toml","Cargo.lock","crates"];
 const sourceBefore = INPUTS.map(path=>statSync(safePath(path)).isDirectory()?inventory(safePath(path)):sha(readFileSync(safePath(path))));
 const root=realpathSync.native(mkdtempSync(join(tmpdir(),"lekalo-docs-105-")));
 const owned = path => assert.ok(resolve(path).startsWith(root+sep),"temporary path escapes owned replay root");
@@ -169,6 +169,14 @@ function repositoryCopy() {
   repository=join(root,"repository"); mkdirSync(repository);
   for(const path of INPUTS) copy(safePath(path),join(repository,path));
   const copiedBin=join(repository,"target/debug",basename(bin)); mkdirSync(dirname(copiedBin),{recursive:true}); cpSync(bin,copiedBin);
+  // The M8 provenance gate verifies binary fixtures through Git's actual
+  // clean filter. Give the disposable replay its own index and the exact
+  // copied attributes; never consult or modify the source checkout's Git
+  // metadata, and never skip the binary-custody leg in a source copy.
+  for(const argv of [["init","--quiet"],["-c","core.autocrlf=false","add","--force","--",".gitattributes","tests/fixtures"]]) {
+    const indexed=spawnSync("git",argv,{cwd:repository,env:childEnv,encoding:"utf8"});
+    assert.equal(indexed.status,0,"disposable fixture custody index unavailable");
+  }
   if(lane==="planner") {
     const vendor=safePath("tests/fixtures/php-laravel/planner/vendor");
     assert.ok(existsSync(join(vendor,"autoload.php")),"planner-vendor-missing: explicit composer install from lock required");

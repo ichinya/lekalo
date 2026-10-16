@@ -1520,7 +1520,7 @@ fn build_resource(
             (
                 revision,
                 format!(
-                    "{{\"schemaVersion\":\"lekalo/inspect/v0.2.16\",\"identity\":\"dev.lekalo.inspect@0.2.16\",\"inspect\":{}}}",
+                    "{{\"schemaVersion\":\"lekalo/inspect/v0.8.0\",\"identity\":\"dev.lekalo.inspect@0.8.0\",\"inspect\":{}}}",
                     payload.get()
                 ),
             )

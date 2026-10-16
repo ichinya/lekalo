@@ -76,6 +76,12 @@ function registryAt(ref) {
 function unionGaps(child, parent, label) {
   const gaps = [];
   const have = new Set(child.ids);
+  const byId = new Map(child.doc.entries.map((entry) => [entry.id, entry]));
+  const changed = parent.doc.entries.filter((entry) => have.has(entry.id)
+    && JSON.stringify(byId.get(entry.id)) !== JSON.stringify(entry));
+  if (changed.length) {
+    gaps.push(`${label}: registry mutated ${changed.length} preserved entries (${changed[0].id})`);
+  }
   const missingIds = parent.ids.filter((id) => !have.has(id));
   if (missingIds.length) {
     gaps.push(`${label}: registry dropped ${missingIds.length} entries (${missingIds.slice(0, 5).join(", ")}${missingIds.length > 5 ? ", …" : ""})`);
@@ -126,6 +132,22 @@ function selftest() {
   const problems = registryInvariants(parseRegistry(JSON.stringify(broken)));
   for (const want of ["registry-not-id-sorted", "registry-codes-not-unique", "registry-message-id-drift"]) {
     if (!problems.includes(want)) throw new Error(`selftest 3: ${want} not caught`);
+  }
+  // 4. Same ids are insufficient: predecessor entries are immutable.
+  const mutated = clone(base);
+  mutated.entries[0].code = "LEK-FORMAT-999";
+  if (!unionGaps(parseRegistry(JSON.stringify(mutated)), ok(), "t4").some((gap) => gap.includes("mutated"))) {
+    throw new Error("selftest 4: preserved entry mutation not caught");
+  }
+  // 5. Remove each real landed family in turn. Every MCP gate invokes
+  // this same guard; no predecessor+own count can hide a dropped family.
+  const actual = parseRegistry(readFileSync(resolve(ROOT, REGISTRY), "utf8"));
+  for (const family of actual.families) {
+    const stale = { ...actual.doc, entries: actual.doc.entries.filter((entry) => !entry.id.startsWith(family)) };
+    if (!unionGaps(parseRegistry(JSON.stringify(stale)), actual, "t5")
+      .some((gap) => gap.includes(`dropped landed families (${family})`))) {
+      throw new Error(`selftest 5: missing ${family} not caught`);
+    }
   }
   return true;
 }

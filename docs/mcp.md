@@ -38,7 +38,7 @@ every preserved upstream contract keeps its frozen version.
 | `contracts/diagnostic-registry.v0.8.0.json` | M8 grand union: every landed M8 family (`format.*`, `adoption.*`, `portability.*`, `worklog-changelog.*`, `managed.*`, `module-api.*`, `tasklink.*`) plus `mcp.*` (`LEK-MCP-001..011`) and every frozen predecessor entry; all family Rust accessors resolve this same 0.8.0 identity, and the merge-time union guard (`scripts/check-registry-union.mjs`) refuses a registry that drops a landed family. |
 
 Tool output payloads stay byte-identical with the core contracts:
-inspect `0.2.16`, impact `0.2.16`, context `0.2.16`, graph `0.2.16`,
+inspect `0.8.0` (the merged #52 successor), impact `0.2.16`, context `0.2.16`, graph `0.2.16`,
 validation report `0.6.4`, doctor `0.3.2`, trace manifest `0.2.16`. Each
 `result` member splices the exact core receipt under its pinned
 discriminator; graph receipts ride under an explicit `mode` tag with no
@@ -135,22 +135,36 @@ it serves the
 no-git projection with typed unavailable Git facts. Secret-shaped tool
 or resource output refuses with `mcp.sensitive-output` rather than
 redacting contract members silently: the screening pass is
-spelling-canonical — it folds ASCII case, removes `_`/`-` from both
-key names and scanned text while preserving original word boundaries,
-and recognizes plain, single and JSON-escaped quoted assignments. Thus
-`client_secret`, `client-secret`, `clientSecret`, `api-key`,
-`aws-secret-access-key`, `password='x'`, and embedded JSON assignments
-are one high-confidence credential class; `NotAPassword=x` remains
-benign. The pass also matches private-key blocks and credential
-headers. Private absolute paths match drive-letter shapes (`D:/...`)
-and boundary-rooted POSIX shapes carrying a private-signal segment
-(`/srv/private/...`); JSON pointers and relative project paths stay
-available. The established needles remain broader: the POSIX `/home/`,
-`/root/`, and `/users/` needles match any `home`/`root`/`users` path
-segment (so benign relative content like `app/home/page.tsx` also
-refuses), and the colon-less `/users/` needle is what catches the
-macOS absolute profile spelling (`/Users/alice/...`) — the accepted
-fail-closed trade-off, recorded here and pinned by test.
+spelling-canonical — it folds ASCII case and a closed set of common
+Cyrillic/Greek lookalikes, removes `_`/`-` symmetrically, and recognizes
+plain, single and JSON-escaped quoted assignments. Credential stems
+anywhere in assigned identifier keys refuse, including plurals and
+unlisted compounds (`secrets`, `mysecret`, `secret_value`,
+`aws_access_key_id`) and compound `key` names in snake/kebab/camel and
+unseparated spellings. Non-empty arrays/objects on a credential key
+refuse just like scalar values. Empty strings/arrays/objects carry no
+material; the quoted JSON `"tokens": <unsigned integer>` budget member
+is the only numeric-count exception, not numeric passwords or
+string-valued tokens. The explicit negated pseudo-key `NotAPassword=x`
+and bare JSON `key` member remain benign; other benign compounds may
+refuse conservatively. This is not exhaustive Unicode normalization or
+a promise to identify every possible secret encoding.
+
+The pass also matches private-key blocks, credential headers, and bare
+`Bearer <token>` schemes. Drive-letter (`D:/...`), UNC
+(`\\server\share\...`, `//server/share/...`), home-relative (`~/...`),
+and boundary-rooted multi-segment POSIX paths refuse by shape, not a
+five-segment vocabulary. Numeric-index JSON pointers such as
+`/definitions/20` stay available, but absolute API routes may refuse
+because their bytes are indistinguishable from host paths. Common
+private dotfile spellings (`.env`, `.ssh`, `.aws`, `.gnupg`, `.config`)
+refuse anywhere, including Windows separator spellings. Relative project
+paths and scheme-qualified URLs remain available except for the
+established broader `/home/`, `/root/`, `/users/`, and dotfile needles:
+`app/home/page.tsx` can refuse too. These are accepted fail-closed
+availability trade-offs, recorded here and pinned by tests. The entire
+bounded output is scanned so long keys/paths and UTF-8 spellings cannot
+straddle a fixed-overlap chunk boundary.
 
 ## Bounds, deadlines, cancellation
 

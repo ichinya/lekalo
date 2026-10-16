@@ -9,7 +9,7 @@
 // exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 
 import { createRequire } from "node:module";
-import { spawnSync, spawn } from "node:child_process";
+import { execFileSync, spawnSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -33,6 +33,7 @@ if (ajvVersion !== "8.17.1") {
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs")], { cwd: root });
 const fail = (reason, detail) => {
   process.stderr.write(`mcp-stdio ${reason}: ${JSON.stringify(detail ?? "")}\n`);
   process.exit(1);
@@ -987,9 +988,33 @@ const validateToolOutput = (responses, id, slug) => {
   const canaries = [
     ["GATE_SPACED_33 password = 0123456789abcdef0123456789", "spaced-assignment-refused"],
     ["GATE_PATH_33 see C:/Users/PrivateReview/private.txt", "private-path-refused"],
+    // r6: each review finding crosses the actual stdio disclosure seam.
+    ['password=["GATE_R6_CANARY"]', "structured-array-refused"],
+    ['password={hash:"GATE_R6_CANARY"}', "structured-object-refused"],
+    ["secrets=GATE_R6_CANARY", "plural-secret-refused"],
+    ["tokens=GATE_R6_CANARY", "plural-token-refused"],
+    ["mysecret=GATE_R6_CANARY", "unlisted-compound-refused"],
+    ["secret_value=GATE_R6_CANARY", "compound-tail-refused"],
+    ["client-key=GATE_R6_CANARY", "kebab-key-refused"],
+    ["license_key=GATE_R6_CANARY", "snake-key-refused"],
+    ["masterKey=GATE_R6_CANARY", "camel-key-refused"],
+    ["masterkey=GATE_R6_CANARY", "unseparated-key-refused"],
+    ["aws_access_key_id=GATE_R6_CANARY", "aws-key-id-refused"],
+    [String.raw`see \\fileserver\hr\GATE_R6_CANARY.txt`, "unc-path-refused"],
+    ["//server/share/GATE_R6_CANARY.txt", "slash-unc-refused"],
+    ["/var/log/GATE_R6_CANARY.log", "unlisted-posix-path-refused"],
+    ["/opt/credentials.json GATE_R6_CANARY", "private-file-refused"],
+    ["~/private/GATE_R6_CANARY.txt", "home-relative-refused"],
+    [".env.production GATE_R6_CANARY", "dotenv-refused"],
+    [".ssh/id_rsa GATE_R6_CANARY", "ssh-dotfile-refused"],
+    [".aws/credentials GATE_R6_CANARY", "aws-dotfile-refused"],
+    ["pаssword=GATE_R6_CANARY", "homoglyph-key-refused"],
+    ["Bearer GATE_R6_CANARY", "bare-bearer-refused"],
   ];
   for (const [canary, name] of canaries) {
-    writeFileSync(commandsPath, original.replace("Focus one task", canary));
+    // JSON string quoting is valid YAML quoting too: structured values
+    // and UNC separators must reach the screen, not fail model parsing.
+    writeFileSync(commandsPath, original.replace(JSON.stringify("Focus one task"), JSON.stringify(canary)));
     const { responses } = await serve(
       [...lifecycle(), call(191, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" })],
       [],
@@ -1001,7 +1026,10 @@ const validateToolOutput = (responses, id, slug) => {
       name,
       output.failure,
     );
-    check(!JSON.stringify(responses).includes("0123456789abcdef"), name + "-no-echo");
+    check(
+      !JSON.stringify(responses).includes("0123456789abcdef") && !JSON.stringify(responses).includes("GATE_R6_CANARY"),
+      name + "-no-echo",
+    );
   }
   writeFileSync(commandsPath, original);
   const { responses: clean } = await serve(

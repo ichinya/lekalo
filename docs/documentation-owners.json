@@ -2941,7 +2941,7 @@
       "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
-      "sourceDigest": "sha256:bd689f2df09366bf7c9e746b520279fe0bd437c87c197adda9cd4dd4cf7c1663",
+      "sourceDigest": "sha256:f8687d8501df699118010f3dc36b5d2656db60f4b7145be2c153c9e4c50fab39",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3355,7 +3355,7 @@
       "id": "contract:contracts/mcp-resource.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-resource.schema.v0.8.0.json",
-      "sourceDigest": "sha256:855d08ae2ab62a56f607e656be5ab055ef0315e90c33d4d45d1ceb99dbf40882",
+      "sourceDigest": "sha256:55efdec06fa81005f414ecc13ac2bc371445cd5d884ad34be847f5e2e73c0036",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3436,7 +3436,7 @@
       "id": "contract:contracts/mcp-tool-inspect-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-inspect-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:f47397208b2fcf5ea509fb6478cd9b4f563676b726914c09cbb3bc9d2618133b",
+      "sourceDigest": "sha256:3e65ec9aa272e6ea095be9dbe0f40a32a389a82d8815f7de64c72242b9165fb5",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

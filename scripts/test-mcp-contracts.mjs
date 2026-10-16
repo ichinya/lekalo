@@ -30,6 +30,10 @@ if (ajvVersion !== "8.17.1") {
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// The same live-line union guard runs in every MCP gate, before any
+// schema/host qualification can mistake a stale registry for success.
+execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs")], { cwd: root });
+execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs"), "--selftest"], { cwd: root });
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
 const fail = (reason, detail) => {
@@ -197,52 +201,8 @@ for (const [family, size] of Object.entries(LANDED_FAMILY_SIZES)) {
     fail("registry-family", { family, expected: size, actual: familySizes[family] ?? 0 });
   }
 }
-// Union completeness, part 2 — live-line monotonicity: against the
-// accessible integration refs (ichinya/M8 and every parent of HEAD)
-// the working-tree registry keeps every base entry id and every base
-// family (the check-registry-union.mjs failure mode, asserted here so
-// the mcp gate itself refuses a stale merge).
-const ids080 = new Set(registry080.entries.map((entry) => entry.id));
-const families080 = new Set(Object.keys(familySizes));
-const registryAt = (ref) => {
-  try {
-    const out = execFileSync("git", ["show", `${ref}:contracts/diagnostic-registry.v0.8.0.json`], {
-      cwd: process.cwd(),
-      encoding: "utf8",
-      maxBuffer: 1 << 26,
-    });
-    return JSON.parse(out);
-  } catch {
-    return null;
-  }
-};
-const unionRefs = ["ichinya/M8"];
-try {
-  unionRefs.push(
-    ...execFileSync("git", ["rev-list", "--parents", "-n", "1", "HEAD"], {
-      cwd: process.cwd(),
-      encoding: "utf8",
-    })
-      .trim()
-      .split(" ")
-      .slice(1),
-  );
-} catch {
-  // no git metadata (source export): part 1 still polices the families
-}
-for (const ref of unionRefs) {
-  const base = registryAt(ref);
-  if (!base) continue;
-  const missingEntries = base.entries.filter((entry) => !ids080.has(entry.id));
-  if (missingEntries.length) {
-    fail("registry-union-gap", { ref, missing: missingEntries.length, first: missingEntries[0]?.id });
-  }
-  const missingFamilies = [...new Set(base.entries.map((entry) => `${entry.id.split(".")[0]}.`))]
-    .filter((family) => !families080.has(family));
-  if (missingFamilies.length) {
-    fail("registry-union-family-gap", { ref, missing: missingFamilies });
-  }
-}
+// Live-line monotonicity and byte-identical predecessor entries are
+// checked by the shared union guard above, not duplicated here.
 const byId065 = new Map(registry065.entries.map((entry) => [entry.id, entry]));
 for (const entry of registry080.entries) {
   if (byId065.has(entry.id)) {
@@ -449,9 +409,20 @@ const outputPins = {
 };
 const resultShape = {
   inspect: {
-    schemaVersion: "lekalo/inspect/v0.2.16",
-    identity: "dev.lekalo.inspect@0.2.16",
-    inspect: golden("tests/fixtures/inspect/golden/planner.focus_task.json").inspect,
+    schemaVersion: "lekalo/inspect/v0.8.0",
+    identity: "dev.lekalo.inspect@0.8.0",
+    // The pinned golden is the FROZEN 0.2.16 envelope; the live output
+    // carries the 0.8.0 successor discriminator (#52 convention). This
+    // legacy-source golden keeps its payload bytes; only its version
+    // identity is patched to the successor spelling before validation.
+    inspect: (() => {
+      const receipt = golden("tests/fixtures/inspect/golden/planner.focus_task.json").inspect;
+      return {
+        ...receipt,
+        schemaVersion: "lekalo/inspect/v0.8.0",
+        identity: "dev.lekalo.inspect@0.8.0",
+      };
+    })(),
   },
   impact: {
     schemaVersion: "lekalo/impact/v0.2.16",
@@ -502,7 +473,7 @@ for (const slug of TOOL_SLUGS) {
 }
 function outputPinVersion(slug) {
   return {
-    inspect: "0.2.16",
+    inspect: "0.8.0",
     impact: "0.2.16",
     context: "0.2.16",
     graph: "0.2.16",
@@ -519,7 +490,7 @@ const incoherent = {
     TOOL_NAMES[0],
     "inspect",
     "denied",
-    { pins: { inspect: "0.2.16" }, failureClass: "scope-denied" },
+    { pins: { inspect: "0.8.0" }, failureClass: "scope-denied" },
   ),
   result: resultShape.inspect,
 };
@@ -527,7 +498,7 @@ if (compiled.get("mcp-tool-inspect-output.schema.v0.8.0.json").validate(incohere
   fail("schema-must-reject-refusal-with-result");
 }
 const validWithoutResult = outputEnvelope(TOOL_NAMES[0], "inspect", "valid", {
-  pins: { inspect: "0.2.16" },
+  pins: { inspect: "0.8.0" },
   result: undefined,
 });
 delete validWithoutResult.result;
@@ -539,10 +510,10 @@ if (compiled.get("mcp-tool-inspect-output.schema.v0.8.0.json").validate(validWit
 // closures reject forged payloads and forged diagnostic items.
 const inspectSchema = compiled.get("mcp-tool-inspect-output.schema.v0.8.0.json");
 const forgedResult = outputEnvelope(TOOL_NAMES[0], "inspect", "valid", {
-  pins: { inspect: "0.2.16" },
+  pins: { inspect: "0.8.0" },
   result: {
-    schemaVersion: "lekalo/inspect/v0.2.16",
-    identity: "dev.lekalo.inspect@0.2.16",
+    schemaVersion: "lekalo/inspect/v0.8.0",
+    identity: "dev.lekalo.inspect@0.8.0",
     inspect: { attackerExtra: "unconstrained" },
   },
 });
@@ -551,7 +522,7 @@ if (inspectSchema.validate(forgedResult) !== false) {
 }
 const forgedDiagnostics = {
   ...outputEnvelope(TOOL_NAMES[0], "inspect", "denied", {
-    pins: { inspect: "0.2.16" },
+    pins: { inspect: "0.8.0" },
     failureClass: "scope-denied",
   }),
   diagnostics: [{ anything: "not-a-diagnostic" }],
@@ -705,9 +676,14 @@ const resourceUri = (uri, kind, data) =>
     data,
   });
 const symbolDocument = {
-  schemaVersion: "lekalo/inspect/v0.2.16",
-  identity: "dev.lekalo.inspect@0.2.16",
-  inspect: golden("tests/fixtures/inspect/golden/planner.focus_task.json").inspect,
+  schemaVersion: "lekalo/inspect/v0.8.0",
+  identity: "dev.lekalo.inspect@0.8.0",
+  // The frozen 0.2.16 golden patched to the 0.8.0 successor spelling
+  // (#52 convention, as in resultShape above).
+  inspect: (() => {
+    const receipt = golden("tests/fixtures/inspect/golden/planner.focus_task.json").inspect;
+    return { ...receipt, schemaVersion: "lekalo/inspect/v0.8.0", identity: "dev.lekalo.inspect@0.8.0" };
+  })(),
 };
 for (const [uri, kind, data] of [
   ["lekalo://planner/summary", "project-summary", resourceEnvelope.data],

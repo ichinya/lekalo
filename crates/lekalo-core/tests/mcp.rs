@@ -25,11 +25,10 @@ fn mcp_registry_is_the_exact_m8_grand_union() {
     let embedded = DiagnosticRegistry::embedded().expect("0.6.4");
     let successor = DiagnosticRegistry::successor().expect("0.6.5");
     let mcp = DiagnosticRegistry::mcp_successor().expect("0.8.0");
-    // The union pin is arithmetic, never a stale predecessor+own subset
-    // (r6 F6/omp F1: 553 pinned a pre-merge state). Every landed M8
-    // family survives the merge with this issue's `mcp.*` additions:
-    // 603 = 592 + 11 = 578 + 14 + 11 = 570 + 8 + 14 + 11.
-    assert_eq!(mcp.len(), 603);
+    // Never pin a stale predecessor+own subset (r6 F6/omp F1). All
+    // predecessor entries and landed families survive, while additional
+    // future families may join this same immutable-entry union.
+    assert!(mcp.len() > successor.len());
     // Every successor accessor parses the same merged bytes, so neither
     // side of the merge can drop a pin (the #113 union-guard invariant).
     assert_eq!(

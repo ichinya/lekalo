@@ -4,7 +4,7 @@
 //! The MCP family is its own contract family: independent of the product
 //! release beyond the issue #33 implementation commit, of the Model/IR
 //! contracts, of every preserved read-service contract it carries
-//! (inspect/impact/context/graph/trace `0.2.16`, doctor `0.3.2`,
+//! (inspect `0.8.0`, impact/context/graph/trace `0.2.16`, doctor `0.3.2`,
 //! validation `0.6.4`), and of the diagnostic registry identity. The
 //! outer MCP protocol date is independent of the Lekalo contract
 //! versions. Bounds are owner-approved proposal constants: caller

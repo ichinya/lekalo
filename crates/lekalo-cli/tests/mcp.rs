@@ -229,10 +229,10 @@ fn inspect_impact_graph_validate_target_status_return_contract_outputs() {
     // inspect: the preserved core receipt under its pinned discriminator.
     let inspect = session.tool(10);
     assert_eq!(inspect["status"], "valid");
-    assert_eq!(inspect["result"]["schemaVersion"], "lekalo/inspect/v0.2.16");
+    assert_eq!(inspect["result"]["schemaVersion"], "lekalo/inspect/v0.8.0");
     assert_eq!(
         inspect["result"]["inspect"]["identity"],
-        "dev.lekalo.inspect@0.2.16"
+        "dev.lekalo.inspect@0.8.0"
     );
     // isError is the MCP-level flag beside structuredContent.
     assert_eq!(session.response(10)["result"]["isError"], false);

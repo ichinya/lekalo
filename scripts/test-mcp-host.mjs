@@ -11,12 +11,13 @@
 // so a missing required host can never be relabeled accepted.
 
 import { createRequire } from "node:module";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs")], { cwd: root });
 const fail = (reason, detail) => {
   process.stderr.write(`mcp-host ${reason}: ${JSON.stringify(detail ?? "")}\n`);
   process.exit(1);
