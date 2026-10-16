@@ -22,7 +22,20 @@ function rewrite(value,prefix){
 const diag=JSON.parse(readFileSync(resolve(root,'contracts/diagnostic.schema.v0.2.16.json'),'utf8'));
 delete diag.$id; delete diag.$schema;
 const impact=JSON.parse(readFileSync(resolve(root,'contracts/impact.schema.v0.2.16.json'),'utf8'));
+const successorImpact=structuredClone(impact);
+successorImpact.$id='https://dev.lekalo/impact.schema.v0.8.0.json';
+successorImpact.description+=' Issue #95: exact Model 0.8.0 successor input pin; unchanged deterministic impact algorithm and closed payload.';
+successorImpact.properties.schemaVersion={const:'lekalo/impact/v0.8.0'};
+successorImpact.properties.identity={const:'dev.lekalo.impact@0.8.0'};
+successorImpact.properties.modelVersion={const:'0.8.0'};
+const impactBytes=JSON.stringify(successorImpact,null,2)+'\n';
+const impactPath=resolve(root,'contracts/impact.schema.v0.8.0.json');
+if(process.argv.includes('--check'))assert.equal(readFileSync(impactPath,'utf8'),impactBytes,'successor impact schema drift');
+else writeFileSync(impactPath,impactBytes);
 delete impact.$id; delete impact.$schema;
+const nestedSuccessorImpact=structuredClone(successorImpact);
+delete nestedSuccessorImpact.$id; delete nestedSuccessorImpact.$schema;
+const modelVersion={enum:['0.2.16','0.8.0']};
 const result={
  $schema:'https://json-schema.org/draft/2020-12/schema',
  $id:'dev.lekalo.watch-result@0.8.0',
@@ -37,17 +50,32 @@ const result={
   work:array(object({module:token,sha256:digest,state:{enum:['executed','reused']}}),4096),
   counts:object({diagnostics:counter,executedUnits:counter,reusedUnits:counter,changedFiles:counter}),
   capsuleInvalidations:array(token,128),
-  pins:object({modelVersion:{const:'0.2.16'},registryVersion:{const:'0.8.0'},
-   versions:object({core:{const:'0.8.0'},ir:{const:'0.2.16'},graph:{const:'0.2.16'},impact:{const:'0.2.16'},validationProfile:{const:'0.6.4'},diagnostic:{const:'lekalo/diagnostic/v0.2.16'},artifactManifest:{const:'lekalo/artifact-manifest/v0.2.16'},lock:{const:'lekalo/lock/v0.3.2'},targetProtocol:{const:'0.3.2'},targetCapabilities:{const:'dev.lekalo.target-capabilities@0.6.4'}}),
+  pins:object({modelVersion,registryVersion:{const:'0.8.0'},
+   versions:object({core:{const:'0.8.0'},ir:modelVersion,graph:modelVersion,impact:modelVersion,validationProfile:{const:'0.6.4'},diagnostic:{const:'lekalo/diagnostic/v0.2.16'},artifactManifest:{const:'lekalo/artifact-manifest/v0.2.16'},lock:{const:'lekalo/lock/v0.3.2'},targetProtocol:{const:'0.3.2'},targetCapabilities:{const:'dev.lekalo.target-capabilities@0.6.4'}}),
    revisions:object({modelDigest:digest,irDigest:digest,sourceMapDigest:digest,graphDigest:digest,lockDigest:digest,lockInputDigest:digest,profileDigest:digest,manifestInputDigest:digest},[]),
    adapters:array(object({target:token,id:token,version:{...string(64),pattern:'^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$'},digest,declaredDigest:digest,entryDigest:digest,capabilityDigest:digest,protocolVersion:{enum:['0.3.2','0.6.4','0.8.0']},profile:token,work:array(object({scope:{enum:['module','global']},module:token,state:{enum:['executed','reused']},sourceRevision:digest,selectionDigest:digest},['scope','state','sourceRevision','selectionDigest']),4097)},['target','id','version','digest','declaredDigest','entryDigest','capabilityDigest','protocolVersion']),8)
   },['registryVersion','versions','revisions','adapters']),
-  impact:{$ref:'#/$defs/impact'},
+  impact:{oneOf:[{$ref:'#/$defs/impact'},{$ref:'#/$defs/successorImpact'}]},
   drift:object({verdict:{enum:['clean','reported']},clean:counter,stale:counter,manualDrift:counter,missing:counter,orphan:counter,reported:counter,findings:counter}),
   pipelineCounts:object({decodedDocuments:counter,reusedDocuments:counter,decodedDefinitions:counter,reusedDefinitions:counter,emittedGraphUnits:counter,reusedGraphUnits:counter,assembledGraphNodes:counter,assembledGraphEdges:counter,graphCyclePasses:counter})
  },['schemaVersion','identity','status','diagnosticsMode','sourceRevision','diagnostics','stages','changedInputs','affected','work','counts','capsuleInvalidations','pins']),
- $defs:{diagnostic:rewrite(diag,'#/$defs/diagnostic'),impact:rewrite(impact,'#/$defs/impact')}
+ allOf:['0.2.16','0.8.0'].map(version=>({
+  if:{type:'object',properties:{pins:{type:'object',properties:{modelVersion:{const:version}},required:['modelVersion']}},required:['pins']},
+  then:{type:'object',properties:{pins:{type:'object',properties:{versions:{type:'object',properties:{ir:{const:version},graph:{const:version},impact:{const:version}}}}},impact:{$ref:version==='0.8.0'?'#/$defs/successorImpact':'#/$defs/impact'}}}
+ })),
+ $defs:{diagnostic:rewrite(diag,'#/$defs/diagnostic'),impact:rewrite(impact,'#/$defs/impact'),successorImpact:rewrite(nestedSuccessorImpact,'#/$defs/successorImpact')}
 };
+// A parse refusal has no current Model pin and cannot publish a payload
+// whose predecessor/successor identity was guessed from an older run.
+result.allOf.push({
+ if:{type:'object',properties:{pins:{type:'object',not:{type:'object',properties:{modelVersion:{}},required:['modelVersion']}}}},
+ then:{
+  type:'object',not:{type:'object',properties:{impact:{}},required:['impact']},
+  properties:{pins:{type:'object',properties:{versions:{type:'object',properties:{
+   ir:{const:'0.2.16'},graph:{const:'0.2.16'},impact:{const:'0.2.16'}
+  }}}}}
+ }
+});
 const common={schemaVersion:{const:'lekalo/watch-event/v0.8.0'},identity:{const:'dev.lekalo.watch-event@0.8.0'},sequence:{...counter,minimum:1},sessionId:{...string(64),pattern:'^[a-zA-Z0-9-]+$'}};
 const run={runId:{...counter,minimum:1},generation:counter,sourceRevision:digest};
 const arm=(event,props,required)=>object({...common,event:{const:event},...props},[...Object.keys(common),'event',...(required??Object.keys(props))]);

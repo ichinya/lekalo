@@ -227,7 +227,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
       - name: Run read-only watch native and poll probes (issue #95)
-        timeout-minutes: 5
+        timeout-minutes: 10
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
         run: |
@@ -235,6 +235,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-platform.mjs
           node scripts/test-watch-equivalence.mjs
           node scripts/test-watch-faults.mjs
+          node scripts/test-watch-successor.mjs
           node scripts/test-watch-consumers.mjs
       - name: Run the live portability contract gate (issue #19)
         env:

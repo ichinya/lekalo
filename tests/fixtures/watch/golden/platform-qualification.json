@@ -1,0 +1,22 @@
+{
+  "decision":"declared-runtime-evidence-boundary",
+  "requiredCiPlatforms":["ubuntu-latest","windows-latest","macos-latest"],
+  "deliveryEvidence":{
+    "windows":"native-and-poll-runtime-qualified",
+    "linux":"qualified-full-pass-later-wsl-revalidation-blocked",
+    "macos":"native-runtime-unavailable-no-macos-host"
+  },
+  "macosPolicy":{
+    "confinement":"deny-default-seatbelt-no-process-fork",
+    "memory":"sampled-resident-supervision-degraded-not-hard-ceiling",
+    "missingEnforcement":"refuse-no-ambient-fallback",
+    "runtimeQualification":"requires-exact-candidate-native-hosted-gates"
+  },
+  "linuxRevalidation":{
+    "fullWatchGatePass":true,
+    "subsequentBounds":["clean-validate-and-watch-oracle-30s-deadlines","wsl-exec-unresponsive-before-shell-start"],
+    "disposition":"retain-qualified-evidence-no-blanket-stable-host-claim"
+  },
+  "crossCompilationIsRuntimeEvidence":false,
+  "windowsTestsAreMacosEvidence":false
+}

@@ -13,10 +13,10 @@ function inventory(dir,prefix=''){
   return e.isDirectory()?inventory(join(dir,e.name),path+'/'):[[path,readFileSync(join(dir,e.name)).toString('hex')]];
  });
 }
-export async function selectiveTargetProbe({root,binary,env}){
+export async function selectiveTargetProbe({root,binary,env,fixture='project'}){
  const project=mkdtempSync(join(tmpdir(),'lekalo-watch-selected-'));
  try{
-  cpSync(join(root,'tests/fixtures/watch/project'),project,{recursive:true});
+  cpSync(join(root,'tests/fixtures/watch',fixture),project,{recursive:true});
   mkdirSync(join(project,'adapters'));mkdirSync(join(project,'src'));
   const entry=join(project,'adapters/fixture.mjs');
   writeFileSync(entry,readFileSync(join(root,'tests/fixtures/watch/mock-adapter.mjs'),'utf8').replace('const selective = false','const selective = true'));
@@ -25,7 +25,7 @@ export async function selectiveTargetProbe({root,binary,env}){
   assert.ifError(lock.error);assert.equal(lock.status,0,lock.stdout+lock.stderr);
   const source=join(project,'lekalo/modules/planner/entities.yaml'),original=readFileSync(source,'utf8');
   const events=[],completed=[],decoder=new StringDecoder('utf8');let pending='',stderr='',failure,cancelOnStart=false,expected=inventory(project);
-  const flags=['watch','--backend','poll','--poll-interval-ms','100','--reconcile-ms','100','--debounce-ms','30','--max-wait-ms','150','--adapter-timeout-ms','5000','--target','watch-fixture','--validate','--json-lines'];
+  const flags=['watch',...(fixture==='project-successor'?['--locked']:[]),'--backend','poll','--poll-interval-ms','100','--reconcile-ms','100','--debounce-ms','30','--max-wait-ms','150','--adapter-timeout-ms','5000','--target','watch-fixture','--validate','--json-lines'];
   const child=spawn(binary,[...flags,'--stop-after-runs','4'],{cwd:project,env,stdio:['ignore','pipe','pipe']});
   const edit=mode=>{writeFileSync(control,mode);expected=inventory(project);};
   await new Promise((resolve,reject)=>{
@@ -55,6 +55,15 @@ export async function selectiveTargetProbe({root,binary,env}){
       const oracle=mkdtempSync(join(tmpdir(),'lekalo-watch-target-oracle-'));
       try{
        cpSync(project,oracle,{recursive:true});
+       if(fixture==='project-successor'){
+        const clean=spawnSync(binary,['--no-cache',...flags,'--stop-after-runs','1'],{cwd:oracle,env,encoding:'utf8',timeout:30000,maxBuffer:16*1024*1024});
+        assert.ifError(clean.error);
+        const result=clean.stdout.trim().split(/\r?\n/).map(JSON.parse).find(e=>e.event==='run-completed');
+        assert.equal(result.status,e.status,'successor targeted status equals a fresh no-reuse captured cycle');
+        assert.deepEqual(result.result.diagnostics,e.result.diagnostics);
+        assert.equal(result.result.pins.modelVersion,'0.8.0');
+        assert.equal(result.result.pins.versions.ir,'0.8.0');
+       }else{
        const loaded=spawnSync(binary,['--no-cache','--json','load','--ir'],{cwd:oracle,env,encoding:'utf8',timeout:30000});
        assert.ifError(loaded.error);assert.equal(loaded.status,0,loaded.stdout+loaded.stderr);
        const ir=JSON.parse(loaded.stdout).ir;
@@ -66,6 +75,7 @@ export async function selectiveTargetProbe({root,binary,env}){
        const report=JSON.parse(readFileSync(join(oracle,'verification.json'),'utf8'));
        assert.equal(report.checks.find(c=>c.id==='adapter.watch-fixture')?.sourceOutcome,'fail');
        assert.equal(e.status,result.status,'settled targeted status equals full clean adapter validation');
+       }
       }finally{rmSync(oracle,{recursive:true,force:true});}
       cancelOnStart=true;edit('hang');
      }else if(completed.length===3){

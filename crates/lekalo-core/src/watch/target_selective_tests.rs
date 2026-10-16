@@ -187,6 +187,79 @@ fn accumulated_failed_removal_partitions_refuse_before_exceeding_wire_bound() {
 }
 
 #[test]
+fn successor_target_cycles_negotiate_pins_and_preserve_selected_reuse() {
+    let root = project_version(true, true);
+    let policy = policy(root.path());
+    let mut service = WatchService::new(WatchRequest {
+        targets: vec!["watch-fixture".into()],
+        locked: true,
+        stages: crate::watch::request::WatchStages {
+            validate: true,
+            impact: true,
+            generate_check: true,
+        },
+        ..WatchRequest::default()
+    })
+    .unwrap();
+    let baseline = run(&mut service, root.path(), &policy, 1);
+    assert_eq!(baseline.status, Status::Valid, "{:?}", baseline.diagnostics);
+    assert_eq!(baseline.pins.model_version, Some("0.8.0"));
+    assert_eq!(baseline.pins.versions.ir, "0.8.0");
+    assert_eq!(baseline.pins.adapters[0].protocol_version, "0.8.0");
+    assert!(baseline.stages.iter().all(|s| s.state != "unavailable"));
+    let source = root.path().join("lekalo/modules/planner/entities.yaml");
+    let original = std::fs::read_to_string(&source).unwrap();
+    std::fs::write(&source, original.replace("version: 1", "version: 2")).unwrap();
+    let edited = run(&mut service, root.path(), &policy, 2);
+    assert_eq!(edited.status, Status::Valid, "{:?}", edited.diagnostics);
+    assert!(edited.pins.adapters[0]
+        .work
+        .iter()
+        .any(|w| w.module.as_deref() == Some("unrelated") && w.state == "reused"));
+    assert_ne!(
+        edited.pins.revisions.ir_digest,
+        baseline.pins.revisions.ir_digest
+    );
+    assert_eq!(edited.impact.as_ref().unwrap()["modelVersion"], "0.8.0");
+    assert_eq!(edited.drift, baseline.drift);
+    let mut clean = WatchService::new(WatchRequest {
+        no_cache: true,
+        ..service.request().clone()
+    })
+    .unwrap();
+    let oracle = run(&mut clean, root.path(), &policy, 1);
+    assert_eq!(
+        serde_json::to_value(edited.diagnostics).unwrap(),
+        serde_json::to_value(oracle.diagnostics).unwrap()
+    );
+}
+
+#[test]
+fn successor_target_never_falls_back_without_negotiated_model_pins() {
+    let root = project_version(false, true);
+    let policy = policy(root.path());
+    let mut service = WatchService::new(WatchRequest {
+        targets: vec!["watch-fixture".into()],
+        ..WatchRequest::default()
+    })
+    .unwrap();
+    let before = crate::target_protocol::transport::launches();
+    let refused = run(&mut service, root.path(), &policy, 1);
+    assert_eq!(
+        refused.status,
+        Status::Unsupported,
+        "{:?}",
+        refused.diagnostics
+    );
+    assert!(refused.pins.adapters.is_empty());
+    assert_eq!(
+        crate::target_protocol::transport::launches() - before,
+        1,
+        "only legacy describe may execute, never scan/validate"
+    );
+}
+
+#[test]
 fn legacy_adapters_keep_visible_full_fallback_and_receive_no_selection() {
     let root = project();
     let policy = policy(root.path());

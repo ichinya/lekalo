@@ -87,7 +87,8 @@ impl Prepared {
                 hash(loader::canonical_model_bytes(model).as_bytes()),
             ),
             ir: ContractPin::new(
-                SemVer::parse(crate::ir::VERSION).map_err(|_| ArtifactFailure::ManifestInvalid)?,
+                SemVer::parse(compilation.project.model_version.as_str())
+                    .map_err(|_| ArtifactFailure::ManifestInvalid)?,
                 hash(compilation.project.to_canonical_json().as_bytes()),
             ),
         };
@@ -166,8 +167,8 @@ fn current_inputs(selection: &LoadSelection) -> Result<Inputs, ArtifactFailure> 
     let ir_json = compilation.project.to_canonical_json();
     let model_version = SemVer::parse(model.model_version.as_str())
         .map_err(|_| ArtifactFailure::ManifestInvalid)?;
-    let ir_version =
-        SemVer::parse(crate::ir::version::VERSION).map_err(|_| ArtifactFailure::ManifestInvalid)?;
+    let ir_version = SemVer::parse(compilation.project.model_version.as_str())
+        .map_err(|_| ArtifactFailure::ManifestInvalid)?;
     let model = ContractPin::new(model_version, hash(model_json.as_bytes()));
     let ir = ContractPin::new(ir_version, hash(ir_json.as_bytes()));
     Ok(Inputs { model, ir })

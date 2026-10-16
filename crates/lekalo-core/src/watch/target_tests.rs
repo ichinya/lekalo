@@ -18,8 +18,15 @@ fn project() -> tempfile::TempDir {
     project_selective(false)
 }
 fn project_selective(selective: bool) -> tempfile::TempDir {
+    project_version(selective, false)
+}
+fn project_version(selective: bool, successor: bool) -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
-    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/watch/project");
+    let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join(if successor {
+        "../../tests/fixtures/watch/project-successor"
+    } else {
+        "../../tests/fixtures/watch/project"
+    });
     snapshot::materialize(&snapshot::capture(&fixture, false).unwrap(), root.path()).unwrap();
     std::fs::create_dir(root.path().join("adapters")).unwrap();
     std::fs::create_dir(root.path().join("src")).unwrap();
@@ -54,7 +61,8 @@ fn project_selective(selective: bool) -> tempfile::TempDir {
         .unwrap(),
         "watch-fixture".to_owned(),
         ContractVersion::<IrContract>::current(),
-        ContractVersion::<IrContract>::current(),
+        ContractVersion::<IrContract>::parse_canonical(crate::ir::version::SUCCESSOR_VERSION)
+            .unwrap(),
         Some(ProtocolBounds {
             min: ContractVersion::<ProtocolContract>::parse_canonical(
                 crate::target_protocol::version::VERSION,

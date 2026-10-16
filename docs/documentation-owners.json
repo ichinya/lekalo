@@ -3186,6 +3186,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/impact.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/impact.schema.v0.8.0.json",
+      "sourceDigest": "sha256:f69708caa85e7d25c690fcfa8844a6e35ada25f1e7235d2a93d4564c97d0c542",
+      "owner": "docs/impact.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/implementation.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/implementation.schema.v0.2.16.json",
@@ -4035,7 +4044,7 @@
       "id": "contract:contracts/target-protocol.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/target-protocol.schema.v0.8.0.json",
-      "sourceDigest": "sha256:94c994ca2547276e33ec549d78579797ac1220a6969eab8c4e27e9436f58e8fe",
+      "sourceDigest": "sha256:fa7be2dd60dee889b9f26c40944fec807677b156a7560ccf8241f0c957a86172",
       "owner": "docs/target-protocol.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4233,7 +4242,7 @@
       "id": "contract:contracts/watch-event.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/watch-event.schema.v0.8.0.json",
-      "sourceDigest": "sha256:6a83ff3a85dea7f919dea5d39bd12bea3b1a17bf821e7ba1da94a7b917246259",
+      "sourceDigest": "sha256:c3194c8abc223b2361e89c7c4d1cf577f0bcc4f65130d89369788c25a9370a0c",
       "owner": "docs/cli.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4242,7 +4251,7 @@
       "id": "contract:contracts/watch-result.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/watch-result.schema.v0.8.0.json",
-      "sourceDigest": "sha256:9427aebc77d6448bceb20ff406103de091778760649ad6b582c223a0e484a190",
+      "sourceDigest": "sha256:d0ea5d8af4c8a66f3e0d93b16d1c5bd25e7676100605a5673a38d6aeb8edb097",
       "owner": "docs/cli.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

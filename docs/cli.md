@@ -109,8 +109,9 @@ Root and per-command help remain clap help text rather than a domain failure.
 
 ### `lekalo watch` (experimental, issue #95)
 
-The current implementation is a read-only incremental developer loop; issue #95
-is **not yet complete**. Bare `lekalo watch` selects validation. Explicit
+The implementation is a read-only incremental developer loop. Its functional
+successor-pin gap is implemented; native macOS qualification remains explicitly
+bounded by [the target protocol evidence boundary](target-protocol.md#issue-95-delivery-evidence-boundary). Bare `lekalo watch` selects validation. Explicit
 `--validate`, `--impact`, and `--generate-check` select those stages; `--strict`,
 `--module`, `--locked`, and the invocation-relative `--project` selector retain
 their command policies. Use `--json-lines` for the separate versioned stream;
@@ -135,9 +136,12 @@ runs cannot commit. The closed event/result schemas are
 `--target` now runs ephemeral locked scan/validation against captured inputs,
 without an observed index or scan receipt. Legacy adapters receive the visible
 `adapter-full-scope` fallback. An adapter must explicitly advertise protocol
-0.8.0 and `watch.selection: true` in the upgraded describe to receive the new
-closed `watch_request`: a snapshot-bound module partition (including removed
-symbols) or mandatory global obligations. Each response echoes the selection
+0.8.0 and `watch: {selection: true, model_versions: [...]}` in the upgraded
+describe to receive the closed `watch_request`: a snapshot-bound module
+partition (including removed symbols) or mandatory global obligations, with
+exact Model/IR version and captured IR digest pins. Both scan and validate
+verify those pins before disclosure. Successor Models require explicit
+Model **and** IR `0.8.0` admission; legacy fallback applies only to `0.2.16`. Each response echoes the selection
 digest. `pins.adapters[].work` records actual executed/reused partitions and
 the source revision of their last execution; untouched diagnostic partitions
 are retained, not discarded. A planner-only save executes planner/dependent
@@ -177,31 +181,39 @@ emits `recovery-required` with `action: stop`, never a fake cancellation or an
 overlapping replacement. An unterminated final line after output failure is
 not a complete replacement.
 
-The closed watch stage pins currently admit Model/IR/graph **0.2.16**.
-M8 Model 0.8.0 sources receive explicit unsupported coverage, never false
-legacy pins or a stream that violates its own schema. Successor Model/IR/graph,
-impact and artifact-check qualification remains unfinished; no 0.8.0 Model
-support is claimed by the new **adapter protocol** seam. Broader CPU/RSS audits
-also remain follow-up work.
+Watch admits exact source-bound Model/IR/graph pairs **0.2.16** and **0.8.0**.
+The successor includes typed relations and secondary uniqueness, a separately
+versioned impact `0.8.0` payload (unchanged impact algorithm), exact lock and
+artifact-check input pins, and independent settled-stage oracle comparisons.
+Unknown, mixed, undeclared or stale pins refuse without launching scan/validate;
+no implicit conversion or protocol-only inference is allowed. The complete
+successor result and refusal classifications are golden-pinned. Broader CPU/RSS
+audits remain follow-up work; sampled supervision is never a hard RSS promise.
 
 Validator instrumentation proves actual planner/dependent rule-subject visits
 without unrelated subjects, plus explicit global-input fallback. Twenty-eight
-clean validation comparisons are supplemented by 23 settled-stage comparisons
-over 12 revisions: validate, the complete impact payload/digest rebound to the
+clean validation comparisons are supplemented by 46 settled-stage comparisons
+over 24 revisions across predecessor and successor Models: validate, the
+complete impact payload/digest rebound to the
 same source-set base/candidate pair, and generate-check, including format-only
 saves, atomic replacement, invalid parse/recovery, generated drift and invalid
 lock/recovery. Invalid parse does not advance the accepted semantic baseline.
 Real long-lived CLI fault probes verify crash -> invalid -> stale cancellation
 -> recovery, and negotiated selection with an unrelated failing partition
 surviving rapid planner saves and cancellation. The selected target failure is
-compared to a clean full `verify` adapter component over the same settled tree;
+compared to a clean full `verify` adapter component for predecessor inputs;
 its IR is produced independently by `load --ir --no-cache` in a private oracle
-copy. A fresh no-cache core service additionally compares the complete retained
+copy. Successor targets compare with an independent fresh no-cache locked
+watch cycle; ordinary `verify` does not implicitly acquire successor pins.
+A fresh no-cache core service additionally compares the complete retained
 diagnostic set. Generated saves stay quiet
 for multiple reconciliation intervals; cache/build feedback remains excluded.
 
-Windows native/poll and Debian WSL inotify/poll qualification cover burst edits,
-atomic replacement, parent rename/deletion and drift. Hermetic notify traces
+Windows native/poll and a complete Debian WSL inotify/poll pass cover burst
+edits, atomic replacement, parent rename/deletion and drift. Later WSL reruns
+and even shell startup hit host deadlines; the retained full pass and this
+intermittent revalidation bound are [golden-pinned](target-protocol.md#issue-95-delivery-evidence-boundary),
+not an unconditional stable-Linux-host claim. Hermetic notify traces
 exercise the real callback/channel/dirty-reader paths for inotify overflow,
 FSEvents rescan/error, split rename and metadata/identical-byte events; they do
 not substitute for a native macOS result. Real slow/broken pipe probes verify

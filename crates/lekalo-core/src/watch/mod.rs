@@ -192,6 +192,16 @@ pub struct VersionPins {
     pub target_protocol: &'static str,
     pub target_capabilities: &'static str,
 }
+impl VersionPins {
+    fn for_model(model: crate::loader::ModelVersion) -> Self {
+        Self {
+            ir: model.as_str(),
+            graph: model.as_str(),
+            impact: crate::impact::version::version_for(model),
+            ..Self::default()
+        }
+    }
+}
 impl Default for VersionPins {
     fn default() -> Self {
         Self {
@@ -643,23 +653,6 @@ impl WatchService {
             )
         };
         let compiled = loaded.and_then(|loaded| {
-            // Watch's closed nested pins currently admit Model/IR/graph
-            // 0.2.16 only. M8's new 0.8.0 loader admission must not cause
-            // an event that lies about those versions or fails its own
-            // schema. Refuse explicitly until the successor watch seam
-            // (including the impact contract) is qualified.
-            if loaded.model.model_version != crate::loader::ModelVersion::Current {
-                return Err(crate::DomainResult::UnsupportedOperation {
-                    diagnostics: crate::diagnostics::DiagnosticSet::try_from_unsorted(
-                        vec![diagnostics::selective_unavailable(
-                            "snapshot",
-                            "model-version",
-                        )],
-                        Status::Unsupported,
-                    )
-                    .expect("watch unsupported-version rule admission"),
-                });
-            }
             budget::admit_model(&loaded.model)?;
             let empty = compile::Fragments::default();
             let previous = if self.request.no_cache {
@@ -999,7 +992,10 @@ impl WatchService {
         }
 
         // Lock preflight (--locked) and the explicit target stage.
-        if self.request.locked {
+        // Explicit target cycles supply their verified executable inventory
+        // to the target-owned locked preflight. An empty-inventory preflight
+        // here would falsely reject every otherwise valid locked adapter.
+        if self.request.locked && self.request.targets.is_empty() {
             match crate::orchestration::locked_check_captured(scratch, &model, &compilation) {
                 Ok(()) => stages.push(StageRow::executed("lock-preflight")),
                 Err(result) => {
@@ -1120,6 +1116,7 @@ impl WatchService {
         let input_hash = |bytes: &[u8]| format!("sha256:{}", crate::digest::sha256_hex(bytes));
         let pins = ResultPins {
             model_version,
+            versions: VersionPins::for_model(model.model_version),
             adapters: adapter_pins,
             revisions: RevisionPins {
                 model_digest: Some(input_hash(

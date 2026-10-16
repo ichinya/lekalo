@@ -1,28 +1,66 @@
 use super::*;
 
 #[test]
-fn successor_model_is_explicitly_refused_not_emitted_under_false_legacy_pins() {
-    let root = project();
-    for path in [
-        "lekalo/project.yaml",
-        "lekalo/modules/planner/module.yaml",
-        "lekalo/modules/planner/entities.yaml",
-        "lekalo/modules/unrelated/module.yaml",
-        "lekalo/modules/unrelated/entities.yaml",
-    ] {
-        let file = root.path().join(path);
-        let text = std::fs::read_to_string(&file).unwrap();
-        std::fs::write(file, text.replace("0.2.16", "0.8.0")).unwrap();
-    }
-    let mut service = WatchService::new(WatchRequest::default()).unwrap();
-    let result = run(&mut service, root.path(), 1);
-    assert_eq!(result.status, Status::Unsupported);
-    assert!(result.pins.model_version.is_none());
-    assert!(result
-        .diagnostics
+fn successor_model_uses_exact_pins_and_matches_clean_after_selective_edits() {
+    let fixture =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/watch/project-successor");
+    let root = tempfile::tempdir().unwrap();
+    materialize(&snapshot::capture(&fixture, false).unwrap(), root.path()).unwrap();
+    let mut service = WatchService::new(WatchRequest {
+        stages: request::WatchStages {
+            validate: true,
+            impact: true,
+            generate_check: false,
+        },
+        ..WatchRequest::default()
+    })
+    .unwrap();
+    let baseline = run(&mut service, root.path(), 1);
+    assert_eq!(baseline.status, Status::Valid, "{:?}", baseline.diagnostics);
+    assert_eq!(
+        serde_json::to_value(&baseline).unwrap(),
+        serde_json::from_str::<serde_json::Value>(include_str!(
+            "../../../../tests/fixtures/watch/golden/successor-result.json"
+        ))
+        .unwrap(),
+        "complete successor result golden"
+    );
+    assert_eq!(baseline.pins.model_version, Some("0.8.0"));
+    assert_eq!(baseline.pins.versions.ir, "0.8.0");
+    assert_eq!(baseline.pins.versions.graph, "0.8.0");
+    assert_eq!(baseline.pins.versions.impact, "0.8.0");
+    assert_eq!(
+        baseline.impact.as_ref().unwrap()["schemaVersion"],
+        "lekalo/impact/v0.8.0"
+    );
+    assert_eq!(
+        serde_json::to_value(&baseline.diagnostics).unwrap(),
+        clean(root.path())
+    );
+    edit_planner(root.path());
+    let edited = run(&mut service, root.path(), 2);
+    assert_eq!(edited.status, Status::Valid, "{:?}", edited.diagnostics);
+    assert!(edited
+        .work
         .iter()
-        .any(|d| d.id() == "watch.selective-unavailable"));
-    assert!(service.accepted().is_none());
+        .any(|u| u.module == "unrelated" && u.state == "reused"));
+    assert_eq!(
+        serde_json::to_value(&edited.diagnostics).unwrap(),
+        clean(root.path())
+    );
+    assert_eq!(edited.impact.as_ref().unwrap()["modelVersion"], "0.8.0");
+    assert_ne!(
+        edited.pins.revisions.ir_digest,
+        baseline.pins.revisions.ir_digest
+    );
+    // A schema rollback cannot alias successor constructs under predecessor pins.
+    let source = root.path().join("lekalo/modules/planner/entities.yaml");
+    let text = std::fs::read_to_string(&source).unwrap();
+    std::fs::write(&source, text.replace("0.8.0", "0.2.16")).unwrap();
+    let refused = run(&mut service, root.path(), 3);
+    assert_ne!(refused.status, Status::Valid);
+    assert!(refused.pins.model_version.is_none());
+    assert_eq!(service.accepted().unwrap().revision, edited.source_revision);
 }
 
 #[test]

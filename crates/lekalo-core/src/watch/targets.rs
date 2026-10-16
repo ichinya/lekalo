@@ -472,7 +472,7 @@ fn scan_target(
         }
     }
     if !discovered.targets.iter().any(|t| t == target)
-        || !discovered.ir_compatible(crate::ir::VERSION)
+        || !discovered.ir_compatible(model.model_version.as_str())
     {
         return Err(unsupported("watch-target-or-ir"));
     }
@@ -533,6 +533,13 @@ fn scan_target(
                 .as_ref()
                 .is_some_and(|s| s.selection)
     });
+    // A legacy fallback has no way to bind successor Model semantics.
+    // Refuse before either scan or validate rather than disclose new IR
+    // under a predecessor pin or silently down-convert it.
+    if model.model_version == crate::loader::ModelVersion::Successor && !selective {
+        return Err(unsupported("watch-successor-pins"));
+    }
+    let input_pins = crate::target_protocol::watch::WatchPins::for_compilation(compilation);
     let mut adapter_pin = AdapterPin {
         target: target.to_owned(),
         id: discovered.adapter.id,
@@ -633,6 +640,7 @@ fn scan_target(
                 .collect();
             let selected = crate::target_protocol::watch::WatchSelection {
                 source_revision: snapshot.source_revision(),
+                pins: input_pins.clone(),
                 scope: if module.is_empty() {
                     "global"
                 } else {
@@ -730,7 +738,7 @@ fn execute_partition<'a>(
         }
         .map_err(|f| mapped(Failure::Target(f)))
     };
-    let scanned = invoke(Operation::Scan, None)?;
+    let scanned = invoke(Operation::Scan, selection.map(|_| evidence))?;
     crate::observed::scan_service::validate_ephemeral(
         &crate::observed::ObservedContext {
             model: model.clone(),

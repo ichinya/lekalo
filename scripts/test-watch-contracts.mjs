@@ -74,19 +74,68 @@ for(const [mutate,reason] of [
 // The selection seam is a successor, not a field smuggled into frozen
 // requests. Ajv independently agrees with the production wire decoder.
 const protocol=ajv.compile(JSON.parse(readFileSync(resolve(root,'contracts/target-protocol.schema.v0.8.0.json'),'utf8')));
-const selection={source_revision:digest,scope:'module',module:'planner',symbols:['planner.title'],changed_paths:['lekalo/modules/planner/entities.yaml']};
-const request={protocol:'lekalo.target/v1',protocol_version:'0.8.0',operation:'scan',request_id:'req-'+'0'.repeat(64),project_root:'.',target:'demo',watch_request:selection};
+const selection={source_revision:digest,pins:{model_version:'0.2.16',ir_version:'0.2.16',ir_digest:digest},scope:'module',module:'planner',symbols:['planner.title'],changed_paths:['lekalo/modules/planner/entities.yaml']};
+const request={protocol:'lekalo.target/v1',protocol_version:'0.8.0',operation:'scan',request_id:'req-'+'0'.repeat(64),project_root:'.',target:'demo',ir_path:'ir/project.json',watch_request:selection};
 valid(protocol,request);
 valid(protocol,{...request,watch_request:{...selection,scope:'global',symbols:[],module:undefined}});
 for(const mutate of [
  j=>{j.protocol_version='0.3.2';},j=>{j.operation='describe';},j=>{j.watch_request.unknown=true;},
  j=>{j.watch_request.source_revision='bad';},j=>{j.watch_request.changed_paths=['../escape'];},
- j=>{j.watch_request.scope='global';},j=>{j.watch_request.module=null;},j=>{delete j.target;},
+ j=>{j.watch_request.scope='global';},j=>{j.watch_request.module=null;},j=>{delete j.target;},j=>{delete j.ir_path;},
+ j=>{delete j.watch_request.pins;},j=>{j.watch_request.pins.model_version='0.8.1';},
+ j=>{j.watch_request.pins.ir_version='0.8.0';},j=>{j.watch_request.pins.ir_digest='unknown';},
+ j=>{j.watch_request.pins.ir_digest=null;},j=>{j.watch_request.pins.unknown=true;},
 ]){const candidate=structuredClone(request);mutate(candidate);invalid(protocol,candidate);}
+const successorRequest=structuredClone(request);
+successorRequest.watch_request.pins.model_version='0.8.0';
+successorRequest.watch_request.pins.ir_version='0.8.0';
+valid(protocol,successorRequest);
+const refusalGolden=JSON.parse(readFileSync(resolve(root,'tests/fixtures/watch/golden/pin-refusals.json'),'utf8'));
+for(const row of refusalGolden.cases){
+ const candidate=structuredClone(successorRequest);
+ if(row.case==='unknown')candidate.watch_request.pins.model_version='0.8.1';
+ else if(row.case==='mixed')candidate.watch_request.pins.ir_version='0.2.16';
+ else if(row.case==='stale')candidate.watch_request.pins.ir_digest='sha256:'+'1'.repeat(64);
+ else if(row.case==='legacy')candidate.protocol_version='0.3.2';
+ (row.schema==='valid'?valid:invalid)(protocol,candidate);
+ assert.equal(row.spawned,false);
+}
+const adapter={id:'fixture',version:'0.8.0',digest};
+const described={protocol:request.protocol,protocol_version:'0.8.0',operation:'describe',request_id:request.request_id,status:'ok',evidence:{adapter},capabilities:{adapter,protocol_versions:['0.3.2','0.8.0'],operations:['describe','scan','validate'],transports:['stdin'],ir_versions:['0.2.16','0.8.0'],watch:{selection:true,model_versions:['0.2.16','0.8.0']}}};
+valid(protocol,described);
+for(const versions of [[],['0.8.1'],['0.8.0','0.8.0']]){
+ const candidate=structuredClone(described);candidate.capabilities.watch.model_versions=versions;invalid(protocol,candidate);
+}
+const successorResult=structuredClone(result);
+successorResult.pins.modelVersion='0.8.0';
+for(const family of ['ir','graph','impact'])successorResult.pins.versions[family]='0.8.0';
+valid(validateResult,successorResult);
+for(const family of ['ir','graph','impact']){
+ const stale=structuredClone(successorResult);stale.pins.versions[family]='0.2.16';invalid(validateResult,stale);
+}
 for(const version of ['0.3.2','0.6.4']){
  const frozen=ajv.compile(JSON.parse(readFileSync(resolve(root,`contracts/target-protocol.schema.v${version}.json`),'utf8')));
  invalid(frozen,{...request,protocol_version:version});
 }
+const successorGolden=JSON.parse(readFileSync(resolve(root,'tests/fixtures/watch/golden/successor-result.json'),'utf8'));
+valid(validateResult,successorGolden);
+valid(ajv.compile(load('impact')),successorGolden.impact);
+for(const pin of ['modelVersion','ir','graph','impact']){
+ const stale=structuredClone(successorGolden);
+ if(pin==='modelVersion')stale.pins.modelVersion='0.2.16';else stale.pins.versions[pin]='0.2.16';
+ invalid(validateResult,stale);
+}
+const boundary=JSON.parse(readFileSync(resolve(root,'tests/fixtures/watch/golden/platform-qualification.json'),'utf8'));
+assert.equal(boundary.decision,'declared-runtime-evidence-boundary');
+assert.equal(boundary.crossCompilationIsRuntimeEvidence,false);
+assert.equal(boundary.windowsTestsAreMacosEvidence,false);
+assert.equal(boundary.deliveryEvidence.macos,'native-runtime-unavailable-no-macos-host');
+assert.equal(boundary.deliveryEvidence.linux,'qualified-full-pass-later-wsl-revalidation-blocked');
+assert.equal(boundary.linuxRevalidation.fullWatchGatePass,true);
+assert.equal(boundary.linuxRevalidation.disposition,'retain-qualified-evidence-no-blanket-stable-host-claim');
+assert.deepEqual(boundary.linuxRevalidation.subsequentBounds,['clean-validate-and-watch-oracle-30s-deadlines','wsl-exec-unresponsive-before-shell-start']);
+assert.equal(boundary.macosPolicy.memory,'sampled-resident-supervision-degraded-not-hard-ceiling');
+assert.equal(boundary.macosPolicy.missingEnforcement,'refuse-no-ambient-fallback');
 const protocolCheck=spawnSync(process.execPath,[resolve(root,'scripts/gen-watch-protocol.mjs'),'--check'],{cwd:root,encoding:'utf8'});
 assert.equal(protocolCheck.status,0,protocolCheck.stderr);
 const check=spawnSync(process.execPath,[resolve(root,'scripts/gen-watch-contracts.mjs'),'--check'],{cwd:root,encoding:'utf8'});

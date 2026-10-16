@@ -285,10 +285,14 @@
                 "minLength": 1,
                 "maxLength": 256,
                 "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)*$"
+              },
+              "ir_path": {
+                "$ref": "#/$defs/logicalPath"
               }
             },
             "required": [
-              "target"
+              "target",
+              "ir_path"
             ]
           }
         }
@@ -408,10 +412,23 @@
           "properties": {
             "selection": {
               "const": true
+            },
+            "model_versions": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "0.2.16",
+                  "0.8.0"
+                ]
+              }
             }
           },
           "required": [
-            "selection"
+            "selection",
+            "model_versions"
           ]
         }
       }
@@ -3299,6 +3316,9 @@
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
+        "pins": {
+          "$ref": "#/$defs/WatchPins"
+        },
         "scope": {
           "enum": [
             "module",
@@ -3333,6 +3353,7 @@
       },
       "required": [
         "source_revision",
+        "pins",
         "scope",
         "symbols",
         "changed_paths"
@@ -3380,6 +3401,57 @@
               "required": [
                 "module"
               ]
+            }
+          }
+        }
+      ]
+    },
+    "WatchPins": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model_version": {
+          "enum": [
+            "0.2.16",
+            "0.8.0"
+          ]
+        },
+        "ir_version": {
+          "enum": [
+            "0.2.16",
+            "0.8.0"
+          ]
+        },
+        "ir_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "model_version",
+        "ir_version",
+        "ir_digest"
+      ],
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "model_version": {
+              "const": "0.2.16"
+            },
+            "ir_version": {
+              "const": "0.2.16"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "model_version": {
+              "const": "0.8.0"
+            },
+            "ir_version": {
+              "const": "0.8.0"
             }
           }
         }

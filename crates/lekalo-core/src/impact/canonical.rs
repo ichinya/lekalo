@@ -50,8 +50,14 @@ fn render(result: &ImpactResult, digest: &str) -> Result<String, DiagnosticSet> 
         field_raw("profile", quote(result.request.profile().key())),
     ]);
     let mut out = object(vec![
-        field_raw("schemaVersion", quote(super::version::SCHEMA_VERSION)),
-        field_raw("identity", quote(super::version::IDENTITY)),
+        field_raw(
+            "schemaVersion",
+            quote(super::version::schema_version_for(result.model_version)),
+        ),
+        field_raw(
+            "identity",
+            quote(super::version::identity_for(result.model_version)),
+        ),
         field_raw("algorithm", quote(super::version::ALGORITHM)),
         field_raw("modelVersion", quote(result.model_version.as_str())),
         field_raw("project", optional(result.project.as_deref().map(quote))),

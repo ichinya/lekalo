@@ -151,6 +151,13 @@ pub(crate) fn compute(
     }
     if unresolved_changed > 0 {
         migration_state = SectionState::Unknown;
+        // Unknown target/metadata paths cannot make migration risk safe.
+        // Bind that uncertainty to the known radius and its real cause;
+        // empty subject/reason lists violate the closed impact contract.
+        migration_subjects.extend(radius.keys().cloned());
+        migration_subjects.sort();
+        migration_subjects.dedup();
+        migration_reasons.push(reason::CHANGED_INPUT.to_owned());
     }
     if !migration_subjects.is_empty() || migration_state == SectionState::Unknown {
         migration_reasons.sort();

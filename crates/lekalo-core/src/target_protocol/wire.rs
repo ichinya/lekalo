@@ -409,7 +409,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
     }
     if let Some(c) = &response.capabilities {
         if c.watch.as_ref().is_some_and(|support| {
-            response.protocol_version != super::version::WATCH_VERSION || !support.selection
+            response.protocol_version != super::version::WATCH_VERSION || !support.valid()
         }) {
             return invalid;
         }

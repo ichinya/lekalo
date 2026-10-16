@@ -1,0 +1,10 @@
+{
+  "cases": [
+    {"case":"unknown","schema":"invalid","runtime":"watch-selection","spawned":false},
+    {"case":"mixed","schema":"invalid","runtime":"watch-selection","spawned":false},
+    {"case":"stale","schema":"valid","runtime":"watch-ir-pin","spawned":false},
+    {"case":"undeclared-model","schema":"valid","runtime":"ir-unsupported","spawned":false},
+    {"case":"undeclared-ir","schema":"valid","runtime":"ir-unsupported","spawned":false},
+    {"case":"legacy","schema":"invalid","runtime":"watch-selection-unsupported","spawned":false}
+  ]
+}

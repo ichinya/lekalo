@@ -480,6 +480,23 @@ impl TargetClient {
                 detail: "watch-selection",
             });
         }
+        if let Some(selection) = selection {
+            if !selection.valid() {
+                return Err(TargetFailure::RequestInvalid {
+                    detail: "watch-selection",
+                });
+            }
+            if !capabilities.watch.as_ref().is_some_and(|support| {
+                support
+                    .model_versions
+                    .contains(&selection.pins.model_version)
+            }) || !capabilities
+                .ir_versions
+                .contains(&selection.pins.ir_version)
+            {
+                return Err(TargetFailure::IrUnsupported);
+            }
+        }
         // Issue #89: the manifest-enforced budget is the ceiling. The
         // described scopes pass through the budget check before any
         // sandbox exists; exceeding scopes refuse as
@@ -512,10 +529,10 @@ impl TargetClient {
             })?;
         // Refuse undeclared IR support before disclosing project IR.
         if request.operation.requires_ir()
-            && !capabilities
-                .ir_versions
-                .iter()
-                .any(|declared| declared == crate::ir::version::VERSION)
+            && !capabilities.ir_versions.iter().any(|declared| {
+                declared
+                    == selection.map_or(crate::ir::version::VERSION, |s| s.pins.ir_version.as_str())
+            })
         {
             return Err(TargetFailure::IrUnsupported);
         }
@@ -549,6 +566,25 @@ impl TargetClient {
             .is_some_and(|path| !inputs.get(path).is_some_and(|value| value != "directory"))
         {
             return Err(TargetFailure::RequestInvalid { detail: "ir-input" });
+        }
+        if let Some(selection) = selection {
+            let ir = request.ir_path.ok_or(TargetFailure::RequestInvalid {
+                detail: "watch-ir-pin",
+            })?;
+            let (dir, name) = ir.rsplit_once('/').unwrap_or(("", ir));
+            let bytes = fs
+                .read_file_opt(dir, name, version::MAX_FILE_BYTES)
+                .map_err(|_| TargetFailure::RequestInvalid {
+                    detail: "watch-ir-pin",
+                })?
+                .ok_or(TargetFailure::RequestInvalid {
+                    detail: "watch-ir-pin",
+                })?;
+            if !selection.pins.matches_ir(&bytes) {
+                return Err(TargetFailure::RequestInvalid {
+                    detail: "watch-ir-pin",
+                });
+            }
         }
         let context = plan::sha256_hex(&canonical_bytes(&(
             &root,

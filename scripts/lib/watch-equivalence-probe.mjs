@@ -94,10 +94,11 @@ async function trace({binary,project,env,flags,edits,check}) {
 }
 export async function multiStageEquivalence({root,binary}) {
  const env={...process.env};delete env.LEKALO_PROJECT;let comparisons=0,settled=0;
+ for(const fixture of ['project','project-successor']) {
  for(const scenario of ['semantic-and-format','parse-recovery','generated-and-lock']) {
   const project=mkdtempSync(join(tmpdir(),'lekalo-watch-stages-'));
   try {
-   cpSync(join(root,'tests/fixtures/watch/project'),project,{recursive:true});
+   cpSync(join(root,'tests/fixtures/watch',fixture),project,{recursive:true});
    assert.equal(clean(binary,project,['lock'],env).status,'valid');
    git(project,env,['init','-q']);commit(project,env);
    const source=join(project,'lekalo/modules/planner/entities.yaml');
@@ -133,5 +134,6 @@ export async function multiStageEquivalence({root,binary}) {
    }});
   }finally{rmSync(project,{recursive:true,force:true});}
  }
- return {comparisons,settled};
+ }
+ return {comparisons,settled,modelVersions:['0.2.16','0.8.0']};
 }
