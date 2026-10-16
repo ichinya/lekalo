@@ -3,7 +3,7 @@
 import {createHash} from 'node:crypto';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import {spawnSync} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
 const hash=bytes=>'sha256:'+createHash('sha256').update(bytes).digest('hex');
 const adapter={id:'watch-fixture',version:'0.8.0',digest:hash(readFileSync(fileURLToPath(import.meta.url)))};
 const canonical=value=>Array.isArray(value)?'['+value.map(canonical).join(',')+']':value&&typeof value==='object'?'{'+Object.keys(value).sort().map(key=>JSON.stringify(key)+':'+canonical(value[key])).join(',')+'}':JSON.stringify(value);
@@ -13,6 +13,14 @@ if(request.operation==='describe') {
  respond({capabilities:{adapter,protocol_versions:['0.3.2'],operations:['describe','scan','validate'],targets:['watch-fixture'],profiles:['default'],read_scopes:['.lekalo/cache/ir/**','src/**'],write_scopes:[],transports:['stdin'],progress:false,ir_versions:['0.2.16'],capabilities:{'scan.symbols':'full'},constraints:{max_entries:1000}}});
 } else {
  const control=readFileSync('src/control.txt','utf8').trim();
+ if(control==='linux-limits') {
+   const limits=readFileSync('/proc/self/limits','utf8');
+   if(!/^Max address space\s+8589934592\s+8589934592\s+bytes[ \t]*$/m.test(limits)||!/^Max processes\s+64\s+64\s+processes[ \t]*$/m.test(limits))throw new Error('namespace bounds missing');
+ }
+ if(control==='tree-hang') {
+   spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:['ignore','inherit','inherit']});
+   await new Promise(resolve=>setTimeout(resolve,30000));
+ }
  if(control==='child') {
    const child=spawnSync(process.execPath,['-e','setTimeout(()=>{},30000)'],{stdio:'ignore',timeout:500});
    if(!child.error||child.error.code==='ETIMEDOUT'||child.pid)throw new Error('child was not denied before execution');

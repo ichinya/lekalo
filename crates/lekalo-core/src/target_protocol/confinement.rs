@@ -25,10 +25,103 @@ pub(super) const SANDBOX_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// primitive.
 pub(super) const SANDBOX_TASK_BOUND: u64 = 64;
 
+/// The Linux address-space bound (`RLIMIT_AS`) applied through the
+/// prlimit wrapper inside the sandbox namespace. Unlike the Windows
+/// job commit-charge cap this counts *reservations*: a V8 runtime
+/// reserves multi-GiB virtual cages while committing far less, so the
+/// honest bound must cover the reservation, not the commit charge. It
+/// is a real cap on runaway mappings — enforcement is recorded
+/// `Degraded`, never claimed equivalent to the Windows memory job.
+pub(super) const SANDBOX_ADDRESS_SPACE_LIMIT_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+
+/// The read-only execution lane one host can actually build. This is
+/// the hermetic model the platform probes resolve into; the watch
+/// target admission (`TargetClient::bounded_read_only_available`)
+/// requires both a memory and a process bound before any adapter runs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ReadOnlyLane {
+    /// Windows job object: commit-charge memory cap and an
+    /// active-process cap of one when children are denied.
+    WindowsJob,
+    /// Linux bubblewrap namespace with the prlimit wrapper: an
+    /// address-space cap plus the per-user-namespace task bound
+    /// (kernel ≥ 5.14). Resource enforcement is honestly `Degraded`.
+    LinuxNamespace,
+    /// macOS `sandbox-exec`: filesystem and network denial only — no
+    /// memory or process primitive exists, so bounded read-only
+    /// adapter execution refuses rather than claiming a bound.
+    MacOsSandboxExec,
+    /// No bounded lane exists (unknown platform, or Linux without
+    /// bubblewrap/prlimit/kernel support).
+    Unavailable,
+}
+
+/// Resolve the lane from platform facts. Pure and testable on any
+/// development platform; the callers feed it their `cfg!`/host probes.
+pub(super) fn read_only_lane(
+    windows: bool,
+    linux: bool,
+    macos: bool,
+    bwrap: bool,
+    prlimit: bool,
+) -> ReadOnlyLane {
+    if windows {
+        ReadOnlyLane::WindowsJob
+    } else if linux {
+        if bwrap && prlimit {
+            ReadOnlyLane::LinuxNamespace
+        } else {
+            ReadOnlyLane::Unavailable
+        }
+    } else if macos {
+        ReadOnlyLane::MacOsSandboxExec
+    } else {
+        ReadOnlyLane::Unavailable
+    }
+}
+
+/// The lane's honest memory bound (`None` when the platform has no
+/// primitive and execution must refuse).
+pub(super) fn lane_memory_bound(lane: ReadOnlyLane) -> Option<u64> {
+    match lane {
+        ReadOnlyLane::WindowsJob => Some(SANDBOX_MEMORY_LIMIT_BYTES),
+        ReadOnlyLane::LinuxNamespace => Some(SANDBOX_ADDRESS_SPACE_LIMIT_BYTES),
+        ReadOnlyLane::MacOsSandboxExec | ReadOnlyLane::Unavailable => None,
+    }
+}
+
+/// The lane's honest process/task bound (`None` when children are
+/// merely unenforced rather than bounded).
+pub(super) fn lane_process_bound(lane: ReadOnlyLane, children_denied: bool) -> Option<u64> {
+    if !children_denied {
+        return None;
+    }
+    match lane {
+        ReadOnlyLane::WindowsJob => Some(1),
+        ReadOnlyLane::LinuxNamespace => Some(SANDBOX_TASK_BOUND),
+        ReadOnlyLane::MacOsSandboxExec | ReadOnlyLane::Unavailable => None,
+    }
+}
+
+/// Whether the Linux bubblewrap sandbox binary exists (the namespace
+/// the prlimit bounds apply inside).
+#[cfg(target_os = "linux")]
+fn bwrap_available() -> bool {
+    Path::new("/usr/bin/bwrap").is_file()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn bwrap_available() -> bool {
+    false
+}
+
 /// The per-session sandbox policy the budget projects onto the OS
 /// primitives (issue #89).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct SandboxPolicy {
+    /// Watch's opt-in Linux address-space cap; predecessor command
+    /// policies and their evidence remain unchanged.
+    pub bounded_resources: bool,
     /// `processes.children: denied` — children are refused where the
     /// platform has a primitive and bounded/honestly reported where it
     /// does not. Children that do spawn stay inside the sandbox either
@@ -45,15 +138,22 @@ impl SandboxPolicy {
     /// probes and the describe handshake).
     pub fn strict() -> Self {
         Self {
+            bounded_resources: false,
             children_denied: true,
             network_allowlist: false,
         }
+    }
+
+    pub fn with_bounded_resources(mut self, required: bool) -> Self {
+        self.bounded_resources = required;
+        self
     }
 
     /// Project the session budget onto the sandbox policy.
     pub fn from_budget(budget: &crate::adapter_package::budget::SessionBudget) -> Self {
         use crate::adapter_package::budget::{ChildPolicy, NetworkBudget};
         Self {
+            bounded_resources: false,
             children_denied: budget.children() == ChildPolicy::Denied,
             network_allowlist: matches!(budget.network(), NetworkBudget::Allowlist(_)),
         }
@@ -119,6 +219,16 @@ impl ConfinementReport {
         };
         let resources = if cfg!(windows) {
             Enforcement::Enforced
+        } else if policy.bounded_resources
+            && cfg!(target_os = "linux")
+            && prlimit_available()
+            && bwrap_available()
+        {
+            // The namespace bounds the adapter's address space through
+            // RLIMIT_AS. That is a real cap on runaway mappings, but it
+            // counts reservations rather than commit charge — an honest
+            // `Degraded`, never a claim of Windows-job equivalence.
+            Enforcement::Degraded
         } else {
             // Linux RLIMIT_RSS is a historical no-op and macOS exposes
             // no sandbox primitive: recording anything stronger would
@@ -141,23 +251,28 @@ impl ConfinementReport {
     /// when denied; the Linux task bound where the wrapper exists and
     /// the kernel bounds the namespace, `None` otherwise).
     pub(super) fn process_limit(&self) -> Option<u64> {
-        if !self.children_denied {
-            return None;
-        }
-        if cfg!(windows) {
-            Some(1)
-        } else if cfg!(target_os = "linux") && prlimit_available() {
-            Some(SANDBOX_TASK_BOUND)
-        } else {
-            None
-        }
+        lane_process_bound(host_read_only_lane(), self.children_denied)
     }
 
-    /// The effective memory bound for the evidence (Windows only).
+    /// The effective memory bound for the evidence: the Windows job
+    /// commit-charge cap, or the Linux namespace address-space bound.
     pub(super) fn memory_limit(&self) -> Option<u64> {
-        (cfg!(windows) && self.resources == Enforcement::Enforced)
-            .then_some(SANDBOX_MEMORY_LIMIT_BYTES)
+        lane_memory_bound(host_read_only_lane()).filter(|_| {
+            self.resources == Enforcement::Enforced || self.resources == Enforcement::Degraded
+        })
     }
+}
+
+/// The lane this host can actually build, from its `cfg` platform and
+/// the resolved sandbox/wrapper probes.
+fn host_read_only_lane() -> ReadOnlyLane {
+    read_only_lane(
+        cfg!(windows),
+        cfg!(target_os = "linux"),
+        cfg!(target_os = "macos"),
+        bwrap_available(),
+        prlimit_available(),
+    )
 }
 
 /// Whether the Linux `prlimit` wrapper is available for the bounded
@@ -666,24 +781,30 @@ impl Sandbox {
             self.project.to_string_lossy().into_owned(),
             "--".into(),
         ]);
-        // Issue #89: a denied children policy cannot be enforced inside
-        // bwrap (no fork primitive), but where the resolved prlimit
-        // binary exists and the kernel charges RLIMIT_NPROC per user
-        // namespace (≥5.14) it bounds the confined tree — applied to the
-        // payload INSIDE the namespace, not around bwrap. Outside the
-        // namespace the rlimit check compares against the task's current
-        // (init) userns count — the whole-uid task total — so a busy
-        // host trips the bound before bwrap's setup fork even runs.
-        // Inside the fresh userns the count covers only this tree, so
-        // the bound tracks the sandbox deterministically. The report
-        // records the bound (or its honest absence) either way.
+        // Issue #89/#95: the prlimit wrapper bounds the payload INSIDE
+        // the namespace, not around bwrap. Outside the namespace the
+        // rlimit check compares against the whole-uid task total, so a
+        // busy host trips the bound before bwrap's setup fork even
+        // runs; inside the fresh userns the count covers only this
+        // tree. The namespace lane additionally caps the address space
+        // (`--as=`, reservation-inclusive, recorded honestly as a
+        // degraded memory bound); the task bound applies when children
+        // are denied. The report records whichever bounds actually
+        // applied (or their honest absence).
+        let lane = self.policy.bounded_resources
+            && matches!(host_read_only_lane(), ReadOnlyLane::LinuxNamespace);
+        let mut wrapper_limits = Vec::new();
+        if lane {
+            wrapper_limits.push(format!("--as={SANDBOX_ADDRESS_SPACE_LIMIT_BYTES}"));
+        }
         if self.policy.children_denied {
+            wrapper_limits.push(format!("--nproc={SANDBOX_TASK_BOUND}"));
+        }
+        if !wrapper_limits.is_empty() {
             if let Some(prlimit) = prlimit_path() {
-                args.extend([
-                    prlimit.to_string_lossy().into_owned(),
-                    format!("--nproc={SANDBOX_TASK_BOUND}"),
-                    "--".into(),
-                ]);
+                args.push(prlimit.to_string_lossy().into_owned());
+                args.extend(wrapper_limits);
+                args.push("--".into());
             }
         }
         args.push(command.program.to_string_lossy().into_owned());
@@ -801,6 +922,95 @@ fn resolve_program(program: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The lane model is hermetic: every platform combination resolves
+    // identically on any development host, so the Linux/macOS watch
+    // target admission behavior is provable without a hosted lane
+    // (issue #95). Real bwrap/prlimit execution stays on the unix
+    // qualification test below and the hosted CI matrix.
+    #[test]
+    fn read_only_lanes_resolve_from_platform_facts() {
+        assert_eq!(
+            read_only_lane(true, false, false, false, false),
+            ReadOnlyLane::WindowsJob
+        );
+        // Linux needs both bubblewrap and the prlimit wrapper: either
+        // missing is an honest refusal, never an unbounded run.
+        assert_eq!(
+            read_only_lane(false, true, false, true, true),
+            ReadOnlyLane::LinuxNamespace
+        );
+        assert_eq!(
+            read_only_lane(false, true, false, true, false),
+            ReadOnlyLane::Unavailable
+        );
+        assert_eq!(
+            read_only_lane(false, true, false, false, true),
+            ReadOnlyLane::Unavailable
+        );
+        // macOS has no memory/process primitive: refusal, not a claim.
+        assert_eq!(
+            read_only_lane(false, false, true, true, true),
+            ReadOnlyLane::MacOsSandboxExec
+        );
+        assert_eq!(
+            read_only_lane(false, false, false, true, true),
+            ReadOnlyLane::Unavailable
+        );
+    }
+
+    #[test]
+    fn lane_bounds_admit_only_both_dimensions() {
+        // A watch target run requires a memory AND a process bound
+        // (`TargetClient::bounded_read_only_available`): the job lane
+        // and the namespace lane qualify, macOS and unavailable never.
+        for (lane, memory, processes) in [
+            (
+                ReadOnlyLane::WindowsJob,
+                Some(SANDBOX_MEMORY_LIMIT_BYTES),
+                Some(1),
+            ),
+            (
+                ReadOnlyLane::LinuxNamespace,
+                Some(SANDBOX_ADDRESS_SPACE_LIMIT_BYTES),
+                Some(SANDBOX_TASK_BOUND),
+            ),
+            (ReadOnlyLane::MacOsSandboxExec, None, None),
+            (ReadOnlyLane::Unavailable, None, None),
+        ] {
+            assert_eq!(lane_memory_bound(lane), memory, "{lane:?}");
+            assert_eq!(lane_process_bound(lane, true), processes, "{lane:?}");
+            assert_eq!(
+                lane_process_bound(lane, false),
+                None,
+                "{lane:?} declared children"
+            );
+        }
+        // The Linux address-space bound is a weaker semantics than the
+        // Windows commit-charge cap: it must stay strictly larger so a
+        // degraded report can never claim job-equivalence by accident.
+        const _: () = assert!(SANDBOX_ADDRESS_SPACE_LIMIT_BYTES > SANDBOX_MEMORY_LIMIT_BYTES);
+    }
+
+    #[test]
+    fn linux_lane_reports_degraded_resources_and_qualifies_for_watch() {
+        // The namespace lane computes a Degraded (never Enforced)
+        // resources dimension with both bounds present.
+        #[cfg(target_os = "linux")]
+        if matches!(host_read_only_lane(), ReadOnlyLane::LinuxNamespace) {
+            let report =
+                ConfinementReport::compute(SandboxPolicy::strict().with_bounded_resources(true));
+            assert_eq!(report.resources, Enforcement::Degraded);
+            let legacy = ConfinementReport::compute(SandboxPolicy::strict());
+            assert_eq!(legacy.resources, Enforcement::Unenforced);
+            assert_eq!(legacy.memory_limit(), None);
+            assert!(report.memory_limit().is_some() && report.process_limit().is_some());
+            return;
+        }
+        // On any host without a live namespace lane, the model still
+        // proves the report a Degraded lane would publish.
+        assert!(lane_memory_bound(ReadOnlyLane::LinuxNamespace).is_some());
+    }
 
     // Qualification-only evidence from fixed code and owned synthetic data.
     // Product diagnostics must continue to discard raw backend/provider stderr.

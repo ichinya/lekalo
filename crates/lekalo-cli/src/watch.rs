@@ -102,30 +102,10 @@ impl Native {
         lost: Arc<AtomicBool>,
         failed: Arc<AtomicBool>,
     ) -> Result<Self, ()> {
-        let watcher =
-            notify::recommended_watcher(move |event: notify::Result<notify::Event>| match event {
-                Ok(event)
-                    if !matches!(
-                        event.kind,
-                        EventKind::Access(_)
-                            | EventKind::Modify(notify::event::ModifyKind::Metadata(_))
-                    ) =>
-                {
-                    if event.need_rescan() {
-                        lost.store(true, Ordering::SeqCst);
-                    }
-                    for path in event.paths {
-                        if tx.try_send(path).is_err() {
-                            lost.store(true, Ordering::SeqCst);
-                        }
-                    }
-                }
-                Ok(_) => {}
-                Err(_) => {
-                    failed.store(true, Ordering::SeqCst);
-                }
-            })
-            .map_err(|_| ())?;
+        let watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+            native_event(event, &tx, &lost, &failed);
+        })
+        .map_err(|_| ())?;
         Ok(Self {
             watcher,
             watched: BTreeSet::new(),
@@ -151,6 +131,46 @@ impl Native {
         Ok(())
     }
 }
+// Shared by the real callback and hermetic inotify/FSEvents event traces.
+fn native_event(
+    event: notify::Result<notify::Event>,
+    tx: &mpsc::SyncSender<PathBuf>,
+    lost: &AtomicBool,
+    failed: &AtomicBool,
+) {
+    use core::backend::{native_verdict, NativeEvent, NativeVerdict};
+    let model = match &event {
+        Ok(event) => NativeEvent {
+            error: false,
+            access_only: matches!(event.kind, EventKind::Access(_)),
+            metadata_only: matches!(
+                event.kind,
+                EventKind::Modify(notify::event::ModifyKind::Metadata(_))
+            ),
+            need_rescan: event.need_rescan(),
+        },
+        Err(_) => NativeEvent {
+            error: true,
+            ..Default::default()
+        },
+    };
+    match native_verdict(model) {
+        NativeVerdict::Ignore => {}
+        NativeVerdict::Deliver => {
+            // Preserve native paths without a lossy string round trip.
+            for path in event.expect("deliver is an ordinary event").paths {
+                if tx.try_send(path).is_err() {
+                    lost.store(true, Ordering::SeqCst);
+                }
+            }
+        }
+        NativeVerdict::Overflow => lost.store(true, Ordering::SeqCst),
+        NativeVerdict::BackendFailed => failed.store(true, Ordering::SeqCst),
+    }
+}
+#[cfg(test)]
+#[path = "watch_backend_tests.rs"]
+mod backend_tests;
 #[cfg(test)]
 #[path = "watch_output_tests.rs"]
 mod output_tests;
@@ -405,9 +425,12 @@ fn dirty(
                 let max = read_budget.min(8 * 1024 * 1024);
                 if let Ok(Some(bytes)) = fs.read_file_opt(dir, name, max) {
                     read_budget = read_budget.saturating_sub(bytes.len());
-                    if format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes))
-                        == record.sha256
-                    {
+                    // Poll semantics: identical bytes after a touch are
+                    // not a change (content digest, never the timestamp).
+                    if !core::backend::poll_content_changed(
+                        Some(record.sha256.as_str()),
+                        Some(&bytes),
+                    ) {
                         continue;
                     }
                 }
@@ -635,9 +658,10 @@ fn run_inner(args: WatchArgs, json_requested: bool, no_cache: bool) -> Result<u8
         dirty(&rx, &root, &policy, &inventory, &mut scheduler, now);
         let subscription_lost = failed.swap(false, Ordering::SeqCst);
         let overflow = lost.swap(false, Ordering::SeqCst);
-        if subscription_lost || overflow {
+        let recovery = core::backend::recovery(request.backend, subscription_lost, overflow);
+        if recovery != core::backend::Recovery::None {
             scheduler.require_full_rescan(now);
-            if subscription_lost && request.backend == WatchBackend::Auto {
+            if recovery == core::backend::Recovery::PollFallback {
                 native = None;
             }
             let seq = output.next();
@@ -660,7 +684,7 @@ fn run_inner(args: WatchArgs, json_requested: bool, no_cache: bool) -> Result<u8
                 break;
             }
         }
-        if subscription_lost && request.backend == WatchBackend::Native {
+        if recovery == core::backend::Recovery::Stop {
             stop_reason = "terminal-refusal";
             terminal = true;
             break;

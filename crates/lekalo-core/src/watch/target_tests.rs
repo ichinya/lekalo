@@ -1,8 +1,8 @@
 use super::*;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[path = "target_cancel_tests.rs"]
 mod cancellation;
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 #[path = "target_resource_tests.rs"]
 mod resources;
 use crate::watch::{
@@ -106,14 +106,14 @@ fn execute(
         },
     )
 }
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 fn policy(root: &Path) -> CapturePolicy {
     CapturePolicy {
         target_roots: preflight(root, &["watch-fixture".to_owned()], 5000).unwrap(),
         generate_check: false,
     }
 }
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn scan_and_validation_are_ephemeral_and_read_only_including_write_probe() {
     let root = project();
@@ -124,14 +124,19 @@ fn scan_and_validation_are_ephemeral_and_read_only_including_write_probe() {
         .target_roots
         .iter()
         .any(|path| path.starts_with(".lekalo/cache")));
-    for mode in ["ok", "write", "child"] {
+    let modes = if cfg!(windows) {
+        ["ok", "write", "child"]
+    } else {
+        ["ok", "write", "linux-limits"]
+    };
+    for mode in modes {
         std::fs::write(root.path().join("src/control.txt"), mode).unwrap();
         let before = snapshot::capture_with_policy(root.path(), &policy).unwrap();
         let outcome = execute(root.path(), &policy, 5000, false);
         assert_eq!(
             outcome.status,
             Status::Valid,
-            "{:?}",
+            "{mode}: {:?}",
             outcome.result.diagnostics
         );
         assert!(outcome
@@ -153,21 +158,45 @@ fn scan_and_validation_are_ephemeral_and_read_only_including_write_probe() {
         assert!(!root.path().join(".lekalo/observed").exists());
     }
 }
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn crash_timeout_invalid_scan_and_later_recovery_do_not_destroy_core_results() {
     let root = project();
     let policy = policy(root.path());
-    for (mode, status) in [
+    let mut service = WatchService::new(WatchRequest {
+        targets: vec!["watch-fixture".to_owned()],
+        adapter_timeout_ms: 5000,
+        ..WatchRequest::default()
+    })
+    .unwrap();
+    // Every outcome is committed into the SAME service. Constructing a
+    // fresh service for each mode would not prove session recovery.
+    for (index, (mode, status)) in [
         ("crash", Status::Unavailable),
         ("hang", Status::Unavailable),
         ("bad-scan", Status::Unavailable),
         ("bad-detail", Status::Invalid),
         ("invalid", Status::Invalid),
         ("ok", Status::Valid),
-    ] {
+        ("crash", Status::Unavailable),
+        ("ok", Status::Valid),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         std::fs::write(root.path().join("src/control.txt"), mode).unwrap();
-        let outcome = execute(root.path(), &policy, 2000, false);
+        let captured = snapshot::capture_with_policy(root.path(), &policy).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let outcome = service.run_revision(
+            &captured,
+            scratch.path(),
+            &RunContext {
+                run_id: index as u64 + 1,
+                generation: index as u64,
+                full_rescan: index == 0,
+                cancel: &AtomicBool::new(false),
+            },
+        );
         assert_eq!(
             outcome.status, status,
             "{mode}: {:?}",
@@ -184,7 +213,19 @@ fn crash_timeout_invalid_scan_and_later_recovery_do_not_destroy_core_results() {
                 .diagnostics
                 .iter()
                 .any(|d| d.id() == "watch.adapter-recovery"));
+        } else if status == Status::Valid {
+            assert!(outcome
+                .result
+                .diagnostics
+                .iter()
+                .all(|d| d.id() != "watch.adapter-recovery"));
+            assert_eq!(outcome.result.pins.adapters.len(), 1);
         }
+        service.commit(outcome.staged);
+        assert_eq!(
+            service.accepted().unwrap().revision,
+            outcome.source_revision
+        );
     }
 }
 #[test]

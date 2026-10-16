@@ -7,6 +7,7 @@ import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {assertRegistryUnion} from './lib/registry-union.mjs';
 const require=createRequire(import.meta.url);
 assert.equal(require('ajv/package.json').version,'8.17.1');
 const Ajv=require('ajv/dist/2020').default;
@@ -56,6 +57,20 @@ invalid(validateEvent,{...incomplete,committed:true});
 invalid(validateEvent,{...events[3],committed:true});
 const noRevision=structuredClone(events[3]);delete noRevision.sourceRevision;invalid(validateEvent,noRevision);
 invalid(validateEvent,{...events[2],result:{...result,rawSource:'secret'}});
+// Count our additions only; preserve EVERY predecessor rule and admit
+// only the live integrated families (not an arbitrary foreign namespace).
+const predecessor=JSON.parse(readFileSync(resolve(root,'contracts/diagnostic-registry.v0.6.5.json'),'utf8'));
+const successor=JSON.parse(readFileSync(resolve(root,'contracts/diagnostic-registry.v0.8.0.json'),'utf8'));
+const unionPolicy={families:['format.','adoption.','portability.','worklog-changelog.','managed.','module-api.','tasklink.','watch.'],ownPrefix:'watch.',ownCount:7};
+const union=registry=>assertRegistryUnion(predecessor,registry,unionPolicy);
+union(successor);
+for(const [mutate,reason] of [
+ [j=>{j.entries.splice(j.entries.findIndex(e=>e.id===predecessor.entries[0].id),1);},/predecessor/],
+ [j=>{j.entries.find(e=>e.id===predecessor.entries[0].id).default_message='changed';},/predecessor/],
+ [j=>{j.entries.push({...j.entries[0],id:'foreign.input-invalid',code:'LEK-FOREIGN-001'});},/foreign-family/],
+ [j=>{j.entries=j.entries.filter(e=>e.id!=='watch.adapter-recovery');},/own-family/],
+ [j=>{j.entries.push(j.entries[0]);},/duplicate rule/],
+]){const draft=structuredClone(successor);mutate(draft);assert.throws(()=>union(draft),reason);}
 const check=spawnSync(process.execPath,[resolve(root,'scripts/gen-watch-contracts.mjs'),'--check'],{cwd:root,encoding:'utf8'});
 assert.equal(check.status,0,check.stderr);
-console.log(JSON.stringify({ok:true,positive,negative}));
+console.log(JSON.stringify({ok:true,positive,negative,registryEntries:successor.entries.length,watchRules:7,registryControls:5}));

@@ -11,6 +11,7 @@
 //! never generates, and never updates the lock; adapter work that
 //! cannot be proven read-only is reported explicitly unavailable.
 
+pub mod backend;
 mod budget;
 pub mod changes;
 pub mod compile;
@@ -641,6 +642,23 @@ impl WatchService {
             )
         };
         let compiled = loaded.and_then(|loaded| {
+            // Watch's closed nested pins currently admit Model/IR/graph
+            // 0.2.16 only. M8's new 0.8.0 loader admission must not cause
+            // an event that lies about those versions or fails its own
+            // schema. Refuse explicitly until the successor watch seam
+            // (including the impact contract) is qualified.
+            if loaded.model.model_version != crate::loader::ModelVersion::Current {
+                return Err(crate::DomainResult::UnsupportedOperation {
+                    diagnostics: crate::diagnostics::DiagnosticSet::try_from_unsorted(
+                        vec![diagnostics::selective_unavailable(
+                            "snapshot",
+                            "model-version",
+                        )],
+                        Status::Unsupported,
+                    )
+                    .expect("watch unsupported-version rule admission"),
+                });
+            }
             budget::admit_model(&loaded.model)?;
             let empty = compile::Fragments::default();
             let previous = if self.request.no_cache {

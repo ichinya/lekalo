@@ -234,6 +234,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-platform.mjs
           node scripts/test-watch-equivalence.mjs
+          node scripts/test-watch-faults.mjs
           node scripts/test-watch-consumers.mjs
       - name: Run the live portability contract gate (issue #19)
         env:

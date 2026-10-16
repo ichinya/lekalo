@@ -75,6 +75,18 @@ pub(crate) struct UnitValidation {
     pub diagnostics: Vec<crate::diagnostics::Diagnostic>,
     pub visited_symbols: std::collections::BTreeSet<String>,
 }
+#[cfg(test)]
+thread_local! {
+    // Actual subjects returned to the rule phases, not requested module
+    // labels or the watch report's executed/reused projection.
+    static SELECTED_VISITS: std::cell::RefCell<Vec<(bool, std::collections::BTreeSet<String>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+#[cfg(test)]
+pub(crate) fn take_selected_visits() -> Vec<(bool, std::collections::BTreeSet<String>)> {
+    SELECTED_VISITS.with(|log| std::mem::take(&mut *log.borrow_mut()))
+}
+
 pub(crate) fn validate_selected(
     compilation: &Compilation,
     profile: &ValidationProfile,
@@ -87,6 +99,11 @@ pub(crate) fn validate_selected(
     rules::semantic_phase(&mut context, profile);
     rules::portability_phase(&mut context, profile);
     let visited_symbols = context.visited();
+    #[cfg(test)]
+    SELECTED_VISITS.with(|log| {
+        log.borrow_mut()
+            .push((check_recursion, visited_symbols.clone()))
+    });
     UnitValidation {
         diagnostics: context.finish(),
         visited_symbols,

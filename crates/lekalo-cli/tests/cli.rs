@@ -352,7 +352,14 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
     // trees for the read-only dev loop).
     assert_eq!(
         cli_normal_dependencies,
-        ["clap", "lekalo-core", "notify", "rusqlite", "serde_json", "tempfile"]
+        [
+            "clap",
+            "lekalo-core",
+            "notify",
+            "rusqlite",
+            "serde_json",
+            "tempfile"
+        ]
     );
     // The only target-scoped dependency is the unix process-control
     // surface (issue #94 formatting custody on the M8 line); nothing else

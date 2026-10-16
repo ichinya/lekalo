@@ -232,6 +232,9 @@ pub struct TargetClient {
     /// strict implicit budget; `scan_service`/`catalog` set it from the
     /// resolved manifest after the trust/consistency gates.
     budget: SessionBudget,
+    /// Watch requires actual memory/process bounds for every exchange;
+    /// predecessor command policies do not opt into new Linux caps.
+    bounded_read_only: bool,
 }
 
 impl Default for TargetClient {
@@ -245,7 +248,9 @@ impl TargetClient {
     /// Watch cannot silently accept the legacy degraded memory/process
     /// dimensions. This is availability, not a claim that spawn succeeded.
     pub(crate) fn bounded_read_only_available() -> bool {
-        let report = confinement::ConfinementReport::compute(confinement::SandboxPolicy::strict());
+        let report = confinement::ConfinementReport::compute(
+            confinement::SandboxPolicy::strict().with_bounded_resources(true),
+        );
         report.memory_limit().is_some() && report.process_limit().is_some()
     }
 
@@ -255,7 +260,12 @@ impl TargetClient {
             described: None,
             binding: None,
             budget: SessionBudget::strict_implicit(),
+            bounded_read_only: false,
         }
+    }
+
+    pub(crate) fn require_bounded_read_only(&mut self) {
+        self.bounded_read_only = true;
     }
 
     /// Set the session's confinement budget (issue #89). Called after
@@ -347,8 +357,13 @@ impl TargetClient {
         );
         envelope.request_id = wire::request_id(&envelope);
         let serialized = serialize(&envelope)?;
-        let sandbox =
-            confinement::Sandbox::new(cwd, &[], &[], false, confinement::SandboxPolicy::strict())?;
+        let sandbox = confinement::Sandbox::new(
+            cwd,
+            &[],
+            &[],
+            false,
+            confinement::SandboxPolicy::strict().with_bounded_resources(self.bounded_read_only),
+        )?;
         // Safe discovery discloses nothing but the request bytes: the
         // handshake runs with empty scopes and an empty environment
         // regardless of the session budget (issue #89).
@@ -573,7 +588,8 @@ impl TargetClient {
             &effective.read,
             &effective.write,
             applying,
-            confinement::SandboxPolicy::from_budget(&self.budget),
+            confinement::SandboxPolicy::from_budget(&self.budget)
+                .with_bounded_resources(self.bounded_read_only),
         )?;
         let stage_fs = Fs::open(&sandbox.project).map_err(|_| TargetFailure::TransportFailed {
             detail: "sandbox-view",

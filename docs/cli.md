@@ -139,9 +139,14 @@ precede describe, including startup preparation. Only committed project-source
 adapters with full `scan.symbols` and scan/validate operations are supported;
 installed/registry supplies, overlapping generated read/write scopes, build
 read roots, implicit environment/network/child grants, and hosts without
-OS-enforced memory/process bounds are refused. Currently only the Windows job
-backend qualifies for target execution; Linux/macOS target support remains a
-mandatory gap, not an approved scope reduction.
+OS-enforced memory/process bounds are refused. Windows uses the 2 GiB job
+memory cap and one-process cap. Linux qualifies with bubblewrap, prlimit and
+kernel >= 5.14: watch explicitly opts into an 8 GiB address-space cap and a
+64-task per-user-namespace bound. Address space includes reservations, not
+RSS/commit charge; resource enforcement is honestly `degraded`, and the task
+bound is not a prohibition on individual forks. Other command policies are
+unchanged. macOS bounded target execution remains an explicit refusal (no
+memory/process primitive), not an approved scope reduction.
 
 Results pin component versions, captured Model/IR/source-map/graph/lock/profile
 and manifest digests, and verified adapter/capability/protocol identities.
@@ -156,19 +161,32 @@ emits `recovery-required` with `action: stop`, never a fake cancellation or an
 overlapping replacement. An unterminated final line after output failure is
 not a complete replacement.
 
-Outstanding required work includes negotiated targeted adapter selection,
-non-Windows bounded adapter execution, descendant/fault scenario breadth,
-CPU/retained-memory audits, and the full multi-stage clean-command equivalence
-matrix.
-Windows native/poll probes cover burst edits, atomic replacement, parent
-rename/deletion, generated drift/recovery with unchanged semantic revision,
-and excluded cache/build feedback. Twenty-eight clean CLI comparisons cover
-default/strict/module and authorization reviews; real slow/broken pipe probes
-verify fail-stop output. Target tests cover crash/timeout, invalid evidence,
-write/child denial and cancellation after owned scan spawn. CI is wired for
-Linux/macOS/Windows but
-wiring is not evidence of a hosted pass. The research acceptance authority is
-[issue-95-research.md](m8/issue-95-research.md), not this checkpoint description.
+The closed watch stage pins currently admit Model/IR/graph **0.2.16**.
+M8 Model 0.8.0 sources receive explicit unsupported coverage, never false
+legacy pins or a stream that violates its own schema. Qualifying successor
+watch/impact pins, negotiated targeted adapter selection, macOS bounded target
+execution, broader descendant faults and CPU/RSS audits remain required work.
+
+Validator instrumentation proves actual planner/dependent rule-subject visits
+without unrelated subjects, plus explicit global-input fallback. Twenty-eight
+clean validation comparisons are supplemented by 23 settled-stage comparisons
+over 12 revisions: validate, the complete impact payload/digest rebound to the
+same source-set base/candidate pair, and generate-check, including format-only
+saves, atomic replacement, invalid parse/recovery, generated drift and invalid
+lock/recovery. Invalid parse does not advance the accepted semantic baseline.
+A real long-lived CLI fault probe verifies crash -> invalid -> stale cancellation
+-> recovery with complete diagnostic replacements. Generated saves stay quiet
+for multiple reconciliation intervals; cache/build feedback remains excluded.
+
+Windows native/poll and Debian WSL inotify/poll qualification cover burst edits,
+atomic replacement, parent rename/deletion and drift. Hermetic notify traces
+exercise the real callback/channel/dirty-reader paths for inotify overflow,
+FSEvents rescan/error, split rename and metadata/identical-byte events; they do
+not substitute for a native macOS result. Real slow/broken pipe probes verify
+fail-stop output. Linux target tests inspect the actual namespace resource
+limits, not just declared values. CI includes Linux/macOS/Windows, but wiring
+is not evidence of a hosted pass. The acceptance authority remains
+[issue-95-research.md](m8/issue-95-research.md).
 
 ### `lekalo init`
 

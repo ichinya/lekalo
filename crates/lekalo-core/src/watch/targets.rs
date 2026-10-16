@@ -37,7 +37,7 @@ pub struct AdapterPin {
     pub profile: Option<String>,
 }
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, any(windows, target_os = "linux")))]
 thread_local! {
     static SCAN_ON_SPAWN: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
 }
@@ -432,7 +432,7 @@ fn scan_target(
         native_request: None,
         lint_request: None,
     };
-    #[cfg(all(test, windows))]
+    #[cfg(all(test, any(windows, target_os = "linux")))]
     if let Some(callback) = SCAN_ON_SPAWN.with(|slot| slot.borrow_mut().take()) {
         crate::target_protocol::transport::on_next_pump_start(callback);
     }

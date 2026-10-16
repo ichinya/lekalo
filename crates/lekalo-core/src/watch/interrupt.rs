@@ -50,8 +50,8 @@ fn install_platform() -> bool {
     // store is async-signal-safe; SIGINT keeps its default disposition
     // before the call and the handler is installed once per process.
     unsafe {
-        libc::signal(libc::SIGINT, handler as usize) != libc::SIG_ERR
-            && libc::signal(libc::SIGTERM, handler as usize) != libc::SIG_ERR
+        libc::signal(libc::SIGINT, handler as *const () as usize) != libc::SIG_ERR
+            && libc::signal(libc::SIGTERM, handler as *const () as usize) != libc::SIG_ERR
     }
 }
 

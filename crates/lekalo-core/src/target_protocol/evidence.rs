@@ -100,11 +100,13 @@ pub struct ChildrenEvidence {
 /// The resource bounds of the session and their honest enforcement.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ResourcesEvidence {
-    /// The enforced memory bound in bytes, when the platform enforces
-    /// one; `null` is an honest gap, never a guess.
+    /// The Windows commit-charge cap, or watch's opt-in Linux
+    /// reservation-inclusive address-space cap. `null` is an honest
+    /// gap, never a guess; the enforcement token distinguishes them.
     #[serde(rename = "memoryLimit")]
     pub memory_limit: Option<u64>,
-    /// `enforced` or `unenforced`.
+    /// `enforced` (Windows job), `degraded` (Linux address-space cap,
+    /// not commit-charge/RSS), or `unenforced` (no memory primitive).
     pub enforcement: &'static str,
 }
 

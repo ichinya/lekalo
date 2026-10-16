@@ -1,5 +1,7 @@
 use super::*;
 use std::sync::atomic::AtomicBool;
+#[path = "fault_tests.rs"]
+mod faults;
 
 fn project() -> tempfile::TempDir {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/watch/project");
@@ -57,8 +59,18 @@ fn selective_subjects_and_parse_ir_work_are_measured_not_filtered() {
         ),
         (5, 0)
     );
+    crate::validator::take_selected_visits();
     edit_planner(root.path());
     let next = run(&mut service, root.path(), 2);
+    // Instrumentation at the validator rule-subject seam proves these
+    // are execution counts, not module-filtered diagnostic rows.
+    let visits = crate::validator::take_selected_visits();
+    assert_eq!(visits.len(), 2); // one selected unit + mandatory global recursion
+    assert_eq!(
+        visits[0],
+        (false, BTreeSet::from(["planner.title".to_owned()]))
+    );
+    assert_eq!(visits[1], (true, BTreeSet::new()));
     assert_eq!(next.affected.scope, "selective");
     assert_eq!(next.affected.modules, ["planner"]);
     assert_eq!(
@@ -94,6 +106,10 @@ fn selective_subjects_and_parse_ir_work_are_measured_not_filtered() {
         clean(root.path())
     );
     let settled = run(&mut service, root.path(), 3);
+    assert_eq!(
+        crate::validator::take_selected_visits(),
+        vec![(true, BTreeSet::new())]
+    );
     assert_eq!(settled.counts.executed_units, 0);
     assert_eq!(settled.counts.reused_units, 2);
     let settled_counts = settled.pipeline_counts.unwrap();

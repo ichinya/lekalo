@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-// Independent clean CLI equivalence over default/strict/scoped metadata reviews.
+// Independent clean CLI equivalence over default/strict/scoped reviews
+// and settled validate/impact/generate-check stages on identical trees.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {cpSync,mkdtempSync,readFileSync,readdirSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {multiStageEquivalence} from './lib/watch-equivalence-probe.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const binary=process.env.LEKALO_BIN??join(root,'target/debug',process.platform==='win32'?'lekalo.exe':'lekalo');
 const env={...process.env};delete env.LEKALO_PROJECT;
@@ -46,4 +48,5 @@ for(const fixture of ['watch/project','authorization/planner','authorization/unc
    }
  }finally{rmSync(project,{recursive:true,force:true});}
 }
-console.log(JSON.stringify({ok:true,cases,platform:process.platform}));
+const multiStage=await multiStageEquivalence({root,binary});
+console.log(JSON.stringify({ok:true,cases,multiStage,platform:process.platform}));

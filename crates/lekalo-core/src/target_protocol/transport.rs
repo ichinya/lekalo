@@ -247,11 +247,11 @@ impl Process for std::process::Child {
     }
 }
 
-#[cfg(all(test, windows))]
+#[cfg(all(test, any(windows, target_os = "linux")))]
 thread_local! {
     static PUMP_START: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
 }
-#[cfg(all(test, windows))]
+#[cfg(all(test, any(windows, target_os = "linux")))]
 pub(crate) fn on_next_pump_start(callback: impl FnOnce() + 'static) {
     PUMP_START.with(|slot| *slot.borrow_mut() = Some(Box::new(callback)));
 }
@@ -262,7 +262,7 @@ pub(super) fn pump(
     limits: &TransportLimits,
     cancel: Option<&AtomicBool>,
 ) -> Result<TransportSuccess, TransportFailure> {
-    #[cfg(all(test, windows))]
+    #[cfg(all(test, any(windows, target_os = "linux")))]
     if let Some(callback) = PUMP_START.with(|slot| slot.borrow_mut().take()) {
         callback();
     }

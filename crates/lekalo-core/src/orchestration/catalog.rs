@@ -161,6 +161,9 @@ fn discover_constrained(
             },
         ));
     }
+    if watch {
+        client.require_bounded_read_only();
+    }
     client.set_budget(if policy == ExpansionPolicy::AllowEscalated {
         budget.with_expansion_allowed()
     } else {

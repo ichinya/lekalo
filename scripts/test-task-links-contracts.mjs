@@ -113,6 +113,7 @@ for (const [name, path] of Object.entries(schemas)) {
     "managed.",
     "tasklink.",
     "module-api.",
+    "watch.",
   ];
   const foreign = added.filter(
     (entry) => !landedFamilies.some((family) => entry.id.startsWith(family)),
