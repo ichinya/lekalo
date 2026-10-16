@@ -72,9 +72,9 @@ evidence remain the manifest ceiling, and `described` exceeds them.
 | Filesystem scopes | private staged view; LPAC read-only grants outside write roots | private staged view; ro-binds + `--remount-ro /`; write roots bound | private staged view; write only into declared roots |
 | Network | denied (LPAC, no network capability) | denied (`--unshare-all`) | denied (deny-default profile) |
 | Network allowlist | `degraded-denied` — no namespace-level destination filter exists | `degraded-denied` | `degraded-denied` |
-| Children denied | `denied-enforced`: job `ACTIVE_PROCESS` limit = 1 | `denied-bounded` (kernel ≥ 5.14, per-userns task bound): `prlimit --nproc=64` wrapper when the wrapper exists and the release bounds `RLIMIT_NPROC` per user namespace, else `denied-unenforced` | `denied-unenforced` (no primitive) |
+| Children denied | `denied-enforced`: job `ACTIVE_PROCESS` limit = 1 | `denied-bounded` (kernel ≥ 5.14, per-userns task bound): `prlimit --nproc=64` wrapper when the wrapper exists and the release bounds `RLIMIT_NPROC` per user namespace, else `denied-unenforced` | Ordinary commands unchanged; watch explicitly denies `process-fork` (`denied-enforced`, one payload process) |
 | Children declared | `permitted` (children stay in the job) | `permitted` (children stay in the namespace) | `permitted` (children stay in the profile) |
-| Memory bound | `enforced`: job process-memory limit (2 GiB constant) | Default unchanged: `unenforced` (`RLIMIT_RSS` is a historical no-op); watch opts into `degraded`: `prlimit --as=8589934592` address-space cap inside the namespace | `unenforced` (no primitive) |
+| Memory bound | `enforced`: job process-memory limit (2 GiB constant) | Default unchanged: `unenforced` (`RLIMIT_RSS` is a historical no-op); watch opts into `degraded`: `prlimit --as=8589934592` address-space cap inside the namespace | Ordinary commands unchanged; watch opts into a `degraded` sampled 2 GiB resident-memory kill threshold, **not a hard allocation cap** |
 
 Every run also keeps the unconditional invariants: private scoped
 project view (write-only paths reveal shape, never source bytes),
@@ -97,8 +97,20 @@ validation all opt into `RLIMIT_AS` at 8 GiB, in addition to the 64-task bound.
 This caps virtual address-space reservations, **not** RSS/commit charge, so its
 resource evidence is `degraded`, not Windows-job-equivalent. Large virtual
 reservations can be refused even with little resident memory. Predecessor
-command budgets do not opt into this new cap. macOS has no equivalent bounded
-target lane and watch refuses target execution there before describe.
+command budgets do not opt into this new cap.
+
+Watch's macOS lane combines explicit seatbelt fork denial with a parent-side
+`proc_pidinfo(PROC_PIDTASKINFO)` resident-memory supervisor on the owned child.
+The sampler runs on each transport poll (5 ms while running); exceeding 2 GiB
+or losing the sampler fails closed and kills/reaps the payload. The evidence's
+`memoryLimit` is a **sampled kill threshold** when this lane says `degraded`:
+allocation can overshoot between samples, and it is not kernel-enforced job
+memory or an address-space ceiling. A confirmed exited process needs no further
+sample. Both sandbox availability and a successful sampler preflight are
+required before describe. Ordinary macOS command budgets remain unchanged.
+Driver-based tests execute the real pump/monitor with synthetic byte samples
+on any host (including sample failure and kill/reap), not Darwin's sampler or
+seatbelt; native macOS execution remains a separate CI qualification.
 
 ## Write-plan vs actual audit
 
@@ -169,7 +181,7 @@ The enforcement vocabulary is closed:
 - `budget.scopeCeiling`: `manifest` | `described`
 - `children.enforcement`: `denied-enforced` | `denied-bounded` |
   `denied-unenforced` | `permitted`
-- `resources.enforcement`: `enforced` | `unenforced`
+- `resources.enforcement`: `enforced` | `degraded` | `unenforced`
 
 No new diagnostic ids were required: budget escalations reuse the
 registered `adapter.permission-escalated` rule and confinement

@@ -35,9 +35,43 @@ pub struct AdapterPin {
     pub protocol_version: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
+    /// Actual module/global requests, including retained partition provenance.
+    pub work: Vec<TargetWork>,
 }
 
-#[cfg(all(test, any(windows, target_os = "linux")))]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetWork {
+    pub scope: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub module: Option<String>,
+    pub state: &'static str,
+    pub source_revision: String,
+    pub selection_digest: String,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TargetPartition {
+    pub work: TargetWork,
+    pub status: Status,
+    pub diagnostics: Vec<crate::diagnostics::Diagnostic>,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct TargetState {
+    pub pin: AdapterPin,
+    pub partitions: std::collections::BTreeMap<String, TargetPartition>,
+}
+
+pub(crate) struct SelectionContext<'a> {
+    pub affected: &'a super::selection::AffectedSet,
+    pub work: &'a [super::WorkUnitWire],
+    pub previous: &'a std::collections::BTreeMap<String, TargetState>,
+    pub old_symbols: &'a std::collections::BTreeMap<String, Vec<String>>,
+    pub symbols: &'a std::collections::BTreeMap<String, Vec<String>>,
+    pub changed_paths: Vec<String>,
+}
+
+#[cfg(all(test, any(windows, target_os = "linux", target_os = "macos")))]
 thread_local! {
     static SCAN_ON_SPAWN: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
 }
@@ -47,6 +81,7 @@ pub(crate) struct TargetScan {
     pub rows: Vec<StageRow>,
     pub diagnostics: Vec<crate::diagnostics::Diagnostic>,
     pub status: Status,
+    pub states: std::collections::BTreeMap<String, TargetState>,
 }
 
 fn mapped(failure: Failure) -> DomainResult {
@@ -298,6 +333,7 @@ pub fn preflight(
     Ok(roots)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn scan(
     scratch: &Path,
     request: &WatchRequest,
@@ -305,34 +341,87 @@ pub(crate) fn scan(
     compilation: &crate::ir::Compilation,
     snapshot: &InputSnapshot,
     cancel: &AtomicBool,
+    selection: &SelectionContext<'_>,
 ) -> TargetScan {
     let mut result = TargetScan {
         pins: Vec::new(),
         rows: Vec::new(),
         diagnostics: Vec::new(),
         status: Status::Valid,
+        states: std::collections::BTreeMap::new(),
     };
     for target in &request.targets {
         if cancel.load(Ordering::SeqCst) {
             break;
         }
-        match scan_target(
-            scratch,
-            target,
-            request,
-            model,
-            compilation,
-            snapshot,
-            cancel,
-        ) {
-            Ok(pin) => {
-                result.pins.push(pin);
-                result.rows.push(StageRow {
-                    reason: Some("adapter-full-scope".to_owned()),
-                    ..StageRow::executed("target-scan")
-                });
+        // Generated-only saves cannot trigger adapters, even describe.
+        // All semantic/lock/entry/target input bytes are unchanged.
+        let reused = !request.no_cache
+            && selection.changed_paths.is_empty()
+            && selection.previous.contains_key(target);
+        let execution = if reused {
+            let mut retained = selection.previous[target].clone();
+            for work in &mut retained.pin.work {
+                work.state = "reused";
+            }
+            for partition in retained.partitions.values_mut() {
+                partition.work.state = "reused";
+            }
+            Ok(retained)
+        } else {
+            scan_target(
+                scratch,
+                target,
+                request,
+                model,
+                compilation,
+                snapshot,
+                cancel,
+                selection,
+            )
+        };
+        match execution {
+            Ok(state) => {
+                for partition in state.partitions.values() {
+                    result.status = super::combine_statuses(result.status, partition.status);
+                    result
+                        .diagnostics
+                        .extend(partition.diagnostics.iter().cloned());
+                }
+                if state.partitions.values().any(|p| p.status != Status::Valid) {
+                    result.rows.push(StageRow::unavailable(
+                        "target-scan",
+                        "adapter-refused",
+                        "partial",
+                    ));
+                } else {
+                    result.rows.push(StageRow {
+                        reason: Some(
+                            if state.pin.work.is_empty() {
+                                "adapter-full-scope"
+                            } else {
+                                "adapter-selected-scope"
+                            }
+                            .to_owned(),
+                        ),
+                        state: if reused { "reused" } else { "executed" },
+                        ..StageRow::executed("target-scan")
+                    });
+                }
+                result.pins.push(state.pin.clone());
+                result.states.insert(target.clone(), state);
             }
             Err(failure) => {
+                // Unavailable discovery cannot silently erase untouched
+                // accepted diagnostic partitions. Coverage stays partial.
+                if let Some(old) = selection.previous.get(target) {
+                    result.diagnostics.extend(
+                        old.partitions
+                            .values()
+                            .flat_map(|p| p.diagnostics.iter().cloned()),
+                    );
+                    result.states.insert(target.clone(), old.clone());
+                }
                 result.status = super::combine_statuses(result.status, failure.status());
                 result
                     .diagnostics
@@ -361,7 +450,8 @@ fn scan_target(
     compilation: &crate::ir::Compilation,
     snapshot: &InputSnapshot,
     cancel: &AtomicBool,
-) -> Result<AdapterPin, DomainResult> {
+    selection: &SelectionContext<'_>,
+) -> Result<TargetState, DomainResult> {
     let lock = read_lock(scratch)?;
     let pin = locked(&lock, target)?;
     let (mut client, supply, discovered) =
@@ -419,7 +509,6 @@ fn scan_target(
         return Err(unsupported("watch-ir-limit"));
     }
     std::fs::write(&path, ir).map_err(|_| mapped(Failure::AdapterSupplyRequired))?;
-    let fs = Fs::open(scratch).map_err(|_| mapped(Failure::AdapterSupplyRequired))?;
     let profile = discovered.selected_profile(None);
     let call = |operation, ir_path| CallRequest {
         operation,
@@ -432,19 +521,216 @@ fn scan_target(
         native_request: None,
         lint_request: None,
     };
-    #[cfg(all(test, any(windows, target_os = "linux")))]
+    #[cfg(all(test, any(windows, target_os = "linux", target_os = "macos")))]
     if let Some(callback) = SCAN_ON_SPAWN.with(|slot| slot.borrow_mut().take()) {
         crate::target_protocol::transport::on_next_pump_start(callback);
     }
-    let scanned = client
-        .call(
-            &supply.command,
-            call(Operation::Scan, None),
+    let selective = client.describe_outcome().is_some_and(|outcome| {
+        outcome.negotiated_version == crate::target_protocol::version::WATCH_VERSION
+            && outcome
+                .capabilities
+                .watch
+                .as_ref()
+                .is_some_and(|s| s.selection)
+    });
+    let mut adapter_pin = AdapterPin {
+        target: target.to_owned(),
+        id: discovered.adapter.id,
+        version: discovered.adapter.version,
+        digest: pin.digest().as_str().to_owned(),
+        declared_digest: discovered.adapter.digest,
+        entry_digest: discovered
+            .executable_digest
+            .expect("lock binding verified entry digest"),
+        capability_digest: discovered.capability_digest,
+        protocol_version: discovered.negotiated_version,
+        profile: profile.clone(),
+        work: Vec::new(),
+    };
+    let previous = selection.previous.get(target).filter(|old| {
+        !request.no_cache
+            && old.pin.entry_digest == adapter_pin.entry_digest
+            && old.pin.capability_digest == adapter_pin.capability_digest
+            && old.pin.digest == adapter_pin.digest
+            && !old.pin.work.is_empty()
+    });
+    let mut partitions = std::collections::BTreeMap::new();
+    if !selective {
+        let failure = execute_partition(
+            &mut client,
+            &supply,
+            &call,
             scratch,
-            &fs,
-            Some(cancel),
+            model,
+            target,
+            profile.as_deref(),
+            &evidence,
+            cancel,
+            None,
         )
-        .map_err(|f| mapped(Failure::Target(f)))?;
+        .err();
+        partitions.insert(
+            "*".to_owned(),
+            partition(
+                failure,
+                TargetWork {
+                    scope: "full".to_owned(),
+                    module: None,
+                    state: "executed",
+                    source_revision: snapshot.source_revision(),
+                    selection_digest: snapshot.source_revision(),
+                },
+                target,
+            ),
+        );
+    } else {
+        let modules: BTreeSet<_> = selection
+            .work
+            .iter()
+            .map(|unit| unit.module.clone())
+            .chain(
+                previous
+                    .into_iter()
+                    .flat_map(|old| old.partitions.keys().filter(|key| !key.is_empty()).cloned()),
+            )
+            .collect();
+        if modules.len() > super::request::limits::MAX_TARGET_PARTITIONS {
+            return Err(super::snapshot::CaptureError::Limit {
+                limit: "target-partitions",
+                count: modules.len() as u64,
+            }
+            .domain_result());
+        }
+        for module in std::iter::once(String::new()).chain(modules) {
+            if cancel.load(Ordering::SeqCst) {
+                break;
+            }
+            let current =
+                module.is_empty() || selection.work.iter().any(|unit| unit.module == module);
+            let selected = module.is_empty()
+                || selection.affected.scope == "full"
+                || selection.affected.modules.contains(&module)
+                || selection
+                    .work
+                    .iter()
+                    .any(|unit| unit.module == module && unit.state == "executed");
+            if !selected && current {
+                if let Some(old) = previous.and_then(|old| old.partitions.get(&module)) {
+                    let mut retained = old.clone();
+                    retained.work.state = "reused";
+                    adapter_pin.work.push(retained.work.clone());
+                    partitions.insert(module, retained);
+                    continue;
+                }
+            }
+            let symbols: BTreeSet<String> = [selection.old_symbols, selection.symbols]
+                .into_iter()
+                .flat_map(|index| index.values().flatten())
+                .filter(|id| {
+                    !module.is_empty() && (*id == &module || id.starts_with(&format!("{module}.")))
+                })
+                .cloned()
+                .collect();
+            let selected = crate::target_protocol::watch::WatchSelection {
+                source_revision: snapshot.source_revision(),
+                scope: if module.is_empty() {
+                    "global"
+                } else {
+                    "module"
+                }
+                .to_owned(),
+                module: (!module.is_empty()).then(|| module.clone()),
+                symbols: symbols.into_iter().collect(),
+                changed_paths: selection.changed_paths.clone(),
+            };
+            let failure = execute_partition(
+                &mut client,
+                &supply,
+                &call,
+                scratch,
+                model,
+                target,
+                profile.as_deref(),
+                &evidence,
+                cancel,
+                Some(&selected),
+            )
+            .err();
+            let row = TargetWork {
+                scope: selected.scope.clone(),
+                module: selected.module.clone(),
+                state: "executed",
+                source_revision: selected.source_revision.clone(),
+                selection_digest: selected.digest(),
+            };
+            adapter_pin.work.push(row.clone());
+            // Removed module partitions are invalidated, not carried into the
+            // new graph/bindings. Their final cleanup exchange still ran.
+            if current || failure.is_some() {
+                partitions.insert(module, partition(failure, row, target));
+            }
+        }
+    }
+    Ok(TargetState {
+        pin: adapter_pin,
+        partitions,
+    })
+}
+
+fn partition(failure: Option<DomainResult>, work: TargetWork, target: &str) -> TargetPartition {
+    let mut partition = TargetPartition {
+        work,
+        status: Status::Valid,
+        diagnostics: Vec::new(),
+    };
+    if let Some(failure) = failure {
+        partition.status = failure.status();
+        partition
+            .diagnostics
+            .extend(failure.diagnostics().iter().cloned());
+        if partition.status == Status::Unavailable {
+            partition
+                .diagnostics
+                .push(diagnostics::adapter_recovery(target));
+        }
+    }
+    partition
+}
+
+#[allow(clippy::too_many_arguments)]
+fn execute_partition<'a>(
+    client: &mut TargetClient,
+    supply: &AdapterSupply,
+    call: &impl Fn(Operation, Option<&'a str>) -> CallRequest<'a>,
+    scratch: &Path,
+    model: &crate::loader::NormalizedModel,
+    target: &str,
+    profile: Option<&str>,
+    evidence: &'a str,
+    cancel: &AtomicBool,
+    selection: Option<&crate::target_protocol::watch::WatchSelection>,
+) -> Result<(), DomainResult> {
+    let fs = Fs::open(scratch).map_err(|_| mapped(Failure::AdapterSupplyRequired))?;
+    let mut invoke = |operation, ir| {
+        match selection {
+            Some(selection) => client.call_watch(
+                &supply.command,
+                call(operation, ir),
+                scratch,
+                Some(cancel),
+                selection,
+            ),
+            None => client.call(
+                &supply.command,
+                call(operation, ir),
+                scratch,
+                &fs,
+                Some(cancel),
+            ),
+        }
+        .map_err(|f| mapped(Failure::Target(f)))
+    };
+    let scanned = invoke(Operation::Scan, None)?;
     crate::observed::scan_service::validate_ephemeral(
         &crate::observed::ObservedContext {
             model: model.clone(),
@@ -452,17 +738,36 @@ fn scan_target(
         },
         &scanned,
         target,
-        profile.as_deref(),
+        profile,
     )?;
-    let validated = client
-        .call(
-            &supply.command,
-            call(Operation::Validate, Some(&evidence)),
-            scratch,
-            &fs,
-            Some(cancel),
-        )
-        .map_err(|f| mapped(Failure::Target(f)))?;
+    if let Some(selection) = selection {
+        let entries = scanned
+            .response
+            .result
+            .as_ref()
+            .and_then(|result| result.entries.as_deref())
+            .unwrap_or(&[]);
+        for entry in entries {
+            let semantic = entry
+                .detail
+                .as_deref()
+                .and_then(|detail| serde_json::from_str::<serde_json::Value>(detail).ok())
+                .and_then(|detail| detail.get("s").and_then(|s| s.as_str()).map(str::to_owned));
+            if !semantic.as_deref().is_some_and(|id| {
+                selection
+                    .module
+                    .as_ref()
+                    .is_some_and(|module| id == module || id.starts_with(&format!("{module}.")))
+            }) {
+                return Err(mapped(Failure::Target(
+                    crate::target_protocol::TargetFailure::ResponseInvalid {
+                        detail: crate::target_protocol::wire::ResponseInvalidity::Evidence,
+                    },
+                )));
+            }
+        }
+    }
+    let validated = invoke(Operation::Validate, Some(evidence))?;
     if !validated
         .response
         .result
@@ -478,17 +783,5 @@ fn scan_target(
             },
         )));
     }
-    Ok(AdapterPin {
-        target: target.to_owned(),
-        id: discovered.adapter.id,
-        version: discovered.adapter.version,
-        digest: pin.digest().as_str().to_owned(),
-        declared_digest: discovered.adapter.digest,
-        entry_digest: discovered
-            .executable_digest
-            .expect("lock binding verified entry digest"),
-        capability_digest: discovered.capability_digest,
-        protocol_version: discovered.negotiated_version,
-        profile,
-    })
+    Ok(())
 }

@@ -855,7 +855,8 @@
                   "protocolVersion": {
                     "enum": [
                       "0.3.2",
-                      "0.6.4"
+                      "0.6.4",
+                      "0.8.0"
                     ]
                   },
                   "profile": {
@@ -863,6 +864,48 @@
                     "minLength": 1,
                     "maxLength": 256,
                     "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)*$"
+                  },
+                  "work": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "scope": {
+                          "enum": [
+                            "module",
+                            "global"
+                          ]
+                        },
+                        "module": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256,
+                          "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)*$"
+                        },
+                        "state": {
+                          "enum": [
+                            "executed",
+                            "reused"
+                          ]
+                        },
+                        "sourceRevision": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        },
+                        "selectionDigest": {
+                          "type": "string",
+                          "pattern": "^sha256:[0-9a-f]{64}$"
+                        }
+                      },
+                      "required": [
+                        "scope",
+                        "state",
+                        "sourceRevision",
+                        "selectionDigest"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 4097
                   }
                 },
                 "required": [

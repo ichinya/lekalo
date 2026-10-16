@@ -55,6 +55,10 @@ pub mod limits {
     /// Maximum bounded capture attempts before an unstable snapshot is
     /// reported instead of committed.
     pub const MAX_CAPTURE_ATTEMPTS: usize = 3;
+    /// Closed result pins admit at most eight target adapters.
+    pub const MAX_TARGETS: usize = 8;
+    /// Retained module partitions plus one mandatory global work row.
+    pub const MAX_TARGET_PARTITIONS: usize = 4096;
 }
 
 /// One independently selected watch stage. With no stage flag the
@@ -202,7 +206,7 @@ impl WatchRequest {
             .module
             .as_ref()
             .is_some_and(|id| !crate::ir::grammar::is_segment(id))
-            || self.targets.len() > 32
+            || self.targets.len() > MAX_TARGETS
             || self
                 .targets
                 .iter()
@@ -237,5 +241,22 @@ impl WatchRequest {
             return Err(DomainResult::usage_error());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod target_limit_tests {
+    use super::*;
+    #[test]
+    fn target_count_matches_the_closed_stream_bound() {
+        let mut request = WatchRequest {
+            targets: (0..limits::MAX_TARGETS)
+                .map(|i| format!("target-{i}"))
+                .collect(),
+            ..WatchRequest::default()
+        };
+        assert!(request.validate().is_ok());
+        request.targets.push("target-overflow".into());
+        assert!(request.validate().is_err());
     }
 }

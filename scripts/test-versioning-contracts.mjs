@@ -11,7 +11,7 @@ for(const family of Object.values(registry.families)) {
  assert.equal(family.current, family === registry.families.protocol ? '0.3.2' : '0.8.0');
  assert.deepEqual(family.aliases,[]);
  assert.deepEqual(family.migrations,[]);
- assert.equal(family.versions.length,2);
+ assert.deepEqual(family.versions.map(v=>v.version), family === registry.families.protocol ? ['0.3.2','0.6.4','0.8.0'] : ['0.2.16','0.8.0']);
  assert.equal(family.current, family === registry.families.protocol ? family.versions[0].version : family.versions.at(-1).version);
  assert.equal(family.versions[0].state,'supported');
  assert.ok(family.versions[0].reason.length>0);

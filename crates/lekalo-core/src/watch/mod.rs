@@ -303,6 +303,7 @@ pub struct AcceptedState {
     pub(crate) documents: BTreeMap<String, (String, crate::loader::project_docs::Document)>,
     pub(crate) fragments: compile::Fragments,
     pub(crate) graph_fragments: crate::graph::build::GraphReuse,
+    pub(crate) targets: BTreeMap<String, targets::TargetState>,
 }
 
 /// The facts one run executes under.
@@ -1017,6 +1018,7 @@ impl WatchService {
             }
         }
         let mut adapter_pins = Vec::new();
+        let mut target_states = BTreeMap::new();
         if !self.request.targets.is_empty() {
             let scan = crate::watch::targets::scan(
                 scratch,
@@ -1025,12 +1027,24 @@ impl WatchService {
                 &compilation,
                 snapshot,
                 context.cancel,
+                &targets::SelectionContext {
+                    affected: &affected,
+                    work: &work,
+                    previous: &self.accepted.targets,
+                    old_symbols: &self.accepted.symbols_by_path,
+                    symbols: &symbols,
+                    changed_paths: changes
+                        .semantic_rows()
+                        .map(|row| row.path.clone())
+                        .collect(),
+                },
             );
             if context.cancel.load(Ordering::SeqCst) {
                 return stale_outcome(context, source_revision, previous_revision);
             }
             stage_status = combine_statuses(stage_status, scan.status);
             adapter_pins = scan.pins;
+            target_states = scan.states;
             stages.extend(scan.rows);
             diagnostics.extend(scan.diagnostics);
             denied |= scan.status == Status::Denied;
@@ -1193,6 +1207,7 @@ impl WatchService {
             documents,
             fragments,
             graph_fragments,
+            targets: target_states,
         };
         if let Err(count) = staged.fit_budget(request::limits::MAX_RESULT_STATE_BYTES) {
             result
@@ -1591,6 +1606,13 @@ impl WatchService {
         // from other accepted units. The loader owns the terminal status.
         diagnostics.extend(self.accepted.partitions.values().flatten().cloned());
         diagnostics.extend(self.accepted.global_partition.iter().cloned());
+        diagnostics.extend(
+            self.accepted
+                .targets
+                .values()
+                .flat_map(|target| target.partitions.values())
+                .flat_map(|p| p.diagnostics.iter().cloned()),
+        );
         let diagnostics = normalize_diagnostics(diagnostics, input_status);
         let status = input_status;
         let result = WatchResult {

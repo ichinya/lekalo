@@ -12,8 +12,8 @@ use std::sync::atomic::AtomicBool;
 #[path = "confinement_windows.rs"]
 mod windows;
 
-/// The sandbox's hard memory bound where the platform enforces one
-/// (Windows job object). A resource constant, never host-derived.
+/// Windows' hard job-memory cap, also macOS watch's sampled resident
+/// kill threshold (degraded, not a hard cap). Never host-derived.
 pub(super) const SANDBOX_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// The bounded process/task count applied when the budget denies
@@ -47,10 +47,10 @@ pub(super) enum ReadOnlyLane {
     /// address-space cap plus the per-user-namespace task bound
     /// (kernel ≥ 5.14). Resource enforcement is honestly `Degraded`.
     LinuxNamespace,
-    /// macOS `sandbox-exec`: filesystem and network denial only — no
-    /// memory or process primitive exists, so bounded read-only
-    /// adapter execution refuses rather than claiming a bound.
-    MacOsSandboxExec,
+    /// macOS seatbelt denies fork; the host samples owned-process RSS
+    /// and kills at the resident threshold. Sampling can overshoot:
+    /// resource evidence is degraded, never a hard allocation ceiling.
+    MacOsSupervised,
     /// No bounded lane exists (unknown platform, or Linux without
     /// bubblewrap/prlimit/kernel support).
     Unavailable,
@@ -74,7 +74,7 @@ pub(super) fn read_only_lane(
             ReadOnlyLane::Unavailable
         }
     } else if macos {
-        ReadOnlyLane::MacOsSandboxExec
+        ReadOnlyLane::MacOsSupervised
     } else {
         ReadOnlyLane::Unavailable
     }
@@ -86,7 +86,8 @@ pub(super) fn lane_memory_bound(lane: ReadOnlyLane) -> Option<u64> {
     match lane {
         ReadOnlyLane::WindowsJob => Some(SANDBOX_MEMORY_LIMIT_BYTES),
         ReadOnlyLane::LinuxNamespace => Some(SANDBOX_ADDRESS_SPACE_LIMIT_BYTES),
-        ReadOnlyLane::MacOsSandboxExec | ReadOnlyLane::Unavailable => None,
+        ReadOnlyLane::MacOsSupervised => Some(SANDBOX_MEMORY_LIMIT_BYTES),
+        ReadOnlyLane::Unavailable => None,
     }
 }
 
@@ -99,7 +100,8 @@ pub(super) fn lane_process_bound(lane: ReadOnlyLane, children_denied: bool) -> O
     match lane {
         ReadOnlyLane::WindowsJob => Some(1),
         ReadOnlyLane::LinuxNamespace => Some(SANDBOX_TASK_BOUND),
-        ReadOnlyLane::MacOsSandboxExec | ReadOnlyLane::Unavailable => None,
+        ReadOnlyLane::MacOsSupervised => Some(1),
+        ReadOnlyLane::Unavailable => None,
     }
 }
 
@@ -119,8 +121,8 @@ fn bwrap_available() -> bool {
 /// primitives (issue #89).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct SandboxPolicy {
-    /// Watch's opt-in Linux address-space cap; predecessor command
-    /// policies and their evidence remain unchanged.
+    /// Watch's opt-in resource controls (Linux address space / macOS
+    /// sampled RSS); predecessor command policies remain unchanged.
     pub bounded_resources: bool,
     /// `processes.children: denied` — children are refused where the
     /// platform has a primitive and bounded/honestly reported where it
@@ -204,7 +206,7 @@ impl ConfinementReport {
     /// policy.
     pub(super) fn compute(policy: SandboxPolicy) -> Self {
         let children = if policy.children_denied {
-            if cfg!(windows) {
+            if cfg!(windows) || (policy.bounded_resources && macos_supervisor_available()) {
                 Enforcement::Enforced
             } else if cfg!(target_os = "linux") && prlimit_available() {
                 // Bounded, and only where the bound is namespace-local.
@@ -229,6 +231,9 @@ impl ConfinementReport {
             // counts reservations rather than commit charge — an honest
             // `Degraded`, never a claim of Windows-job equivalence.
             Enforcement::Degraded
+        } else if policy.bounded_resources && macos_supervisor_available() {
+            // Host-observed RSS kill threshold, not a hard allocation cap.
+            Enforcement::Degraded
         } else {
             // Linux RLIMIT_RSS is a historical no-op and macOS exposes
             // no sandbox primitive: recording anything stronger would
@@ -252,6 +257,7 @@ impl ConfinementReport {
     /// the kernel bounds the namespace, `None` otherwise).
     pub(super) fn process_limit(&self) -> Option<u64> {
         lane_process_bound(host_read_only_lane(), self.children_denied)
+            .filter(|_| self.children != Enforcement::Unenforced)
     }
 
     /// The effective memory bound for the evidence: the Windows job
@@ -266,6 +272,9 @@ impl ConfinementReport {
 /// The lane this host can actually build, from its `cfg` platform and
 /// the resolved sandbox/wrapper probes.
 fn host_read_only_lane() -> ReadOnlyLane {
+    if cfg!(target_os = "macos") && !macos_supervisor_available() {
+        return ReadOnlyLane::Unavailable;
+    }
     read_only_lane(
         cfg!(windows),
         cfg!(target_os = "linux"),
@@ -273,6 +282,15 @@ fn host_read_only_lane() -> ReadOnlyLane {
         bwrap_available(),
         prlimit_available(),
     )
+}
+
+#[cfg(target_os = "macos")]
+fn macos_supervisor_available() -> bool {
+    super::memory::available()
+}
+#[cfg(not(target_os = "macos"))]
+fn macos_supervisor_available() -> bool {
+    false
 }
 
 /// Whether the Linux `prlimit` wrapper is available for the bounded
@@ -828,13 +846,14 @@ impl Sandbox {
         // sandbox-exec inherits the spawning environment; the private
         // runner scrubs it (env -i semantics) and re-grants exactly the
         // budget pairs at spawn, keeping host values out of argv.
-        transport::run_private(
+        transport::run_private_macos(
             &self.macos_command(command),
             request,
             limits,
             &self.project,
             cancel,
             env,
+            self.policy.bounded_resources,
         )
     }
 
@@ -844,6 +863,9 @@ impl Sandbox {
         // dyld opens the filesystem root while resolving its runtime paths.
         // This literal permits that directory alone, never its descendants.
         let mut profile = format!("(version 1)(deny default)(allow process-exec)(allow sysctl-read)(allow mach-lookup (global-name \"com.apple.system.logger\"))(allow file-read* (literal \"/\") (subpath \"/System\") (subpath \"/usr/lib\") (subpath \"/dev\") (subpath {}) (subpath {}))", quoted(&self.runtime), quoted(&self.project));
+        if self.policy.bounded_resources && self.policy.children_denied {
+            profile.push_str("(deny process-fork)");
+        }
         for root in &self.write_roots {
             profile.push_str(&format!("(allow file-write* (subpath {}))", quoted(root)));
         }
@@ -948,10 +970,10 @@ mod tests {
             read_only_lane(false, true, false, false, true),
             ReadOnlyLane::Unavailable
         );
-        // macOS has no memory/process primitive: refusal, not a claim.
+        // macOS supervision is degraded sampling, not a kernel ceiling.
         assert_eq!(
             read_only_lane(false, false, true, true, true),
-            ReadOnlyLane::MacOsSandboxExec
+            ReadOnlyLane::MacOsSupervised
         );
         assert_eq!(
             read_only_lane(false, false, false, true, true),
@@ -963,7 +985,7 @@ mod tests {
     fn lane_bounds_admit_only_both_dimensions() {
         // A watch target run requires a memory AND a process bound
         // (`TargetClient::bounded_read_only_available`): the job lane
-        // and the namespace lane qualify, macOS and unavailable never.
+        // and supervised macOS qualify; unavailable never.
         for (lane, memory, processes) in [
             (
                 ReadOnlyLane::WindowsJob,
@@ -975,7 +997,11 @@ mod tests {
                 Some(SANDBOX_ADDRESS_SPACE_LIMIT_BYTES),
                 Some(SANDBOX_TASK_BOUND),
             ),
-            (ReadOnlyLane::MacOsSandboxExec, None, None),
+            (
+                ReadOnlyLane::MacOsSupervised,
+                Some(SANDBOX_MEMORY_LIMIT_BYTES),
+                Some(1),
+            ),
             (ReadOnlyLane::Unavailable, None, None),
         ] {
             assert_eq!(lane_memory_bound(lane), memory, "{lane:?}");

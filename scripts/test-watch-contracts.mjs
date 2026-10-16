@@ -71,6 +71,24 @@ for(const [mutate,reason] of [
  [j=>{j.entries=j.entries.filter(e=>e.id!=='watch.adapter-recovery');},/own-family/],
  [j=>{j.entries.push(j.entries[0]);},/duplicate rule/],
 ]){const draft=structuredClone(successor);mutate(draft);assert.throws(()=>union(draft),reason);}
+// The selection seam is a successor, not a field smuggled into frozen
+// requests. Ajv independently agrees with the production wire decoder.
+const protocol=ajv.compile(JSON.parse(readFileSync(resolve(root,'contracts/target-protocol.schema.v0.8.0.json'),'utf8')));
+const selection={source_revision:digest,scope:'module',module:'planner',symbols:['planner.title'],changed_paths:['lekalo/modules/planner/entities.yaml']};
+const request={protocol:'lekalo.target/v1',protocol_version:'0.8.0',operation:'scan',request_id:'req-'+'0'.repeat(64),project_root:'.',target:'demo',watch_request:selection};
+valid(protocol,request);
+valid(protocol,{...request,watch_request:{...selection,scope:'global',symbols:[],module:undefined}});
+for(const mutate of [
+ j=>{j.protocol_version='0.3.2';},j=>{j.operation='describe';},j=>{j.watch_request.unknown=true;},
+ j=>{j.watch_request.source_revision='bad';},j=>{j.watch_request.changed_paths=['../escape'];},
+ j=>{j.watch_request.scope='global';},j=>{j.watch_request.module=null;},j=>{delete j.target;},
+]){const candidate=structuredClone(request);mutate(candidate);invalid(protocol,candidate);}
+for(const version of ['0.3.2','0.6.4']){
+ const frozen=ajv.compile(JSON.parse(readFileSync(resolve(root,`contracts/target-protocol.schema.v${version}.json`),'utf8')));
+ invalid(frozen,{...request,protocol_version:version});
+}
+const protocolCheck=spawnSync(process.execPath,[resolve(root,'scripts/gen-watch-protocol.mjs'),'--check'],{cwd:root,encoding:'utf8'});
+assert.equal(protocolCheck.status,0,protocolCheck.stderr);
 const check=spawnSync(process.execPath,[resolve(root,'scripts/gen-watch-contracts.mjs'),'--check'],{cwd:root,encoding:'utf8'});
 assert.equal(check.status,0,check.stderr);
 console.log(JSON.stringify({ok:true,positive,negative,registryEntries:successor.entries.length,watchRules:7,registryControls:5}));

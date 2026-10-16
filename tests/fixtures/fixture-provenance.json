@@ -403,7 +403,7 @@
     {
       "family": "watch",
       "origin": "synthetic",
-      "note": "Issue #95: authored planner/unrelated Model documents and a dependency-free read-only Node adapter with synthetic crash/timeout/write/invalid-evidence and Linux namespace-limit controls, plus runtime-generated dependency, rapid-edit, multi-stage oracle, budget and consumer fixtures; no private application inputs."
+      "note": "Issue #95: authored planner/unrelated Model documents and a dependency-free read-only Node adapter with synthetic crash/timeout/write/invalid-evidence, opt-in negotiated module/global selection and Linux namespace-limit controls, plus runtime-generated dependency, rapid-edit, retained-diagnostic, clean-target/multi-stage oracle, budget and consumer fixtures; no private application inputs."
     }
   ]
 }

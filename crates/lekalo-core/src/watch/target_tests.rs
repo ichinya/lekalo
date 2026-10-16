@@ -1,8 +1,8 @@
 use super::*;
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 #[path = "target_cancel_tests.rs"]
 mod cancellation;
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 #[path = "target_resource_tests.rs"]
 mod resources;
 use crate::watch::{
@@ -10,17 +10,28 @@ use crate::watch::{
     RunContext, WatchService,
 };
 
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
+#[path = "target_selective_tests.rs"]
+mod selective;
+
 fn project() -> tempfile::TempDir {
+    project_selective(false)
+}
+fn project_selective(selective: bool) -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/watch/project");
     snapshot::materialize(&snapshot::capture(&fixture, false).unwrap(), root.path()).unwrap();
     std::fs::create_dir(root.path().join("adapters")).unwrap();
     std::fs::create_dir(root.path().join("src")).unwrap();
-    std::fs::write(
-        root.path().join("adapters/fixture.mjs"),
-        include_bytes!("../../../../tests/fixtures/watch/mock-adapter.mjs"),
-    )
-    .unwrap();
+    let script = include_str!("../../../../tests/fixtures/watch/mock-adapter.mjs").replace(
+        "const selective = false",
+        if selective {
+            "const selective = true"
+        } else {
+            "const selective = false"
+        },
+    );
+    std::fs::write(root.path().join("adapters/fixture.mjs"), script.as_bytes()).unwrap();
     std::fs::write(root.path().join("src/control.txt"), "ok").unwrap();
     use crate::lockfile::{
         resolution::{CandidateAdapter, CandidateSet},
@@ -33,9 +44,7 @@ fn project() -> tempfile::TempDir {
     };
     let digest = Sha256Digest::parse(&format!(
         "sha256:{}",
-        crate::digest::sha256_hex(include_bytes!(
-            "../../../../tests/fixtures/watch/mock-adapter.mjs"
-        ))
+        crate::digest::sha256_hex(script.as_bytes())
     ))
     .unwrap();
     let manifest = AdapterCompatibilityManifest::new(
@@ -106,14 +115,14 @@ fn execute(
         },
     )
 }
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 fn policy(root: &Path) -> CapturePolicy {
     CapturePolicy {
         target_roots: preflight(root, &["watch-fixture".to_owned()], 5000).unwrap(),
         generate_check: false,
     }
 }
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 #[test]
 fn scan_and_validation_are_ephemeral_and_read_only_including_write_probe() {
     let root = project();
@@ -124,7 +133,7 @@ fn scan_and_validation_are_ephemeral_and_read_only_including_write_probe() {
         .target_roots
         .iter()
         .any(|path| path.starts_with(".lekalo/cache")));
-    let modes = if cfg!(windows) {
+    let modes = if cfg!(windows) || cfg!(target_os = "macos") {
         ["ok", "write", "child"]
     } else {
         ["ok", "write", "linux-limits"]
@@ -158,7 +167,7 @@ fn scan_and_validation_are_ephemeral_and_read_only_including_write_probe() {
         assert!(!root.path().join(".lekalo/observed").exists());
     }
 }
-#[cfg(any(windows, target_os = "linux"))]
+#[cfg(any(windows, target_os = "linux", target_os = "macos"))]
 #[test]
 fn crash_timeout_invalid_scan_and_later_recovery_do_not_destroy_core_results() {
     let root = project();

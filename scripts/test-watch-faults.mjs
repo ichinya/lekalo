@@ -8,6 +8,7 @@ import {tmpdir} from 'node:os';
 import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {StringDecoder} from 'node:string_decoder';
+import {selectiveTargetProbe} from './lib/watch-target-probe.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const binary=process.env.LEKALO_BIN??join(root,'target/debug',process.platform==='win32'?'lekalo.exe':'lekalo');
 const env={...process.env};delete env.LEKALO_PROJECT;
@@ -58,17 +59,12 @@ try {
    try {
     if(failure)throw failure;
     assert.equal(signal,null);assert.equal(pending,'');
-    // macOS has no bounded target execution primitive. The real CLI
-    // refusal is coverage evidence, never a fake target success.
-    if(process.platform==='darwin'){
-     assert.equal(code,4,stderr);
-     assert(events.some(e=>e.event==='session-stopped'&&e.reason==='terminal-refusal'));
-    }else{assert.equal(code,0,stderr);assert.equal(completed.length,4);}
+    assert.equal(code,0,JSON.stringify({stderr,events}));assert.equal(completed.length,4);
     resolve();
    }catch(error){reject(error);}
   });
  });
- if(process.platform!=='darwin'){
+ {
   assert.deepEqual(completed.map(e=>e.status),['valid','unavailable','invalid','valid']);
   assert(completed[1].result.diagnostics.some(d=>d.id==='watch.adapter-recovery'));
   assert(completed[2].result.diagnostics.some(d=>d.id==='target.operation-failed'));
@@ -78,5 +74,6 @@ try {
   for(const start of events.filter(e=>e.event==='run-started'))assert.equal(events.filter(e=>['run-completed','run-cancelled'].includes(e.event)&&e.runId===start.runId).length,1);
  }
  assert.deepEqual(inventory(project),expected);
- console.log(JSON.stringify({ok:true,platform:process.platform,settled:completed.length,cancelled:events.filter(e=>e.event==='run-cancelled').length,targetLane:process.platform==='darwin'?'bounded-refusal':'qualified'}));
+ console.log(JSON.stringify({ok:true,platform:process.platform,settled:completed.length,cancelled:events.filter(e=>e.event==='run-cancelled').length,targetLane:process.platform==='darwin'?'resident-supervised-degraded':'qualified'}));
 }finally{rmSync(project,{recursive:true,force:true});}
+console.log(JSON.stringify({ok:true,platform:process.platform,selectiveTarget:await selectiveTargetProbe({root,binary,env})}));

@@ -44,7 +44,7 @@
       "family": "protocol",
       "current": "0.3.2",
       "min": "0.3.2",
-      "max": "0.6.4",
+      "max": "0.8.0",
       "aliases": [],
       "versions": [
         {
@@ -54,6 +54,11 @@
         },
         {
           "version": "0.6.4",
+          "state": "supported",
+          "classification": "additive"
+        },
+        {
+          "version": "0.8.0",
           "state": "supported",
           "classification": "additive"
         }

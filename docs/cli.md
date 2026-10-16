@@ -133,26 +133,42 @@ runs cannot commit. The closed event/result schemas are
 `dev.lekalo.watch-event@0.8.0` and `dev.lekalo.watch-result@0.8.0`.
 
 `--target` now runs ephemeral locked scan/validation against captured inputs,
-without an observed index or scan receipt. Successful target execution is
-explicitly `adapter-full-scope`, not a selective-work claim. Entry checksums
-precede describe, including startup preparation. Only committed project-source
+without an observed index or scan receipt. Legacy adapters receive the visible
+`adapter-full-scope` fallback. An adapter must explicitly advertise protocol
+0.8.0 and `watch.selection: true` in the upgraded describe to receive the new
+closed `watch_request`: a snapshot-bound module partition (including removed
+symbols) or mandatory global obligations. Each response echoes the selection
+digest. `pins.adapters[].work` records actual executed/reused partitions and
+the source revision of their last execution; untouched diagnostic partitions
+are retained, not discarded. A planner-only save executes planner/dependent
+partitions plus global obligations, never unrelated module validation.
+Generated-only saves reuse target results without even describe.
+Entry checksums precede describe, including startup preparation. Only committed project-source
 adapters with full `scan.symbols` and scan/validate operations are supported;
 installed/registry supplies, overlapping generated read/write scopes, build
-read roots, implicit environment/network/child grants, and hosts without
-OS-enforced memory/process bounds are refused. Windows uses the 2 GiB job
+read roots, implicit environment/network/child grants, and hosts without an
+admitted resource-control lane are refused. Windows uses the 2 GiB job
 memory cap and one-process cap. Linux qualifies with bubblewrap, prlimit and
 kernel >= 5.14: watch explicitly opts into an 8 GiB address-space cap and a
 64-task per-user-namespace bound. Address space includes reservations, not
 RSS/commit charge; resource enforcement is honestly `degraded`, and the task
 bound is not a prohibition on individual forks. Other command policies are
-unchanged. macOS bounded target execution remains an explicit refusal (no
-memory/process primitive), not an approved scope reduction.
+unchanged. macOS watch uses deny-default seatbelt with explicit `process-fork`
+denial and a fail-closed parent-side `proc_pidinfo` resident-memory supervisor.
+The 2 GiB resident threshold is sampled at the transport poll interval (5 ms),
+so overshoot between samples is possible: this is `degraded` supervision,
+**not** a hard allocation ceiling or Windows-job equivalent. Missing sampler
+or sandbox support refuses admission; a failed sample or threshold crossing
+kills/reaps the owned process before replacement. Ordinary command policies
+retain their previous enforcement records.
 
 Results pin component versions, captured Model/IR/source-map/graph/lock/profile
 and manifest digests, and verified adapter/capability/protocol identities.
 Describe's self-asserted digest is recorded separately from the verified lock
 pin. Watch admission caps Model inputs at 1 MiB, 256 modules, 2048 definitions
-and 32768 normalized nodes. Session state uses a conservative 64 MiB charge
+and 32768 normalized nodes. The closed stream admits at most eight targets and
+4096 retained module partitions per target (plus global obligations); accumulated
+failed removals refuse observably before exceeding the wire bound. Session state uses a conservative 64 MiB charge
 with cache eviction before refusing mandatory state; this is not an RSS
 measurement. Output has one outstanding record (16 MiB maximum), a five-second
 acknowledgement deadline, and fail-stop behavior for slow/broken consumers.
@@ -163,9 +179,10 @@ not a complete replacement.
 
 The closed watch stage pins currently admit Model/IR/graph **0.2.16**.
 M8 Model 0.8.0 sources receive explicit unsupported coverage, never false
-legacy pins or a stream that violates its own schema. Qualifying successor
-watch/impact pins, negotiated targeted adapter selection, macOS bounded target
-execution, broader descendant faults and CPU/RSS audits remain required work.
+legacy pins or a stream that violates its own schema. Successor Model/IR/graph,
+impact and artifact-check qualification remains unfinished; no 0.8.0 Model
+support is claimed by the new **adapter protocol** seam. Broader CPU/RSS audits
+also remain follow-up work.
 
 Validator instrumentation proves actual planner/dependent rule-subject visits
 without unrelated subjects, plus explicit global-input fallback. Twenty-eight
@@ -174,8 +191,13 @@ over 12 revisions: validate, the complete impact payload/digest rebound to the
 same source-set base/candidate pair, and generate-check, including format-only
 saves, atomic replacement, invalid parse/recovery, generated drift and invalid
 lock/recovery. Invalid parse does not advance the accepted semantic baseline.
-A real long-lived CLI fault probe verifies crash -> invalid -> stale cancellation
--> recovery with complete diagnostic replacements. Generated saves stay quiet
+Real long-lived CLI fault probes verify crash -> invalid -> stale cancellation
+-> recovery, and negotiated selection with an unrelated failing partition
+surviving rapid planner saves and cancellation. The selected target failure is
+compared to a clean full `verify` adapter component over the same settled tree;
+its IR is produced independently by `load --ir --no-cache` in a private oracle
+copy. A fresh no-cache core service additionally compares the complete retained
+diagnostic set. Generated saves stay quiet
 for multiple reconciliation intervals; cache/build feedback remains excluded.
 
 Windows native/poll and Debian WSL inotify/poll qualification cover burst edits,
@@ -184,8 +206,13 @@ exercise the real callback/channel/dirty-reader paths for inotify overflow,
 FSEvents rescan/error, split rename and metadata/identical-byte events; they do
 not substitute for a native macOS result. Real slow/broken pipe probes verify
 fail-stop output. Linux target tests inspect the actual namespace resource
-limits, not just declared values. CI includes Linux/macOS/Windows, but wiring
-is not evidence of a hosted pass. The acceptance authority remains
+limits, not just declared values. The macOS supervisor threshold, sample failure,
+cancellation and kill/reap paths are driver-qualified through the production
+pump on any host; these synthetic samples do **not** execute `proc_pidinfo` or
+seatbelt. The Darwin cfg also cross-compiles; that is not a native runtime test.
+The same real target crash/selection probes now run on macOS in CI rather than
+accepting terminal refusal. CI includes Linux/macOS/Windows, but wiring is not
+evidence of a hosted pass. The acceptance authority remains
 [issue-95-research.md](m8/issue-95-research.md).
 
 ### `lekalo init`

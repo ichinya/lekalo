@@ -151,7 +151,26 @@ impl AcceptedState {
                         .sum::<usize>()
             })
             .sum::<usize>();
+        let targets = self
+            .targets
+            .iter()
+            .map(|(key, target)| {
+                key.capacity()
+                    + serde_json::to_vec(&target.pin)
+                        .map_or(usize::MAX / 16, |bytes| bytes.len().saturating_mul(4))
+                    + target
+                        .partitions
+                        .iter()
+                        .map(|(key, p)| {
+                            512 + key.capacity()
+                                + serde_json::to_vec(&(&p.work, &p.diagnostics))
+                                    .map_or(usize::MAX / 16, |bytes| bytes.len().saturating_mul(4))
+                        })
+                        .sum::<usize>()
+            })
+            .sum::<usize>();
         size_of::<Self>()
+            .saturating_add(targets)
             .saturating_add(metadata.saturating_mul(4))
             .saturating_add(rows.saturating_mul(256))
             .saturating_add(diagnostics.saturating_mul(size_of::<crate::diagnostics::Diagnostic>()))

@@ -4032,6 +4032,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/target-protocol.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/target-protocol.schema.v0.8.0.json",
+      "sourceDigest": "sha256:94c994ca2547276e33ec549d78579797ac1220a6969eab8c4e27e9436f58e8fe",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/task-links-evidence.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/task-links-evidence.schema.v0.8.0.json",
@@ -4224,7 +4233,7 @@
       "id": "contract:contracts/watch-event.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/watch-event.schema.v0.8.0.json",
-      "sourceDigest": "sha256:b07625c4011768cd3d343e44b66a67f910092a154ead3790c958993375fd0a46",
+      "sourceDigest": "sha256:6a83ff3a85dea7f919dea5d39bd12bea3b1a17bf821e7ba1da94a7b917246259",
       "owner": "docs/cli.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4233,7 +4242,7 @@
       "id": "contract:contracts/watch-result.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/watch-result.schema.v0.8.0.json",
-      "sourceDigest": "sha256:a3638af29e6e2ec0b25363b8f89511f3d8b2e0394ebf5a539e53894abef749d8",
+      "sourceDigest": "sha256:9427aebc77d6448bceb20ff406103de091778760649ad6b582c223a0e484a190",
       "owner": "docs/cli.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

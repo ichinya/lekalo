@@ -27,11 +27,14 @@ mod conformance;
 pub mod diagnostic;
 pub mod discovery;
 pub mod evidence;
+#[cfg(any(target_os = "macos", test))]
+mod memory;
 pub mod plan;
 pub mod scopes;
 pub mod selection;
 pub mod transport;
 pub mod version;
+pub mod watch;
 pub mod wire;
 
 use std::sync::atomic::AtomicBool;
@@ -232,8 +235,8 @@ pub struct TargetClient {
     /// strict implicit budget; `scan_service`/`catalog` set it from the
     /// resolved manifest after the trust/consistency gates.
     budget: SessionBudget,
-    /// Watch requires actual memory/process bounds for every exchange;
-    /// predecessor command policies do not opt into new Linux caps.
+    /// Watch opts into resource controls on every exchange (including
+    /// macOS' honestly degraded sampled supervisor, not a hard cap).
     bounded_read_only: bool,
 }
 
@@ -245,8 +248,9 @@ impl Default for TargetClient {
 
 impl TargetClient {
     /// Build one client with explicit transport limits.
-    /// Watch cannot silently accept the legacy degraded memory/process
-    /// dimensions. This is availability, not a claim that spawn succeeded.
+    /// Watch requires both admitted resource controls and process
+    /// containment. This is availability, not successful execution or
+    /// a claim that macOS sampling is a hard memory allocation ceiling.
     pub(crate) fn bounded_read_only_available() -> bool {
         let report = confinement::ConfinementReport::compute(
             confinement::SandboxPolicy::strict().with_bounded_resources(true),
@@ -423,6 +427,30 @@ impl TargetClient {
         _fs: &Fs,
         cancel: Option<&AtomicBool>,
     ) -> Result<CallOutcome, TargetFailure> {
+        self.call_selected(command, request, cwd, cancel, None)
+    }
+
+    /// Read-only partition exchange; legacy sessions are refused before
+    /// selection bytes are serialized or any process is launched.
+    pub(crate) fn call_watch(
+        &mut self,
+        command: &AdapterCommand,
+        request: CallRequest<'_>,
+        cwd: &std::path::Path,
+        cancel: Option<&AtomicBool>,
+        selection: &watch::WatchSelection,
+    ) -> Result<CallOutcome, TargetFailure> {
+        self.call_selected(command, request, cwd, cancel, Some(selection))
+    }
+
+    fn call_selected(
+        &mut self,
+        command: &AdapterCommand,
+        request: CallRequest<'_>,
+        cwd: &std::path::Path,
+        cancel: Option<&AtomicBool>,
+        selection: Option<&watch::WatchSelection>,
+    ) -> Result<CallOutcome, TargetFailure> {
         let applying = request.operation == Operation::Clean
             || (request.operation == Operation::Generate && request.dry_run == Some(false));
         let planning = request.operation == Operation::PlanClean
@@ -444,6 +472,14 @@ impl TargetClient {
             });
         }
         let capabilities = described.capabilities.clone();
+        if selection.is_some()
+            && (described.negotiated_version != version::WATCH_VERSION
+                || !capabilities.watch.as_ref().is_some_and(|s| s.selection))
+        {
+            return Err(TargetFailure::CapabilityUnsupported {
+                detail: "watch-selection",
+            });
+        }
         // Issue #89: the manifest-enforced budget is the ceiling. The
         // described scopes pass through the budget check before any
         // sandbox exists; exceeding scopes refuse as
@@ -565,6 +601,7 @@ impl TargetClient {
         envelope.dry_run = dry_run;
         envelope.plan_id = plan_request;
         envelope.lint_request = request.lint_request.cloned();
+        envelope.watch_request = selection.cloned();
         if let Some(native) = request.native_request {
             envelope.native_request = Some(native.clone());
         }
@@ -609,6 +646,11 @@ impl TargetClient {
         );
         let response = self.interpret(exchange, &envelope)?;
         self.validate_response_payload(&request, &response, &capabilities)?;
+        if response.evidence.watch_digest != selection.map(watch::WatchSelection::digest) {
+            return Err(TargetFailure::ResponseInvalid {
+                detail: ResponseInvalidity::Evidence,
+            });
+        }
         let writes = response.writes.clone().unwrap_or_default();
 
         let mut outcome_plan_id = None;
@@ -1065,6 +1107,7 @@ fn base_envelope(
         native_request: None,
 
         lint_request: None,
+        watch_request: None,
     }
 }
 
@@ -1105,6 +1148,9 @@ fn snapshot_scopes(fs: &Fs, write_scopes: &[String]) -> Result<plan::Snapshot, T
 fn transport_failure(error: transport::TransportFailure) -> TargetFailure {
     match error {
         transport::TransportFailure::Spawn => TargetFailure::TransportFailed { detail: "spawn" },
+        transport::TransportFailure::ResourceLimit => TargetFailure::TransportFailed {
+            detail: "resident-memory-limit",
+        },
         transport::TransportFailure::RequestWrite => TargetFailure::TransportFailed {
             detail: "request-write",
         },

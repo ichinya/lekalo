@@ -1,18 +1,41 @@
 # Target adapter process protocol
 
-Status: **Implemented** host protocol `lekalo.target/v1` at exact contract `0.3.2`, product `0.6.4`, source base `a56ee578`. Owner: adapter-host maintainers. [ADR-0025](adr/0025-target-protocol.md). Model/IR remain `0.2.16`; active diagnostic registry is `0.6.4`. Supported operations are describe, scan, bind, validate, generate, verify, plan-clean, clean and the read-only native-plan extension. Operation availability depends on the adapter and profile; declaration is not successful execution.
+Status: **Implemented** host protocol `lekalo.target/v1` with bootstrap contract `0.3.2` and explicitly negotiated successors `0.6.4` (lint) and `0.8.0` (watch selection), product `0.8.0`. Owner: adapter-host maintainers. [ADR-0025](adr/0025-target-protocol.md). Model/IR remain `0.2.16`; active diagnostic registry is `0.6.4`. Supported operations are describe, scan, bind, validate, generate, verify, plan-clean, clean and the read-only native-plan extension. Operation availability depends on the adapter and profile; declaration is not successful execution.
 
 The exact [current schema](../contracts/target-protocol.schema.v0.3.2.json) and production decoder govern this checkout. Historical base/extension paragraphs below describe negotiation history; they do not admit a historical contract absent from the current registry. [Workflow provider discovery](provider-contract.md) is separate. [Native gates](native-gates.md) document planning; production native execution is **Planned**. [Architecture](architecture.md), [security](security.md), [Node adapter](../adapters/node-typescript/README.md), [PHP adapter](../adapters/php-laravel/README.md).
 
 ## Version negotiation and capability discovery
 
-This checkout probes and accepts **exactly `0.3.2`**: `BASE_VERSION`, `VERSION` and the singleton `SUPPORTED_VERSIONS` set in `crates/lekalo-core/src/target_protocol/version.rs`. A historical frozen schema does not grant runtime acceptance. The adapter must explicitly declare a version supported by this producer; arbitrary newer/older strings are refused.
+This checkout probes at **exactly `0.3.2`** (`BASE_VERSION`/`VERSION`) and upgrades only to a supported version the adapter explicitly declares and proves through a second describe at that exact version. The ascending `SUPPORTED_VERSIONS` set in `crates/lekalo-core/src/target_protocol/version.rs` admits 0.3.2, 0.6.4 and 0.8.0. The frozen predecessor schemas retain their exact members and bytes; arbitrary newer/older strings are refused.
 
 Describe reports exact adapter identity/digest, protocol versions, operations, transports, target/profile choices, read/write scopes and capabilities. The closed capability object includes exact `ir_versions`, a bounded map of named support states (`full`, `partial`, `unsupported`, `unknown`) and optional declared constraints. Names must resolve in the embedded capability-definition registry. Missing or unknown evidence does not mean supported.
 
 Discovery sends only describe, without project IR or write authority. An IR-carrying operation requires explicit compatibility with the core's `0.2.16` IR. Incompatible candidates are filtered before disclosure. A declared digest is distinct from verified entry bytes; capability provenance distinguishes declared, read-only probed and planned/applied verified evidence.
 
 Selection filters IR compatibility before required capability support. Partial support requires explicit `allow_partial`; unknown support cannot satisfy a required capability. Survivors and refusal reasons are deterministic. Cache/lock custody includes adapter identity, actual bytes, negotiated protocol, IR and capability-definition/profile digests; changes invalidate the snapshot. [Target profiles](target-profile.md), [lock](lockfile.md), [adapter conformance](adapter-conformance.md).
+
+## Read-only watch selection (0.8.0)
+
+The [watch protocol successor](../contracts/target-protocol.schema.v0.8.0.json)
+adds optional `capabilities.watch: {selection: true}` on the upgraded describe.
+Only that declaration, at exactly 0.8.0, admits `watch_request` on scan/validate;
+legacy adapters receive a visible complete full-scope fallback. The closed
+request carries `source_revision`, `scope` (`module` or `global`), the module
+for module scope, sorted owned `symbols` (old and current, including deletions)
+and sorted `changed_paths`. Global scope has no module or symbols and runs only
+mandatory project-level obligations. Full captured IR is resolution context,
+not permission to revalidate unrelated module partitions.
+
+Selected responses must echo `evidence.watch_digest`, SHA-256 over compact
+UTF-8 JSON of the selection with recursively byte-sorted object keys and no
+trailing newline. Unknown members, explicit nulls, unsupported versions,
+unsafe paths, wrong/missing digests and scan entries outside the selected
+module are refused. Every request is still bound by the ordinary request ID,
+verified adapter/capability identity, read-only confinement and deadline. The
+host retains untouched diagnostic partitions and invalidates deleted ones;
+[watch delivery](cli.md#lekalo-watch-experimental-issue-95) records actual
+executed/reused partition provenance. This adapter seam does not itself admit
+Model/IR 0.8.0 sources.
 
 ## Scan entry evidence
 

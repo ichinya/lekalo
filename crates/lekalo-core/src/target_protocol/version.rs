@@ -23,7 +23,9 @@ pub const VERSION: &str = "0.3.2";
 /// anything else is a registry/decoder drift refused as a developer
 /// fault before any adapter is launched.
 pub const LINT_VERSION: &str = "0.6.4";
-pub const SUPPORTED_VERSIONS: [&str; 2] = ["0.3.2", LINT_VERSION];
+/// The explicitly negotiated read-only watch partition seam.
+pub const WATCH_VERSION: &str = "0.8.0";
+pub const SUPPORTED_VERSIONS: [&str; 3] = ["0.3.2", LINT_VERSION, WATCH_VERSION];
 
 /// The identity of the schema artifact for the current protocol version.
 pub const IDENTITY: &str = "dev.lekalo.target-protocol@0.3.2";
