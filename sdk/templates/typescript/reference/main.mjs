@@ -173,6 +173,15 @@ process.exitCode = await serve({
       return { planId: planId(plan), writes: plan };
     },
     async "plan-native"() {
+      // r10 emission probes mutate completed native-plan output, never the
+      // validator; the ordinary reference remains explicitly unsupported.
+      if (fault("native-plan-control") || fault("invalid-native-entries") || fault("invalid-native-units")) {
+        const native_plan = { kind: "native-plan", digest: sha256("native-plan-control"), commands: 2, packages: 1, completeness: "complete", run_eligibility: "runnable" };
+        for (const member of ["entries", "units"]) {
+          if (fault(`invalid-native-${member}`)) native_plan[member] = 1;
+        }
+        return { payload: { native_plan } };
+      }
       return {
         error: {
           errorClass: "unsupported",

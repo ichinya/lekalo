@@ -472,6 +472,9 @@ lifecycleAccounting.negativeControls = 0;
 // Exact emitted bytes, retained for production replay below. Invalid
 // callback output must never become a stdout success or a refusal object.
 const emittedOracleRows = [];
+// Native-plan callbacks are not describe C-mode contexts. Still replay
+// their EXACT emitted success/error bytes through production V mode (r10).
+const nativeEmissionOracleRows = [];
 
 // Real per-SDK lifecycle lanes beyond the battery (issue #106 review r4
 // #7): a POSITIVE valid file exchange and an oversized-response refusal
@@ -483,6 +486,21 @@ lifecycleAccounting.outputLimitLegs = 0;
 lifecycleAccounting.invalidBuilderLegs = 0;
 lifecycleAccounting.realCrashLegs = 0;
 lifecycleAccounting.stdoutHygieneLegs = 0;
+lifecycleAccounting.nativePlanBuilderLegs = 0;
+const r10HostileRequests = corpusFiles('invalid').filter((name) => name.startsWith('r10-')).flatMap((name) => {
+  const bytes = readFileSync(join(corpusRoot, 'invalid', name));
+  const value = JSON.parse(bytes.toString('utf8'));
+  if (value.status !== undefined || value.operation === undefined) return [];
+  const expect = JSON.parse(readFileSync(join(corpusRoot, 'invalid', name.replace(/\.json$/, '.expect.json')), 'utf8'));
+  if (expect.stage !== 'decode') fail('lifecycle-stdout-hygiene-inventory', name);
+  return [bytes];
+});
+if (r10HostileRequests.length === 0) fail('lifecycle-stdout-hygiene-inventory', 'r10 request regression set is empty');
+const hygieneInvocations = (lang, args) => lang === 'php' ? [
+  args, [args[0], '-d', 'display_errors=1', ...args.slice(1)],
+  [args[0], '-d', 'display_errors=0', ...args.slice(1)],
+  [args[0], '-n', '-d', 'display_errors=1', ...args.slice(1)],
+] : [args];
 {
   const fileExchangeDir = mkdtempSync(join(tmpdir(), "adapter-sdk-vectors-file-exchange-"));
   process.on("exit", () => {
@@ -632,16 +650,48 @@ lifecycleAccounting.stdoutHygieneLegs = 0;
         native_request: [`sha256:${"0".repeat(64)}`],
       }),
     ];
-    for (const [row, hostile] of [...hostileMissingMembers, ...hostileShortSeqs].entries()) {
-      const leg = run(adapterArgs[0], [...adapterArgs.slice(1)], fileExchangeDir, { input: Buffer.from(hostile, "utf8"), timeout: 60000 });
-      if ((leg.stdout ?? "").length > 0) {
-        fail("lifecycle-stdout-hygiene", `${lang}/row-${row}: a refused request leaked ${(leg.stdout ?? "").length} stdout bytes: ${(leg.stdout ?? "").toString("utf8").slice(0, 80)}`);
-      }
-      if (leg.status === 0) {
-        fail("lifecycle-stdout-hygiene", `${lang}/row-${row}: a hostile member-missing request was admitted`);
+    const hygieneRows = [...hostileMissingMembers, ...hostileShortSeqs, ...r10HostileRequests];
+    for (const invocation of hygieneInvocations(lang, adapterArgs)) {
+      for (const [row, hostile] of hygieneRows.entries()) {
+        const leg = run(invocation[0], invocation.slice(1), fileExchangeDir, { input: Buffer.from(hostile), timeout: 60000 });
+        if (leg.error || (leg.stderr ?? '').length > 8192) fail('lifecycle-stdout-hygiene-process', `${lang}/row-${row}`);
+        if ((leg.stdout ?? '').length > 0) {
+          fail('lifecycle-stdout-hygiene', `${lang}/row-${row}: refused request leaked stdout bytes`);
+        }
+        if (leg.status === 0) fail('lifecycle-stdout-hygiene', `${lang}/row-${row}: hostile request admitted`);
+        lifecycleAccounting.stdoutHygieneLegs += 1;
       }
     }
-    lifecycleAccounting.stdoutHygieneLegs = (lifecycleAccounting.stdoutHygieneLegs ?? 0) + hostileMissingMembers.length + hostileShortSeqs.length;
+    // r10 A: the intact native-plan control must succeed, and forbidden
+    // entries/units must NOT become status:ok or exit-0 empty output.
+    // Both transports and every PHP warning configuration execute.
+    const nativeRequest = readFileSync(join(corpusRoot, 'valid', 'plan-native-request.json'));
+    const nativeFile = join(fileExchangeDir, `native-${lang}.json`);
+    writeFileSync(nativeFile, nativeRequest);
+    for (const [configuration, invocation] of hygieneInvocations(lang, adapterArgs).entries()) {
+      for (const transport of ['stdin', 'file']) {
+        for (const mutant of ['native-plan-control', 'invalid-native-entries', 'invalid-native-units']) {
+          const args = [...invocation.slice(1), '--lekalo-fault', mutant];
+          if (transport === 'file') args.push('--lekalo-request-file', nativeFile);
+          const leg = run(invocation[0], args, fileExchangeDir, { input: transport === 'file' ? Buffer.alloc(0) : nativeRequest, encoding: null, timeout: 60000 });
+          const stdout = leg.stdout ?? Buffer.alloc(0);
+          const positive = mutant === 'native-plan-control';
+          if (leg.error || (leg.stderr ?? Buffer.alloc(0)).length > 8192) fail('native-emission-process', `${lang}/${mutant}`);
+          if (stdout.length === 0) {
+            if (positive || leg.status === 0) fail('native-emission-empty', `${lang}/${mutant}`);
+          } else {
+            let response;
+            try { response = JSON.parse(stdout.toString('utf8')); } catch { fail('native-emission-json', `${lang}/${mutant}`); }
+            if (response.status !== (positive ? 'ok' : 'error') || (positive && leg.status !== 0)) fail('native-emission-status', `${lang}/${mutant}`);
+            if (positive && response.result?.native_plan?.kind !== 'native-plan') fail('native-emission-control', lang);
+            if (!positive && response.error?.code !== 'sdk-build-refused') fail('native-emission-mutant', `${lang}/${mutant}: fault did not reach the builder`);
+            if (stdout[stdout.length - 1] === 10) fail('native-emission-newline', `${lang}/${mutant}`);
+            nativeEmissionOracleRows.push({ relative: `emission-native/${lang}/${configuration}/${transport}/${mutant}`, bytes: stdout });
+          }
+          lifecycleAccounting.nativePlanBuilderLegs += 1;
+        }
+      }
+    }
     for (const mutant of ["operations", "protocol_versions", "transports", "max_entries", "max_writes", "capability", "identity", "negotiation", "describe"]) {
       trace(`emission ${lang}/${mutant}`);
       const leg = run(adapterArgs[0], [...adapterArgs.slice(1), "--lekalo-fault", `invalid-${mutant}`], fileExchangeDir, { input: Buffer.from(validDescribe), encoding: null, timeout: 60000 });
@@ -678,8 +728,13 @@ lifecycleAccounting.stdoutHygieneLegs = 0;
   if (lifecycleAccounting.outputLimitLegs !== expectedLegs) {
     fail("lifecycle-output-limit-count", `executed ${lifecycleAccounting.outputLimitLegs} serializer-budget legs, expected ${expectedLegs} (one per SDK lane)`);
   }
-  if (lifecycleAccounting.stdoutHygieneLegs !== expectedLegs * 8) {
-    fail("lifecycle-stdout-hygiene-count", `executed ${lifecycleAccounting.stdoutHygieneLegs} stdout-hygiene legs, expected ${expectedLegs * 8} (three hostile member-missing rows and five short-seq rows per SDK lane)`);
+  const invocationCount = expectedLegs + (lifecycleLanguages.includes('php') ? 3 : 0);
+  const expectedHygiene = invocationCount * (8 + r10HostileRequests.length);
+  if (lifecycleAccounting.stdoutHygieneLegs !== expectedHygiene) {
+    fail('lifecycle-stdout-hygiene-count', `${lifecycleAccounting.stdoutHygieneLegs} vs ${expectedHygiene} (missing/short-seq and every r10 hostile request, PHP default/on/off/-n)`);
+  }
+  if (lifecycleAccounting.nativePlanBuilderLegs !== invocationCount * 6) {
+    fail('native-emission-count', `${lifecycleAccounting.nativePlanBuilderLegs} vs ${invocationCount * 6}`);
   }
 }
 
@@ -913,6 +968,7 @@ for (const row of emittedOracleRows) {
   pushRow(row.relative, row.bytes, "V", true);
   pushClientRow(`${row.relative}#client`, row.request, row.bytes, { accepted: false, reason: "operation-failed" });
 }
+for (const row of nativeEmissionOracleRows) pushRow(row.relative, row.bytes, 'V', true);
 const oracleRows = [...oracleInventory.entries()].map(([relative, entry]) => ({
   relative,
   hex: entry.bytes.toString("hex"),
@@ -955,7 +1011,9 @@ oracleRows.forEach((row, index) => {
   // Reason equality binds only where the corpus declares the production
   // refusal vocabulary (the upgrade rows); the invalid/ rows carry the
   // SDK runner's stage/reason spellings (bounds vs shape), whose
-  // accept/refuse verdict is the parity contract.
+  // accept/refuse verdict is the parity contract. Tokens are advisory
+  // across admission layers (sdk/spec.md section 4); only explicitly
+  // marked productionAccepts rows may be stricter than production.
   if (!verdict.accepted && row.compareReason && row.reason !== undefined && row.reason !== verdict.reason) {
     fail("oracle-reason", `${row.relative}: production refused with ${verdict.reason}, corpus declares ${row.reason}`);
   }

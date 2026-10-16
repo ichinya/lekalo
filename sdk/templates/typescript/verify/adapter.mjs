@@ -919,10 +919,11 @@ __register("src/runtime/decode.mjs", (() => {
 /**
  * Strict wire decoding (issue #106): closed request/response envelopes.
  *
- * Mirrors the host's admission exactly: unknown members, explicit nulls,
- * duplicate keys, wrong protocol tokens, unsupported exact versions, and
- * out-of-bounds values are refused before any callback runs. Every
- * refusal carries one closed safe reason token — never payload content.
+ * Closed wire spellings follow the host; lint_evidence additionally has
+ * deliberate SDK emission ceilings (sdk/spec.md section 4). Unknown
+ * members, forbidden nulls, duplicate keys, wrong tokens/versions and
+ * out-of-bounds values refuse before callbacks. Each refusal carries a
+ * closed local reason token — never payload content.
  */
 const {WIRE_TOKEN, SUPPORTED_PROTOCOL_VERSIONS, LATEST_OPERATIONS, BOUNDS, ENUMS} = __module("src/generated/protocol.mjs");
 const {CAPABILITY_DEFINITIONS} = __module("src/generated/capabilities.mjs");
@@ -1114,6 +1115,7 @@ function decodeNativeChanges(rawValue) {
   // All-default struct: accepted from `{}` and from a positional seq
   // (`[]` decodes with both lists defaulted) exactly like production's
   // serde struct-from-seq (issue #106 review r5 #9).
+  if (!structValue(rawValue, ["files", "symbols"])) return failure("shape");
   const seq = seqAsMembers(rawValue, ["files", "symbols"]);
   if (!seq.ok) return seq;
   const value = seq.value;
@@ -1205,8 +1207,10 @@ function decodeStateString(value) {
     return { ok: true, value };
   }
   if (["unknown", "withheld", "unsupported"].includes(value.state)) {
-    if (keys.length !== 1) return failure("shape");
-    return { ok: true, value };
+    // Serde also admits explicit null content on map-spelled unit variants
+    // (r10); normalize all three legal spellings onto the same unit map.
+    if (keys.some((key) => key !== "state" && key !== "value") || (value.value !== undefined && value.value !== null)) return failure("shape");
+    return { ok: true, value: { state: value.state } };
   }
   return failure("shape");
 }
@@ -1393,6 +1397,7 @@ function decodeResult(rawValue) {
   // All-default operation result: production deserializes it from a
   // positional seq too (`result:[]` is the all-default value), exactly
   // like serde struct-from-seq (issue #106 review r5 #9).
+  if (!structValue(rawValue, ["ok", "truncated", "entries", "findings", "bindings", "native_plan", "lint_evidence"])) return failure("shape");
   const seq = seqAsMembers(rawValue, ["ok", "truncated", "entries", "findings", "bindings", "native_plan", "lint_evidence"]);
   if (!seq.ok) return seq;
   const value = seq.value;
@@ -1455,6 +1460,8 @@ function decodeResult(rawValue) {
  * r2 #3): every member of the pinned 0.6.4 schema is required, the
  * identity/schemaVersion are consts, and each nested object is closed.
  * A shallow object check used to admit `{}` and emit `status:"ok"`.
+ * Defensive token/digest/count ceilings exceed typed wire admission by
+ * design; oracle-backed productionAccepts rows pin them (sdk/spec.md §4).
  * Refusal reasons stay inside the closed decoder vocabulary.
  */
 const LINT_EVIDENCE_MEMBERS = [
@@ -1502,7 +1509,7 @@ const lintStateString = (value) => {
     return lintBounded256(value.value) ? true : "bounds";
   }
   if (["unknown", "withheld", "unsupported"].includes(value.state)) {
-    return value.value === undefined ? true : "shape";
+    return value.value === undefined || value.value === null ? true : "shape";
   }
   return "shape";
 };
@@ -1519,7 +1526,7 @@ const lintStateBool = (value) => {
     return typeof value.value === "boolean" ? true : "shape";
   }
   if (["unknown", "withheld", "unsupported"].includes(value.state)) {
-    return value.value === undefined ? true : "shape";
+    return value.value === undefined || value.value === null ? true : "shape";
   }
   return "shape";
 };
@@ -1538,7 +1545,7 @@ const lintStateU64 = (value) => {
     return value.value <= 10_000_000 ? true : "bounds";
   }
   if (["unknown", "withheld", "unsupported"].includes(value.state)) {
-    return value.value === undefined ? true : "shape";
+    return value.value === undefined || value.value === null ? true : "shape";
   }
   return "shape";
 };
@@ -1762,6 +1769,7 @@ function decodeScanEntry(rawValue) {
     // All-default evidence: `{}` and the positional `[]` both decode
     // (signature/references default) exactly like production's serde
     // struct-from-seq (issue #106 review r5 #9).
+    if (!structValue(value.evidence, ["signature", "references"])) return failure("shape");
     const seq = seqAsMembers(value.evidence, ["signature", "references"]);
     if (!seq.ok) return seq;
     const evidence = seq.value;
@@ -1801,19 +1809,23 @@ function decodeFinding(rawValue) {
   if (closed) return closed;
   if (!isLogicalPath(value.path)) return failure("bounds");
   if (boundedText(value.code, BOUNDS.ERROR_CODE_MAX)) return failure("bounds");
-  if (value.code === "") return failure("bounds");
   const absent = optional(value.detail);
   if (absent) return absent;
   if (value.detail !== undefined && boundedText(value.detail, BOUNDS.ERROR_DETAIL_MAX)) return failure("bounds");
   return { ok: true, value };
 }
 
-function decodeNativePlan(value) {
-  const closed = closeObject(value, ["commands", "completeness", "digest", "entries", "kind", "packages", "run_eligibility", "units"]);
+function decodeNativePlan(rawValue) {
+  // The canonical closed NativePlanRef has exactly these six fields,
+  // in declared order for serde's positional spelling (r10).
+  const fields = ["kind", "digest", "commands", "packages", "completeness", "run_eligibility"];
+  if (!structValue(rawValue, fields)) return failure("shape");
+  const value = seqAsMembers(rawValue, fields).value;
+  const closed = closeObject(value, fields);
   if (closed) return closed;
   if (!ENUMS.nativePlanKind.includes(value.kind)) return failure("shape");
   if (!isSha256Digest(value.digest)) return failure("bounds");
-  for (const member of ["commands", "entries", "packages", "units"]) {
+  for (const member of ["commands", "packages"]) {
     const absent = optional(value[member]);
     if (absent) return absent;
     if (value[member] !== undefined && (!isInt(value[member]) || value[member] > BOUNDS.MAX_CONSTRAINT_VALUE)) return failure("bounds");
@@ -1834,7 +1846,7 @@ function decodeProgress(value) {
     value[stepIndex] = step;
     const closed = closeObject(step, ["detail", "state", "step"]);
     if (closed) return closed;
-    if (boundedText(step.step, BOUNDS.PROGRESS_TEXT_MAX) || step.step === "") return failure("bounds");
+    if (boundedText(step.step, BOUNDS.PROGRESS_TEXT_MAX)) return failure("bounds");
     if (!ENUMS.progressState.includes(step.state)) return failure("shape");
     const absent = optional(step.detail);
     if (absent) return absent;
@@ -1941,6 +1953,7 @@ function decodeCapabilities(rawValue, protocolVersion) {
   // all-default struct deserializes from `{}` or a positional `[]`
   // (issue #106 review r5 #1/#9).
   if (value.constraints !== undefined && value.constraints !== null) {
+    if (!structValue(value.constraints, ["max_entries", "max_writes"])) return failure("shape");
     const seq = seqAsMembers(value.constraints, ["max_entries", "max_writes"]);
     if (!seq.ok) return seq;
     const constraints = seq.value;

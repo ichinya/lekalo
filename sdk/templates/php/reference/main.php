@@ -175,6 +175,14 @@ $handlers = [
         return ['planId' => planIdOf($plan), 'writes' => $plan];
     },
     'plan-native' => function () {
+        // r10: mutate callback output, not the emission validator.
+        if (fault('native-plan-control') || fault('invalid-native-entries') || fault('invalid-native-units')) {
+            $plan = ['kind' => 'native-plan', 'digest' => Ids::sha256('native-plan-control'), 'commands' => 2, 'packages' => 1, 'completeness' => 'complete', 'run_eligibility' => 'runnable'];
+            foreach (['entries', 'units'] as $member) {
+                if (fault("invalid-native-{$member}")) $plan[$member] = 1;
+            }
+            return ['payload' => ['native_plan' => $plan]];
+        }
         return ['error' => ['errorClass' => 'unsupported', 'errorCode' => 'plan-native-unsupported', 'message' => 'this reference adapter does not plan native gates']];
     },
     'scan' => function () {

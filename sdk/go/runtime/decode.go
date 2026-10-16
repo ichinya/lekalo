@@ -1,5 +1,7 @@
 // Strict wire decoding and semantic validation (issue #106): the
 // hand-maintained codec obligation over the generated vocabulary.
+// Lint evidence has deliberate SDK emission ceilings beyond typed wire
+// admission (sdk/spec.md section 4, oracle-backed productionAccepts rows).
 package runtime
 
 import (
@@ -636,10 +638,11 @@ func admitStateString(value Value) (Value, *Refusal) {
 		}
 		return nil, refuse(stageDecode, "shape")
 	case "unknown", "withheld", "unsupported":
-		if len(value.(map[string]any)) != 1 {
+		// Serde admits both absent and explicit-null unit content (r10).
+		if Has(value, "value") && !IsNull(value, "value") {
 			return nil, refuse(stageDecode, "shape")
 		}
-		return value, nil
+		return map[string]any{"state": state}, nil
 	default:
 		return nil, refuse(stageDecode, "shape")
 	}
@@ -807,7 +810,7 @@ func admitScanEntry(rawValue Value, path string) *Refusal {
 }
 
 func admitNativePlan(rawValue Value, path string) *Refusal {
-	allowed := []string{"commands", "completeness", "digest", "entries", "kind", "packages", "run_eligibility", "units"}
+	allowed := []string{"commands", "completeness", "digest", "kind", "packages", "run_eligibility"}
 	if !structValue(rawValue, allowed) {
 		return refuse(stageDecode, "shape")
 	}
@@ -821,7 +824,7 @@ func admitNativePlan(rawValue Value, path string) *Refusal {
 	if !IsSha256Digest(GetString(value, "digest")) {
 		return refuse(stageDecode, "bounds")
 	}
-	for _, member := range []string{"commands", "entries", "packages", "units"} {
+	for _, member := range []string{"commands", "packages"} {
 		if IsNull(value, member) {
 			return refuse(stageDecode, "explicit-null")
 		}
@@ -1064,7 +1067,7 @@ func lintStateString(rawValue Value) string {
 		}
 		return "bounds"
 	case "unknown", "withheld", "unsupported":
-		if Has(value, "value") {
+		if Has(value, "value") && !IsNull(value, "value") {
 			return "shape"
 		}
 		return ""
@@ -1096,7 +1099,7 @@ func lintStateBool(rawValue Value) string {
 		}
 		return "shape"
 	case "unknown", "withheld", "unsupported":
-		if Has(value, "value") {
+		if Has(value, "value") && !IsNull(value, "value") {
 			return "shape"
 		}
 		return ""
@@ -1136,7 +1139,7 @@ func lintStateU64(rawValue Value) string {
 		}
 		return ""
 	case "unknown", "withheld", "unsupported":
-		if Has(value, "value") {
+		if Has(value, "value") && !IsNull(value, "value") {
 			return "shape"
 		}
 		return ""

@@ -1347,4 +1347,252 @@ r8Valid('scopes-astral-item', describeResponse, d => d.capabilities.read_scopes 
 // r8 #9: an empty lint scope item is the semantic layer's lint-request
 // refusal (the ai-lint token grammar), never a decode-stage bound.
 r8Invalid('lint-scope-empty-item', lintRequest, d => d.lint_request.scope = ["src", ""], 'validate', 'lint-request');
+// Round-10 differential regressions: a declared per-struct/per-State
+// spelling inventory, not a handful of helper-specific examples. Every
+// generated row executes in all four SDKs and the raw production oracle.
+const r10Case = (name, base, mutate, reason, productionAccepts = false) => {
+  const doc = structuredClone(base);
+  const replacement = mutate(doc);
+  const value = replacement === undefined ? doc : replacement;
+  const family = reason === undefined ? 'valid' : 'invalid';
+  writeWire(family, `r10-${name}`, value);
+  if (reason !== undefined) writeExpect(`r10-${name}`, { stage: 'decode', reason, ...(productionAccepts ? { productionAccepts: true } : {}) });
+};
+const at = (doc, path) => path.split('.').reduce((value, member) => value[member], doc);
+const put = (doc, path, value) => {
+  const members = path.split('.');
+  const member = members.pop();
+  const parent = members.reduce((value, key) => value[key], doc);
+  parent[member] = value;
+};
+const positional = (value, fields) => {
+  const end = fields.findIndex((field) => value[field] === undefined);
+  return fields.slice(0, end < 0 ? fields.length : end).map((field) => value[field]);
+};
+const numericObject = (seq) => Object.fromEntries(seq.map((value, index) => [String(index), value]));
+const recordFields = ['id', 'kind', 'mechanism', 'subject', 'semanticSymbol', 'operation', 'resource', 'field', 'nativeId', 'confidence', 'currency', 'origin', 'claim', 'binding', 'configuration', 'ownership', 'trace', 'value', 'key', 'candidates', 'activation', 'locations', 'guards'];
+const evidenceFields = ['schemaVersion', 'identity', 'target', 'scope', 'producer', 'pins', 'inputManifestDigest', 'sources', 'locations', 'coverage', 'records', 'limitations'];
+const coverageFields = ['rule', 'target', 'scope', 'state', 'eligible', 'examined', 'limitations'];
+const nativeFields = ['kind', 'digest', 'commands', 'packages', 'completeness', 'run_eligibility'];
+const pinFields = ['model', 'ir', 'observed', 'revision', 'profile', 'capabilities'];
+const nativeControl = structuredClone(planNativeRequest);
+nativeControl.native_request.observed_ref = { digest: D('observed') };
+const planControl = structuredClone(planNativeResponse);
+planControl.result.native_plan.packages = 1;
+const structInventory = [
+  ['limits', describeRequest, 'limits', ['timeout_ms', 'max_output_bytes']],
+  ['profile-capability', generateProfileRequest, 'profile_capabilities.0', ['id', 'support']],
+  ['native-request', nativeControl, 'native_request', ['changes', 'scan_ref', 'observed_ref', 'execution_policy_ref', 'input_manifest_digest', 'tool_catalog_digest', 'capability_snapshot_digest']],
+  ['native-changes', nativeControl, 'native_request.changes', ['files', 'symbols']],
+  ['native-change', nativeControl, 'native_request.changes.files.0', ['path', 'change', 'before_digest', 'after_digest']],
+  ...['scan_ref', 'observed_ref', 'execution_policy_ref'].map((member) => [`native-${member}`, nativeControl, `native_request.${member}`, ['digest', 'revision', 'adapter']]),
+  ['lint-request', lintRequest, 'lint_request', ['scope', 'pins', 'bindings', 'files']],
+  ['lint-binding', lintRequest, 'lint_request.bindings.0', ['path', 'nativeId', 'symbol', 'kind', 'fingerprint']],
+  ['request-pins', lintRequest, 'lint_request.pins', pinFields],
+  ['evidence', describeResponse, 'evidence', ['adapter', 'plan_id']],
+  ['identity-evidence', describeResponse, 'evidence.adapter', ['id', 'version', 'digest']],
+  ['identity-capabilities', describeResponse, 'capabilities.adapter', ['id', 'version', 'digest']],
+  ['capabilities', describeResponse, 'capabilities', ['adapter', 'protocol_versions', 'operations', 'transports', 'targets', 'profiles', 'read_scopes', 'write_scopes', 'progress', 'ir_versions', 'capabilities', 'constraints']],
+  ['constraints', describeResponseConstraints, 'capabilities.constraints', ['max_entries', 'max_writes']],
+  ['result', validateResponseFindings, 'result', ['ok', 'truncated', 'entries', 'findings', 'bindings', 'native_plan', 'lint_evidence']],
+  ['scan-entry', scanResponseEvidence, 'result.entries.0', ['path', 'kind', 'detail', 'evidence']],
+  ['scan-evidence', scanResponseEvidence, 'result.entries.0.evidence', ['signature', 'references']],
+  ['scan-reference', scanResponseEvidence, 'result.entries.0.evidence.references.0', ['target', 'role', 'confidence']],
+  ['finding', verifyResponseFindings, 'result.findings.0', ['path', 'code', 'detail']],
+  ['binding', bindResponse, 'result.bindings.0', ['module', 'target', 'profile']],
+  ['write', generateResponseApply, 'writes.0', ['path', 'action', 'sha256']],
+  ['progress', generateResponseApply, 'progress.0', ['step', 'state', 'detail']],
+  ['error', verifyResponseError, 'error', ['class', 'code', 'message', 'retryable', 'partial', 'detail']],
+  ['native-plan', planControl, 'result.native_plan', nativeFields],
+  ['lint-evidence', lintResponse, 'result.lint_evidence', evidenceFields],
+  ['evidence-pins', lintResponse, 'result.lint_evidence.pins', pinFields],
+  ['producer', lintResponse, 'result.lint_evidence.producer', ['id', 'version', 'artifactDigest', 'tool', 'compiler', 'framework', 'recipe']],
+  ['source', lintResponse, 'result.lint_evidence.sources.0', ['id', 'path', 'fingerprint', 'bytes'], 'bounds'],
+  ['span', lintResponse, 'result.lint_evidence.locations.0', ['id', 'source', 'start', 'end', 'line', 'column', 'endLine', 'endColumn'], 'bounds'],
+  ['coverage', lintResponse, 'result.lint_evidence.coverage.0', coverageFields],
+  ['record', lintResponse, 'result.lint_evidence.records.0', recordFields],
+  ['route', lintResponse, 'result.lint_evidence.records.0.candidates.0', ['identity', 'confidence', 'currency', 'origin'], 'bounds'],
+  ['activation', lintResponse, 'result.lint_evidence.records.0.activation.0', ['role', 'identity', 'locations', 'guards', 'confidence'], 'bounds'],
+];
+for (const [name, base, path, fields, reason = 'shape'] of structInventory) {
+  // Every list-of-struct helper is exercised at two different indexes;
+  // this catches a path that accidentally points at its parent list.
+  const indexes = path.endsWith('.0') ? [0, 1] : [null];
+  for (const index of indexes) {
+    const label = index === null ? name : `${name}-${index}`;
+    const actualPath = index === null ? path : path.slice(0, -1) + index;
+    const control = structuredClone(base);
+    if (index === 1 && at(control, actualPath) === undefined) {
+      const sample = structuredClone(at(control, path));
+      if (name === 'span') sample.id += '-second';
+      put(control, actualPath, sample);
+    }
+    const seq = positional(at(control, actualPath), fields);
+    r10Case(`struct-${label}-map`, control, () => {});
+    r10Case(`struct-${label}-seq`, control, (d) => { put(d, actualPath, seq); });
+    r10Case(`struct-${label}-numeric-object`, control, (d) => { put(d, actualPath, numericObject(seq)); }, reason);
+  }
+}
+// Envelope seq controls (nested paths above are additionally tested with
+// seq parents below); root numeric objects remain invalid, never structs.
+r10Case('request-envelope-seq', describeRequest, (d) => ['lekalo.target/v1', '0.3.2', 'describe', d.request_id, '.']);
+r10Case('response-envelope-seq', describeResponse, (d) => [d.protocol, d.protocol_version, d.operation, d.request_id, d.status, d.evidence, d.capabilities]);
+for (const member of ['entries', 'units']) {
+  r10Case(`native-plan-forbidden-${member}`, planControl, (d) => { d.result.native_plan[member] = 1; }, 'shape');
+  for (const kind of ['build-success', 'validate-before-write']) {
+    const response = structuredClone(planControl);
+    response.result.native_plan[member] = 1;
+    writeDoc('semantic', `r10-native-plan-${member}-${kind}`, {
+      kind, request: planNativeRequest, response: kind === 'validate-before-write' ? response : undefined,
+      builder: kind === 'build-success' ? { identity: ADAPTER, fragments: { payload: response.result } } : undefined,
+      expect: 'reject:shape', productionResponseAccepts: false,
+    });
+  }
+}
+for (let length = 0; length <= 7; length += 1) {
+  const seq = nativeFields.map((member) => planControl.result.native_plan[member]);
+  r10Case(`native-plan-prefix-${length}`, planControl, (d) => { d.result.native_plan = length === 7 ? [...seq, 1] : seq.slice(0, length); }, length === 1 ? 'bounds' : length === 0 || length > 6 ? 'shape' : undefined);
+}
+for (const [label, base, path] of [
+  ['finding-code', verifyResponseFindings, 'result.findings.0.code'],
+  ['progress-text-0', generateResponseApply, 'progress.0.step'],
+  ['progress-text-1', generateResponseApply, 'progress.1.step'],
+]) {
+  for (const length of [0, 128, 129]) {
+    for (const spelling of ['map', 'seq']) {
+      r10Case(`${label}-${length}-${spelling}`, base, (d) => {
+        put(d, path, 'x'.repeat(length));
+        if (spelling === 'seq') {
+          const parent = path.slice(0, path.lastIndexOf('.'));
+          put(d, parent, positional(at(d, parent), label === 'finding-code' ? ['path', 'code', 'detail'] : ['step', 'state', 'detail']));
+        }
+      }, length > 128 ? 'bounds' : undefined);
+    }
+  }
+}
+const stateInventory = [
+  ...['observed', 'revision', 'profile', 'capabilities'].map((pin) => [`request-${pin}`, lintRequest, `lint_request.pins.${pin}`, D(pin)]),
+  ...pinFields.map((pin) => [`evidence-${pin}`, lintResponse, `result.lint_evidence.pins.${pin}`, D(pin)]),
+  ...['compiler', 'framework'].map((member) => [`producer-${member}`, lintResponse, `result.lint_evidence.producer.${member}`, 'known-token']),
+  ...['semanticSymbol', 'operation', 'resource', 'field', 'value', 'key'].map((member) => [`record-${member}`, lintResponse, `result.lint_evidence.records.0.${member}`, 'known-token']),
+  ...['binding', 'configuration', 'ownership', 'trace'].map((member) => [`record-${member}`, lintResponse, `result.lint_evidence.records.0.${member}`, false]),
+  ...['eligible', 'examined'].map((member) => [`coverage-${member}`, lintResponse, `result.lint_evidence.coverage.0.${member}`, 0]),
+];
+for (const [name, base, path, known] of stateInventory) {
+  for (const tag of ['unknown', 'withheld', 'unsupported']) {
+    for (const [spelling, value] of Object.entries({ map: { state: tag }, 'map-null': { state: tag, value: null }, seq: [tag, null] })) {
+      r10Case(`state-${name}-${tag}-${spelling}`, base, (d) => { put(d, path, value); });
+    }
+    r10Case(`state-${name}-${tag}-payload`, base, (d) => { put(d, path, { state: tag, value: 5 }); }, 'shape');
+  }
+  for (const [spelling, value] of Object.entries({ map: { state: 'known', value: known }, seq: ['known', known] })) {
+    r10Case(`state-${name}-known-${spelling}`, base, (d) => { put(d, path, value); });
+  }
+  r10Case(`state-${name}-numeric-object`, base, (d) => { put(d, path, { '0': 'unknown', '1': null }); }, 'shape');
+  // Wrong-typed known content is a typed shape failure, not a grammar bound.
+  for (const spelling of ['map', 'seq']) {
+    const wrong = typeof known === 'string' ? 5 : 'not-the-payload-type';
+    r10Case(`state-${name}-known-wrong-${spelling}`, base, (d) => { put(d, path, spelling === 'map' ? { state: 'known', value: wrong } : ['known', wrong]); }, 'shape');
+  }
+}
+for (const member of ['eligible', 'examined']) {
+  for (const spelling of ['map', 'seq']) {
+    for (const parent of ['map', 'seq']) {
+      const doc = structuredClone(lintResponse);
+      const coverage = doc.result.lint_evidence.coverage[0];
+      coverage[member] = spelling === 'map' ? { state: 'known', value: 0 } : ['known', 0];
+      if (parent === 'seq') doc.result.lint_evidence.coverage[0] = coverageFields.map((field) => coverage[field]);
+      const name = `r10-state-u64-${member}-${spelling}-parent-${parent}`;
+      writeWire('valid', `${name}-zero`, doc);
+      const text = canonicalJson(doc).replace(spelling === 'map' ? '"state":"known","value":0' : '["known",0]', spelling === 'map' ? '"state":"known","value":-0' : '["known",-0]');
+      writeWire('invalid', `${name}-negative-zero`, text);
+      writeExpect(`${name}-negative-zero`, { stage: 'decode', reason: 'shape' });
+    }
+  }
+}
+// PHP audit-path remapping through entire positional parents, with both
+// legal map-null units and hostile numeric objects at nested positions.
+r10Case('nested-evidence-parent-seq-numeric-adapter', generateResponseApply, (d) => {
+  d.evidence = [numericObject([ADAPTER.id, ADAPTER.version, ADAPTER.digest]), APPLY_PLAN_ID];
+}, 'shape');
+r10Case('nested-progress-second-numeric-object', generateResponseApply, (d) => {
+  d.progress[1] = numericObject(['emit', 'done']);
+}, 'shape');
+r10Case('lint-parent-seq-unit-null', lintResponse, (d) => {
+  d.result.lint_evidence.pins.profile = { state: 'unknown', value: null };
+  d.result.lint_evidence = evidenceFields.map((field) => d.result.lint_evidence[field]);
+});
+r10Case('lint-parent-seq-numeric-route', lintResponse, (d) => {
+  d.result.lint_evidence.records[0].candidates[0] = numericObject(['route', 'high', 'current', 'extracted']);
+  d.result.lint_evidence = evidenceFields.map((field) => d.result.lint_evidence[field]);
+}, 'bounds');
+r10Case('scan-references-numeric-list', scanResponseEvidence, (d) => { d.result.entries[0].evidence.references = numericObject(d.result.entries[0].evidence.references); }, 'bounds');
+
+// Deliberate, SAFE-DIRECTION SDK hardening of host-owned lint evidence
+// (sdk/spec.md section 4). Pin EVERY grammar/bound class separately;
+// productionAccepts means wire admission only, never host semantic trust.
+const lintHardening = (name, mutate) => r10Case(`lint-hardening-${name}`, lintResponse, (d) => { mutate(d.result.lint_evidence); }, 'bounds', true);
+for (const [name, path] of [
+  ['target', 'target'], ['scope-item', 'scope.0'],
+  ['rule', 'coverage.0.rule'], ['coverage-target', 'coverage.0.target'], ['coverage-scope', 'coverage.0.scope'],
+  ['limitation', 'limitations.0'], ['coverage-limitation', 'coverage.0.limitations.0'],
+  ['record-id', 'records.0.id'], ['record-subject', 'records.0.subject'], ['record-native-id', 'records.0.nativeId'],
+  ['producer-id', 'producer.id'], ['producer-version', 'producer.version'], ['producer-tool', 'producer.tool'], ['producer-recipe', 'producer.recipe'],
+  ['source-id', 'sources.0.id'], ['span-id', 'locations.0.id'], ['span-source', 'locations.0.source'],
+  ['route-identity', 'records.0.candidates.0.identity'], ['activation-identity', 'records.0.activation.0.identity'],
+  ['record-location', 'records.0.locations.0'], ['record-guard', 'records.0.guards.0'],
+  ['activation-location', 'records.0.activation.0.locations.0'], ['activation-guard', 'records.0.activation.0.guards.0'],
+]) {
+  for (const [shape, value] of Object.entries({ empty: '', space: 'has space', long: 'x'.repeat(257) })) {
+    lintHardening(`${name}-${shape}`, (e) => { put(e, path, value); });
+  }
+}
+for (const pin of pinFields) {
+  for (const [shape, value] of Object.entries({ empty: '', space: 'has space', long: 'x'.repeat(257) })) {
+    lintHardening(`pin-${pin}-${shape}`, (e) => { e.pins[pin] = { state: 'known', value }; });
+  }
+  // Unlike request pins, evidence pins are not required digests at wire
+  // admission or by this SDK: a non-digest token is a positive control.
+  r10Case(`evidence-pin-${pin}-non-digest`, lintResponse, (d) => { d.result.lint_evidence.pins[pin] = { state: 'known', value: 'not-a-digest' }; });
+}
+for (const member of ['compiler', 'framework']) {
+  for (const [shape, value] of Object.entries({ empty: '', space: 'has space', long: 'x'.repeat(257) })) lintHardening(`producer-${member}-${shape}`, (e) => { e.producer[member] = { state: 'known', value }; });
+}
+for (const member of ['semanticSymbol', 'operation', 'resource', 'field', 'value', 'key']) {
+  lintHardening(`record-state-${member}-long`, (e) => { e.records[0][member] = { state: 'known', value: 'x'.repeat(257) }; });
+}
+for (const [name, path] of [['producer-digest', 'producer.artifactDigest'], ['input-digest', 'inputManifestDigest'], ['source-digest', 'sources.0.fingerprint']]) {
+  for (const [shape, value] of Object.entries({ plain: 'not-a-digest', long: 'x'.repeat(257) })) lintHardening(`${name}-${shape}`, (e) => { put(e, path, value); });
+}
+for (const [name, path, max] of [
+  ['candidates', 'records.0.candidates', 32], ['activation', 'records.0.activation', 32],
+  ['locations', 'locations', 32], ['record-locations', 'records.0.locations', 32], ['record-guards', 'records.0.guards', 32],
+  ['activation-locations', 'records.0.activation.0.locations', 32], ['activation-guards', 'records.0.activation.0.guards', 32],
+  ['limitations', 'limitations', 10_000], ['coverage-limitations', 'coverage.0.limitations', 10_000], ['scope', 'scope', 10_000],
+]) {
+  lintHardening(`count-${name}`, (e) => {
+    const sample = at(e, path)[0] ?? 'guard';
+    put(e, path, Array.from({ length: max + 1 }, (_, index) => typeof sample === 'string' ? `item-${index}` : { ...sample, id: sample.id === undefined ? undefined : `span-${index}` }));
+  });
+}
+for (const path of ['limitations', 'scope', 'coverage.0.limitations', 'records.0.locations', 'records.0.guards', 'records.0.activation.0.locations', 'records.0.activation.0.guards']) {
+  lintHardening(`duplicate-${path.replaceAll('.', '-')}`, (e) => { put(e, path, ['duplicate', 'duplicate']); });
+}
+for (const member of ['start', 'end', 'line', 'column', 'endLine', 'endColumn']) lintHardening(`span-${member}-oversize`, (e) => { e.locations[0][member] = 1048577; });
+lintHardening('source-bytes-oversize', (e) => { e.sources[0].bytes = 1048577; });
+lintHardening('source-path-grammar', (e) => { e.sources[0].path = '../untrusted'; });
+lintHardening('source-path-length', (e) => { e.sources[0].path = 'x'.repeat(513); });
+for (const member of ['eligible', 'examined']) lintHardening(`coverage-${member}-ceiling`, (e) => { e.coverage[0][member] = { state: 'known', value: 10_000_001 }; });
+for (const name of ['sources', 'coverage', 'records']) {
+  lintHardening(`count-${name}`, (e) => {
+    // Positional structs keep these 10001-element boundary rows small;
+    // production's output budget still admits the exact generated bytes.
+    const fields = name === 'sources' ? ['id', 'path', 'fingerprint', 'bytes'] : name === 'coverage' ? coverageFields : recordFields;
+    const item = positional(e[name][0], fields);
+    e[name] = Array(10_001).fill(item);
+  });
+}
+// Wrong-typed limitations are NOT production-legal. Keep the hardening
+// exception honest: no productionAccepts marker on typed-wire failures.
+r10Case('lint-limitations-null-item', lintResponse, (d) => { d.result.lint_evidence.limitations = [null]; }, 'bounds');
 process.stdout.write(`${JSON.stringify({ ok: true, gate: "adapter-sdk-fixtures", written: written.length })}\n`);

@@ -148,8 +148,47 @@ run at decode; the cross-member rules run at validate:
   status/error pairing, operation payload completeness, write-plan
   presence and digest/action pairing, plan echo on apply.
 
-The deep `lint_evidence` subtree stays host-owned: the SDK carries it
-as a closed object and never builds one.
+The deep `lint_evidence` subtree stays host-owned: the SDK never derives
+or attests evidence. It carries **closed, defensively bounded** evidence,
+not every value admitted by production's typed wire decoder. This is an
+intentional safe-direction emission boundary, shared by all four SDKs:
+
+- evidence/coverage targets and scope, rule ids, record ids/subjects/native
+  ids, producer id/version/tool/recipe, source/span ids, route/activation
+  identities, string State payloads and limitation/location/guard items
+  must be nonempty ASCII ai-lint tokens of at most 256 bytes;
+- digest-typed evidence members (input manifest, producer artifact and
+  source fingerprint) require canonical SHA-256; evidence **pin** State
+  strings require the token bound, not digest grammar. Source paths use
+  the portable logical-path grammar and a 512-byte ceiling;
+- collections have a 10,000-member ceiling (sources, coverage, records,
+  scope and limitations); spans and record/activation collections have
+  a 32-member ceiling. String lists and the evidence span list must be
+  unique. Source bytes/span offsets and coordinates cap at 1,048,576,
+  and known coverage counts cap at 10,000,000;
+- these restrictions are SDK emission hardening, NOT evidence validation
+  or an authorization grant. Production wire admission accepts broader
+  text/counts; the host's ai-lint input parser and semantic owners still
+  validate independently. The `r10-lint-hardening-*` corpus records each
+  retained class with `productionAccepts:true`, replayed against the real
+  wire decoder, plus typed negatives without that exception.
+
+Closed structs admit member maps and declared-order positional prefixes.
+State units admit `{state:tag}`, `{state:tag,value:null}` and `[tag,null]`
+equally; a unit's non-null content and numeric-key object substitutes for
+sequences refuse. These spelling rules are wire parity, not hardening.
+
+Refusal tokens describe the SDK's local admission stage and are **advisory
+relative to production**, not a promise of identical classification at
+all layers. For example null limits, required/empty pins, null limitation
+items and numeric-key members can be classified as `explicit-null`,
+`shape` or `bounds` earlier than production's typed/semantic refusal;
+Rust's null-envelope and TypeScript's unknown-member paths can likewise
+choose different closed tokens. The shared SDK corpus pins its local
+stage/reason; the production gate binds accept/refuse direction (except
+explicitly documented safe-direction hardening), and binds exact reasons
+only on upgrade and real-client-context rows. No token difference permits
+an SDK success where production refuses.
 
 ## 5. Compatibility matrix
 

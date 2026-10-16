@@ -3,6 +3,8 @@
 //! Mirrors the host's admission: unknown members, explicit nulls, wrong
 //! tokens, unsupported exact versions, and out-of-bounds values are
 //! refused before any callback runs, with closed safe reason tokens.
+//! Lint evidence has deliberately stricter SDK emission ceilings; see
+//! sdk/spec.md section 4 and the oracle-backed productionAccepts rows.
 
 use crate::generated::protocol;
 use crate::ids::{is_plan_id, is_request_id, is_sha256_digest};
@@ -803,10 +805,16 @@ fn admit_state_string(value: &Value) -> Result<Value, Refusal> {
             Ok(value.clone())
         }
         Some("unknown" | "withheld" | "unsupported") => {
-            if value.member_names().len() != 1 {
+            // Serde treats absent and explicit-null unit content alike (r10).
+            if !is_closed_object(value, &["state", "value"])
+                || !value.get("value").map_or(true, Value::is_null)
+            {
                 return Err(Refusal::new("decode", "shape"));
             }
-            Ok(value.clone())
+            Ok(Value::Object(vec![(
+                "state".to_owned(),
+                Value::Str(state.unwrap_or("").to_owned()),
+            )]))
         }
         _ => Err(Refusal::new("decode", "shape")),
     }
@@ -989,11 +997,9 @@ fn admit_native_plan(value: &Value, _path: &str) -> Result<(), Refusal> {
         "commands",
         "completeness",
         "digest",
-        "entries",
         "kind",
         "packages",
         "run_eligibility",
-        "units",
     ];
     let mapped = seq_as_members(
         value,
@@ -1021,7 +1027,7 @@ fn admit_native_plan(value: &Value, _path: &str) -> Result<(), Refusal> {
     {
         return Err(Refusal::new("decode", "bounds"));
     }
-    for member in ["commands", "entries", "packages", "units"] {
+    for member in ["commands", "packages"] {
         if explicit_null(value, member) {
             return Err(Refusal::new("decode", "explicit-null"));
         }
@@ -1263,7 +1269,7 @@ fn lint_state_string(value: &Value) -> Option<&'static str> {
             None => Some("shape"),
         },
         Some("unknown" | "withheld" | "unsupported") => {
-            if value.get("value").is_none() {
+            if value.get("value").map_or(true, Value::is_null) {
                 None
             } else {
                 Some("shape")
@@ -1296,7 +1302,7 @@ fn lint_state_bool(value: &Value) -> Option<&'static str> {
             }
         }
         Some("unknown" | "withheld" | "unsupported") => {
-            if value.get("value").is_none() {
+            if value.get("value").map_or(true, Value::is_null) {
                 None
             } else {
                 Some("shape")
@@ -1328,7 +1334,7 @@ fn lint_state_u64(value: &Value) -> Option<&'static str> {
             None => Some("shape"),
         },
         Some("unknown" | "withheld" | "unsupported") => {
-            if value.get("value").is_none() {
+            if value.get("value").map_or(true, Value::is_null) {
                 None
             } else {
                 Some("shape")

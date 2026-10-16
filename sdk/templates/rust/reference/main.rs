@@ -264,11 +264,25 @@ impl Adapter for ReferenceAdapter {
                     ..Output::default()
                 }
             }
-            "plan-native" => error_output(
-                "unsupported",
-                "plan-native-unsupported",
-                "this reference adapter does not plan native gates".to_owned(),
-            ),
+            "plan-native" => {
+                // r10: mutate callback output to probe the real emission boundary.
+                if fault("native-plan-control") || fault("invalid-native-entries") || fault("invalid-native-units") {
+                    let mut plan = Value::Object(vec![
+                        ("kind".to_owned(), Value::Str("native-plan".to_owned())),
+                        ("digest".to_owned(), Value::Str(sdk::sha256("native-plan-control"))),
+                        ("commands".to_owned(), Value::Int(2)),
+                        ("packages".to_owned(), Value::Int(1)),
+                        ("completeness".to_owned(), Value::Str("complete".to_owned())),
+                        ("run_eligibility".to_owned(), Value::Str("runnable".to_owned())),
+                    ]);
+                    for member in ["entries", "units"] {
+                        if fault(&format!("invalid-native-{member}")) { replace_member(&mut plan, member, Value::Int(1)); }
+                    }
+                    Output { payload: Some(Value::Object(vec![("native_plan".to_owned(), plan)])), ..Output::default() }
+                } else {
+                    error_output("unsupported", "plan-native-unsupported", "this reference adapter does not plan native gates".to_owned())
+                }
+            },
             "scan" => Output {
                 payload: Some(Value::Object(vec![
                     (

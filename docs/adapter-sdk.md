@@ -45,6 +45,11 @@ are closed Draft 2020-12 artifacts under `contracts/`.
   `Option` nullability. The response `capabilities.capabilities` map alone
   permits duplicate keys with last-wins semantics; constraints may be
   absent/null, while non-null values must be in `1..=1073741824`.
+  Host-owned `lint_evidence` additionally carries deliberate SDK
+  token/count/digest ceilings: [the precise boundary](../sdk/spec.md#4-semantic-admission-beyond-the-schema)
+  is stronger than production wire admission, pinned by oracle-backed
+  `productionAccepts` rows, and never replaces host evidence validation.
+  Refusal-token equality across different admission layers is advisory.
 - **Semantic validation** — cross-member request rules and response
   echo/identity/pairing rules, including equality of describe evidence
   and declared adapter identities, `describe` support, and the negotiated

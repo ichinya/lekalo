@@ -221,6 +221,16 @@ func (a *referenceAdapter) Handle(operation string, request sdk.Value) sdk.Outpu
 		}
 		return sdk.Output{PlanID: planIDOf(plan), Writes: plan}
 	case "plan-native":
+		// r10: mutate callback output, not the emission validator.
+		if fault("native-plan-control") || fault("invalid-native-entries") || fault("invalid-native-units") {
+			plan := map[string]any{"kind": "native-plan", "digest": sdk.Sha256("native-plan-control"), "commands": int64(2), "packages": int64(1), "completeness": "complete", "run_eligibility": "runnable"}
+			for _, member := range []string{"entries", "units"} {
+				if fault("invalid-native-" + member) {
+					plan[member] = int64(1)
+				}
+			}
+			return sdk.Output{Payload: map[string]any{"native_plan": plan}}
+		}
 		return sdk.Output{Error: [3]string{"unsupported", "plan-native-unsupported", "this reference adapter does not plan native gates"}, HasError: true}
 	case "scan":
 		return sdk.Output{Payload: map[string]any{
