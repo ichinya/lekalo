@@ -70,6 +70,10 @@ try {
     const visit = (relative) => {
       for (const name of readdirSync(join(base, relative)).sort()) {
         const next = relative ? `${relative}/${name}` : name;
+        // The shared OS-held writer lock is deliberately persistent and
+        // never unlinked, including on no-op format. It is runtime custody,
+        // not a canonical formatting output; exclude ONLY this admitted leaf.
+        if (next === ".lekalo/cache/writer.lock") continue;
         if (statSync(join(base, next)).isDirectory()) visit(next);
         else digest.update(`${next}:${sha256(readFileSync(join(base, next)))}\n`);
       }

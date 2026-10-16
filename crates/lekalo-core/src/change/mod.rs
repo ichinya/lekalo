@@ -12,6 +12,7 @@
 //! consume the same request, plan, and receipt types.
 
 pub mod catalog;
+mod custody;
 pub mod diagnostic;
 pub mod edit;
 pub mod plan;
@@ -214,9 +215,10 @@ fn chain_endpoint_after(history: &History, sequence: u64, path: &str) -> Option<
 /// grammar and then read no-follow through the shared [`Fs`], so a
 /// ledger-controlled `../`, absolute, drive, or link path can never
 /// turn the postcondition into an arbitrary-file digest oracle (r7
-/// review, devin F3 + omp F1). A no-op record carries no file and
-/// verifies only through its recorded absence of edits — the digest
-/// chain already binds it to the ledger it lives in. The read-only
+/// review, devin F3 + omp F1). This file-state check is NOT provenance:
+/// replay additionally requires the independently committed custody pin
+/// (r10, F1), including for no-op records with an empty source set.
+/// The read-only
 /// receipt lookup is exempt (it mints no authority): the contract keeps
 /// receipts usable after source drift.
 pub(crate) fn verify_record_postcondition(
@@ -226,7 +228,13 @@ pub(crate) fn verify_record_postcondition(
 ) -> Result<(), ChangeError> {
     let sources = record_source_outcomes(record);
     if sources.is_empty() {
-        return Ok(());
+        return if record.receipt.get("state").and_then(Json::as_str) == Some("no-op") {
+            Ok(())
+        } else {
+            Err(ChangeError::HistoryInvalid {
+                detail: "postcondition-files",
+            })
+        };
     }
     for outcome in &sources {
         // The admitted project-relative grammar — the same component-wise
@@ -842,8 +850,12 @@ pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeErr
             // project must actually carry the record's committed semantic
             // delta or a later committed successor of it.
             verify_record_postcondition(&root, &history, record)?;
+            custody::verify(&root, Some(&history_bytes))?;
             return replayed_receipt(record);
         }
+        custody::verify(&root, Some(&history_bytes))?;
+    } else {
+        custody::verify(&root, None)?;
     }
     let prepared = prepare(&PrepareOptions {
         project: options.project,
@@ -908,6 +920,7 @@ pub fn apply_prepared(
         Some(bytes) => History::decode(bytes)?,
     };
     verify_history_project(&root, &history)?;
+    custody::verify(&root, history_bytes.as_deref())?;
     let key = receipt::key_digest(options.idempotency_key);
     if let Some(record) = history.by_key(&key) {
         if record.request_digest != prepared.request_digest() {
@@ -1198,6 +1211,19 @@ pub fn apply_prepared(
         creation: !history_present,
     });
 
+    // Independent, non-cache commit custody is part of this SAME journaled
+    // replacement set: rollback restores it, committed recovery verifies it.
+    // Never reconstruct it from a ledger an editor can freely rechain.
+    let before_pin = custody::read(&root)?;
+    let after_pin = custody::encode(&history, &final_history_bytes);
+    plans.push(ReplacementPlan {
+        logical: custody::LOGICAL_PATH.to_owned(),
+        before_digest: receipt::bytes_digest(before_pin.as_deref().unwrap_or_default()),
+        after_digest: receipt::bytes_digest(&after_pin),
+        after_bytes: after_pin,
+        creation: before_pin.is_none(),
+    });
+
     let mut transaction =
         transaction::Transaction::begin(&root, &transaction_id, &prepared.plan_id(), &plans)?;
     for (index, plan) in plans.iter().enumerate() {
@@ -1269,10 +1295,18 @@ pub fn lookup_receipt(
     // (round 2, finding 8), as is any read failure other than NotFound.
     let history_bytes = match read_history_bytes(&root)? {
         Some(bytes) => bytes,
-        None => return Ok(None),
+        None => {
+            custody::verify(&root, None)?; // surviving custody detects whole-ledger deletion
+            return Ok(None);
+        }
     };
     let history = History::decode(&history_bytes)?;
     verify_history_project(&root, &history)?;
+    // A checkout without local custody can inspect canonical audit facts,
+    // but an existing local pin must never be contradicted or bypassed.
+    if custody::read(&root)?.is_some() {
+        custody::verify(&root, Some(&history_bytes))?;
+    }
     let key = receipt::key_digest(idempotency_key);
     match history.by_key(&key) {
         // The receipt projection is a read-only audit surface and mints

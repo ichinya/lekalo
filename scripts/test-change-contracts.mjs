@@ -11,7 +11,7 @@ import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { LANDED_FAMILIES, unionSize } from "./lib/registry-union.mjs";
+import { registryUnion } from "./lib/registry-union.mjs";
 
 const require = createRequire(import.meta.url);
 let Ajv2020;
@@ -246,19 +246,29 @@ if (successor.identity !== `dev.lekalo.diagnostic-registry@${IDENTITY}`) {
   fail("registry-identity");
 }
 const predecessorIds = new Map(predecessor.entries.map((entry) => [entry.id, entry]));
-// The 0.8.0 successor is the MERGED milestone union: every 0.6.5 entry
-// plus the landed families (format, adoption, portability,
-// worklog-changelog, managed, change — r8, finding omp F7: the union
-// arithmetic lives once in scripts/lib/registry-union.mjs).
-if (
-  successor.entries.length !==
-  unionSize(predecessor.entries.length)
-) {
-  fail("registry-union-size", {
-    predecessor: predecessor.entries.length,
-    successor: successor.entries.length,
-  });
+// Validate the actual additive union, including live tasklink/module-api
+// and future families. This MUST check predecessor presence, not just size.
+registryUnion(predecessor, successor);
+// Regressions for the stale-union class: unrelated additive families must
+// be accepted without editing this helper, and a same-size predecessor
+// replacement MUST fail (the old optional lookup silently accepted it).
+const liveSuperset = structuredClone(successor);
+for (const [family, count, prefix] of [["tasklink", 8, "LEK-TL-"], ["module-api", 14, "LEK-MAPI-"]]) {
+  if (liveSuperset.entries.some((entry) => entry.id.startsWith(`${family}.`))) continue;
+  for (let index = 0; index < count; index += 1) {
+    liveSuperset.entries.push({ ...successor.entries[0], id: `${family}.r10-${index}`, code: `${prefix}${900 + index}` });
+  }
 }
+liveSuperset.entries.sort((a, b) => a.id < b.id ? -1 : 1);
+registryUnion(predecessor, liveSuperset);
+const replaced = structuredClone(successor);
+const missingId = predecessor.entries[0].id;
+replaced.entries.find((entry) => entry.id === missingId).id = "zz-regression.replacement";
+replaced.entries.sort((a, b) => a.id < b.id ? -1 : 1);
+let missingRefused = false;
+try { registryUnion(predecessor, replaced); }
+catch (error) { missingRefused = String(error).includes("registry-predecessor-missing"); }
+if (!missingRefused) fail("registry-predecessor-presence-guard");
 let previousId = null;
 const codes = new Set();
 for (const entry of successor.entries) {
@@ -273,13 +283,6 @@ for (const entry of successor.entries) {
 }
 const changeEntries = successor.entries.filter((entry) => entry.id.startsWith("change."));
 if (changeEntries.length !== 12) fail("registry-change-family-size", changeEntries.length);
-// The merged format.*, adoption.*, portability.*, worklog-changelog.*,
-// managed.*, and change.* families ride along verbatim; their sizes are
-// the shared union arithmetic (r8, finding omp F7).
-for (const { family, codePrefix, entries } of LANDED_FAMILIES) {
-  const carried = successor.entries.filter((entry) => entry.code.startsWith(codePrefix)).length;
-  if (carried !== entries) fail(`registry-${family}-family-size`, carried);
-}
 const expectedChange = [
   ["change.commit-failed", "LEK-CHANGE-009"],
   ["change.compatibility-denied", "LEK-CHANGE-004"],

@@ -738,6 +738,111 @@ if (process.platform === "win32") {
   }
 }
 
+// r10 F1/F2: the public chain/tip can be recomputed by a ledger editor.
+// Only an actual local transaction may publish independent replay custody.
+const canonical = (value) => Array.isArray(value) ? value.map(canonical)
+  : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])])) : value;
+function rechain(document) {
+  let previous = provDigest("");
+  for (const record of document.records) {
+    const projection = structuredClone(record.receipt);
+    delete projection.history.recordDigest;
+    previous = provDigest(`${previous}\x1f${document.project}\x1f${record.intentDigest}\x1f${JSON.stringify(canonical(projection))}`);
+    record.receipt.history.recordDigest = previous;
+  }
+  document.tip = { sequence: document.records.length, recordDigest: previous };
+}
+function applyField(name, key) {
+  return run(["change", "entity-field:add", "--project", ".", "--entity", "tasks.task",
+    "--name", name, "--type", "tasks.priority", "--apply", "--idempotency-key", key, "--json"]);
+}
+freshSandbox("custody-donor");
+const donorCommit = applyField("priority", "r10-custody");
+if (donorCommit.code !== 0) fail("r10-donor-commit", donorCommit.json);
+const genuine = JSON.parse(readFileSync(join(sandbox, "lekalo/change-history.json"), "utf8"));
+const nextCommit = applyField("escalation", "r10-successor");
+if (nextCommit.code !== 0) fail("r10-successor-commit", nextCommit.json);
+const withSuccessor = JSON.parse(readFileSync(join(sandbox, "lekalo/change-history.json"), "utf8"));
+// Plain tail deletion changes no record hash, but MUST fail both receipt
+// lookups rather than silently reporting committed/unknown.
+const truncated = structuredClone(withSuccessor);
+truncated.records.pop();
+truncated.nextSequence = 2;
+writeFileSync(join(sandbox, "lekalo/change-history.json"), JSON.stringify(truncated));
+for (const key of ["r10-custody", "r10-successor"]) {
+  const result = run(["change", "receipt", "--project", ".", "--idempotency-key", key, "--json"]);
+  if (result.code !== 1 || !result.json?.reasonCodes?.includes("change.history-invalid")) fail("r10-tail-truncation", result);
+}
+rmSync(sandbox, { recursive: true, force: true });
+for (const attack of ["current-digest", "different-file", "empty-files", "fake-no-op", "later-successor"]) {
+  freshSandbox(`custody-${attack}`);
+  const source = join(sandbox, "lekalo/modules/tasks/entities.yaml");
+  const before = readFileSync(source);
+  const document = structuredClone(attack === "later-successor" ? withSuccessor : genuine);
+  const record = document.records[0];
+  if (attack === "current-digest") {
+    record.receipt.files[0].afterDigest = provDigest(before);
+    record.receipt.files[0].beforeDigest = provDigest("invented preimage");
+  } else if (attack === "different-file") {
+    record.files = ["lekalo/project.yaml"];
+    record.receipt.files[0].path = "lekalo/project.yaml";
+    record.receipt.files[0].afterDigest = provDigest(readFileSync(join(sandbox, "lekalo/project.yaml")));
+  } else if (attack === "later-successor") {
+    document.records[1].receipt.files[0].afterDigest = provDigest(before);
+  } else {
+    record.files = [];
+    record.receipt.files = [];
+    if (attack === "fake-no-op") record.receipt.state = "no-op";
+  }
+  rechain(document);
+  if (attack !== "empty-files" && !historyValidate(document)) fail("r10-forgery-shape", historyValidate.errors);
+  writeFileSync(join(sandbox, "lekalo/change-history.json"), JSON.stringify(document));
+  const result = applyField("priority", "r10-custody");
+  if (result.code !== 1 || !result.json?.reasonCodes?.includes("change.history-invalid")) fail(`r10-forged-${attack}`, result);
+  if (!readFileSync(source).equals(before)) fail("r10-forgery-mutated-sources", attack);
+  rmSync(sandbox, { recursive: true, force: true });
+}
+
+// r10 F3: exact crash state after the first of TWO recovery restorations.
+// A prefix with every PRESENT row restored must not unblock a sibling.
+freshSandbox("partial-adoption-recovery");
+const partialPlan = `sha256:${"c".repeat(32)}${"d".repeat(32)}`;
+const partialHomeRelative = `.lekalo/import/adoption/recovery/${"c".repeat(32)}/${"d".repeat(32)}`;
+const partialHome = join(sandbox, partialHomeRelative);
+mkdirSync(join(partialHome, "snapshots"), { recursive: true });
+const restorationRows = ["one.txt", "two.txt"].map((path) => {
+  const snapshot = `${partialHomeRelative}/snapshots/${createHash("sha256").update(path).digest("hex").slice(0, 32)}.bin`;
+  writeFileSync(join(sandbox, snapshot), "");
+  return { path, state: "written", snapshot, action: "create", before: null, after: provDigest("installed") };
+});
+writeFileSync(join(sandbox, "two.txt"), "installed"); // first path already restored (removed)
+const originalJournal = { schema_version: "lekalo/adoption-journal/v0.8.0", plan: partialPlan, phase: "apply", steps: restorationRows };
+writeFileSync(join(partialHome, "journal.json"), JSON.stringify(originalJournal));
+writeFileSync(join(partialHome, "recovery.json"), JSON.stringify({
+  ...originalJournal, phase: "recovery", steps: [{ ...restorationRows[0], action: undefined, state: "restored" }],
+}));
+const receiptHome = join(sandbox, ".lekalo/import/adoption/receipts", "c".repeat(32));
+mkdirSync(receiptHome, { recursive: true });
+const receiptLeaf = join(receiptHome, `${"d".repeat(32)}.json`);
+for (const malformed of ["", "{}", '{"outcome":"completed"}']) {
+  writeFileSync(receiptLeaf, malformed);
+  const refused = applyField("priority", "r10-partial-adoption");
+  if (refused.code !== 3 || !refused.json?.reasonCodes?.includes("change.precondition-failed")) fail("r10-partial-adoption-unblocked", refused);
+  if (!existsSync(join(sandbox, "two.txt"))) fail("r10-second-path-not-preserved");
+}
+rmSync(receiptLeaf);
+const restored = run(["adoption", "recovery", "--project", ".", "--digest", partialPlan, "--restore", "--json"]);
+if (restored.code !== 0) fail("r10-adoption-resume", restored);
+if (existsSync(join(sandbox, "two.txt"))) fail("r10-adoption-incomplete");
+const afterRecovery = applyField("priority", "r10-partial-adoption");
+if (afterRecovery.code !== 0) fail("r10-complete-adoption-still-blocked", afterRecovery);
+// The live cache-clear command must preserve lock-leaf identity/custody.
+const cleared = run(["cache", "clear", "--project", ".", "--yes", "--json"]);
+if (cleared.code !== 0 || !existsSync(join(sandbox, ".lekalo/cache/writer.lock"))) fail("r10-cache-clear-unlinked-writer-lock", cleared);
+if (!existsSync(join(sandbox, ".lekalo/change-history-pin.json"))) fail("r10-cache-clear-lost-commit-custody");
+const replayAfterClear = applyField("priority", "r10-partial-adoption");
+if (replayAfterClear.code !== 0 || replayAfterClear.json?.state !== "replayed") fail("r10-replay-after-clear", replayAfterClear);
+
 rmSync(sandbox, { recursive: true, force: true });
 process.stdout.write(`${JSON.stringify({
   ok: true,
@@ -758,6 +863,10 @@ process.stdout.write(`${JSON.stringify({
     "cache-clear-custody",
     "shared-writer-serialization",
     "adoption-journal-barriers",
+    "recomputed-ledger-custody-refusals",
+    "two-record-tail-truncation",
+    "two-file-partial-adoption-recovery",
+    "cache-clear-preserves-writer-lock-and-custody",
     heldLockFlow,
   ],
 }, null, 2)}\n`);

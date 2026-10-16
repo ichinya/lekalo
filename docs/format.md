@@ -51,6 +51,10 @@ blank-line groups; set-like `modules[].imports` sort; every
 behaviorally ordered array is preserved. Comments ride their owners;
 a comment without an unambiguous owner blocks until the explicit lossy
 opt-in. A source file that is already canonical formats to itself.
+A mutating `format` invocation (including no-op) may create the persistent
+shared `.lekalo/cache/writer.lock`; this is runtime lock custody, not a
+formatted output. The committed-tree fixed-point gate excludes exactly
+that leaf, not the source tree or other unexpected residue.
 
 ## Reports and safety
 

@@ -110,7 +110,6 @@ pub(crate) struct SnapshotRecord {
 
 /// The confined recovery home of one plan digest.
 pub(crate) struct RecoveryHome {
-    pub root: PathBuf,
     pub journal_relative: String,
     pub snapshots_relative: String,
 }
@@ -176,12 +175,10 @@ pub(crate) fn read_snapshot(root: &Path, record: &SnapshotRecord) -> Outcome<Vec
 }
 
 /// Resolve (never create) the recovery home of one plan digest.
-pub(crate) fn recovery_home(root: &Path, plan_digest: &str) -> Option<RecoveryHome> {
+pub(crate) fn recovery_home(_root: &Path, plan_digest: &str) -> Option<RecoveryHome> {
     let (head, tail) = version::digest_dir(plan_digest)?;
-    let home = root.join(version::RECOVERY_DIR).join(&head).join(&tail);
     let base = format!("{}/{}/{}", version::RECOVERY_DIR, head, tail);
     Some(RecoveryHome {
-        root: home,
         journal_relative: format!("{base}/journal.json"),
         snapshots_relative: format!("{base}/snapshots"),
     })
@@ -203,71 +200,150 @@ pub(crate) fn recovery_home(root: &Path, plan_digest: &str) -> Option<RecoveryHo
 /// rollback surface's restoration material, and a completed recovery
 /// retains the original journal by design (R6 — it is the only complete
 /// restoration metadata). A home is stranded exactly when its journal
-/// has neither a completed receipt (any outcome — the same
-/// disambiguation [`recover`] applies) nor a completed recovery progress
-/// record (`recovery.json` whose every step is `restored` or
-/// `already-restored`).
+/// has neither an exact, digest-verified completed receipt nor a strictly
+/// decoded recovery progress record covering EVERY journaled restoration.
+/// A restored prefix is an interrupted recovery, never a resolution.
 ///
 /// Model READERS are deliberately not gated by this barrier — see the
 /// loader's Phase 2c note for the contractual rationale.
 pub fn recovery_barrier_code(fs: &crate::project_fs::Fs) -> Option<&'static str> {
-    use crate::project_fs::EntryType;
-    let heads = fs.entries(version::RECOVERY_DIR).ok()?;
+    use crate::project_fs::{EntryType, FsErrorKind};
+    const BARRIER: Option<&str> = Some("adoption.recovery-required");
+    let heads = match fs.entries_bounded(version::RECOVERY_DIR, 4096) {
+        Ok(entries) => entries,
+        Err(FsErrorKind::NotFound) => return None,
+        Err(_) => return BARRIER,
+    };
     for (head, entry_type) in heads {
         if entry_type != EntryType::Directory {
-            continue;
+            return BARRIER;
         }
-        let tails = fs
-            .entries(&format!("{}/{}", version::RECOVERY_DIR, head))
-            .ok()?;
+        let tails = match fs.entries_bounded(&format!("{}/{}", version::RECOVERY_DIR, head), 4096) {
+            Ok(entries) => entries,
+            Err(_) => return BARRIER,
+        };
         for (tail, entry_type) in tails {
             if entry_type != EntryType::Directory {
-                continue;
+                return BARRIER;
             }
             let home = format!("{}/{}/{}", version::RECOVERY_DIR, head, tail);
-            if !matches!(fs.entry_type(&home, "journal.json"), Ok(EntryType::File)) {
+            let bytes = match fs.read_file_opt(&home, "journal.json", 4 * 1024 * 1024) {
+                Ok(None) | Err(FsErrorKind::NotFound) => continue,
+                Ok(Some(bytes)) => bytes,
+                Err(_) => return BARRIER,
+            };
+            let plan = format!("sha256:{head}{tail}");
+            let Ok(journal) = decode_journal(&bytes, &plan, &format!("{home}/snapshots"), false)
+            else {
+                return BARRIER;
+            };
+            if completed_receipt_resolves(fs, &home, &head, &tail, &journal)
+                || recovery_progress_resolved(fs, &home, &journal)
+            {
                 continue;
             }
-            // The recovery home's two directory levels are the plan
-            // digest's halves, so the completed receipt — if any — is
-            // exactly `receipts/<head>/<tail>.json` (any outcome:
-            // completed apply, completed rollback).
-            let receipt = fs.entry_type(
-                &format!("{}/{}", version::RECEIPTS_DIR, head),
-                &format!("{tail}.json"),
-            );
-            if matches!(receipt, Ok(EntryType::File)) {
-                continue;
-            }
-            if recovery_progress_resolved(fs, &home) {
-                continue;
-            }
-            return Some("adoption.recovery-required");
+            return BARRIER;
         }
     }
     None
 }
 
-/// Whether one home's `recovery.json` records a COMPLETED recovery:
-/// every step `restored` or `already-restored`. Anything else — absent,
-/// unreadable, malformed, or carrying a `restore-failed` step — is not a
-/// resolution (fail closed toward the barrier).
-fn recovery_progress_resolved(fs: &crate::project_fs::Fs, home: &str) -> bool {
-    let Ok(Some(bytes)) = fs.read_file_opt(home, "recovery.json", 64 * 1024) else {
+/// A receipt is resolution only after strict owner decoding, digest/plan/
+/// phase binding, and exact coverage of the journal's completed writes.
+fn completed_receipt_resolves(
+    fs: &crate::project_fs::Fs,
+    home: &str,
+    head: &str,
+    tail: &str,
+    journal: &Journal,
+) -> bool {
+    let Ok(Some(bytes)) = fs.read_file_opt(
+        &format!("{}/{head}", version::RECEIPTS_DIR),
+        &format!("{tail}.json"),
+        4 * 1024 * 1024,
+    ) else {
         return false;
     };
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+    let Ok(receipt) = super::wire::receipt_of_bytes(&bytes) else {
         return false;
     };
-    let Some(steps) = value.get("steps").and_then(|steps| steps.as_array()) else {
-        return false;
-    };
-    !steps.is_empty()
-        && steps.iter().all(|step| {
-            matches!(
-                step.get("state").and_then(|state| state.as_str()),
-                Some("restored") | Some("already-restored")
+    let value = serde_json::to_value(&receipt).expect("receipt serializes");
+    if receipt.plan != journal.plan
+        || receipt.phase != journal.phase
+        || receipt.journal.as_deref() != Some(format!("{home}/journal.json").as_str())
+        || !matches!(
+            (receipt.phase.as_str(), receipt.outcome.as_str()),
+            ("apply" | "confirmation", "completed") | ("rollback", "rolled-back")
+        )
+        || receipt.receipt
+            != super::wire::digest(
+                "adoption-receipt",
+                &super::wire::without_member(&value, "receipt"),
             )
+    {
+        return false;
+    }
+    let state = if journal.phase == "rollback" {
+        "restored"
+    } else {
+        "written"
+    };
+    let rows: Vec<_> = journal
+        .steps
+        .iter()
+        .filter(|step| step.state == state)
+        .collect();
+    let mut seen = std::collections::BTreeSet::new();
+    rows.len() == receipt.writes.len()
+        && rows.iter().all(|step| {
+            seen.insert(&step.path)
+                && step
+                    .snapshot
+                    .as_ref()
+                    .is_some_and(|snapshot| receipt.snapshots.contains(snapshot))
+                && receipt.writes.iter().any(|write| {
+                    write.path == step.path
+                        && (state == "restored"
+                            || (step.action.as_ref() == Some(&write.action)
+                                && step.before == write.before
+                                && step.after == write.after))
+                })
+        })
+}
+
+/// Recovery persists progress after EACH restore. Only an exact, duplicate-
+/// free complete set, bound to the original journal's metadata, clears the
+/// sibling barrier; a one-row prefix of a two-file recovery stays blocked.
+fn recovery_progress_resolved(fs: &crate::project_fs::Fs, home: &str, journal: &Journal) -> bool {
+    if !matches!(journal.phase.as_str(), "apply" | "confirmation") {
+        return false;
+    }
+    let Ok(Some(bytes)) = fs.read_file_opt(home, "recovery.json", 4 * 1024 * 1024) else {
+        return false;
+    };
+    let Ok(progress) = decode_journal(&bytes, &journal.plan, &format!("{home}/snapshots"), true)
+    else {
+        return false;
+    };
+    let records: Vec<_> = journal
+        .steps
+        .iter()
+        .filter(|step| step.state == "written")
+        .collect();
+    let mut seen = std::collections::BTreeSet::new();
+    !records.is_empty()
+        && records.len() == progress.steps.len()
+        && records.iter().zip(&progress.steps).all(|(record, step)| {
+            seen.insert(&record.path)
+                && record.action.is_some()
+                && (record.before.is_some() || record.after.is_some())
+                && record.snapshot.is_some()
+                && step.path == record.path
+                && step.snapshot == record.snapshot
+                && step.before == record.before
+                && step.after == record.after
+                && step.action.is_none()
+                && matches!(step.state.as_str(), "restored" | "already-restored")
         })
 }
 
@@ -385,12 +461,39 @@ pub fn load_journal(root: &Path, plan_digest: &str) -> Outcome<Option<Journal>> 
             "invalid-digest",
         )));
     };
-    let bytes = match std::fs::read(home.root.join("journal.json")) {
-        Ok(bytes) => bytes,
-        Err(_) => return Ok(None),
+    let fs = crate::project_fs::Fs::open(root)
+        .map_err(|_| DomainResult::invalid(diagnostic::input_invalid_set("journal", "read")))?;
+    let logical = home
+        .journal_relative
+        .rsplit_once('/')
+        .expect("journal home")
+        .0;
+    let bytes = match fs.read_file_opt(logical, "journal.json", 4 * 1024 * 1024) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) | Err(crate::project_fs::FsErrorKind::NotFound) => return Ok(None),
+        Err(_) => {
+            return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+                "journal", "read",
+            )))
+        }
     };
+    decode_journal(&bytes, plan_digest, &home.snapshots_relative, false).map(Some)
+}
+
+fn decode_journal(
+    bytes: &[u8],
+    plan_digest: &str,
+    snapshots: &str,
+    recovery: bool,
+) -> Outcome<Journal> {
+    if !version::is_sha256(plan_digest) {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "journal",
+            "journal-plan",
+        )));
+    }
     let value =
-        super::wire::unique_json(&bytes).map_err(|error| DomainResult::invalid(error.set()))?;
+        super::wire::unique_json(bytes).map_err(|error| DomainResult::invalid(error.set()))?;
     let journal: Journal = serde_json::from_value(value).map_err(|_| {
         DomainResult::invalid(diagnostic::input_invalid_set("journal", "closed-shape"))
     })?;
@@ -406,9 +509,29 @@ pub fn load_journal(root: &Path, plan_digest: &str) -> Outcome<Option<Journal>> 
             "journal-plan",
         )));
     }
-    let snapshots_prefix = format!("{}/", home.snapshots_relative);
+    if (recovery && journal.phase != "recovery")
+        || (!recovery
+            && !matches!(
+                journal.phase.as_str(),
+                "apply" | "confirmation" | "rollback"
+            ))
+    {
+        return Err(DomainResult::invalid(diagnostic::input_invalid_set(
+            "journal",
+            "journal-phase",
+        )));
+    }
+    let snapshots_prefix = format!("{snapshots}/");
     for step in &journal.steps {
-        if !JOURNAL_STATES.contains(&step.state.as_str()) {
+        let state_valid = if recovery {
+            matches!(
+                step.state.as_str(),
+                "restored" | "already-restored" | "restore-failed"
+            )
+        } else {
+            JOURNAL_STATES.contains(&step.state.as_str())
+        };
+        if !state_valid {
             return Err(DomainResult::invalid(diagnostic::input_invalid_set(
                 "journal",
                 "journal-state",
@@ -449,7 +572,7 @@ pub fn load_journal(root: &Path, plan_digest: &str) -> Outcome<Option<Journal>> 
             }
         }
     }
-    Ok(Some(journal))
+    Ok(journal)
 }
 
 /// The durable recovery view of one plan (F10/X5): the interrupted
@@ -788,11 +911,15 @@ pub fn recover(root: &Path, plan_digest: &str) -> Outcome<RecoveryOutcome> {
     })
 }
 
-/// Durably record one recovery's progress beside (never over) the
-/// original journal, through the confined store. The original journal
-/// keeps the complete restoration metadata, so an interrupted or
-/// failed recovery is always resumable (R6); the progress rows make
-/// every completed restoration visible (F6).
+#[cfg(test)]
+thread_local! {
+    // Simulates process death AFTER durable progress publication, with no
+    // cleanup. Never compiled into the shipped CLI or library.
+    static INTERRUPT_RECOVERY_AFTER: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Durably record progress beside (never over) the complete original
+/// journal. Every publication is a possible process-death checkpoint.
 fn persist_recovery_progress(root: &Path, home: &RecoveryHome, progress: &Journal) -> Outcome<()> {
     let bytes = serde_json::to_vec_pretty(progress).expect("journal serializes");
     let parent = home
@@ -806,6 +933,18 @@ fn persist_recovery_progress(root: &Path, home: &RecoveryHome, progress: &Journa
             "journal-write",
         ))
     })?;
+    #[cfg(test)]
+    if INTERRUPT_RECOVERY_AFTER.get() == progress.steps.len() {
+        if std::env::var_os("LEKALO_TEST_ADOPTION_RECOVERY_KILL_ROOT").is_some() {
+            // Actual process death: no Rust cleanup/Drop runs, and the OS
+            // releases the writer handle just as for a killed recovery.
+            std::process::exit(91);
+        }
+        return Err(DomainResult::invalid(diagnostic::recovery_required_set(
+            &progress.plan,
+            "test-interruption",
+        )));
+    }
     Ok(())
 }
 
@@ -1084,6 +1223,244 @@ mod tests {
                 .as_slice(),
         )
         .expect("journal written");
+    }
+
+    #[test]
+    fn interrupted_two_file_recovery_keeps_the_sibling_barrier_until_complete() {
+        let plan = sha(b"two-file-recovery");
+        // Re-execute this exact test as a child and die after publication
+        // of the FIRST restore. This proves a real no-cleanup process-death
+        // state, not merely a fabricated prefix or an unwound error return.
+        if let Some(root) = std::env::var_os("LEKALO_TEST_ADOPTION_RECOVERY_KILL_ROOT") {
+            INTERRUPT_RECOVERY_AFTER.set(1);
+            recover(Path::new(&root), &plan).expect("child must die in the checkpoint");
+            panic!("recovery passed the process-death checkpoint");
+        }
+        let root = tempfile::tempdir().unwrap();
+        let home = home_of(root.path(), &plan);
+        let mut journal = Journal::new(&plan, "apply");
+        let records = snapshot_targets(
+            root.path(),
+            &home,
+            &["one.txt".to_owned(), "two.txt".to_owned()],
+            &mut journal,
+        )
+        .unwrap();
+        for record in &records {
+            std::fs::write(root.path().join(&record.path), b"installed").unwrap();
+            journal.steps.push(JournalStep {
+                path: record.path.clone(),
+                state: "written".to_owned(),
+                snapshot: Some(record.snapshot.clone()),
+                action: Some("create".to_owned()),
+                before: None,
+                after: Some(sha(b"installed")),
+            });
+        }
+        write_journal(root.path(), &home, &journal);
+        let fs = crate::project_fs::Fs::open(root.path()).unwrap();
+        assert_eq!(
+            recovery_barrier_code(&fs),
+            Some("adoption.recovery-required")
+        );
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "adoption::transaction::tests::interrupted_two_file_recovery_keeps_the_sibling_barrier_until_complete", "--nocapture"])
+            .env("LEKALO_TEST_ADOPTION_RECOVERY_KILL_ROOT", root.path())
+            .output().expect("recovery subprocess");
+        assert_eq!(
+            child.status.code(),
+            Some(91),
+            "child checkpoint: {}{}",
+            String::from_utf8_lossy(&child.stdout),
+            String::from_utf8_lossy(&child.stderr)
+        );
+        assert!(!root.path().join("one.txt").exists());
+        assert!(
+            root.path().join("two.txt").exists(),
+            "death window: second path is unresolved"
+        );
+        assert_eq!(
+            recovery_barrier_code(&fs),
+            Some("adoption.recovery-required")
+        );
+        // Neither an empty receipt nor malformed/duplicate progress may
+        // hide the real interrupted state from ANY sibling writer.
+        let (head, tail) = version::digest_dir(&plan).unwrap();
+        let receipt_dir = root.path().join(version::RECEIPTS_DIR).join(&head);
+        std::fs::create_dir_all(&receipt_dir).unwrap();
+        let receipt_path = receipt_dir.join(format!("{tail}.json"));
+        for bytes in [
+            b"".as_slice(),
+            b"{}".as_slice(),
+            b"{\"outcome\":\"completed\"}".as_slice(),
+        ] {
+            std::fs::write(&receipt_path, bytes).unwrap();
+            assert_eq!(
+                recovery_barrier_code(&fs),
+                Some("adoption.recovery-required")
+            );
+        }
+        std::fs::remove_file(receipt_path).unwrap();
+        recover(root.path(), &plan).expect("resumes idempotently");
+        assert!(!root.path().join("two.txt").exists());
+        assert_eq!(recovery_barrier_code(&fs), None);
+        let progress_path = root
+            .path()
+            .join(home.journal_relative)
+            .with_file_name("recovery.json");
+        let complete = std::fs::read(&progress_path).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&complete).unwrap();
+        for mutation in [
+            "missing",
+            "duplicate",
+            "wrong-plan",
+            "wrong-path",
+            "wrong-snapshot",
+            "wrong-before",
+            "wrong-phase",
+            "unknown",
+        ] {
+            let mut bad = value.clone();
+            match mutation {
+                "missing" => {
+                    bad["steps"].as_array_mut().unwrap().pop();
+                }
+                "duplicate" => {
+                    bad["steps"][1] = bad["steps"][0].clone();
+                }
+                "wrong-plan" => bad["plan"] = serde_json::json!(sha(b"foreign")),
+                "wrong-path" => bad["steps"][1]["path"] = serde_json::json!("foreign.txt"),
+                "wrong-snapshot" => {
+                    bad["steps"][1]["snapshot"] = serde_json::json!(records[0].snapshot)
+                }
+                "wrong-before" => bad["steps"][1]["before"] = serde_json::json!(sha(b"foreign")),
+                "wrong-phase" => bad["phase"] = serde_json::json!("apply"),
+                _ => bad["extra"] = serde_json::json!(true),
+            }
+            std::fs::write(&progress_path, serde_json::to_vec(&bad).unwrap()).unwrap();
+            assert_eq!(
+                recovery_barrier_code(&fs),
+                Some("adoption.recovery-required"),
+                "{mutation}"
+            );
+        }
+        std::fs::write(progress_path, complete).unwrap();
+        assert_eq!(recovery_barrier_code(&fs), None);
+    }
+
+    #[test]
+    fn completed_receipt_requires_owner_decode_digest_plan_and_exact_write_set() {
+        let root = tempfile::tempdir().unwrap();
+        let plan = sha(b"completed-installation");
+        let home = home_of(root.path(), &plan);
+        let snapshot = format!(
+            "{}/{}",
+            home.snapshots_relative,
+            version::snapshot_name("one.txt")
+        );
+        let journal = Journal {
+            steps: vec![JournalStep {
+                path: "one.txt".to_owned(),
+                state: "written".to_owned(),
+                snapshot: Some(snapshot.clone()),
+                action: Some("create".to_owned()),
+                before: None,
+                after: Some(sha(b"installed")),
+            }],
+            ..Journal::new(&plan, "apply")
+        };
+        write_journal(root.path(), &home, &journal);
+        let receipt = super::super::wire::AdoptionReceipt {
+            schema_version: version::RECEIPT_SCHEMA_VERSION.to_owned(),
+            identity: version::RECEIPT_IDENTITY.to_owned(),
+            receipt: String::new(),
+            phase: "apply".to_owned(),
+            project: "test".to_owned(),
+            plan: plan.clone(),
+            outcome: "completed".to_owned(),
+            writes: vec![WriteEntry {
+                path: "one.txt".to_owned(),
+                action: "create".to_owned(),
+                before: None,
+                after: Some(sha(b"installed")),
+                content: Some("installed".to_owned()),
+            }],
+            journal: Some(home.journal_relative.clone()),
+            snapshots: vec![snapshot],
+            verification: None,
+            pins: super::super::wire::Pins {
+                model: sha(b"model"),
+                lock: None,
+                observed_index: None,
+                adapter: None,
+                sources: Vec::new(),
+            },
+            analysis: None,
+        };
+        let fs = crate::project_fs::Fs::open(root.path()).unwrap();
+        for mutation in [
+            "bad-digest",
+            "foreign-plan",
+            "failed",
+            "wrong-phase",
+            "missing-write",
+            "wrong-journal",
+            "valid",
+        ] {
+            let mut sample = receipt.clone();
+            match mutation {
+                "foreign-plan" => sample.plan = sha(b"foreign"),
+                "failed" => sample.outcome = "failed".to_owned(),
+                "wrong-phase" => sample.phase = "rollback".to_owned(),
+                "missing-write" => sample.writes.clear(),
+                "wrong-journal" => sample.journal = None,
+                _ => {}
+            }
+            let value = serde_json::to_value(&sample).unwrap();
+            sample.receipt = super::super::wire::digest(
+                "adoption-receipt",
+                &super::super::wire::without_member(&value, "receipt"),
+            );
+            if mutation == "bad-digest" {
+                sample.receipt = sha(b"bad");
+            }
+            persist_receipt(root.path(), &plan, &sample).unwrap();
+            assert_eq!(
+                recovery_barrier_code(&fs),
+                if mutation == "valid" {
+                    None
+                } else {
+                    Some("adoption.recovery-required")
+                },
+                "{mutation}"
+            );
+        }
+        // Duplicate-key bytes refuse even if the other projection is valid.
+        let (head, tail) = version::digest_dir(&plan).unwrap();
+        std::fs::write(
+            root.path()
+                .join(version::RECEIPTS_DIR)
+                .join(head)
+                .join(format!("{tail}.json")),
+            b"{\"outcome\":\"completed\",\"outcome\":\"completed\"}",
+        )
+        .unwrap();
+        assert_eq!(
+            recovery_barrier_code(&fs),
+            Some("adoption.recovery-required")
+        );
+        // An unreadable/non-directory enumeration is also fail closed.
+        let broken = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(broken.path().join(".lekalo/import/adoption")).unwrap();
+        std::fs::write(
+            broken.path().join(version::RECOVERY_DIR),
+            b"not a directory",
+        )
+        .unwrap();
+        assert_eq!(
+            recovery_barrier_code(&crate::project_fs::Fs::open(broken.path()).unwrap()),
+            Some("adoption.recovery-required")
+        );
     }
 
     /// F1/R4: a durable journal is untrusted persisted input. Loading

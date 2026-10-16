@@ -188,7 +188,9 @@ impl CacheHome {
     /// holds a journal, the clear refuses outright — the operator must
     /// recover or abort it first — so the custody exemption is a second
     /// line of defense, never the only one. Returns the number of
-    /// top-level entries removed.
+    /// top-level entries removed. The persistent shared `writer.lock` leaf
+    /// is also custody: unlinking it (even while unlocked) can split OS-lock
+    /// ownership between an old open inode and a newly created one.
     pub(crate) fn clear(&self) -> Result<usize, HomeFailure> {
         if !crate::change::transaction::pending_transactions(&self.project_root).is_empty() {
             return Err(Self::denied(
@@ -202,7 +204,7 @@ impl CacheHome {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let Some(name) = name.to_str() else { continue };
-            if name == "migrations" || name == "format" || name == "change" {
+            if matches!(name, "migrations" | "format" | "change" | "writer.lock") {
                 continue;
             }
             let metadata = match entry.metadata() {
@@ -257,6 +259,7 @@ impl CacheHome {
             if name.to_str() == Some("migrations")
                 || name.to_str() == Some("format")
                 || name.to_str() == Some("change")
+                || name.to_str() == Some("writer.lock")
             {
                 continue;
             }
@@ -406,6 +409,25 @@ mod tests {
                 .len();
         let total = home.total_bytes().expect("bounded projection");
         assert_eq!(total, 0, "custody bytes are not disposable: {bytes}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn clear_preserves_the_shared_writer_lock_leaf_even_while_held() {
+        let root = temp_root("clear-writer-lock");
+        let home = CacheHome::resolve(&root).expect("home resolves");
+        let lock = crate::project_writer::WriterLock::acquire(&root).expect("held lock");
+        std::fs::write(root.join(".lekalo/cache/cache.sqlite"), b"stale").expect("db");
+        assert_eq!(home.clear().expect("clear under live lock"), 1);
+        assert!(root.join(".lekalo/cache/writer.lock").is_file());
+        assert_eq!(home.total_bytes(), Some(0));
+        // A contender must still see the SAME held lock after clear.
+        assert!(crate::project_writer::WriterLock::acquire(&root).is_err());
+        drop(lock);
+        let next = crate::project_writer::WriterLock::acquire(&root).expect("released");
+        assert_eq!(home.clear().expect("idle clear"), 0);
+        assert!(root.join(".lekalo/cache/writer.lock").is_file());
+        drop(next);
         let _ = std::fs::remove_dir_all(&root);
     }
 

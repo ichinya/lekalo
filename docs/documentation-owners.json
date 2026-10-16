@@ -2737,7 +2737,7 @@
       "id": "contract:contracts/change-history.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-history.schema.v0.8.0.json",
-      "sourceDigest": "sha256:51c6803bfd9fedd8c70ff15911c673ec257c517e8d9e73e1d7f200311fa35353",
+      "sourceDigest": "sha256:b498c67687164d89759f6276cf51ba7907141b8a1b3bfe193cebdae26fce46b1",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2971,7 +2971,7 @@
       "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
-      "sourceDigest": "sha256:17d48898047cc45c4ab185c14c9b19f40f9eea6c45f3b205f67ee52eeb995ea2",
+      "sourceDigest": "sha256:9f549416f622b7ecd2c28ac9fd837dd28104f64f62a664ffcfa9ff12342b96ad",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

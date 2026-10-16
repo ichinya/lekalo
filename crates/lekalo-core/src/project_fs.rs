@@ -866,7 +866,7 @@ const RUNTIME_ENTRIES: [&str; 6] = [
 /// change provenance registry (issue #73) anchors transaction journals
 /// OUTSIDE the transaction cache home, so a journal planted into
 /// `.lekalo/cache` alone can never mint recovery authority.
-const RUNTIME_FILES: [&str; 1] = ["pending-transactions.json"];
+const RUNTIME_FILES: [&str; 2] = ["pending-transactions.json", "change-history-pin.json"];
 
 /// The closed children of `.lekalo/adapters/` — the custody tree the
 /// adapter package model owns (docs/canonical-structure.md).

@@ -23,7 +23,9 @@ filesystem writer or a policy bypass.
 - Canonical homes: `lekalo/change-history.json` (durable audit and
   idempotency ledger, admitted by the structure checker; never model
   input) and `.lekalo/cache/change/<transaction-id>/` (temporary
-  journal/backup/recovery material)
+  journal/backup/recovery material), plus the private non-cache commit
+  custody pin `.lekalo/change-history-pin.json` (never canonical Model
+  input and never reconstructed from ledger claims)
 
 ## Request surface
 
@@ -199,8 +201,12 @@ the sibling barriers: a change writer refuses while a migration,
 format, or adoption journal is stranded (`change.precondition-failed`,
 denied 3, detail `migration-journal`/`format-journal`/
 `adoption-journal`) — the adoption barrier's stranded predicate ignores
-completed work, which deliberately retains its journals (the receipts
-and the recovery progress record disambiguate), and adoption's own
+completed work, which deliberately retains its journals (a strictly
+owner-decoded, digest- and plan-bound completed receipt with the exact
+write set, or recovery progress covering **every** original restoration
+with matching plan/path/snapshot/before/after metadata, disambiguates).
+A restored prefix of a multi-file recovery, malformed/empty receipt,
+or enumeration/decode error preserves the barrier, and adoption's own
 mutating entries stay reachable while a journal is stranded because
 they are its resolvers.
 
@@ -252,7 +258,12 @@ The canonical history is a tamper-evident chain: each record carries a
 digest over the previous record's digest, the project identity, the
 record's exact execution-intent digest, and its own pinned fields plus
 the ENTIRE embedded receipt projection, recomputed and verified on
-every decode; replay, lookup, and committed recovery additionally bind
+every decode. A top-level `tip` independently pins the accepted record
+count (`sequence`) and last `recordDigest`: dropping the tail and changing
+`nextSequence` alone fails decode. Stored receipts admit only committed
+mutations with a nonempty, duplicate-free source set or no-op with no
+source files; malformed or empty mutation projections fail closed.
+Replay, lookup, and committed recovery additionally bind
 the ledger's project identity to the selected project's owner document.
 A valid ledger copied from a different project ID refuses rather than
 authorizing replay. The stored intent is additionally cross-checked against
@@ -264,6 +275,31 @@ zero-byte ledger files all fail closed (`change.history-invalid`,
 invalid 1); replay never guesses from current source bytes. The chain
 is tamper evidence against partial edits, not authentication against
 an attacker who can recompute every hash.
+
+Replay authority therefore also requires independent **local commit
+custody** (`.lekalo/change-history-pin.json`, outside the disposable
+cache). The sealed writer journals and publishes this closed pin in the
+same transaction as sources/history; ordinary failure restores the old
+pin and committed recovery verifies it. It binds the exact accepted
+history bytes, project, record count, and chain tip. A ledger-only editor
+cannot mint it by substituting a different in-project file, rewriting
+after-digests to current bytes, fabricating a later successor, or
+emptying the source set (even relabeling the claim as no-op). Missing,
+linked, malformed, or mismatched custody refuses `change.history-invalid`
+(`commit-custody`), including when a new key attempts to extend the edited
+history. A removed ledger with surviving custody is not first-use.
+`cache clear` preserves this pin and the persistent `writer.lock` leaf;
+no-op mutating entries may create that lock without changing sources.
+
+The canonical audit/receipt store remains the history, not the custody
+pin: read-only lookup remains available after source drift or a checkout
+without local custody, but it never authorizes replay. A clone or backup
+that omits custody intentionally cannot claim a local commit/replay;
+restore the original trusted custody with the complete project backup,
+not by synthesizing it from the ledger. Editing/copying both the entire
+runtime custody and the ledger is outside the ledger-only trust boundary,
+like editing the canonical sources directly. This is local provenance,
+not cryptographic authentication against a full-project writer.
 
 The raw idempotency key never enters any wire surface: only its
 `sha256:` digest is stored. Receipt states (`committed`, `replayed`,

@@ -10,6 +10,7 @@
     "identity",
     "project",
     "nextSequence",
+    "tip",
     "records"
   ],
   "properties": {
@@ -29,6 +30,16 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 1000001
+    },
+    "tip": {
+      "description": "Independently stored accepted record count and chain endpoint. Decode verifies both against records; truncating a tail and adjusting nextSequence alone fails closed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sequence", "recordDigest"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "recordDigest": { "$ref": "#/$defs/sha256" }
+      }
     },
     "records": {
       "type": "array",
@@ -107,6 +118,13 @@
     "receiptProjection": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "committed" } }, "required": ["state"] },
+          "then": { "properties": { "files": { "type": "array", "minItems": 1 } } },
+          "else": { "properties": { "files": { "type": "array", "maxItems": 0 } } }
+        }
+      ],
       "required": [
         "status",
         "schemaVersion",

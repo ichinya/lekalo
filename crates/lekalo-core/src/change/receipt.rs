@@ -73,6 +73,7 @@ impl TransactionState {
 
 /// One file outcome of a committed or rolled-back transaction.
 #[derive(Clone, Debug, Serialize, serde::Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct FileOutcome {
     pub path: String,
     #[serde(rename = "beforeDigest")]
@@ -259,6 +260,11 @@ impl History {
         {
             return Err(super::diagnostic::ChangeError::HistoryInvalid { detail: "identity" });
         }
+        if map.len() != 6 {
+            return Err(super::diagnostic::ChangeError::HistoryInvalid {
+                detail: "root-members",
+            });
+        }
         let project = map
             .get("project")
             .and_then(Json::as_str)
@@ -428,11 +434,35 @@ impl History {
                 detail: "next-sequence-order",
             });
         }
+        // A backward-only chain cannot detect removal of its last row.
+        // This independently stored count/tip anchor detects tail truncation
+        // even when the editor adjusts nextSequence (r10, finding F2).
+        let tip = map
+            .get("tip")
+            .and_then(Json::as_object)
+            .ok_or(super::diagnostic::ChangeError::HistoryInvalid { detail: "tip" })?;
+        if tip.len() != 2
+            || tip.get("sequence").and_then(Json::as_u64) != Some(records.len() as u64)
+            || tip.get("recordDigest").and_then(Json::as_str) != Some(chain.as_str())
+        {
+            return Err(super::diagnostic::ChangeError::HistoryInvalid { detail: "tip" });
+        }
         Ok(Self {
             project,
             next_sequence,
             records,
         })
+    }
+
+    /// The accepted chain endpoint (the empty sentinel for a new ledger).
+    pub(crate) fn tip_digest(&self) -> String {
+        self.records
+            .last()
+            .and_then(|record| record.receipt.get("history"))
+            .and_then(|anchor| anchor.get("recordDigest"))
+            .and_then(Json::as_str)
+            .unwrap_or(GENESIS_DIGEST)
+            .to_owned()
     }
 
     /// Serialize the canonical history bytes (sorted keys, compact rows are
@@ -459,6 +489,10 @@ impl History {
             "identity": version::HISTORY_IDENTITY,
             "project": self.project,
             "nextSequence": self.records.len() as u64 + 1,
+            "tip": {
+                "sequence": self.records.len(),
+                "recordDigest": self.tip_digest(),
+            },
             "records": records,
         });
         serde_json::to_string_pretty(&document).unwrap_or_default()
@@ -504,8 +538,10 @@ pub(crate) const GENESIS_DIGEST: &str =
 /// decode closed (round 2, finding 7; round 3, finding 5 extends the
 /// input beyond the bare receipt). This remains an unkeyed chain: it is
 /// tamper evidence against partial edits, not authentication against an
-/// attacker who can recompute every hash — that requires a keyed
-/// successor and stays out of scope. Encode ([`super::apply_prepared`])
+/// attacker who can recompute every hash. Replay additionally requires
+/// the transactionally published non-cache custody pin outside this
+/// ledger (r10, finding F1); the public chain alone is never authority.
+/// Encode ([`super::apply_prepared`])
 /// and decode ([`History::decode`]) compute exactly this formula.
 pub(crate) fn record_digest(
     previous: &str,
@@ -621,10 +657,7 @@ fn verify_receipt_projection<'a>(
         return invalid("receipt-binding");
     }
     let state = text("state")?;
-    if !matches!(
-        state,
-        "committed" | "no-op" | "replayed" | "rejected" | "rolled-back" | "recovery-required"
-    ) {
+    if !matches!(state, "committed" | "no-op") {
         return invalid("receipt-state");
     }
     let receipt_operations = map.get("operations").and_then(Json::as_array).ok_or(
@@ -653,6 +686,37 @@ fn verify_receipt_projection<'a>(
             detail: "receipt-files",
         },
     )?;
+    // Committed mutation requires a real, nonempty source set; no-op has
+    // none. Never let an empty or malformed projection silently authorize
+    // mutating replay (r10, finding F1). Every outcome is strictly typed.
+    if (state == "committed") == receipt_files.is_empty() {
+        return invalid("receipt-state-files");
+    }
+    let mut seen_paths = std::collections::BTreeSet::new();
+    for value in receipt_files {
+        let outcome: FileOutcome = serde_json::from_value(value.clone()).map_err(|_| {
+            super::diagnostic::ChangeError::HistoryInvalid {
+                detail: "receipt-files",
+            }
+        })?;
+        if !seen_paths.insert(outcome.path.clone())
+            || outcome.path == super::version::HISTORY_LOGICAL_PATH
+            || super::expect_digest(&outcome.before_digest).is_none()
+            || super::expect_digest(&outcome.after_digest).is_none()
+            || outcome.outcome != "replaced"
+            || outcome.before_digest == outcome.after_digest
+        {
+            return invalid("receipt-files");
+        }
+    }
+    if map
+        .get("transaction")
+        .and_then(|tx| tx.get("state"))
+        .and_then(Json::as_str)
+        != Some("committed")
+    {
+        return invalid("receipt-transaction");
+    }
     let receipt_files: Option<Vec<&str>> = receipt_files
         .iter()
         .map(|value| value.get("path").and_then(Json::as_str))

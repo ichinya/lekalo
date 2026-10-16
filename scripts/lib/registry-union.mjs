@@ -1,40 +1,40 @@
-// The merged 0.8.0 diagnostic-registry union arithmetic, stated once
-// (issue #73 r8, review finding omp F7): every family gate and the
-// managed-contracts generator derived "predecessor + landed families"
-// independently across six sites, so the next family merge (or one
-// family gaining a rule) touched every gate. This module is the single
-// source of that arithmetic; gates import it instead of re-deriving.
-//
-// The counts are the number of registry entries each merged family
-// landed in the 0.8.0 union successor on top of the frozen 0.6.5
-// predecessor (522 entries, preserved byte-identically). `codePrefix`
-// is the registry code prefix the family's entries carry.
+// The milestone registry is an ADDITIVE union, not an exhaustive hand-maintained
+// list of landed families. Every consumer validates the actual data (r10 #73):
+// predecessorIds MUST be a subset, predecessor entries must be byte-identical,
+// and all successor IDs/codes must be unique and sorted. Each owning family
+// gate separately pins its own closed rule set. New live M8 families therefore
+// require no arithmetic update in unrelated gates or this helper.
 
-export const LANDED_FAMILIES = [
-  { family: 'format', issue: 94, codePrefix: 'LEK-FORMAT-', entries: 11 },
-  // Issue #136 landed nine rules; issue #73 r8 added the denied-allowed
-  // shared-writer busy rule `adoption.writer-locked` (LEK-ADOPT-010).
-  { family: 'adoption', issue: 136, codePrefix: 'LEK-ADOPT-', entries: 10 },
-  { family: 'portability', issue: 19, codePrefix: 'LEK-PORT-', entries: 9 },
-  { family: 'worklog-changelog', issue: 51, codePrefix: 'LEK-WC-', entries: 7 },
-  { family: 'managed', issue: 41, codePrefix: 'LEK-MGD-', entries: 12 },
-  { family: 'change', issue: 73, codePrefix: 'LEK-CHANGE-', entries: 12 },
-];
-
-// The total number of landed entries across every merged family.
-export const LANDED_ENTRY_COUNT = LANDED_FAMILIES.reduce(
-  (sum, family) => sum + family.entries,
-  0,
-);
-
-// The expected 0.8.0 union successor size for one predecessor size.
-export const unionSize = (predecessorCount) => predecessorCount + LANDED_ENTRY_COUNT;
-
-// The number of entries one named family landed (`undefined` when the
-// family is not part of the merged union).
-export const familyCount = (family) =>
-  LANDED_FAMILIES.find((candidate) => candidate.family === family)?.entries;
-
-// The number of entries carrying one registry code prefix.
-export const countByCodePrefix = (entries, codePrefix) =>
-  entries.filter((entry) => entry.code.startsWith(codePrefix)).length;
+export function registryUnion(predecessor, successor) {
+  const fail = (reason, id) => { throw new Error(`${reason}${id ? `: ${id}` : ""}`); };
+  const originals = new Map(predecessor.entries.map((entry) => [entry.id, entry]));
+  const byId = new Map();
+  const codes = new Set();
+  let previous = null;
+  for (const entry of successor.entries) {
+    if (previous !== null && entry.id <= previous) fail("registry-order", entry.id);
+    if (byId.has(entry.id)) fail("registry-duplicate-id", entry.id);
+    if (codes.has(entry.code)) fail("registry-code-collision", entry.code);
+    previous = entry.id;
+    byId.set(entry.id, entry);
+    codes.add(entry.code);
+  }
+  for (const [id, original] of originals) {
+    if (!byId.has(id)) fail("registry-predecessor-missing", id);
+    if (JSON.stringify(byId.get(id)) !== JSON.stringify(original)) {
+      fail("registry-predecessor-entry-drift", id);
+    }
+  }
+  const families = new Map();
+  for (const entry of successor.entries) {
+    if (originals.has(entry.id)) continue;
+    const family = entry.id.split(".")[0];
+    if (!family || !entry.id.includes(".")) fail("registry-additive-family", entry.id);
+    families.set(family, (families.get(family) ?? 0) + 1);
+  }
+  return {
+    size: byId.size,
+    added: byId.size - originals.size,
+    families: [...families].map(([family, entries]) => ({ family, entries })),
+  };
+}

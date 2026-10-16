@@ -31,7 +31,7 @@ const CANONICAL_ROOT_ENTRIES = new Set([
 const RUNTIME_ENTRIES = new Set(["import", "cache", "generated", "consumer", "privacy", "adapters"]);
 // The closed runtime top-level files: the issue #73 change provenance
 // registry (anchors transaction journals outside the transaction cache).
-const RUNTIME_FILES = new Set(["pending-transactions.json"]);
+const RUNTIME_FILES = new Set(["pending-transactions.json", "change-history-pin.json"]);
 // The governed issue #32 adapter store (docs/canonical-structure.md).
 const RUNTIME_ADAPTERS_CHILDREN = new Set([
   "packages", "quarantine", "staging", "evidence", "inventory.json"

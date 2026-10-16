@@ -58,5 +58,9 @@
       "sequence": 1
     }
   ],
-  "schemaVersion": "lekalo/change-history/v0.8.0"
+  "schemaVersion": "lekalo/change-history/v0.8.0",
+  "tip": {
+    "recordDigest": "sha256:7141534dfe802f3bc8cbd1fcc1a514fb7a70a9c393dea79529562ee02f333347",
+    "sequence": 1
+  }
 }

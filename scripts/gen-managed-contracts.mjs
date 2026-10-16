@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { LANDED_ENTRY_COUNT } from './lib/registry-union.mjs';
+import { registryUnion } from './lib/registry-union.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const version = '0.8.0';
@@ -212,6 +212,7 @@ export function artifacts() {
   // adoption, portability, worklog-changelog, change) verbatim from the
   // committed successor, so the artifact stays one sorted closed union.
   const committed = read(`contracts/diagnostic-registry.v${version}.json`);
+  registryUnion(predecessor, committed); // Never silently repair a dropped predecessor.
   const predecessorIds = new Set(predecessor.entries.map(entry => entry.id));
   const carried = committed.entries.filter(
     entry => !predecessorIds.has(entry.id) && !entry.id.startsWith('managed.'),
@@ -224,7 +225,8 @@ export function artifacts() {
     entries: [...predecessor.entries, ...carried, ...entries].sort((a, b) => (a.id < b.id ? -1 : 1)),
   };
   const registrySchema = JSON.parse(JSON.stringify(read('contracts/diagnostic-registry.schema.v0.6.4.json')).replaceAll('0.6.4', version));
-  registrySchema.description = `Merged additive union successor: the ${predecessor.entries.length} predecessor entries are preserved verbatim, and this successor tightens the data-fields \`name\` grammar to \`^[A-Za-z][A-Za-z0-9]{0,31}$\` (all existing data names conform; no \`maxLength\` member is carried — the pattern bounds the length). Issue #94 adds the closed format.* family (LEK-FORMAT-001..009 with LEK-FORMAT-010..012 in later successors), issue #136 adds ten adoption.* rules (LEK-ADOPT-001..010, the tenth the denied-allowed shared-writer busy rule of issue #73 r8) owning service-specific admission, consent, revision, verification, recovery, and serialization failures, issue #19 adds nine portability.* diagnostics (LEK-PORT-001..009), issue #51 adds seven worklog-changelog.* diagnostics (LEK-WC-001..007), issue #41 adds the managed.* infrastructure family, and issue #73 adds twelve change.* rules (LEK-CHANGE-001..012) owning the semantic Change API refusals; the merged registry carries all six families (${predecessor.entries.length + LANDED_ENTRY_COUNT} entries). Wire diagnostics remain v0.2.16; predecessor producer registries (0.6.4 default, 0.6.5 architecture union) keep their exact pins.`;
+  registryUnion(predecessor, registry);
+  registrySchema.description = 'Merged additive milestone union successor: every frozen 0.6.5 predecessor entry is preserved verbatim and every landed family is carried from the committed successor, without an exhaustive family list or total. Each family owner pins its own closed rule set; the shared union guard requires predecessor presence and byte identity, sorted unique IDs, and unique codes. The data-fields `name` grammar is `^[A-Za-z][A-Za-z0-9]{0,31}$` (all existing data names conform). Wire diagnostics remain v0.2.16; predecessor producer registries keep their exact pins.';
   files.set(`contracts/diagnostic-registry.v${version}.json`, pretty(registry));
   files.set(`contracts/diagnostic-registry.schema.v${version}.json`, pretty(registrySchema));
   for (const [family, properties] of Object.entries(shapes)) {

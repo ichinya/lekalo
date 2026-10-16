@@ -850,6 +850,7 @@ fn verify_history_custody(root: &Path, transaction: &str) -> Result<(), ChangeEr
             transaction: transaction.to_owned(),
         })?;
     super::verify_history_project(root, &history)?;
+    super::custody::verify(root, Some(&bytes))?;
     let named = history.records.iter().any(|record| {
         record
             .receipt
@@ -880,7 +881,12 @@ fn verify_history_custody(root: &Path, transaction: &str) -> Result<(), ChangeEr
 /// freshness arms below stay exact.
 fn read_target_bytes(root: &Path, logical: &str) -> std::io::Result<Vec<u8>> {
     let fs = crate::project_fs::Fs::open(root).map_err(|_| std::io::Error::other("fs"))?;
-    match fs.read_logical(logical, crate::loader::source::MAX_DOCUMENT_BYTES) {
+    let bytes = if logical == super::custody::LOGICAL_PATH {
+        fs.read_file_opt(".lekalo", "change-history-pin.json", 1024)
+    } else {
+        fs.read_logical(logical, crate::loader::source::MAX_DOCUMENT_BYTES)
+    };
+    match bytes {
         Ok(Some(bytes)) => Ok(bytes),
         Ok(None) | Err(crate::project_fs::FsErrorKind::NotFound) => Err(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -897,7 +903,11 @@ fn read_target_bytes(root: &Path, logical: &str) -> std::io::Result<Vec<u8>> {
 /// no-follow so symlinks, junctions, and reparse points can never redirect
 /// a transaction or recovery write outside the root.
 fn validated_target(root: &Path, logical: &str) -> Result<PathBuf, ChangeError> {
-    if crate::project_fs::path_violation(logical).is_some() {
+    // Exactly one service-owned runtime target joins the source/history
+    // transaction. Never broaden the grammar for caller/journal paths.
+    if logical != super::custody::LOGICAL_PATH
+        && crate::project_fs::path_violation(logical).is_some()
+    {
         return Err(ChangeError::WriteBoundaryDenied);
     }
     let fs = Fs::open(root).map_err(|_| ChangeError::WriteBoundaryDenied)?;
@@ -1150,6 +1160,7 @@ fn validate_journal_targets(root: &Path, journal: &Journal) -> Result<(), Change
             });
         }
         let admitted = if file.path == super::version::HISTORY_LOGICAL_PATH
+            || file.path == super::custody::LOGICAL_PATH
             || file.path == "lekalo/project.yaml"
             || admitted_module_home(&file.path, &modules)
         {
@@ -1211,6 +1222,7 @@ fn restorations_of(
             // other journaled creation is a forged deletion authority and
             // fails closed.
             let admitted_creation = file.path == super::version::HISTORY_LOGICAL_PATH
+                || file.path == super::custody::LOGICAL_PATH
                 || module_kind_home(&file.path).is_some();
             if !admitted_creation {
                 return Err(ChangeError::WriteBoundaryDenied);

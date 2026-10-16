@@ -2495,32 +2495,23 @@ fn a_genuine_ledger_grafted_into_a_same_id_project_mints_no_replay_authority() {
     assert!(!looked_up.replayed, "a lookup never mints replay");
     // Nothing was written to the recipient's sources.
     assert_eq!(recipient.entities_bytes(), before, "recipient untouched");
-    // A same-id project that DID carry the change still replays: apply
-    // the change here with a fresh key, then re-graft the (now grown)
-    // donor ledger under the original key — the postcondition holds.
-    apply_request(&recipient, &request, "fresh-key-v1", false).expect("recipient commits");
-    let error = apply_request(&recipient, &request, "graft-key-v1", false);
-    // The recipient's own ledger now shadows the graft (it was
-    // overwritten by the recipient's commit above); restore the donor
-    // ledger to prove the positive: digest-matching sources replay.
-    std::fs::write(recipient.history_path(), &genuine_ledger).expect("re-graft");
-    // The donor ledger's record digest chain ends at the donor's record;
-    // the recipient sources now DO carry the committed delta (same edit),
-    // so the postcondition holds and the replay is minted.
-    let replay = error.or_else(|_| apply_request(&recipient, &request, "graft-key-v1", false));
-    match replay {
-        Ok(receipt) => {
-            assert_eq!(receipt.state(), ReceiptState::Replayed);
-            assert!(receipt.replayed);
+    // The state check alone is not provenance (r10 F1). Even if the
+    // recipient gets identical source bytes, a copied ledger has no local
+    // transaction custody. Only an actual local commit creates that pin.
+    std::fs::write(recipient.entities_path(), donor.entities_bytes()).expect("matching sources");
+    let error = apply_request(&recipient, &request, "graft-key-v1", false)
+        .expect_err("matching bytes alone cannot mint provenance");
+    assert!(matches!(
+        error,
+        ChangeError::HistoryInvalid {
+            detail: "commit-custody"
         }
-        Err(ChangeError::HistoryInvalid { detail, .. }) => {
-            // The chain-anchor binding also refuses a re-grafted ledger
-            // whose records disagree with the recipient's own history —
-            // still fail-closed, still no fabricated authority.
-            assert_eq!(detail, "chain", "unexpected refusal detail: {detail}");
-        }
-        Err(error) => panic!("unexpected error: {error:?}"),
-    }
+    ));
+    assert!(
+        apply_request(&donor, &request, "graft-key-v1", false)
+            .unwrap()
+            .replayed
+    );
 }
 
 /// Re-forge one single-record donor ledger so its record's `files[]`
@@ -2602,7 +2593,8 @@ fn forge_ledger_with_outside_path(
         .expect("history")
         .as_object_mut()
         .expect("history object")
-        .insert("recordDigest".to_owned(), serde_json::json!(digest));
+        .insert("recordDigest".to_owned(), serde_json::json!(digest.clone()));
+    document["tip"] = serde_json::json!({"sequence": 1, "recordDigest": digest});
     serde_json::to_vec_pretty(&document).expect("forged ledger serializes")
 }
 
@@ -2666,6 +2658,219 @@ fn an_edited_graft_with_an_escaping_files_path_mints_no_replay_authority() {
         assert_eq!(recipient.entities_bytes(), before, "{tag}: untouched");
     }
     let _ = std::fs::remove_dir_all(&outside);
+}
+
+/// Recompute ALL public integrity anchors, like a ledger editor can.
+fn rechain_history(document: &mut serde_json::Value) {
+    let project = document["project"].as_str().unwrap().to_owned();
+    let mut previous = sha256_of(b"");
+    let records = document["records"].as_array_mut().unwrap();
+    for record in records.iter_mut() {
+        let intent = record["intentDigest"].as_str().unwrap();
+        let mut projection = record["receipt"].clone();
+        projection["history"]
+            .as_object_mut()
+            .unwrap()
+            .remove("recordDigest");
+        let canonical = serde_json::to_string(&projection).unwrap();
+        previous = sha256_of(
+            format!("{previous}\u{1f}{project}\u{1f}{intent}\u{1f}{canonical}").as_bytes(),
+        );
+        record["receipt"]["history"]["recordDigest"] = serde_json::json!(previous);
+    }
+    document["tip"] = serde_json::json!({"sequence": records.len(), "recordDigest": previous});
+}
+
+#[test]
+fn ledger_only_forgeries_cannot_mint_replay_even_after_rechaining() {
+    let donor = Sandbox::new("rechain-donor");
+    let request = add_priority_request();
+    apply_request(&donor, &request, "rechain-key", false).unwrap();
+    let genuine: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(donor.history_path()).unwrap()).unwrap();
+    for attack in [
+        "current-digest",
+        "different-file",
+        "empty-files",
+        "fake-no-op",
+        "later-successor",
+    ] {
+        let recipient = Sandbox::new("rechain-recipient");
+        let before = recipient.entities_bytes();
+        let mut forged = genuine.clone();
+        if attack == "later-successor" {
+            apply_request(&donor, &add_field_request("escalation"), "later-key", false).unwrap();
+            forged = serde_json::from_slice(&std::fs::read(donor.history_path()).unwrap()).unwrap();
+            forged["records"][1]["receipt"]["files"][0]["afterDigest"] =
+                serde_json::json!(sha256_of(&before));
+        } else if attack == "current-digest" {
+            forged["records"][0]["receipt"]["files"][0]["afterDigest"] =
+                serde_json::json!(sha256_of(&before));
+            // Also evade the state/file digest consistency control: the
+            // independent custody boundary must still refuse this forgery.
+            forged["records"][0]["receipt"]["files"][0]["beforeDigest"] =
+                serde_json::json!(sha256_of(b"invented preimage"));
+        } else if attack == "different-file" {
+            forged["records"][0]["files"] = serde_json::json!(["lekalo/project.yaml"]);
+            forged["records"][0]["receipt"]["files"][0]["path"] =
+                serde_json::json!("lekalo/project.yaml");
+            forged["records"][0]["receipt"]["files"][0]["afterDigest"] = serde_json::json!(
+                sha256_of(&std::fs::read(recipient.root.join("lekalo/project.yaml")).unwrap())
+            );
+        } else {
+            forged["records"][0]["files"] = serde_json::json!([]);
+            forged["records"][0]["receipt"]["files"] = serde_json::json!([]);
+            if attack == "fake-no-op" {
+                forged["records"][0]["receipt"]["state"] = serde_json::json!("no-op");
+            }
+        }
+        rechain_history(&mut forged);
+        if attack != "empty-files" {
+            change::receipt::History::decode(&serde_json::to_vec(&forged).unwrap())
+                .expect("public chain is fully consistent");
+        }
+        std::fs::write(
+            recipient.history_path(),
+            serde_json::to_vec_pretty(&forged).unwrap(),
+        )
+        .unwrap();
+        let error = apply_request(&recipient, &request, "rechain-key", false).expect_err(attack);
+        assert!(
+            matches!(error, ChangeError::HistoryInvalid { .. }),
+            "{attack}: {error:?}"
+        );
+        assert_eq!(recipient.entities_bytes(), before, "{attack}: no mutation");
+    }
+    // Editing and rechaining an ALREADY PINNED local ledger also fails:
+    // existing custody cannot be overwritten by a new key to launder it.
+    let mut edited: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(donor.history_path()).unwrap()).unwrap();
+    edited["records"][0]["receipt"]["operations"][0]["detail"] =
+        serde_json::json!("invented claim");
+    rechain_history(&mut edited);
+    std::fs::write(
+        donor.history_path(),
+        serde_json::to_vec_pretty(&edited).unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(
+        apply_request(&donor, &add_field_request("third"), "new-key", false),
+        Err(ChangeError::HistoryInvalid {
+            detail: "commit-custody"
+        })
+    ));
+}
+
+#[test]
+fn tail_truncation_is_invalid_even_when_next_sequence_is_adjusted() {
+    let sandbox = Sandbox::new("tail-truncation");
+    apply_request(&sandbox, &add_field_request("priority"), "tail-one", false).unwrap();
+    apply_request(
+        &sandbox,
+        &add_field_request("escalation"),
+        "tail-two",
+        false,
+    )
+    .unwrap();
+    let mut ledger: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(sandbox.history_path()).unwrap()).unwrap();
+    ledger["records"].as_array_mut().unwrap().pop();
+    ledger["nextSequence"] = serde_json::json!(2);
+    let truncated = serde_json::to_vec_pretty(&ledger).unwrap();
+    assert!(matches!(
+        change::receipt::History::decode(&truncated),
+        Err(ChangeError::HistoryInvalid { detail: "tip" })
+    ));
+    std::fs::write(sandbox.history_path(), truncated).unwrap();
+    for key in ["tail-one", "tail-two"] {
+        assert!(matches!(
+            change::lookup_receipt(Some(&sandbox.selection_str()), key),
+            Err(ChangeError::HistoryInvalid { detail: "tip" })
+        ));
+    }
+    // Even recomputing the PUBLIC tip cannot bypass independent custody.
+    rechain_history(&mut ledger);
+    std::fs::write(
+        sandbox.history_path(),
+        serde_json::to_vec_pretty(&ledger).unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(
+        apply_request(&sandbox, &add_field_request("third"), "tail-three", false),
+        Err(ChangeError::HistoryInvalid {
+            detail: "commit-custody"
+        })
+    ));
+}
+
+#[test]
+fn interrupted_history_and_custody_publication_rolls_back_together() {
+    let sandbox = Sandbox::new("custody-rollback");
+    let request = add_priority_request();
+    apply_request(&sandbox, &request, "original-key", false).unwrap();
+    let pin_path = sandbox.root.join(".lekalo/change-history-pin.json");
+    let old_history = std::fs::read(sandbox.history_path()).unwrap();
+    let old_pin = std::fs::read(&pin_path).unwrap();
+    let after_history = b"interrupted new history\n";
+    let after_pin = b"interrupted new pin\n";
+    let journal = plant_journal(
+        &sandbox,
+        "change-custody01",
+        "replacing",
+        serde_json::json!([
+            { "path": "lekalo/change-history.json", "beforeDigest": sha256_of(&old_history),
+              "afterDigest": sha256_of(after_history), "creation": false },
+            { "path": ".lekalo/change-history-pin.json", "beforeDigest": sha256_of(&old_pin),
+              "afterDigest": sha256_of(after_pin), "creation": false }
+        ]),
+        true,
+    );
+    std::fs::write(journal.join("backups/0"), &old_history).unwrap();
+    std::fs::write(journal.join("backups/1"), &old_pin).unwrap();
+    // Exact publication crash window: history changed, custody not yet.
+    std::fs::write(sandbox.history_path(), after_history).unwrap();
+    let recovered =
+        change::recover_transaction(Some(&sandbox.selection_str()), "change-custody01").unwrap();
+    assert_eq!(recovered.state, "rolled-back");
+    assert_eq!(std::fs::read(sandbox.history_path()).unwrap(), old_history);
+    assert_eq!(std::fs::read(pin_path).unwrap(), old_pin);
+    assert!(
+        apply_request(&sandbox, &request, "original-key", false)
+            .unwrap()
+            .replayed
+    );
+}
+
+#[test]
+fn replay_custody_survives_cache_clear_and_missing_history_is_not_first_use() {
+    let sandbox = Sandbox::new("custody-cache-clear");
+    let request = add_priority_request();
+    apply_request(&sandbox, &request, "custody-key", false).unwrap();
+    let cleared = lekalo_core::cache::clear(&sandbox.selection());
+    assert_eq!(cleared.status(), lekalo_core::result::Status::Valid);
+    assert!(sandbox
+        .root
+        .join(".lekalo/change-history-pin.json")
+        .is_file());
+    assert!(sandbox.root.join(".lekalo/cache/writer.lock").is_file());
+    assert!(
+        apply_request(&sandbox, &request, "custody-key", false)
+            .unwrap()
+            .replayed
+    );
+    std::fs::remove_file(sandbox.history_path()).unwrap();
+    assert!(matches!(
+        change::lookup_receipt(Some(&sandbox.selection_str()), "custody-key"),
+        Err(ChangeError::HistoryInvalid {
+            detail: "commit-custody"
+        })
+    ));
+    assert!(matches!(
+        apply_request(&sandbox, &add_field_request("other"), "other-key", false),
+        Err(ChangeError::HistoryInvalid {
+            detail: "commit-custody"
+        })
+    ));
 }
 
 #[test]
@@ -2804,18 +3009,27 @@ fn a_planted_adoption_journal_serializes_sibling_writers() {
         "got {error:?}"
     );
     assert!(!sandbox.history_path().exists(), "nothing committed");
-    // The predicate is precise: a completed receipt at the plan's
-    // receipts home means the journal is completed work's retained
-    // restoration material, not a strand — the change writer proceeds.
+    // Mere receipt-file existence must NEVER clear the barrier (r10 F3).
+    // This malformed journal has no verifiable completed transaction.
     let receipts = sandbox
         .root
         .join(".lekalo/import/adoption/receipts")
         .join("a".repeat(32));
     std::fs::create_dir_all(&receipts).expect("receipts home");
-    std::fs::write(receipts.join(format!("{}.json", "b".repeat(32))), b"{}")
-        .expect("completed receipt");
+    let receipt_path = receipts.join(format!("{}.json", "b".repeat(32)));
+    for bytes in [b"".as_slice(), b"{}".as_slice()] {
+        std::fs::write(&receipt_path, bytes).expect("malformed receipt");
+        assert!(matches!(
+            apply_request(&sandbox, &request, "adoption-barrier-v2", false),
+            Err(ChangeError::PreconditionFailed {
+                detail: "adoption-journal",
+                ..
+            })
+        ));
+    }
+    std::fs::remove_file(home.join("journal.json")).expect("resolved journal");
     apply_request(&sandbox, &request, "adoption-barrier-v2", false)
-        .expect("completed adoption work does not block sibling writers");
+        .expect("resolved adoption work does not block sibling writers");
 }
 
 #[test]
