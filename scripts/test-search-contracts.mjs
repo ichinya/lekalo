@@ -136,6 +136,20 @@ const familyScopeVerdict = (registry) => {
       successor: registry.entries.length,
     };
   }
+  // Presence half of the union invariant: every accepted 0.6.5 entry
+  // stays in the successor. With ids unique (enforced separately on
+  // the shipped registry), len(successor) === len(predecessor) +
+  // len(additions) iff no predecessor row was dropped from the union
+  // (the wrong add/add merge resolution this gate exists to catch).
+  if (registry.entries.length !== predecessor.entries.length + familyAdded.length) {
+    return {
+      ok: false,
+      reason: "predecessor-entry-missing",
+      predecessor: predecessor.entries.length,
+      successor: registry.entries.length,
+      familyAdded: familyAdded.length,
+    };
+  }
   const searchFamily = registry.entries.filter((entry) => entry.id.startsWith("search.")).length;
   if (searchFamily !== expected.length) {
     return {
@@ -153,7 +167,9 @@ if (!scope.ok) fail(scope.reason, scope);
 //     simulated merged union where another landed family sits
 //     alongside the eight search.* rules must still pass (this is the
 //     586-entry tree this branch merges into), while a stray
-//     non-search addition outside every landed family must fail.
+//     non-search addition outside every landed family, a dropped
+//     0.6.5 predecessor row, and a ninth search.* rule must each fail
+//     with their own reason (predecessor presence added in r10).
 {
   const template = successor.entries.find((entry) => entry.id === "search.ambiguous");
   const byId = (a, b) => (a.id < b.id ? -1 : 1);
@@ -180,6 +196,25 @@ if (!scope.ok) fail(scope.reason, scope);
   const strayVerdict = familyScopeVerdict(strayUnion);
   if (strayVerdict.ok || strayVerdict.foreign?.[0] !== "bogus.registry-union-stray") {
     fail("registry-union-simulation-stray-accepted", strayVerdict);
+  }
+  const dropped = "adapter.check-failed";
+  if (!predecessorIds.has(dropped)) fail("registry-union-simulation-predecessor-unknown", dropped);
+  const droppedUnion = {
+    ...mergedUnion,
+    entries: mergedUnion.entries.filter((entry) => entry.id !== dropped),
+  };
+  const droppedVerdict = familyScopeVerdict(droppedUnion);
+  if (droppedVerdict.ok || droppedVerdict.reason !== "predecessor-entry-missing") {
+    fail("registry-union-simulation-dropped-predecessor-accepted", droppedVerdict);
+  }
+  const ninth = { ...template, id: "search.ninth-rule", code: "LEK-SRCH-009" };
+  const ninthUnion = {
+    ...mergedUnion,
+    entries: [...mergedUnion.entries, ninth].sort(byId),
+  };
+  const ninthVerdict = familyScopeVerdict(ninthUnion);
+  if (ninthVerdict.ok || ninthVerdict.reason !== "registry-union-size") {
+    fail("registry-union-simulation-ninth-search-accepted", ninthVerdict);
   }
 }
 // Registry invariants JSON Schema cannot express.
