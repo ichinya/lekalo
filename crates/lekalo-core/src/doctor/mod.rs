@@ -57,6 +57,20 @@ impl Default for Options {
     }
 }
 
+/// Finite adapter-state bytes admitted by a caller's filesystem policy.
+/// `None` means the file was proven absent, not an instruction to reopen it.
+#[derive(Clone, Debug, Default)]
+pub struct TrustInputs {
+    pub inventory: Option<Vec<u8>>,
+    pub revocations: Option<Vec<u8>>,
+}
+
+impl TrustInputs {
+    /// The finite doctor dependencies; callers need no package/install API.
+    pub const INVENTORY_FILE: &'static str = crate::adapter_package::inventory::INVENTORY_FILE;
+    pub const REVOCATIONS_FILE: &'static str = crate::adapter_package::trust::REVOCATIONS_FILE;
+}
+
 /// The one entry point behind `doctor`, `status`, and `readiness`.
 ///
 /// The report is the product: it is emitted `valid` whenever it was
@@ -64,14 +78,35 @@ impl Default for Options {
 /// (usage) fails the envelope; path-confinement refusals surface inside
 /// the report as blocked checks with their preserved rule ids.
 pub fn report(selection: &LoadSelection, git: &GitFacts, options: &Options) -> DomainResult {
-    let doc = build(selection, git, options);
+    report_with_trust_inputs(selection, git, options, None)
+}
+
+/// Report using already-admitted adapter bytes instead of reopening their paths.
+/// Ordinary CLI callers retain the existing filesystem-backed behavior.
+pub fn report_with_trust_inputs(
+    selection: &LoadSelection,
+    git: &GitFacts,
+    options: &Options,
+    trust_inputs: Option<&TrustInputs>,
+) -> DomainResult {
+    let doc = build_with_trust_inputs(selection, git, options, trust_inputs);
     let json = serde_json::to_string_pretty(&doc).expect("the doctor document serializes");
     DomainResult::receipt(json, human_summary(options.kind, options.phase, &doc))
 }
 
 /// Assemble the typed document behind [`report`]; the entry point for the
 /// typed assertions of the test suite.
+#[cfg(test)]
 pub(crate) fn build(selection: &LoadSelection, git: &GitFacts, options: &Options) -> DoctorReport {
+    build_with_trust_inputs(selection, git, options, None)
+}
+
+fn build_with_trust_inputs(
+    selection: &LoadSelection,
+    git: &GitFacts,
+    options: &Options,
+    trust_inputs: Option<&TrustInputs>,
+) -> DoctorReport {
     let (project_check, root) = checks::project_root(selection);
     let structure = match &root {
         Some(root) => crate::project_fs::Fs::validate_project(root),
@@ -95,6 +130,7 @@ pub(crate) fn build(selection: &LoadSelection, git: &GitFacts, options: &Options
         facts: &facts,
         git,
         traces: &options.traces,
+        trust_inputs,
         targets_declared,
         kind: options.kind,
         phase: options.phase,

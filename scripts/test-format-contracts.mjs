@@ -6,6 +6,7 @@
 // this checkout (CI does the same on Node 18 and 24) and exposed through
 // NODE_PATH / LEKALO_AJV_NODE_PATH.
 
+import "./registry-union.mjs";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";

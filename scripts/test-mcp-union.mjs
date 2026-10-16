@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Issue #33 r6: black-box proof that EVERY MCP gate refuses a registry
-// missing any landed M8 family. All mutations live in a disposable Git
+// Issue #33 r7: black-box proof that every MCP and landed sibling gate
+// refuses a registry missing any landed M8 family. All mutations live in a disposable Git
 // repository; the checkout's registry/index never changes.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -13,14 +13,17 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 execFileSync(process.execPath, [join(root, "scripts/check-registry-union.mjs")], { cwd: root });
 const registryPath = "contracts/diagnostic-registry.v0.8.0.json";
 const registry = JSON.parse(readFileSync(join(root, registryPath), "utf8"));
-const gates = ["test-mcp-contracts.mjs", "test-mcp-boundaries.mjs", "test-mcp-stdio.mjs", "test-mcp-host.mjs"];
+const gates = ["test-mcp-contracts.mjs", "test-mcp-boundaries.mjs", "test-mcp-stdio.mjs", "test-mcp-host.mjs",
+  "test-adoption-contracts.mjs", "test-format-contracts.mjs", "test-managed-contracts.mjs",
+  "test-portability-contracts.mjs", "test-module-api-contracts.mjs", "test-task-links-contracts.mjs",
+  "test-worklog-changelog-contracts.mjs"];
 const families = ["format.", "adoption.", "managed.", "portability.", "tasklink.", "worklog-changelog.", "module-api.", "mcp."];
-const stage = mkdtempSync(join(tmpdir(), "lekalo-mcp-union-r6-"));
+const stage = mkdtempSync(join(tmpdir(), "lekalo-mcp-union-r7-"));
 let checks = 0;
 try {
   mkdirSync(join(stage, "scripts"));
   mkdirSync(join(stage, "contracts"));
-  for (const script of [...gates, "check-registry-union.mjs"]) {
+  for (const script of [...gates, "check-registry-union.mjs", "registry-union.mjs", "gen-managed-contracts.mjs"]) {
     copyFileSync(join(root, "scripts", script), join(stage, "scripts", script));
   }
   const writeRegistry = (document) => writeFileSync(join(stage, registryPath), `${JSON.stringify(document, null, 2)}\n`);

@@ -60,7 +60,9 @@ expressed. A comma is never part of a symbol operand — the changed-list
 separator is a CLI spelling, so `changedSymbols` is a typed array whose
 members cannot re-split into an unchecked set. Structural violations are
 JSON-RPC `-32602`; cross-field semantic violations are the typed
-`mcp.input-invalid` tool result. A changed-mode `lekalo_impact` call
+`mcp.input-invalid` tool result. Catalog/module/target identifiers are at
+most 63 ASCII characters; `baseRef`/`headRef` are bounded to 128 Unicode
+code points (the same length language as the input schemas). A changed-mode `lekalo_impact` call
 refuses with `mcp.backend-unavailable` unless the trusted catalog
 explicitly admits Git access (`git.changedMode`).
 
@@ -129,15 +131,23 @@ name of out-of-root bytes is never served. The same alias policy also
 applies to the model loader (`project_fs::read_file_opt`) and the
 `lekalo.lock` snapshot leg, not only trace manifests; governed cache,
 bindings and artifact inputs are identity-pinned before/after a status
-projection. `lekalo_target_status` spawns
-`git` only when the catalog admits `git.changedMode`; without admission
-it serves the
-no-git projection with typed unavailable Git facts. Secret-shaped tool
+projection. The finite doctor dependencies
+`.lekalo/adapters/inventory.json` and
+`.lekalo/adapters/evidence/revocations.json` use the same bounded,
+no-follow, single-owner admission: presence, exact content and physical
+file identity enter the pre/post snapshot, and the doctor consumes the
+admitted bytes instead of reopening their paths. `lekalo_target_status`
+spawns `git` only when the catalog admits `git.changedMode`; without
+admission it serves typed unavailable Git facts. Both Git-read adapters
+force `GIT_OPTIONAL_LOCKS=0`, overriding launcher settings: a read grant
+never permits an implicit `.git/index` refresh write. Secret-shaped tool
 or resource output refuses with `mcp.sensitive-output` rather than
 redacting contract members silently: the screening pass is
 spelling-canonical — it folds ASCII case and a closed set of common
 Cyrillic/Greek lookalikes, removes `_`/`-` symmetrically, and recognizes
-plain, single and JSON-escaped quoted assignments. Credential stems
+plain, single and JSON-escaped quoted assignments. Value delimiters
+must match the opening quote's kind and escape context; a leading
+opposite quote cannot disguise a nonempty credential as empty. Credential stems
 anywhere in assigned identifier keys refuse, including plurals and
 unlisted compounds (`secrets`, `mysecret`, `secret_value`,
 `aws_access_key_id`) and compound `key` names in snake/kebab/camel and
@@ -157,9 +167,13 @@ and boundary-rooted multi-segment POSIX paths refuse by shape, not a
 five-segment vocabulary. Numeric-index JSON pointers such as
 `/definitions/20` stay available, but absolute API routes may refuse
 because their bytes are indistinguishable from host paths. Common
-private dotfile spellings (`.env`, `.ssh`, `.aws`, `.gnupg`, `.config`)
-refuse anywhere, including Windows separator spellings. Relative project
-paths and scheme-qualified URLs remain available except for the
+private dotfile spellings (`.env`, `.ssh`, `.aws`, `.gnupg`, `.config`,
+`.netrc`, `.npmrc`, `.pypirc`, `.git-credentials`, `.keystore`)
+refuse anywhere, including Windows separator spellings. UNC and POSIX
+matchers share assignment/punctuation boundaries, and decoded JSON
+strings are screened too: escaped newlines/tabs cannot hide a path.
+Relative project paths and benign URLs (`https://...`, `lekalo://...`)
+remain available except for the
 established broader `/home/`, `/root/`, `/users/`, and dotfile needles:
 `app/home/page.tsx` can refuse too. These are accepted fail-closed
 availability trade-offs, recorded here and pinned by tests. The entire
@@ -192,8 +206,12 @@ requests and never act. Unknown and completed ids are not registered,
 so a reused id is never poisoned. A timed-out/cancelled worker holds its
 slot until it finishes (the bound counts real in-flight work); its
 cooperative guard stops new admitted reads and Git child spawns after
-abandonment, and kills a bounded doctor Git child at its next poll.
-Pure core traversal mid-computation remains deferred (below).
+abandonment. Both doctor and changed-impact Git children use the same
+five-second bounded wait, concurrent pipe draining (4 MiB per stream),
+and process-tree cleanup (Unix process groups / Windows jobs) on
+cancellation, deadline or output overflow. Children are terminated and
+reaped before the worker releases its slot. Pure core traversal
+mid-computation remains deferred (below).
 
 Duplicate JSON member names refuse the inbound frame before any map
 insertion (`mcp.duplicate-key`, last-key-wins is never an admission
@@ -221,8 +239,9 @@ reports `resources: {subscribe: false, listChanged: false}`.
   mid-computation; the deadline and the concurrency bound cap the
   abandoned work (the timed-out worker keeps its slot until completion).
   At CLI read/spawn checkpoints, cancelled or timed-out workers stop
-  starting new reads/processes; a child already spawned is polled and
-  killed by the doctor Git adapter. This is not full process isolation
+  starting new reads/processes; already-running Git children and their
+  supervised descendants are polled, terminated and reaped by both Git
+  adapters. This is not full process isolation
   or guaranteed interruption of arbitrary pure core traversal.
 
 ## Diagnostics
@@ -241,10 +260,14 @@ node scripts/test-mcp-contracts.mjs
 node scripts/test-mcp-stdio.mjs
 node scripts/test-mcp-boundaries.mjs
 node scripts/test-mcp-host.mjs
+node scripts/test-mcp-union.mjs
+node scripts/test-classification-contracts.mjs
 cargo test --locked -p lekalo-core --test mcp
 cargo test --locked -p lekalo-cli --test mcp
 cargo test --locked -p lekalo-cli --test mcp_review
 cargo test --locked -p lekalo-cli --test mcp_r5
+cargo test --locked -p lekalo-cli --test mcp_r7
+cargo test --locked -p lekalo-cli --bin lekalo mcp::work::tests
 ```
 
 The stdio gate drives the real binary over a real pipe and validates
@@ -256,7 +279,13 @@ findings as wire behavior: duplicate keys, ancestor links, the output-
 limit substitution, subscribe authorization, and the launch-group
 narrowing. The host gate qualifies a real MCP host/SDK connection; when
 no qualified host is provisioned it reports `unavailable` (exit 2) and
-CI treats that as a failure, never silently accepts.
+CI treats that as a failure, never silently accepts. The r7 wire tests
+also inventory a Git-enabled session (including index bytes/mtime),
+refuse aliased adapter state, and pin trust-state changes; the worker
+unit tests prove child/descendant termination and bounded pipe capture.
+The union matrix removes each landed family against all eleven family
+gates, and the classification gate resolves every local schema reference,
+including otherwise-unused definitions.
 
 ## Connecting an AI Factory extension
 

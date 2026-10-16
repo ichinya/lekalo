@@ -1052,9 +1052,26 @@ const validateToolOutput = (responses, id, slug) => {
     [204, "impact", { projectId: "planner", mode: "symbol", symbol: "planner.focus_task", profile: "UPPER" }],
     [205, "graph", { projectId: "planner", mode: "show", symbol: "planner.focus/task" }],
   ];
+  const id64 = "a".repeat(64);
+  const identifierCases = [
+    ["inspect", "projectId", { symbol: "planner.focus_task" }],
+    ["inspect", "groupId", { symbol: "planner.focus_task" }],
+    ["impact", "module", { mode: "symbol", symbol: "planner.focus_task" }],
+    ["impact", "target", { mode: "symbol", symbol: "planner.focus_task" }],
+    ["validate", "module", {}],
+    ["target-status", "targetId", {}],
+    ["target-status", "profileId", {}],
+    ["trace-export", "manifestRef", {}],
+  ];
+  for (const [index, [slug, field, rest]] of identifierCases.entries()) {
+    structural.push([210 + index, slug, { projectId: "planner", ...rest, [field]: id64 }]);
+  }
+  for (const [index, field] of ["baseRef", "headRef"].entries()) {
+    structural.push([220 + index, "impact", { projectId: "planner", mode: "changed", baseRef: "x", [field]: "é".repeat(129) }]);
+  }
   const semantic = [206, "graph", { projectId: "planner", mode: "export", symbol: "planner.focus_task" }];
   const { responses } = await serve(
-    [...lifecycle(), ...structural.map(([id, slug, args]) => call(id, `lekalo_${slug}`, args)), call(semantic[0], `lekalo_${semantic[1]}`, semantic[2])],
+    [...lifecycle(), ...structural.map(([id, slug, args]) => call(id, `lekalo_${slug.replaceAll("-", "_")}`, args)), call(semantic[0], `lekalo_${semantic[1]}`, semantic[2])],
     [],
     "mcp.local.json",
   );
@@ -1064,6 +1081,17 @@ const validateToolOutput = (responses, id, slug) => {
   }
   check(inputSchemas.get("graph")(semantic[2]) === true, "graph-members-schema-valid");
   check(toolOutput(responses, semantic[0]).failure?.failureClass === "invalid-input", "graph-exclusivity-is-typed-semantic-refusal");
+  const admitted = identifierCases.map(([slug, field, rest], index) => [230 + index, slug, { projectId: "planner", ...rest, [field]: "a".repeat(63) }]);
+  for (const [index, text] of ["é".repeat(65), "é".repeat(128), "😀".repeat(128)].entries()) {
+    admitted.push([240 + index, "impact", { projectId: "planner", mode: "changed", baseRef: text, worktree: true }]);
+    admitted.push([250 + index, "impact", { projectId: "planner", mode: "changed", baseRef: "x", headRef: text }]);
+  }
+  const accepted = await serve([...lifecycle(), ...admitted.map(([id, slug, args]) => call(id, `lekalo_${slug.replaceAll("-", "_")}`, args))], [], "mcp.local.json");
+  for (const [id, slug, args] of admitted) {
+    check(inputSchemas.get(slug)(args) === true, "ajv-admits-id-and-unicode-length-edge", { id, slug });
+    const response = findResponse(accepted.responses, id);
+    check(response && response.error?.code !== -32602 && response.result?.structuredContent, "rust-admits-same-id-and-unicode-length-edge", { id, slug, response });
+  }
 }
 
 rmSync(tempRoot, { recursive: true, force: true });

@@ -61,15 +61,26 @@ const NEEDLES: [(&str, &str); 8] = [
 /// below (`contains_drive_letter_path`, `contains_unc_path`,
 /// `contains_posix_root_path`, r4 F1/r6 F4), which the segment list
 /// could never cover.
-const PRIVATE_PATH_NEEDLES: [&str; 8] = [
-    "/home/", "/root/", "/users/",
+const PRIVATE_PATH_NEEDLES: [&str; 13] = [
+    "/home/",
+    "/root/",
+    "/users/",
     // r6 F5: the canonical secret-bearing dotfile spellings refuse
     // anywhere they appear — `.env` (and `.env.production`-style
     // derivatives), `.ssh/`, `.aws/`, `.gnupg/`, and `.config/` trees.
     // The same fail-closed trade-off as the segment needles above: a
     // benign `.env`-shaped substring cannot be proven harmless from
     // bytes alone.
-    ".env", ".ssh", ".aws", ".gnupg", ".config",
+    ".env",
+    ".ssh",
+    ".aws",
+    ".gnupg",
+    ".config",
+    ".netrc",
+    ".npmrc",
+    ".pypirc",
+    ".git-credentials",
+    ".keystore",
 ];
 
 /// The closed confusable (homoglyph) fold (r6 F7): the Cyrillic and
@@ -194,10 +205,7 @@ fn contains_unc_path(folded: &[u8]) -> bool {
         if !separator(folded.get(index)) || !separator(folded.get(index + 1)) {
             continue;
         }
-        let at_boundary = index == 0
-            || folded[index - 1].is_ascii_whitespace()
-            || matches!(folded[index - 1], b'"' | b'\'');
-        if !at_boundary {
+        if !path_boundary(folded, index) {
             continue;
         }
         let ordinary = |byte: Option<&u8>| {
@@ -302,11 +310,7 @@ fn is_indexed_pointer(path: &[u8]) -> bool {
 /// have the same lexical shape and may refuse: the accepted availability
 /// collateral is preferable to leaking another unlisted host path.
 fn contains_posix_root_path(folded: &[u8]) -> bool {
-    let boundary = |index: usize| {
-        index == 0
-            || folded[index - 1].is_ascii_whitespace()
-            || matches!(folded[index - 1], b'"' | b'\'' | b'(' | b'[' | b'=')
-    };
+    let boundary = |index: usize| path_boundary(folded, index);
     for index in 0..folded.len() {
         if folded[index] != b'/' {
             continue;
@@ -335,6 +339,36 @@ fn contains_posix_root_path(folded: &[u8]) -> bool {
     false
 }
 
+/// Common assignment/punctuation boundaries for both UNC and POSIX paths.
+/// A scheme colon in `https://...` is not a boundary; an assignment colon
+/// in `path:/var/...` is. Relative project segments remain non-boundaries.
+fn path_boundary(bytes: &[u8], index: usize) -> bool {
+    if index == 0 {
+        return true;
+    }
+    let previous = bytes[index - 1];
+    if previous == b':' {
+        let prefix = &bytes[..index - 1];
+        let start = prefix
+            .iter()
+            .rposition(|byte| !byte.is_ascii_alphanumeric() && !matches!(byte, b'+' | b'-' | b'.'))
+            .map_or(0, |at| at + 1);
+        // Preserve the explicit benign URL controls, not arbitrary
+        // `path:` assignments masquerading as a scheme.
+        if matches!(
+            &prefix[start..],
+            b"http" | b"https" | b"lekalo" | b"file" | b"ftp" | b"ssh"
+        ) {
+            return false;
+        }
+    }
+    previous.is_ascii_whitespace()
+        || matches!(
+            previous,
+            b'"' | b'\'' | b'(' | b'[' | b'{' | b'=' | b':' | b';' | b','
+        )
+}
+
 /// Screen one outgoing envelope. `Ok(())` ships; `Err(reason)` refuses
 /// the whole output with `mcp.sensitive-output`. The screen is total:
 /// every byte of the envelope (payload, diagnostics, and scope members)
@@ -342,7 +376,27 @@ fn contains_posix_root_path(folded: &[u8]) -> bool {
 pub fn screen_envelope(envelope: &str) -> Result<(), &'static str> {
     // The transport bounds response size. Scan its complete byte span:
     // fixed overlap cannot preserve arbitrary compound keys/paths.
-    screen_bytes(envelope.as_bytes())
+    screen_bytes(envelope.as_bytes())?;
+    // Serialized whitespace/quotes are not client-visible boundaries.
+    // Screen every decoded JSON string too, including member names, so
+    // real newlines/tabs and Unicode escapes cannot hide a private path.
+    if let Ok(document) = serde_json::from_str::<serde_json::Value>(envelope) {
+        let mut pending = vec![&document];
+        while let Some(value) = pending.pop() {
+            match value {
+                serde_json::Value::String(text) => screen_bytes(text.as_bytes())?,
+                serde_json::Value::Array(items) => pending.extend(items),
+                serde_json::Value::Object(members) => {
+                    for (key, value) in members {
+                        screen_bytes(key.as_bytes())?;
+                        pending.push(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(())
 }
 
 fn screen_bytes(bytes: &[u8]) -> Result<(), &'static str> {
@@ -436,25 +490,40 @@ fn quote_equivalent(text: &[u8], index: usize) -> Option<usize> {
 
 /// Whether a value span (already whitespace-trimmed) carries a
 /// non-empty assigned token: a quote-equivalent-wrapped value closes
-/// with any later quote equivalent (`password="x"`, `password='x'`,
+/// with the SAME opening quote spelling and escape context (`password="x"`, `password='x'`,
 /// `{"password":"x"}` — the escaped spellings serialize as `\"` and
 /// a lone backslash no longer breaks the scan, r4 F1); an unwrapped
 /// value needs a non-empty, non-structural leading byte, and a composite
 /// value (`[`, `{`) carries assigned material unless it is exactly
 /// empty (r6 F1: `{"password":["hunter2"]}` and
 /// `{"secrets":{"a":"x"}}` refuse; `[]`/`{}` mirror the empty-string
-/// rule and ship). A value that never closes before the frame ends
-/// carries no token at all — structural fragments are not assignments.
+/// rule and ship). An isolated opener carries no material. Once content
+/// precedes another quote boundary, fail closed even for an unterminated
+/// embedded assignment; the enclosing JSON quote is not proof of emptiness.
 fn carries_token(bytes: &[u8]) -> bool {
     if let Some(width) = quote_equivalent(bytes, 0) {
+        let opener = &bytes[..width];
         let mut cursor = width;
-        let mut span = 0;
         while cursor < bytes.len() {
-            if quote_equivalent(bytes, cursor).is_some() {
-                return span > 0;
+            // For an ordinary quote, skip escaped characters; for the
+            // serialized \" spelling, a preceding backslash pair is
+            // escaped content, not a delimiter. The other quote kind
+            // is always content (r7: a leading apostrophe is not empty).
+            if bytes[cursor..].starts_with(opener) {
+                return cursor > width;
             }
-            span += 1;
-            cursor += 1;
+            // Only an EXACT immediate closer can establish emptiness.
+            // Once material precedes another quote, fail closed too:
+            // it may be the enclosing JSON string's delimiter after an
+            // unterminated embedded assignment (an existing refusal).
+            if cursor > width && quote_equivalent(bytes, cursor).is_some() {
+                return true;
+            }
+            if bytes[cursor] == b'\\' && cursor + 1 < bytes.len() {
+                cursor += 2;
+            } else {
+                cursor += 1;
+            }
         }
         return false;
     }
@@ -789,6 +858,47 @@ mod tests {
     }
 
     #[test]
+    fn decoded_private_paths_and_punctuation_boundaries_refuse() {
+        for path in [r"\\server\share\x", "/var/log/auth.log"] {
+            for prefix in ["", "path=", "see (", "path:", "path;", "\n", "\t"] {
+                let description = format!("{prefix}{path}");
+                let envelope = serde_json::json!({"description": description}).to_string();
+                assert_eq!(
+                    screen_envelope(&envelope),
+                    Err("private-absolute-path"),
+                    "{envelope}"
+                );
+            }
+        }
+        for path in [
+            ".netrc",
+            ".npmrc",
+            ".pypirc",
+            ".git-credentials",
+            ".keystore",
+        ] {
+            assert_eq!(
+                screen_envelope(&serde_json::json!({"description": path}).to_string()),
+                Err("private-absolute-path")
+            );
+        }
+        for control in [
+            "https://example.com/a/b",
+            "lekalo://planner/summary",
+            "/definitions/20",
+            "/modules/2/id",
+            "lekalo/modules/planner/commands.yaml",
+            "and//or",
+        ] {
+            assert_eq!(
+                screen_envelope(&serde_json::json!({"description": control}).to_string()),
+                Ok(()),
+                "{control}"
+            );
+        }
+    }
+
+    #[test]
     fn header_spellings_refuse() {
         assert_eq!(
             screen_envelope("{\"header\":\"Authorization: Bearer xyz\"}"),
@@ -1066,6 +1176,10 @@ mod tests {
             "{\"description\":\"password='synthetic-secret-q7'\"}",
             "{\"note\":\"{\\\"password\\\":\\\"synthetic-secret-json8\\\"}\"}",
             "secret : 'topsecretvalue'",
+            r#"{"description":"{\"password\":\"'R7CANARY\"}"}"#,
+            r#"password='"R7CANARY'"#,
+            r#"password="\"R7CANARY""#,
+            r#"{"description":"password=\"unterminatedR7CANARY"}"#,
         ] {
             assert_eq!(
                 screen_envelope(envelope),

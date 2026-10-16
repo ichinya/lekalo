@@ -1,13 +1,13 @@
 //! Snapshot identity for the MCP server (issue #33): the MCP snapshot is
 //! a separate domain over the sorted admitted logical identities and their
-//! exact content digests. Roots, clocks, environment, and host names never
+//! exact content/identity pins. Roots, clocks, environment, and host names never
 //! enter a deterministic output.
 
 use std::collections::BTreeMap;
 
 use lekalo_core::digest::sha256_hex;
 
-/// One admitted input identity and its exact content digest.
+/// One admitted logical input identity and its exact content/identity pin.
 pub type Inputs = BTreeMap<String, String>;
 
 /// The snapshot reference of one admitted input set: `sha256-` plus the

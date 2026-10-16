@@ -5431,7 +5431,11 @@ fn run_doctor(project: Option<String>, fix: bool, traces: Vec<String>) -> Domain
 /// checks, but Git remains behind the trusted changed-mode catalog grant.
 /// This reuses the ordinary read-only doctor report with unavailable Git
 /// facts when that grant is absent (issue #33 r4 F4).
-fn run_doctor_for_mcp(project: Option<String>, allow_git: bool) -> DomainResult {
+fn run_doctor_for_mcp(
+    project: Option<String>,
+    allow_git: bool,
+    trust_inputs: &lekalo_core::doctor::TrustInputs,
+) -> DomainResult {
     let selection = selection_for(&project);
     let git = doctor_git_facts_with(&selection, allow_git);
     let options = lekalo_core::doctor::Options {
@@ -5440,7 +5444,7 @@ fn run_doctor_for_mcp(project: Option<String>, allow_git: bool) -> DomainResult 
         fix: false,
         traces: Vec::new(),
     };
-    lekalo_core::doctor::report(&selection, &git, &options)
+    lekalo_core::doctor::report_with_trust_inputs(&selection, &git, &options, Some(trust_inputs))
 }
 
 /// `lekalo status`: the freshness panel plus the exact revisions.

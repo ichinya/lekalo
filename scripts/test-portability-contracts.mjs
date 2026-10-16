@@ -11,6 +11,7 @@
 
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
+import "./registry-union.mjs";
 import { execFileSync } from "node:child_process";
 import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";

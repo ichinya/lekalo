@@ -101,6 +101,11 @@ fn identity_of(metadata: &std::fs::Metadata) -> Option<FileIdentity> {
 /// The identity of one OPENED file handle. On Windows this is the real
 /// volume/file-id pair from the handle (never a path re-resolution), so
 /// the pin is a true identity comparison.
+#[cfg(unix)]
+fn opened_identity(file: &std::fs::File) -> Option<FileIdentity> {
+    identity_of(&file.metadata().ok()?)
+}
+
 #[cfg(windows)]
 fn opened_identity(file: &std::fs::File) -> Option<FileIdentity> {
     use std::os::windows::fs::MetadataExt;
@@ -291,7 +296,39 @@ pub fn read_governed(root: &Path, logical: &str, cap: usize) -> Result<Vec<u8>, 
     read_checked(root, logical, cap)
 }
 
+/// A finite optional doctor dependency, with both content and physical identity.
+/// Missing files/ancestors are admitted only after all existing ancestors have
+/// passed the no-follow checks; a dangling link is never treated as absence.
+pub fn read_optional_governed(
+    root: &Path,
+    logical: &str,
+    cap: usize,
+) -> Result<Option<(Vec<u8>, FileIdentity)>, ReadRefusal> {
+    if !policy::governed_internal_path(logical) {
+        return Err(ReadRefusal::NotAdmitted);
+    }
+    check_component(root)?;
+    let mut path = root.to_path_buf();
+    for segment in logical.split('/') {
+        path.push(segment);
+        match path.symlink_metadata() {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(_) => return Err(ReadRefusal::Unreadable),
+            Ok(_) => check_component(&path)?,
+        }
+    }
+    read_pinned(root, logical, cap).map(Some)
+}
+
 fn read_checked(root: &Path, logical: &str, cap: usize) -> Result<Vec<u8>, ReadRefusal> {
+    read_pinned(root, logical, cap).map(|(bytes, _)| bytes)
+}
+
+fn read_pinned(
+    root: &Path,
+    logical: &str,
+    cap: usize,
+) -> Result<(Vec<u8>, FileIdentity), ReadRefusal> {
     if super::work::should_stop() {
         return Err(ReadRefusal::Unreadable);
     }
@@ -327,7 +364,7 @@ fn read_checked(root: &Path, logical: &str, cap: usize) -> Result<Vec<u8>, ReadR
     if !identity_matches(&opened, &after) {
         return Err(ReadRefusal::Link);
     }
-    Ok(bytes)
+    Ok((bytes, opened))
 }
 
 /// Open one fully-checked path without following a final-component link:

@@ -9,6 +9,7 @@
 // test-adoption-refactor.mjs and test-adoption-hybrid.mjs, which must
 // run after `cargo build --workspace --locked` in the same job.
 import { createRequire } from "node:module";
+import "./registry-union.mjs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";

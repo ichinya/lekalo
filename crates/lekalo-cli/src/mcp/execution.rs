@@ -916,6 +916,15 @@ fn pin_artifacts(root: &std::path::Path, inputs: &mut Inputs) -> Option<()> {
 /// a generated/removed bindings home cannot hide behind an unchanged
 /// ref. A load failure is `None`; the caller fails closed.
 pub(crate) fn admitted_inputs_for(entry: &super::catalog::ProjectEntry) -> Option<Inputs> {
+    admit_project_inputs(entry).map(|admitted| admitted.inputs)
+}
+
+struct AdmittedProject {
+    inputs: Inputs,
+    trust: lekalo_core::doctor::TrustInputs,
+}
+
+fn admit_project_inputs(entry: &super::catalog::ProjectEntry) -> Option<AdmittedProject> {
     if super::work::should_stop() {
         return None;
     }
@@ -953,7 +962,32 @@ pub(crate) fn admitted_inputs_for(entry: &super::catalog::ProjectEntry) -> Optio
     pin_governed_tree(&entry.root, ".lekalo/cache", &mut inputs)?;
     pin_governed_tree(&entry.root, ".lekalo/consumer/bindings", &mut inputs)?;
     pin_artifacts(&entry.root, &mut inputs)?;
-    Some(inputs)
+    // The full doctor reads these two finite adapter-state dependencies.
+    // Admit them before evaluation, pin exact content AND file identity,
+    // and pass the same bytes into the check rather than reopening paths.
+    let mut admit_adapter = |logical: &str| -> Option<Option<Vec<u8>>> {
+        let admitted =
+            read::read_optional_governed(&entry.root, logical, read::MANIFEST_READ_CAP).ok()?;
+        match admitted {
+            None => {
+                inputs.insert(format!("state:{logical}"), "absent".to_owned());
+                Some(None)
+            }
+            Some((bytes, identity)) => {
+                inputs.insert(format!("state:{logical}"), domain_digest("state", &bytes));
+                inputs.insert(
+                    format!("identity:{logical}"),
+                    domain_digest("identity", format!("{identity:?}").as_bytes()),
+                );
+                Some(Some(bytes))
+            }
+        }
+    };
+    let trust = lekalo_core::doctor::TrustInputs {
+        inventory: admit_adapter(lekalo_core::doctor::TrustInputs::INVENTORY_FILE)?,
+        revocations: admit_adapter(lekalo_core::doctor::TrustInputs::REVOCATIONS_FILE)?,
+    };
+    Some(AdmittedProject { inputs, trust })
 }
 
 /// The stale-snapshot refusal: authorized input bytes changed during
@@ -996,7 +1030,7 @@ fn run(
     let project = Some(entry.selector.clone());
     // Fail closed when the admitted inputs cannot even be pinned before
     // the read (r2 F7): an unpinnable candidate is never evaluated.
-    let Some(inputs_before) = admitted_inputs_for(entry) else {
+    let Some(admitted_before) = admit_project_inputs(entry) else {
         return Ok(refusal(
             family,
             request.tool_name(),
@@ -1146,6 +1180,7 @@ fn run(
             project.clone(),
             target_id.as_deref(),
             profile_id.as_deref(),
+            &admitted_before.trust,
         ),
         ToolRequest::TraceExport { .. } => unreachable!("matched above"),
     };
@@ -1155,7 +1190,7 @@ fn run(
         return Ok(stale(family, request.tool_name(), scope));
     };
     let mut inputs = Inputs::new();
-    if inputs_before != inputs_after {
+    if admitted_before.inputs != inputs_after {
         return Ok(stale(family, request.tool_name(), scope));
     }
     for (identity, digest) in &inputs_after {
@@ -1216,6 +1251,7 @@ fn run_target_status(
     project: Option<String>,
     target_id: Option<&str>,
     profile_id: Option<&str>,
+    trust_inputs: &lekalo_core::doctor::TrustInputs,
 ) -> DomainResult {
     const PANELS: [&str; 4] = ["lock", "inventory", "trust", "profiles"];
     let mut selected: Vec<&str> = Vec::new();
@@ -1240,7 +1276,11 @@ fn run_target_status(
     // `ready` panel against the schema's checks.minItems=1.
     let doctor = selected.iter().any(|panel| *panel != "lock");
     let result = if doctor {
-        crate::run_doctor_for_mcp(project, catalog.core.admits_git_changed_mode())
+        crate::run_doctor_for_mcp(
+            project,
+            catalog.core.admits_git_changed_mode(),
+            trust_inputs,
+        )
     } else if catalog.core.admits_git_changed_mode() {
         crate::run_status(project, None)
     } else {

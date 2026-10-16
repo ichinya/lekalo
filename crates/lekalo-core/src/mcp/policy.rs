@@ -158,7 +158,7 @@ fn contains_percent_or_scheme(path: &str) -> bool {
 }
 
 fn is_secret_name(name: &str) -> bool {
-    const SECRET_NAMES: [&str; 8] = [
+    const SECRET_NAMES: [&str; 10] = [
         ".env",
         "config",
         "credentials",
@@ -167,6 +167,8 @@ fn is_secret_name(name: &str) -> bool {
         ".npmrc",
         ".netrc",
         ".git-credentials",
+        ".pypirc",
+        ".keystore",
     ];
     SECRET_NAMES.contains(&name)
 }

@@ -452,7 +452,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
             let base_ref = match arguments.get("baseRef") {
                 None => None,
                 Some(Value::String(text)) => {
-                    if text.is_empty() || text.len() > 128 {
+                    if text.is_empty() || text.chars().count() > 128 {
                         return Err(field("baseRef"));
                     }
                     Some(text.clone())
@@ -462,7 +462,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
             let head_ref = match arguments.get("headRef") {
                 None => None,
                 Some(Value::String(text)) => {
-                    if text.is_empty() || text.len() > 128 {
+                    if text.is_empty() || text.chars().count() > 128 {
                         return Err(field("headRef"));
                     }
                     Some(text.clone())

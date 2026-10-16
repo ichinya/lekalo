@@ -10,16 +10,8 @@
 
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
 
 use lekalo_core::doctor::{GitFacts, GitState};
-
-/// The bounded wait for one Git invocation; a slower Git counts as
-/// unavailable rather than hanging the diagnostic.
-const GIT_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// The poll interval of the bounded wait.
-const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 /// Collect the read-only Git facts of one project root.
 pub fn git_facts(project_root: &Path) -> GitFacts {
@@ -82,25 +74,8 @@ fn bounded_git(project_root: &Path, args: &[&str]) -> Result<String, Failure> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    let mut child = crate::mcp::work::spawn_if_active(&mut command)
-        .map_err(|_| Failure::Unavailable)?
-        .ok_or(Failure::Unavailable)?;
-    let deadline = Instant::now() + GIT_TIMEOUT;
-    let status = loop {
-        match child.try_wait().expect("child status is inspectable") {
-            Some(status) => break status,
-            None => {
-                if Instant::now() >= deadline || crate::mcp::work::should_stop() {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(Failure::Unavailable);
-                }
-                std::thread::sleep(POLL_INTERVAL);
-            }
-        }
-    };
-    let output = child.wait_with_output().expect("the child already exited");
-    if !status.success() {
+    let output = crate::mcp::work::git_output(&mut command).map_err(|_| Failure::Unavailable)?;
+    if !output.status.success() {
         return Err(Failure::NotARepository);
     }
     let text = String::from_utf8(output.stdout).map_err(|_| Failure::Unavailable)?;

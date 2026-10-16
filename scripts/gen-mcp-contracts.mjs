@@ -107,7 +107,7 @@ const mergeDefs = (...parts) => Object.assign({}, ...parts);const out = (name, d
 
 const VERSION = "0.8.0";
 const PROTOCOL_DATE = "2025-11-25";
-const ID_PATTERN = "^[a-z][a-z0-9-]{0,63}$";
+const ID_PATTERN = "^[a-z][a-z0-9-]{0,62}$";
 const SYMBOL_PATTERN = "^[A-Za-z][A-Za-z0-9_.-]{0,191}$";
 const SHA256 = "^sha256-[0-9a-f]{64}$";
 const STATUSES = [
@@ -895,7 +895,7 @@ out("mcp-resource.schema.v0.8.0.json", {
       // literal dots (planner.focus_task) and percent escapes, matching
       // the production `encode_component` grammar (review F10).
       pattern:
-        "^lekalo://[a-z][a-z0-9-]{0,63}(/g/[a-z][a-z0-9-]{0,63})?/(summary|modules|targets|diagnostics|symbol/[a-z][a-zA-Z0-9_.%-]{0,240})$",
+        "^lekalo://[a-z][a-z0-9-]{0,62}(/g/[a-z][a-z0-9-]{0,62})?/(summary|modules|targets|diagnostics|symbol/[a-z][a-zA-Z0-9_.%-]{0,240})$",
     },
     scope: scopeSchema,
     revision: { type: "string", pattern: SHA256 },
@@ -915,7 +915,8 @@ out("mcp-resource.schema.v0.8.0.json", {
   required: ["schemaVersion", "identity", "kind", "uri", "scope", "revision", "data"],
   additionalProperties: false,
   $defs: {
-    diagnosticItem: DIAGNOSTIC_ITEM,
+    diagnosticItem: rewriteRefs(DIAGNOSTIC_ITEM, "validation"),
+    ...VALIDATION_MERGED_DEFS(),
     ...INSPECT_BUNDLE.defs,
     ...DOCTOR_BUNDLE.defs,
   },

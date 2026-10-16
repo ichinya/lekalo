@@ -68,12 +68,8 @@ fn git(project_root: &Path, args: &[&str]) -> Result<String, GitInputFailure> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let child = crate::mcp::work::spawn_if_active(&mut command)
-        .map_err(|_| GitInputFailure::Unavailable)?
-        .ok_or(GitInputFailure::Unavailable)?;
-    let output = child
-        .wait_with_output()
-        .map_err(|_| GitInputFailure::Unavailable)?;
+    let output =
+        crate::mcp::work::git_output(&mut command).map_err(|_| GitInputFailure::Unavailable)?;
     if !output.status.success() {
         // 128 with "ambiguous argument" style refusals map to a selector
         // fault; anything else is an unavailable repository. The stderr

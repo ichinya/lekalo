@@ -13,6 +13,7 @@
 // scan additionally rejects duplicate JSON keys, which a parsed-value
 // representation cannot see. Read-only; run from the repo root.
 
+import "./registry-union.mjs";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import {
