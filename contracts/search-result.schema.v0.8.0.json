@@ -53,7 +53,7 @@
     },
     "coverage": {
       "type": "array",
-      "maxItems": 8,
+      "maxItems": 9,
       "uniqueItems": true,
       "items": {
         "$ref": "#/$defs/coverageRow"
@@ -87,7 +87,9 @@
             "requirements",
             "bindings",
             "diagnostics",
-            "waivers"
+            "waivers",
+            "errors",
+            "profiles"
           ]
         },
         "state": {

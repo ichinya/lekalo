@@ -15,13 +15,18 @@ use serde_json::Value as Json;
 /// duplicate comparison, values scan without materialization.
 pub(crate) fn reject_duplicate_keys(text: &str) -> Result<(), ()> {
     let mut lexer = KeyLexer::new(text);
-    lexer.scan_value()?;
+    lexer.scan_value(0)?;
     lexer.skip_ws();
     if lexer.peek().is_some() {
         return Err(());
     }
     Ok(())
 }
+
+// Well above the closed search wires' nesting, and below serde_json's
+// default recursion limit. Bound containers before recursing so even a
+// sub-MiB hostile input cannot overflow the CLI stack (issue #93 r11).
+const MAX_JSON_DEPTH: usize = 64;
 
 struct KeyLexer<'a> {
     bytes: &'a [u8],
@@ -55,11 +60,12 @@ impl<'a> KeyLexer<'a> {
         }
     }
 
-    fn scan_value(&mut self) -> Result<(), ()> {
+    fn scan_value(&mut self, depth: usize) -> Result<(), ()> {
         self.skip_ws();
         match self.peek() {
-            Some(b'{') => self.scan_object(),
-            Some(b'[') => self.scan_array(),
+            Some(b'{') if depth < MAX_JSON_DEPTH => self.scan_object(depth + 1),
+            Some(b'[') if depth < MAX_JSON_DEPTH => self.scan_array(depth + 1),
+            Some(b'{' | b'[') => Err(()),
             Some(b'"') => self.scan_string(None),
             Some(b't') => self.scan_literal("true"),
             Some(b'f') => self.scan_literal("false"),
@@ -165,7 +171,7 @@ impl<'a> KeyLexer<'a> {
         }
     }
 
-    fn scan_array(&mut self) -> Result<(), ()> {
+    fn scan_array(&mut self, depth: usize) -> Result<(), ()> {
         self.expect(b'[')?;
         self.skip_ws();
         if self.peek() == Some(b']') {
@@ -173,7 +179,7 @@ impl<'a> KeyLexer<'a> {
             return Ok(());
         }
         loop {
-            self.scan_value()?;
+            self.scan_value(depth)?;
             self.skip_ws();
             match self.peek() {
                 Some(b',') => self.position += 1,
@@ -189,7 +195,7 @@ impl<'a> KeyLexer<'a> {
     /// Object keys decode into one per-object keyed set — single-pass,
     /// linear-time duplicate detection (issue #93 r6). Values scan
     /// without materialization: the parsed document is never kept.
-    fn scan_object(&mut self) -> Result<(), ()> {
+    fn scan_object(&mut self, depth: usize) -> Result<(), ()> {
         self.expect(b'{')?;
         let mut keys: std::collections::HashSet<String> = std::collections::HashSet::new();
         self.skip_ws();
@@ -203,7 +209,7 @@ impl<'a> KeyLexer<'a> {
             self.scan_string(Some(&mut key))?;
             self.skip_ws();
             self.expect(b':')?;
-            self.scan_value()?;
+            self.scan_value(depth)?;
             if !keys.insert(key) {
                 // A duplicate key never decodes.
                 return Err(());
@@ -306,6 +312,28 @@ mod tests {
         assert!(reject_duplicate_keys("1e").is_err());
         assert!(reject_duplicate_keys("\"").is_err());
         assert!(reject_duplicate_keys("\"\\").is_err());
+    }
+
+    #[test]
+    fn nesting_is_bounded_before_recursing() {
+        for (open, close) in [("[", "]"), ("{\"x\":", "}")] {
+            let shallow = format!("{}0{}", open.repeat(8), close.repeat(8));
+            assert!(reject_duplicate_keys(&shallow).is_ok());
+            let at_limit = format!(
+                "{}0{}",
+                open.repeat(MAX_JSON_DEPTH),
+                close.repeat(MAX_JSON_DEPTH)
+            );
+            assert!(reject_duplicate_keys(&at_limit).is_ok());
+            let over_limit = format!(
+                "{}0{}",
+                open.repeat(MAX_JSON_DEPTH + 1),
+                close.repeat(MAX_JSON_DEPTH + 1)
+            );
+            assert!(reject_duplicate_keys(&over_limit).is_err());
+            let hostile = format!("{}0{}", open.repeat(400_000), close.repeat(400_000));
+            assert!(reject_duplicate_keys(&hostile).is_err());
+        }
     }
 
     #[test]

@@ -3258,6 +3258,226 @@ fn conflicting_diagnostic_statements_refuse() {
     assert!(keys.contains(&"diag:focus-concurrency-001"), "{keys:?}");
 }
 
+/// One finding id has one statement across ALL admitted files (r11),
+/// independent of filename order. Identical copies deduplicate; changes
+/// to any identity member refuse before a diagnostic card is projected.
+#[test]
+fn cross_document_diagnostic_identity_is_global() {
+    let (project, _guard) = disposable_project();
+    let mut base = read_evidence(&project, "diagnostics.json");
+    base["findings"] = serde_json::json!([base["findings"][0].clone()]);
+    base["metadata"]["findingCount"] = serde_json::json!(1);
+    let manifest = serde_json::json!({
+        "schemaVersion": "lekalo/search-inputs/v0.8.0",
+        "identity": "dev.lekalo.search-inputs@0.8.0",
+        "projectId": "planner",
+        "inputs": [
+            {"kind": "diagnostics", "path": "evidence/a.json", "identity": "dev.lekalo.search-diagnostics@0.8.0"},
+            {"kind": "diagnostics", "path": "evidence/z.json", "identity": "dev.lekalo.search-diagnostics@0.8.0"}
+        ]
+    });
+    std::fs::write(
+        project.join("evidence/two-files.json"),
+        serde_json::to_vec(&manifest).expect("manifest"),
+    )
+    .expect("write manifest");
+    let write_pair = |left: &serde_json::Value, right: &serde_json::Value| {
+        for (name, document) in [("a.json", left), ("z.json", right)] {
+            std::fs::write(
+                project.join("evidence").join(name),
+                serde_json::to_vec(document).expect("producer bytes"),
+            )
+            .expect("write producer");
+        }
+    };
+    let args = [
+        "--json",
+        "--no-cache",
+        "find",
+        "--kind",
+        "diagnostic",
+        "--project",
+        ".",
+        "--inputs",
+        "evidence/two-files.json",
+    ];
+    write_pair(&base, &base);
+    let admitted = lekalo_in(&project, &args);
+    assert_eq!(exit_code(&admitted), 0, "{}", stderr_text(&admitted));
+    let document = json(&admitted);
+    assert_eq!(document["items"].as_array().expect("items").len(), 1);
+    assert_eq!(
+        document["items"][0]["card"]["key"],
+        "diag:focus-concurrency-001"
+    );
+    assert_eq!(document["items"][0]["card"]["subkind"], "warning");
+    assert!(document["coverage"]
+        .as_array()
+        .expect("coverage")
+        .iter()
+        .any(|row| row["domain"] == "diagnostics" && row["state"] == "complete"));
+    for (member, value) in [
+        ("severity", "info"),
+        ("disposition", "resolved"),
+        ("rule", "planner.different-rule"),
+        ("subject", "planner.refocus_task"),
+    ] {
+        let mut conflicting = base.clone();
+        conflicting["findings"][0][member] = serde_json::json!(value);
+        for swapped in [false, true] {
+            if swapped {
+                write_pair(&conflicting, &base);
+            } else {
+                write_pair(&base, &conflicting);
+            }
+            let refused = lekalo_in(&project, &args);
+            assert_eq!(
+                exit_code(&refused),
+                1,
+                "{member}, swapped={swapped}: {refused:?}"
+            );
+            let envelope = json(&refused);
+            assert_eq!(envelope["diagnostics"][0]["id"], "search.input-invalid");
+            assert_eq!(
+                envelope["diagnostics"][0]["data"]["detail"],
+                "identity-conflict"
+            );
+        }
+    }
+}
+
+/// Hostile nesting stays well below the byte cap but must be a typed
+/// refusal, not a process stack overflow, at manifest AND producer reads.
+#[test]
+fn deeply_nested_search_inputs_refuse_without_stack_overflow() {
+    let (project, _guard) = disposable_project();
+    let shallow = r#"{"schemaVersion":"lekalo/search-inputs/v0.8.0","identity":"dev.lekalo.search-inputs@0.8.0","projectId":"planner","inputs":[]}"#;
+    let manifest_path = project.join("evidence/depth.json");
+    std::fs::write(&manifest_path, shallow).expect("shallow manifest");
+    let args = [
+        "--json",
+        "--no-cache",
+        "find",
+        "--id",
+        "planner.focus_task",
+        "--project",
+        ".",
+        "--inputs",
+        "evidence/depth.json",
+    ];
+    let accepted = lekalo_in(&project, &args);
+    assert_eq!(exit_code(&accepted), 0, "{accepted:?}");
+    let nested = format!("{}0{}", "[".repeat(400_000), "]".repeat(400_000));
+    // A closed-manifest prefix followed by nested arrays reproduces
+    // the lexer stack overflow independently of the typed decoder.
+    let hostile = shallow.replace("[]", &nested);
+    std::fs::write(&manifest_path, hostile).expect("hostile manifest");
+    let refused = lekalo_in(&project, &args);
+    assert_eq!(refused.status.code(), Some(1), "{refused:?}");
+    assert_eq!(
+        json(&refused)["diagnostics"][0]["id"],
+        "search.input-invalid"
+    );
+    // The producer boundary shares the lexer, and must refuse too.
+    std::fs::write(
+        &manifest_path,
+        shallow.replace("[]", r#"[{"kind":"diagnostics","path":"evidence/deep-producer.json","identity":"dev.lekalo.search-diagnostics@0.8.0"}]"#),
+    )
+    .expect("producer manifest");
+    std::fs::write(project.join("evidence/deep-producer.json"), nested).expect("deep producer");
+    let refused = lekalo_in(&project, &args);
+    assert_eq!(refused.status.code(), Some(1), "{refused:?}");
+    assert_eq!(
+        json(&refused)["diagnostics"][0]["id"],
+        "search.input-invalid"
+    );
+}
+
+#[cfg(any(unix, windows))]
+fn file_symlink(target: &Path, link: &Path) {
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target, link).expect("file symlink");
+    #[cfg(windows)]
+    std::os::windows::fs::symlink_file(target, link).expect("file symlink");
+}
+
+/// Status cannot disclose the contents of outside pointer/generation
+/// links before the later Model/structure pass (issue #93 r11).
+#[test]
+#[cfg(any(unix, windows))]
+fn status_refuses_pointer_and_generation_file_links() {
+    let (project, guard) = disposable_project();
+    assert_eq!(exit_code(&build_once(&project)), 0);
+    let home = project.join(".lekalo/cache/search");
+    let pointer = home.join("current.json");
+    let honest_pointer = std::fs::read(&pointer).expect("pointer");
+    let digest = serde_json::from_slice::<serde_json::Value>(&honest_pointer)
+        .expect("pointer json")["digest"]
+        .as_str()
+        .expect("digest")
+        .to_owned();
+    let outside_pointer = guard.path().join("outside-pointer.json");
+    std::fs::write(&outside_pointer, &honest_pointer).expect("outside pointer");
+    std::fs::remove_file(&pointer).expect("remove pointer");
+    file_symlink(&outside_pointer, &pointer);
+    let assert_denied = || {
+        let status = lekalo_in(
+            &project,
+            &["--json", "search-index", "status", "--project", "."],
+        );
+        assert_eq!(status.status.code(), Some(0), "{status:?}");
+        let document = json(&status);
+        assert_eq!(document["searchIndex"]["state"], "denied");
+        assert!(document["searchIndex"]["generation"].is_null());
+        assert!(document["searchIndex"]["cards"].is_null());
+        let find = lekalo_in(
+            &project,
+            &[
+                "--json",
+                "find",
+                "--id",
+                "planner.focus_task",
+                "--project",
+                ".",
+            ],
+        );
+        assert_eq!(find.status.code(), Some(3), "{find:?}");
+        assert!(json(&find)["diagnostics"]
+            .as_array()
+            .expect("diagnostics")
+            .iter()
+            .any(|row| row["id"] == "structure.path-link"));
+    };
+    for external_digest in ["c".repeat(64), "f".repeat(64)] {
+        std::fs::write(
+            &outside_pointer,
+            format!("{{\"digest\":\"{external_digest}\"}}"),
+        )
+        .expect("outside edit");
+        assert_denied();
+    }
+    std::fs::remove_file(&pointer).expect("unlink pointer");
+    std::fs::write(&pointer, honest_pointer).expect("restore pointer");
+    let generation = home.join(&digest);
+    let honest_generation = std::fs::read(&generation).expect("generation");
+    let outside_generation = guard.path().join("outside-generation");
+    std::fs::write(&outside_generation, &honest_generation).expect("outside generation");
+    std::fs::remove_file(&generation).expect("remove generation");
+    file_symlink(&outside_generation, &generation);
+    assert_denied();
+    assert_eq!(
+        std::fs::read(outside_generation).expect("unchanged outside"),
+        honest_generation
+    );
+    std::fs::remove_file(&generation).expect("unlink generation");
+    std::fs::write(generation, honest_generation).expect("restore generation");
+    let restored = lekalo_in(
+        &project,
+        &["--json", "search-index", "status", "--project", "."],
+    );
+    assert_eq!(json(&restored)["searchIndex"]["state"], "ready");
+}
+
 /// The published producer row bounds are enforced at admission: a
 /// diagnostics snapshot with 4097 findings and an ownership profile
 /// with 4097 members are the same refusal the published schemas give

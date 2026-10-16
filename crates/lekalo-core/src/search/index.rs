@@ -15,11 +15,11 @@
 //! IDs, installation paths, and cache-hit telemetry.
 
 use std::collections::BTreeMap;
-use std::io::Read as _;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::project_fs::{EntryType, Fs, FsErrorKind};
 use crate::search::input::SearchInputs;
 use crate::search::projection::{Card, Projection};
 use crate::search::version::{
@@ -30,7 +30,7 @@ use crate::search::wire::{canonical_json, sha256_digest};
 /// Why a durable store operation degraded.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StoreError {
-    /// The cache home is denied by policy/authority (fail closed).
+    /// A cache component or child file is denied by policy (fail closed).
     Denied,
     /// Any other I/O condition (degrade to transient).
     Io,
@@ -221,6 +221,7 @@ impl SearchIndex {
 /// The governed generation store under `.lekalo/cache/search/`.
 pub struct SearchStore {
     root: PathBuf,
+    fs: Fs,
 }
 
 impl SearchStore {
@@ -236,13 +237,55 @@ impl SearchStore {
         // Mirror the cache path policy: refuse absolute/aliased project
         // roots by resolving first; deny symlinked cache homes.
         let canonical = std::fs::canonicalize(project_root).map_err(|_| StoreError::Io)?;
-        let home = canonical.join(".lekalo").join("cache").join("search");
-        if let Ok(resolved) = std::fs::canonicalize(&home) {
-            if !resolved.starts_with(&canonical) {
-                return Err(StoreError::Denied);
+        let store = Self {
+            root: canonical.join(".lekalo").join("cache").join("search"),
+            fs: Fs::open(&canonical).map_err(|_| StoreError::Io)?,
+        };
+        store.home_exists()?;
+        Ok(store)
+    }
+
+    /// Check every cache directory component without following links.
+    /// Rechecked on every read, including when resolve saw no store yet.
+    fn home_exists(&self) -> Result<bool, StoreError> {
+        let mut directory = String::new();
+        for name in [".lekalo", "cache", "search"] {
+            match self.fs.entry_type(&directory, name) {
+                Ok(EntryType::Directory) => {}
+                Ok(_) => return Err(StoreError::Denied),
+                Err(FsErrorKind::NotFound) => return Ok(false),
+                Err(_) => return Err(StoreError::Io),
             }
+            if !directory.is_empty() {
+                directory.push('/');
+            }
+            directory.push_str(name);
         }
-        Ok(Self { root: home })
+        Ok(true)
+    }
+
+    /// The only store read boundary: reject child-file links/reparse
+    /// points BEFORE opening or reading pointer/generation bytes. The
+    /// project filesystem also checks components at open time (Unix
+    /// descriptor-relative O_NOFOLLOW; Windows reparse checks), and
+    /// bounds the read before allocation (issue #93 r11).
+    fn read_file(&self, name: &str, max: usize) -> Result<Option<Vec<u8>>, StoreError> {
+        if !self.home_exists()? {
+            return Ok(None);
+        }
+        const HOME: &str = ".lekalo/cache/search";
+        match self.fs.entry_type(HOME, name) {
+            Ok(EntryType::File) => {}
+            Ok(_) => return Err(StoreError::Denied),
+            Err(FsErrorKind::NotFound) => return Ok(None),
+            Err(_) => return Err(StoreError::Io),
+        }
+        match self.fs.read_file_opt(HOME, name, max) {
+            Ok(bytes) => Ok(bytes),
+            Err(FsErrorKind::NotFound) => Ok(None),
+            Err(FsErrorKind::Limit { .. }) => Err(StoreError::Corrupt),
+            Err(FsErrorKind::Io) => Err(StoreError::Io),
+        }
     }
 
     /// The current-generation pointer path.
@@ -264,20 +307,9 @@ impl SearchStore {
     pub fn current(&self) -> Result<Option<String>, StoreError> {
         /// The pointer is `{"digest":"<64 hex>"}` — 82 bytes; anything
         /// past a small fixed bound is corrupt, never allocated.
-        const MAX_POINTER_BYTES: u64 = 256;
-        let bytes = match std::fs::File::open(self.current_path()) {
-            Ok(file) => {
-                let mut bytes = Vec::new();
-                file.take(MAX_POINTER_BYTES + 1)
-                    .read_to_end(&mut bytes)
-                    .map_err(|_| StoreError::Io)?;
-                if bytes.len() > MAX_POINTER_BYTES as usize {
-                    return Err(StoreError::Corrupt);
-                }
-                bytes
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(_) => return Err(StoreError::Io),
+        const MAX_POINTER_BYTES: usize = 256;
+        let Some(bytes) = self.read_file("current.json", MAX_POINTER_BYTES)? else {
+            return Ok(None);
         };
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
@@ -318,30 +350,9 @@ impl SearchStore {
         {
             return Err(StoreError::Corrupt);
         }
-        let path = self.generation_path(digest);
-        // Bound BEFORE allocation: the on-disk length is checked before
-        // any byte is read into memory, exactly like the producer-side
-        // `read_confined`/`take` helpers (the eventual verdict is the
-        // same `Corrupt`; the allocation is not unbounded).
-        if let Ok(metadata) = std::fs::metadata(&path) {
-            if metadata.len() > MAX_INDEX_BYTES as u64 {
-                return Err(StoreError::Corrupt);
-            }
-        }
-        let bytes = match std::fs::File::open(&path) {
-            Ok(file) => {
-                let mut bytes = Vec::new();
-                file.take(MAX_INDEX_BYTES as u64 + 1)
-                    .read_to_end(&mut bytes)
-                    .map_err(|_| StoreError::Io)?;
-                bytes
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(_) => return Err(StoreError::Io),
+        let Some(bytes) = self.read_file(digest, MAX_INDEX_BYTES)? else {
+            return Ok(None);
         };
-        if bytes.len() > MAX_INDEX_BYTES {
-            return Err(StoreError::Corrupt);
-        }
         let text = std::str::from_utf8(&bytes).map_err(|_| StoreError::Corrupt)?;
         crate::search::wire::reject_duplicate_keys(text).map_err(|_| StoreError::Corrupt)?;
         let mut document: IndexDocument =
@@ -456,6 +467,13 @@ impl SearchStore {
                     postings: Some(document.postings.len() as u64),
                     document: Some(document),
                     generation: Some(digest),
+                },
+                Err(StoreError::Denied) => IndexStatus {
+                    state: "denied",
+                    generation: None,
+                    cards: None,
+                    postings: None,
+                    document: None,
                 },
                 _ => IndexStatus {
                     state: "corrupt",
@@ -682,14 +700,119 @@ mod tests {
         assert_eq!(store.current().expect("preserved pointer"), current);
     }
 
+    #[cfg(any(unix, windows))]
+    fn file_link(target: &Path, link: &Path) {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, link).expect("create file symlink");
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_file(target, link).expect("create file symlink");
+    }
+
+    #[test]
+    #[cfg(any(unix, windows))]
+    fn pointer_links_are_denied_before_reading_target_bytes() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside project");
+        let store = SearchStore::resolve(temp.path()).expect("resolves");
+        store.publish(&skeleton_document()).expect("publish");
+        let pointer = store.current_path();
+        let honest = std::fs::read(&pointer).expect("honest pointer");
+        std::fs::remove_file(&pointer).expect("remove pointer");
+        let target = outside.path().join("pointer.json");
+        std::fs::write(&target, &honest).expect("outside pointer");
+        file_link(&target, &pointer);
+        for digest in ["c".repeat(64), "f".repeat(64)] {
+            std::fs::write(&target, format!("{{\"digest\":\"{digest}\"}}")).expect("outside edit");
+            assert_eq!(store.current(), Err(StoreError::Denied));
+            let status = store.status();
+            assert_eq!(status.state, "denied");
+            assert_eq!(status.generation, None);
+            assert_eq!(status.document, None);
+        }
+        std::fs::remove_file(pointer).expect("unlink pointer");
+        std::fs::write(store.current_path(), honest).expect("restore pointer");
+        assert_eq!(store.status().state, "ready");
+    }
+
+    #[test]
+    #[cfg(any(unix, windows))]
+    fn generation_links_are_denied_even_for_valid_target_bytes() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside project");
+        let store = SearchStore::resolve(temp.path()).expect("resolves");
+        store.publish(&skeleton_document()).expect("publish");
+        let digest = store.current().expect("pointer").expect("digest");
+        let generation = store.generation_path(&digest);
+        let honest = std::fs::read(&generation).expect("honest generation");
+        std::fs::remove_file(&generation).expect("remove generation");
+        // Both outside and in-project file aliases are refused. Valid
+        // content/digest custody does not authorize following a link.
+        for target in [outside.path().join("generation"), temp.path().join("alias")] {
+            std::fs::write(&target, &honest).expect("target generation");
+            file_link(&target, &generation);
+            assert_eq!(store.load(&digest), Err(StoreError::Denied));
+            let status = store.status();
+            assert_eq!(status.state, "denied");
+            assert_eq!(status.generation, None);
+            assert_eq!(status.document, None);
+            assert_eq!(std::fs::read(&target).expect("unchanged target"), honest);
+            std::fs::remove_file(&generation).expect("unlink generation");
+        }
+        std::fs::write(&generation, honest).expect("restore generation");
+        assert_eq!(store.status().state, "ready");
+    }
+
+    #[test]
+    #[cfg(any(unix, windows))]
+    fn every_store_directory_link_is_denied_including_after_resolve() {
+        for parent in ["", ".lekalo", ".lekalo/cache"] {
+            let temp = tempfile::tempdir().expect("tempdir");
+            let outside = tempfile::tempdir().expect("outside project");
+            let store = SearchStore::resolve(temp.path()).expect("missing store resolves");
+            let link = match parent {
+                "" => temp.path().join(".lekalo"),
+                ".lekalo" => temp.path().join(".lekalo").join("cache"),
+                _ => temp.path().join(".lekalo").join("cache").join("search"),
+            };
+            std::fs::create_dir_all(link.parent().expect("parent")).expect("parent directory");
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(outside.path(), &link).expect("directory symlink");
+            #[cfg(windows)]
+            {
+                let output = std::process::Command::new("cmd")
+                    .args(["/C", "mklink", "/J"])
+                    .arg(&link)
+                    .arg(outside.path())
+                    .output()
+                    .expect("create directory junction");
+                assert!(output.status.success(), "{output:?}");
+            }
+            assert!(matches!(
+                SearchStore::resolve(temp.path()),
+                Err(StoreError::Denied)
+            ));
+            assert_eq!(store.current(), Err(StoreError::Denied));
+            assert_eq!(store.load(&"a".repeat(64)), Err(StoreError::Denied));
+            assert_eq!(store.status().state, "denied");
+            assert_eq!(
+                std::fs::read_dir(outside.path()).expect("outside").count(),
+                0
+            );
+            #[cfg(unix)]
+            std::fs::remove_file(link).expect("unlink directory");
+            #[cfg(windows)]
+            std::fs::remove_dir(link).expect("unlink junction");
+        }
+    }
+
     #[test]
     fn oversize_generation_and_pointer_bytes_are_refused_corrupt() {
         let temp = tempfile::tempdir().expect("tempdir");
         let store = SearchStore::resolve(temp.path()).expect("resolves");
         std::fs::create_dir_all(temp.path().join(".lekalo/cache/search")).expect("store home");
-        // A planted oversize generation: the on-disk length is checked
-        // BEFORE any byte is read into memory (issue #93 r5 — bounded
-        // reads), and the verdict is the same Corrupt as before.
+        // A planted oversize generation: the confined read is bounded
+        // BEFORE allocation (issue #93 r5/r11), and the verdict is the
+        // same Corrupt as before.
         let hex = "a".repeat(64);
         let oversize = temp.path().join(".lekalo/cache/search").join(&hex);
         std::fs::write(&oversize, vec![b'x'; MAX_INDEX_BYTES + 4096]).expect("oversize");

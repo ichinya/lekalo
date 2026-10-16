@@ -11,8 +11,11 @@
 // Requires `cargo build --workspace --locked` first (CI builds before
 // this gate). Runs fully offline in an empty environment; no adapter,
 // network, or target-source access happens, and the gate fails if any
-// expected artifact is missing instead of skipping.
+// expected artifact is missing instead of skipping. Every successful
+// search/find response is validated live with pinned Ajv 8.17.1 (same
+// NODE_PATH / LEKALO_AJV_NODE_PATH provisioning as the contract gate).
 
+import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { dirname as dirnamePath } from "node:path";
 import {
@@ -36,6 +39,33 @@ const binary =
 const fail = (reason, detail) => {
   process.stderr.write(`${JSON.stringify({ ok: false, reason, detail }, null, 2)}\n`);
   process.exit(1);
+};
+
+const require = createRequire(
+  process.env.LEKALO_AJV_NODE_PATH
+    ? `${process.env.LEKALO_AJV_NODE_PATH}/`
+    : import.meta.url,
+);
+let validateResult;
+try {
+  const version = require("ajv/package.json").version;
+  if (version !== "8.17.1") fail("ajv-version", version);
+  const Ajv2020 = require("ajv/dist/2020").default;
+  validateResult = new Ajv2020({ strict: true, allErrors: true }).compile(
+    JSON.parse(readFileSync(join(root, "contracts/search-result.schema.v0.8.0.json"), "utf8")),
+  );
+} catch (error) {
+  fail("live-result-schema-unavailable", error?.message);
+}
+let liveSchemas = 0;
+const validateLiveResult = (document, args) => {
+  // Only CLI envelope fields are stripped: all payload members remain
+  // subject to the closed result schema, including future additions.
+  const { status, diagnostics, reasonCodes, ...payload } = document;
+  if (status !== "valid" || !validateResult(payload)) {
+    fail("live-result-schema-invalid", { args, status, errors: validateResult.errors });
+  }
+  liveSchemas += 1;
 };
 
 let binaryOk = false;
@@ -74,6 +104,9 @@ const run = (args) => {
   const text = (result.stdout ?? "").trim().length > 0
     ? result.stdout
     : result.stderr ?? "";
+  if (result.status === 0 && (args.includes("find") || args.includes("search"))) {
+    validateLiveResult(JSON.parse(text), args);
+  }
   return {
     code: result.status ?? 1,
     stdout: result.stdout ?? "",
@@ -89,6 +122,11 @@ const ok = (name, condition, detail) => {
   if (!condition) fail(name, detail);
   checks += 1;
 };
+
+// Cold canonical-only assembly: no registration or producer can mask
+// the coverage vocabulary emitted by the minimal live response (r11).
+const coldCanonical = run(["--json", "--no-cache", "find", "--id", "planner.focus_task", "--project", "."]);
+ok("r11-cold-result-schema", coldCanonical.code === 0 && coldCanonical.json().coverage.length === 9, coldCanonical.stderr);
 
 // ---------------------------------------------------------------------------
 // AC1: writers/readers of a field without grep — exact scope, overlapping
@@ -366,6 +404,11 @@ const status = run(["--json", "search-index", "status", "--project", "."]);
 const statusDoc = status.json();
 ok("ac6-status-ready", statusDoc.searchIndex.state === "ready", statusDoc.searchIndex);
 ok("ac6-status-cards", statusDoc.searchIndex.cards >= 20, statusDoc.searchIndex.cards);
+
+// No explicit manifest: this response is served from the registered
+// generation, not the cold assembly; run() schema-validates it too.
+const registeredWarm = run(["--json", "find", "--id", "planner.focus_task", "--project", "."]);
+ok("r11-registered-warm-result-schema", registeredWarm.code === 0 && registeredWarm.json().coverage.length === 9, registeredWarm.stderr);
 
 // Warm pagination walks the whole ranked set with no repeats/skips.
 const warmSeen = new Set();
@@ -720,7 +763,13 @@ for (let m = 0; m < 150; m++) {
   }
   writeFileSync(join(dir, "entities.yaml"), yaml);
 }
-const runScale = (args) => spawnSync(binary, args, { cwd: scaleProject, encoding: "utf8", env: offlineEnv });
+const runScale = (args) => {
+  const result = spawnSync(binary, args, { cwd: scaleProject, encoding: "utf8", env: offlineEnv });
+  if (result.status === 0 && (args.includes("find") || args.includes("search"))) {
+    validateLiveResult(JSON.parse(result.stdout), args);
+  }
+  return result;
+};
 const scaleBuild = runScale([
   "--json", "search-index", "build", "--project", ".", "--inputs", inputsRelative,
 ]);
@@ -749,5 +798,5 @@ const scaleUpdate = timedScale("r6-scale-noop-update", ["--json", "search-index"
 rmSync(scaleProject, { recursive: true, force: true });
 
 process.stdout.write(
-  `${JSON.stringify({ ok: true, checks, project: "disposable temp copy", scale: { cards: scaleCards, warmFindSeconds: +scaleWarm.toFixed(2), statusSeconds: +scaleStatus.toFixed(2), noopUpdateSeconds: +scaleUpdate.toFixed(2), deadlineSeconds: SCALE_DEADLINE_MS / 1000 } }, null, 2)}\n`,
+  `${JSON.stringify({ ok: true, checks, liveSchemas, project: "disposable temp copy", scale: { cards: scaleCards, warmFindSeconds: +scaleWarm.toFixed(2), statusSeconds: +scaleStatus.toFixed(2), noopUpdateSeconds: +scaleUpdate.toFixed(2), deadlineSeconds: SCALE_DEADLINE_MS / 1000 } }, null, 2)}\n`,
 );

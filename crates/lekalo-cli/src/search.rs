@@ -1462,6 +1462,7 @@ struct DiagnosticsEnvelope {
 }
 
 /// One closed-decoded admitted diagnostic finding.
+#[derive(Eq, PartialEq)]
 struct DiagnosticFinding {
     id: String,
     rule: String,
@@ -1854,6 +1855,11 @@ fn admit_producers(
     let mut states: Vec<(&'static str, &'static str)> = Vec::new();
     let mut dropped_effects: u64 = 0;
     let mut pins = Vec::with_capacity(manifest.entries().len());
+    // Finding ids are shared by the whole admitted producer set, not
+    // qualified by input filename. Validate/deduplicate all statements
+    // before projecting any diagnostic card (issue #93 r11).
+    let mut diagnostic_findings: std::collections::BTreeMap<String, DiagnosticFinding> =
+        std::collections::BTreeMap::new();
     for entry in manifest.entries() {
         // The one confined bounded read: custody gate, pin source, and
         // decoded bytes are the exact same buffer.
@@ -2037,33 +2043,25 @@ fn admit_producers(
                 // conflicting diagnostic statements: the conflict is a
                 // typed refusal, never silently collapsed by card-map
                 // insertion or input order into a false survivor
-                // (issue #93 r5). Only an exact re-statement of the
-                // same statement is a legal duplicate row.
-                let mut seen: std::collections::BTreeMap<&str, (&str, &str, &str, &str)> =
-                    std::collections::BTreeMap::new();
-                for finding in &envelope.findings {
+                // (issue #93 r5/r11). Only an exact re-statement of the
+                // same statement is a legal duplicate, even across files.
+                for finding in envelope.findings {
                     if !projection
                         .cards
                         .contains_key(&format!("def:{}", finding.subject))
                     {
                         return Err(producer_invalid("subject-unknown", "diagnostics"));
                     }
-                    let identity = (
-                        finding.rule.as_str(),
-                        finding.subject.as_str(),
-                        finding.severity.as_str(),
-                        finding.disposition.as_str(),
-                    );
-                    match seen.insert(finding.id.as_str(), identity) {
-                        // A first sighting, or an exact re-statement of
-                        // the same statement: only a DISAGREEING reuse
-                        // of one id is a conflicting diagnostic identity.
-                        None => {}
-                        Some(previous) if previous == identity => {}
-                        _ => return Err(producer_invalid("identity-conflict", "diagnostics")),
+                    match diagnostic_findings.get(&finding.id) {
+                        Some(previous) if previous != &finding => {
+                            return Err(producer_invalid("identity-conflict", "diagnostics"));
+                        }
+                        Some(_) => {} // Exact restatement: project only once.
+                        None => {
+                            diagnostic_findings.insert(finding.id.clone(), finding);
+                        }
                     }
                 }
-                project_diagnostics(projection, &envelope, cap);
                 states.push(("diagnostics", "complete"));
             }
             lekalo_core::search::ProducerKind::OwnershipProfile => {
@@ -2090,6 +2088,8 @@ fn admit_producers(
             }
         }
     }
+    let findings: Vec<DiagnosticFinding> = diagnostic_findings.into_values().collect();
+    project_diagnostics(projection, &findings, cap);
     // Requirement→native-binding joins (issue #93 r5): every observed
     // binding card of a typed native symbol inherits its definition
     // card's joined requirement/scenario/gate refs. The join runs as a
@@ -3152,8 +3152,8 @@ fn project_error_contract(
 /// cards keyed by finding id, rule identity, severity subkind, and a
 /// typed `evidences` relation onto the subject card. Resolved findings
 /// stay visibly stale (excluded by default, never erased).
-fn project_diagnostics(projection: &mut Projection, envelope: &DiagnosticsEnvelope, cap: usize) {
-    for finding in &envelope.findings {
+fn project_diagnostics(projection: &mut Projection, findings: &[DiagnosticFinding], cap: usize) {
+    for finding in findings {
         let key = format!("diag:{}", finding.id);
         let freshness = if finding.disposition == "resolved" {
             Freshness::Stale

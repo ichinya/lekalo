@@ -3222,7 +3222,7 @@
       "id": "contract:contracts/search-result.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/search-result.schema.v0.8.0.json",
-      "sourceDigest": "sha256:ca127ee0dd2a01b133b16a23b9082145c4c27618f4c53b152ec9b22eb1b005e6",
+      "sourceDigest": "sha256:887488d7aaade61a8ecef0b0d1f7631c06e8cc71aed08b28616532a2846bdbf3",
       "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
