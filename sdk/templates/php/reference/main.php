@@ -118,7 +118,7 @@ $handlers = [
         }
         return ['planId' => $request['plan_id'] ?? planIdOf($plan), 'writes' => $plan];
     },
-    'describe' => function () use ($identity, $capabilitiesMap, $writeScopes) {
+    'describe' => function (array $request) use ($identity, $capabilitiesMap, $writeScopes) {
         $failed = callbackFaults('describe');
         if ($failed !== null) {
             return $failed;
@@ -136,6 +136,10 @@ $handlers = [
             true,
             $capabilitiesMap
         );
+        if (fault('limits-probe')) {
+            // PHP callbacks consume the accepted deadline via named limits.
+            $caps['constraints'] = ['max_entries' => $request['limits']['timeout_ms'] ?? null, 'max_writes' => $request['limits']['max_output_bytes'] ?? null];
+        }
         return mutateCapabilities($caps);
     },
     'generate' => function (array $request) use ($writeScopes) {

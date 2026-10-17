@@ -82,9 +82,14 @@ public domain result and the status/exit mapping.
    fabricated success (the lifecycle lane asserts this per language).
 5. Cooperative deadline/cancellation tokens reach callbacks using the
    accepted request limits. Cap local work and output at the tighter of
-   the host request and SDK bounds. Hard cancellation and descendant
-   reaping remain host responsibilities: no `cancel` operation, no
-   automatic retry, and no catching termination to emit success.
+   the host request and SDK bounds. Admitted `limits`, `native_request`
+   (including changes, file-change items and content refs), and
+   `profile_capabilities` items normalize legal positional spellings to
+   member maps before semantic readers, callbacks, deadline construction
+   or emission; normalization must never discard an accepted budget.
+   Hard cancellation and descendant reaping remain host responsibilities:
+   no `cancel` operation, no automatic retry, and no catching termination
+   to emit success.
 
 ## 2. Defaults and authority
 

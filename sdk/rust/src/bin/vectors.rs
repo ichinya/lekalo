@@ -191,6 +191,13 @@ fn main() {
             None => (expect, ""),
         };
         let outcome: Result<bool, String> = (|| match kind {
+            "request-normalization" => {
+                let request =
+                    sdk::decode_request(&json_text(&vector, "request")).map_err(|r| r.reason)?;
+                let token = sdk::serve::DeadlineToken::from_request(&request);
+                Ok(canonical(&request) == json_text(&vector, "normalized")
+                    && token.deadline_ms == Some(1000))
+            }
             "validate-before-write" => {
                 let request =
                     sdk::decode_request(&json_text(&vector, "request")).map_err(|r| r.reason)?;

@@ -178,6 +178,11 @@ func (a *referenceAdapter) Handle(operation string, request sdk.Value) sdk.Outpu
 		if err != nil {
 			return refused()
 		}
+		if fault("limits-probe") {
+			token := sdk.DeadlineTokenFromRequest(request)
+			limits, _ := request.(map[string]any)["limits"].(map[string]any)
+			capabilities.(map[string]any)["constraints"] = map[string]any{"max_entries": token.DeadlineMs, "max_writes": limits["max_output_bytes"]}
+		}
 		return sdk.Output{Capabilities: mutateCapabilities(capabilities)}
 	case "generate":
 		body, modelPath, writes := deterministicWrites(request)

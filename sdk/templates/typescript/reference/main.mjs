@@ -125,7 +125,7 @@ process.exitCode = await serve({
       }
       return { planId: request.plan_id ?? planId(plan), writes: plan };
     },
-    async describe({ log }) {
+    async describe({ log, request, token }) {
       LOG_VERBOSE(log);
       await AWAIT_CALLBACK_HANG();
       const failed = CALLBACK_FAILURE();
@@ -142,6 +142,10 @@ process.exitCode = await serve({
         transports: ["stdin", "file"],
         writeScopes: WRITE_SCOPES,
       });
+      if (fault("limits-probe")) {
+        // Observe the actual serve token AND callback-facing named limits.
+        caps.constraints = { max_entries: token.deadlineMs, max_writes: request.limits?.max_output_bytes };
+      }
       return mutateCapabilities(caps);
     },
     async generate({ log, request }) {

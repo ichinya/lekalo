@@ -314,6 +314,26 @@ pub fn admit_request_value(value: &Value) -> Result<Value, Refusal> {
     if explicit_null(value, "native_request") {
         return refuse(null_reason);
     }
+    // Validation must not discard a legal positional spelling: serve's
+    // output ceiling, deadline tokens and callbacks consume member maps.
+    if let Value::Object(members) = &mut owned {
+        for (name, member) in members {
+            match name.as_str() {
+                "limits" => {
+                    *member =
+                        seq_as_members(member, &["timeout_ms", "max_output_bytes"])?.into_owned();
+                }
+                "profile_capabilities" => {
+                    if let Value::Array(items) = member {
+                        for item in items {
+                            *item = seq_as_members(item, &["id", "support"])?.into_owned();
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
     Ok(owned)
 }
 
@@ -603,7 +623,35 @@ fn admit_native_request(value: &Value) -> Result<Value, Refusal> {
     if let Some(observed) = value.get("observed_ref") {
         admit_content_ref(observed, "native_request.observed_ref")?;
     }
-    Ok(value.clone())
+    let mut normalized = value.clone();
+    if let Value::Object(members) = &mut normalized {
+        for (name, member) in members {
+            match name.as_str() {
+                "changes" => {
+                    let files = files
+                        .iter()
+                        .map(|file| {
+                            seq_as_members(
+                                file,
+                                &["path", "change", "before_digest", "after_digest"],
+                            )
+                            .map(std::borrow::Cow::into_owned)
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    *member = Value::Object(vec![
+                        ("files".to_owned(), Value::Array(files)),
+                        ("symbols".to_owned(), Value::Array(symbols.to_vec())),
+                    ]);
+                }
+                "scan_ref" | "execution_policy_ref" | "observed_ref" => {
+                    *member =
+                        seq_as_members(member, &["digest", "revision", "adapter"])?.into_owned();
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(normalized)
 }
 
 fn admit_lint_request(value: &Value) -> Result<Value, Refusal> {

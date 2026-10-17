@@ -126,6 +126,10 @@ foreach ($list('semantic') as $name) {
     $outcome = function () use ($vector, $kind, $expectKind, $expectReason): array {
         try {
             switch ($kind) {
+                case 'request-normalization':
+                    $request = Decode::admitRequest(Json::canonicalJson($vector['request']));
+                    return [$request['ok'] && Decode::validateRequest($request['value']) === null
+                        && Json::canonicalJson($request['value']) === Json::canonicalJson($vector['normalized']), 'normalization'];
                 case 'validate-before-write':
                     $request = Decode::admitRequest(Json::canonicalJson($vector['request']));
                     if (!$request['ok']) {

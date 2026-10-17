@@ -189,7 +189,16 @@ impl Adapter for ReferenceAdapter {
                     None,
                 );
                 match capabilities {
-                    Ok(value) => Output { capabilities: Some(mutate_capabilities(value)), ..Output::default() },
+                    Ok(mut value) => {
+                        if fault("limits-probe") {
+                            let token = sdk::DeadlineToken::from_request(request);
+                            replace_member(&mut value, "constraints", Value::Object(vec![
+                                ("max_entries".to_owned(), token.deadline_ms.map_or(Value::Null, |ms| Value::Int(ms as i64))),
+                                ("max_writes".to_owned(), request.get("limits").and_then(|limits| limits.get("max_output_bytes")).cloned().unwrap_or(Value::Null)),
+                            ]));
+                        }
+                        Output { capabilities: Some(mutate_capabilities(value)), ..Output::default() }
+                    },
                     Err(_) => refused(),
                 }
             }

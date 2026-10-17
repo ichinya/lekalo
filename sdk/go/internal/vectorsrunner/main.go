@@ -211,6 +211,13 @@ func runSemantic(corpus string, _ *verdict) {
 		}
 		ok, detail := func() (bool, string) {
 			switch kind {
+			case "request-normalization":
+				request, refusal := sdk.AdmitRequest(sdk.Canonical(vector["request"]))
+				if refusal != nil {
+					return false, refusal.Reason
+				}
+				token := sdk.DeadlineTokenFromRequest(request)
+				return sdk.Canonical(request) == sdk.Canonical(vector["normalized"]) && token.DeadlineMs == 1000, "normalization/deadline"
 			case "validate-before-write":
 				request, refusal := sdk.AdmitRequest(sdk.Canonical(vector["request"]))
 				if refusal != nil {

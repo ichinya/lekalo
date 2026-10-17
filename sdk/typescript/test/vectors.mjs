@@ -107,7 +107,11 @@ for (const name of list("semantic")) {
   try {
     let ok = false;
     const [expectKind, expectReason] = vector.expect.split(":");
-    if (kind === "validate-before-write") {
+    if (kind === "request-normalization") {
+      const decoded = sdk.decodeRequest(JSON.stringify(vector.request));
+      ok = decoded.ok && sdk.validateRequest(decoded.value).ok
+        && sdk.canonicalJson(decoded.value) === sdk.canonicalJson(vector.normalized);
+    } else if (kind === "validate-before-write") {
       const request = sdk.decodeRequest(JSON.stringify(vector.request));
       const response = sdk.decodeResponse(JSON.stringify(vector.response));
       if (!request.ok || !response.ok) {

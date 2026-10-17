@@ -155,9 +155,12 @@ func AdmitRequestValue(value Value) (Value, *Refusal) {
 		return nil, refuse(stageDecode, nullReason)
 	}
 	if Has(value, "limits") {
-		if refusal := admitLimits(value.(map[string]any)["limits"]); refusal != nil {
+		limits, refusal := admitLimits(valueOf(value, "limits"))
+		if refusal != nil {
 			return nil, refusal
 		}
+		// Serve consumers and callbacks read the admitted member-map form.
+		value.(map[string]any)["limits"] = limits
 	}
 	if IsNull(value, "profile_capabilities") {
 		return nil, refuse(stageDecode, nullReason)
@@ -203,13 +206,13 @@ func unknownOrShape(value Value, allowed []string) string {
 	return "shape"
 }
 
-func admitLimits(rawValue Value) *Refusal {
+func admitLimits(rawValue Value) (Value, *Refusal) {
 	if !structValue(rawValue, []string{"timeout_ms", "max_output_bytes"}) {
-		return refuse(stageDecode, "shape")
+		return nil, refuse(stageDecode, "shape")
 	}
 	value, _ := seqAsMembers(rawValue, []string{"timeout_ms", "max_output_bytes"})
 	if !isClosedObject(value, []string{"max_output_bytes", "timeout_ms"}) {
-		return refuse(stageDecode, "shape")
+		return nil, refuse(stageDecode, "shape")
 	}
 	// Production requires BOTH members whenever `limits` is present
 	// (wire.rs: absent or out-of-range is admission `shape`); the SDK
@@ -224,20 +227,20 @@ func admitLimits(rawValue Value) *Refusal {
 		{"max_output_bytes", generated.LIMITS_OUTPUT_MIN, generated.LIMITS_OUTPUT_MAX},
 	} {
 		if IsNull(value, bound.member) {
-			return refuse(stageDecode, "explicit-null")
+			return nil, refuse(stageDecode, "explicit-null")
 		}
 		if !Has(value, bound.member) {
-			return refuse(stageDecode, "shape")
+			return nil, refuse(stageDecode, "shape")
 		}
 		if _, isFloat := value.(map[string]any)[bound.member].(float64); isFloat {
 			// A float lexeme where production types `u64` is `shape`.
-			return refuse(stageDecode, "shape")
+			return nil, refuse(stageDecode, "shape")
 		}
 		if !numberInRange(value.(map[string]any)[bound.member], bound.min, bound.max) {
-			return refuse(stageDecode, "bounds")
+			return nil, refuse(stageDecode, "bounds")
 		}
 	}
-	return nil
+	return value, nil
 }
 
 func admitProfileCapabilities(value Value) *Refusal {
@@ -274,39 +277,39 @@ func admitProfileCapabilities(value Value) *Refusal {
 	return nil
 }
 
-func admitContentRef(rawValue Value, path string) *Refusal {
+func admitContentRef(rawValue Value, path string) (Value, *Refusal) {
 	if !structValue(rawValue, []string{"digest", "revision", "adapter"}) {
-		return refuse(stageDecode, "shape")
+		return nil, refuse(stageDecode, "shape")
 	}
 	value, _ := seqAsMembers(rawValue, []string{"digest", "revision", "adapter"})
 	if !isClosedObject(value, []string{"adapter", "digest", "revision"}) {
-		return refuse(stageDecode, "shape")
+		return nil, refuse(stageDecode, "shape")
 	}
 	if !IsSha256Digest(GetString(value, "digest")) {
-		return refuse(stageDecode, "bounds")
+		return nil, refuse(stageDecode, "bounds")
 	}
 	// Revision is an unbounded wire string; the optional adapter identity carries the production adapter token
 	// grammar (issue #106 review r4 #2, core wire.rs validate:
 	// `!scopes::is_token(adapter)` refuses `native-request`): a present,
 	// non-token identity must never reach dispatch.
 	if IsNull(value, "adapter") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "adapter") && !IsToken(GetString(value, "adapter")) {
-		return refuse(stageDecode, "bounds")
+		return nil, refuse(stageDecode, "bounds")
 	}
 	if IsNull(value, "revision") {
-		return refuse(stageDecode, "explicit-null")
+		return nil, refuse(stageDecode, "explicit-null")
 	}
 	// Production types `revision` `Option<String>` with no bound beyond
 	// the member type (issue #106 review r5 #9): only the type is
 	// checked, never a length the wire does not declare.
 	if Has(value, "revision") {
 		if _, ok := value.(map[string]any)["revision"].(string); !ok {
-			return refuse(stageDecode, "shape")
+			return nil, refuse(stageDecode, "shape")
 		}
 	}
-	return nil
+	return value, nil
 }
 
 func admitNativeRequest(value Value) (Value, *Refusal) {
@@ -384,19 +387,31 @@ func admitNativeRequest(value Value) (Value, *Refusal) {
 			return nil, refuse(stageDecode, "shape")
 		}
 	}
-	if refusal := admitContentRef(valueOf(value, "scan_ref"), "native_request.scan_ref"); refusal != nil {
-		return nil, refusal
+	if files == nil {
+		files = []any{}
 	}
-	if refusal := admitContentRef(valueOf(value, "execution_policy_ref"), "native_request.execution_policy_ref"); refusal != nil {
-		return nil, refusal
+	if symbols == nil {
+		symbols = []any{}
+	}
+	changes.(map[string]any)["files"] = files
+	changes.(map[string]any)["symbols"] = symbols
+	value.(map[string]any)["changes"] = changes
+	for _, member := range []string{"scan_ref", "execution_policy_ref"} {
+		mapped, refusal := admitContentRef(valueOf(value, member), "native_request."+member)
+		if refusal != nil {
+			return nil, refusal
+		}
+		value.(map[string]any)[member] = mapped
 	}
 	if IsNull(value, "observed_ref") {
 		return nil, refuse(stageDecode, "explicit-null")
 	}
 	if Has(value, "observed_ref") {
-		if refusal := admitContentRef(valueOf(value, "observed_ref"), "native_request.observed_ref"); refusal != nil {
+		mapped, refusal := admitContentRef(valueOf(value, "observed_ref"), "native_request.observed_ref")
+		if refusal != nil {
 			return nil, refusal
 		}
+		value.(map[string]any)["observed_ref"] = mapped
 	}
 	return value, nil
 }

@@ -1074,7 +1074,7 @@ function decodeProfileCapabilities(value) {
   // never an empty default (issue #106 review r5 #1).
   if (!Array.isArray(value) || value.length === 0 || value.length > BOUNDS.MAX_DECLARED_CAPABILITIES) return failure("bounds");
   let previous = null;
-  for (const rawCapability of value) {
+  for (const [index, rawCapability] of value.entries()) {
     if (!structValue(rawCapability, ["id", "support"])) return failure("shape");
     const capability = seqAsMembers(rawCapability, ["id", "support"]).value;
     const closed = closeObject(capability, ["id", "support"]);
@@ -1083,6 +1083,7 @@ function decodeProfileCapabilities(value) {
     if (!SUPPORT_STATES.includes(capability.support)) return failure("shape");
     if (previous !== null && capability.id <= previous) return failure("bounds");
     previous = capability.id;
+    value[index] = capability;
   }
   return { ok: true, value };
 }
@@ -1162,15 +1163,19 @@ function decodeNativeRequest(rawValue) {
   }
   const changes = decodeNativeChanges(value.changes);
   if (!changes.ok) return changes;
+  value.changes = changes.value;
   const scanRef = decodeContentRef(value.scan_ref);
   if (!scanRef.ok) return scanRef;
+  value.scan_ref = scanRef.value;
   const policyRef = decodeContentRef(value.execution_policy_ref);
   if (!policyRef.ok) return policyRef;
+  value.execution_policy_ref = policyRef.value;
   const absentObserved = optional(value.observed_ref);
   if (absentObserved) return absentObserved;
   if (value.observed_ref !== undefined) {
     const observed = decodeContentRef(value.observed_ref);
     if (!observed.ok) return observed;
+    value.observed_ref = observed.value;
   }
   return { ok: true, value };
 }
@@ -1355,16 +1360,20 @@ function decodeRequest(text, maxBytes = BOUNDS.MAX_REQUEST_BYTES) {
   if (value.limits !== undefined) {
     const limits = decodeLimits(value.limits);
     if (!limits.ok) return limits;
+    // Consumers and callbacks must see the admitted member-map spelling.
+    value.limits = limits.value;
   }
   const absentCaps = absentMember("profile_capabilities");
   if (absentCaps) return absentCaps;
   const capabilities = decodeProfileCapabilities(value.profile_capabilities);
   if (!capabilities.ok) return capabilities;
+  if (capabilities.value !== undefined) value.profile_capabilities = capabilities.value;
   const absentNative = absentMember("native_request");
   if (absentNative) return absentNative;
   if (value.native_request !== undefined) {
     const native = decodeNativeRequest(value.native_request);
     if (!native.ok) return native;
+    value.native_request = native.value;
   }
   const absentLint = absentMember("lint_request");
   if (absentLint) return absentLint;

@@ -1595,4 +1595,55 @@ for (const name of ['sources', 'coverage', 'records']) {
 // Wrong-typed limitations are NOT production-legal. Keep the hardening
 // exception honest: no productionAccepts marker on typed-wire failures.
 r10Case('lint-limitations-null-item', lintResponse, (d) => { d.result.lint_evidence.limitations = [null]; }, 'bounds');
+// r11: compose legal struct spellings with their downstream consumers.
+// These wire rows ALSO execute through real serve processes (both
+// transports, every PHP warning configuration), not just codec admission.
+for (const [budget, maxOutput] of [['tiny', 1], ['roomy', 8388608]]) {
+  for (const spelling of ['map', 'seq']) {
+    const limits = { timeout_ms: 1000, max_output_bytes: maxOutput };
+    writeWire('valid', `r11-serve-limits-${budget}-${spelling}`, {
+      ...describeRequest,
+      limits: spelling === 'map' ? limits : [limits.timeout_ms, limits.max_output_bytes],
+    });
+  }
+}
+// Normalization is part of the returned admission value, including nested
+// native structs. Map controls and seq twins must yield identical maps.
+const nativeFull = {
+  ...planNativeRequest,
+  limits: { timeout_ms: 1000, max_output_bytes: 8388608 },
+  native_request: {
+    ...nativeRequest,
+    changes: { ...nativeRequest.changes, files: [{ ...nativeRequest.changes.files[0], before_digest: D('before') }, nativeRequest.changes.files[1]] },
+    observed_ref: { digest: D('observed') },
+  },
+};
+const nativeEmpty = {
+  ...nativeFull,
+  native_request: { ...nativeFull.native_request, changes: { files: [], symbols: [] } },
+};
+const profileFull = { ...generateProfileRequest, limits: nativeFull.limits };
+for (const [name, normalized] of [['native-full', nativeFull], ['native-defaults', nativeEmpty], ['profile', profileFull]]) {
+  for (const spelling of ['map', 'seq']) {
+    const request = structuredClone(normalized);
+    if (spelling === 'seq') {
+      request.limits = [1000, 8388608];
+      if (request.native_request) {
+        const native = request.native_request;
+        native.changes = name === 'native-defaults' ? [] : [
+          native.changes.files.map((file) => positional(file, ['path', 'change', 'before_digest', 'after_digest'])),
+          native.changes.symbols,
+        ];
+        for (const member of ['scan_ref', 'execution_policy_ref', 'observed_ref']) {
+          native[member] = positional(native[member], ['digest', 'revision', 'adapter']);
+        }
+        request.native_request = positional(native, ['changes', 'scan_ref', 'observed_ref', 'execution_policy_ref', 'input_manifest_digest', 'tool_catalog_digest', 'capability_snapshot_digest']);
+      }
+      if (request.profile_capabilities) request.profile_capabilities = request.profile_capabilities.map((item) => [item.id, item.support]);
+    }
+    writeDoc('semantic', `r11-request-normalization-${name}-${spelling}`, {
+      kind: 'request-normalization', expect: 'accept', request, normalized,
+    });
+  }
+}
 process.stdout.write(`${JSON.stringify({ ok: true, gate: "adapter-sdk-fixtures", written: written.length })}\n`);

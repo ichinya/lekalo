@@ -472,8 +472,8 @@ lifecycleAccounting.negativeControls = 0;
 // Exact emitted bytes, retained for production replay below. Invalid
 // callback output must never become a stdout success or a refusal object.
 const emittedOracleRows = [];
-// Native-plan callbacks are not describe C-mode contexts. Still replay
-// their EXACT emitted success/error bytes through production V mode (r10).
+// Native-plan callbacks and direct corpus requests are not describe
+// C-mode contexts. Replay their EXACT emitted bytes through V mode.
 const nativeEmissionOracleRows = [];
 
 // Real per-SDK lifecycle lanes beyond the battery (issue #106 review r4
@@ -483,6 +483,8 @@ const nativeEmissionOracleRows = [];
 // the SDK stdout budget.
 lifecycleAccounting.fileValidLegs = 0;
 lifecycleAccounting.outputLimitLegs = 0;
+lifecycleAccounting.outputLimitControlLegs = 0;
+lifecycleAccounting.deadlineTokenLegs = 0;
 lifecycleAccounting.invalidBuilderLegs = 0;
 lifecycleAccounting.realCrashLegs = 0;
 lifecycleAccounting.stdoutHygieneLegs = 0;
@@ -517,17 +519,21 @@ const hygieneInvocations = (lang, args) => lang === 'php' ? [
     protocol_version: "0.3.2",
   };
   const validDescribe = JSON.stringify({ ...describeContext, request_id: `req-${createHash("sha256").update(JSON.stringify(describeContext)).digest("hex")}` });
-  // A VALID request declaring max_output_bytes:1 (the wire minimum):
-  // every legal envelope exceeds one byte, so the completed response
-  // must refuse at the bounded serializer — nonzero exit, empty stdout,
-  // never a truncated success.
-  const tinyBudget = JSON.stringify({
-    limits: { max_output_bytes: 1, timeout_ms: 60000 },
-    operation: "describe",
-    project_root: ".",
-    protocol: "lekalo.target/v1",
-    protocol_version: "0.3.2",
-    request_id: `req-${"f".repeat(64)}`,
+  // r11 composes legal positional Limits with actual serve consumers.
+  // The inventory is corpus-backed and cannot omit the seq/tiny pair.
+  const limitNames = corpusFiles('valid').filter((name) => name.startsWith('r11-serve-limits-'));
+  const expectedLimitNames = ['roomy', 'tiny'].flatMap((budget) => ['map', 'seq'].map((spelling) => `r11-serve-limits-${budget}-${spelling}.json`)).sort();
+  if (JSON.stringify(limitNames) !== JSON.stringify(expectedLimitNames)) fail('serve-limits-inventory', limitNames);
+  const limitCases = limitNames.map((name) => {
+    const bytes = readFileSync(join(corpusRoot, 'valid', name));
+    const request = JSON.parse(bytes.toString('utf8'));
+    const tiny = name.includes('-tiny-');
+    const maximum = tiny ? 1 : 8388608;
+    const expected = name.endsWith('-seq.json') ? [1000, maximum] : { max_output_bytes: maximum, timeout_ms: 1000 };
+    if (JSON.stringify(request.limits) !== JSON.stringify(expected)) {
+      fail('serve-limits-corpus', name);
+    }
+    return { name, bytes, tiny, maximum };
   });
   for (const lang of lifecycleLanguages.filter((lane) => ALL.includes(lane))) {
     const adapterArgs = lifecycleAdapters[lang];
@@ -546,17 +552,49 @@ const hygieneInvocations = (lang, args) => lang === 'php' ? [
       fail("lifecycle-file-exchange-valid", `${lang}: the file-coordinate exchange did not emit a success capabilities envelope`);
     }
     lifecycleAccounting.fileValidLegs += 1;
-    // Oversized emission through the bounded serializer: the response
-    // exceeds the declared one-byte budget and must refuse — nonzero
-    // exit, zero stdout bytes, a bounded stderr line.
-    const budgetLeg = run(adapterArgs[0], [...adapterArgs.slice(1)], ROOT, { input: Buffer.from(tinyBudget, "utf8"), timeout: 60000 });
-    if (budgetLeg.status === 0) {
-      fail("lifecycle-output-limit", `${lang}: a response over the declared one-byte budget was emitted as success`);
+    // Both transports × map/seq × PHP default/on/off/-n. Tiny limits
+    // must refuse at emission; roomy twins must succeed byte-identically.
+    // Probe the real TS serve token / Rust+Go callback token helpers;
+    // PHP exposes the same deadline as callback-facing named limits.
+    for (const [configuration, invocation] of hygieneInvocations(lang, adapterArgs).entries()) {
+      const twins = new Map();
+      for (const transport of ['stdin', 'file']) {
+        for (const { name, bytes, tiny, maximum } of limitCases) {
+          const label = `${lang}/${configuration}/${transport}/${name}`;
+          const limitFile = join(fileExchangeDir, `limits-${lang}.json`);
+          writeFileSync(limitFile, bytes);
+          const argv = [...invocation.slice(1), ...(transport === 'file' ? ['--lekalo-request-file', limitFile] : [])];
+          const options = { input: transport === 'file' ? Buffer.from('not-json: file must win') : bytes, encoding: null, timeout: 60000 };
+          for (const probe of tiny ? [false] : [false, true]) {
+            const leg = run(invocation[0], [...argv, ...(probe ? ['--lekalo-fault', 'limits-probe'] : [])], ROOT, options);
+            const stdout = leg.stdout ?? Buffer.alloc(0);
+            const stderr = leg.stderr ?? Buffer.alloc(0);
+            if (leg.error || leg.status === null || stderr.length > 65536 || /Warning:|Fatal error:|Notice:/.test(stderr.toString('utf8'))) {
+              fail('serve-limits-process', label);
+            }
+            if (tiny) {
+              if (leg.status === 0 || stdout.length !== 0) fail('lifecycle-output-limit', `${label}: expected nonzero exit and zero stdout, got ${leg.status}/${stdout.length}`);
+              lifecycleAccounting.outputLimitLegs += 1;
+              continue;
+            }
+            let response;
+            try { response = JSON.parse(stdout.toString('utf8')); } catch { fail('serve-limits-control', label); }
+            if (leg.status !== 0 || response.status !== 'ok' || response.capabilities === undefined || stdout.length > maximum) {
+              fail('serve-limits-control', label);
+            }
+            if (probe) {
+              const constraints = response.capabilities.constraints;
+              if (constraints?.max_entries !== 1000 || constraints?.max_writes !== maximum) fail('serve-deadline-token', label);
+              lifecycleAccounting.deadlineTokenLegs += 1;
+            } else lifecycleAccounting.outputLimitControlLegs += 1;
+            const key = probe ? 'token' : 'control';
+            if (twins.has(key) && !stdout.equals(twins.get(key))) fail('serve-limits-twin-bytes', label);
+            twins.set(key, stdout);
+            nativeEmissionOracleRows.push({ relative: `emission/limits/${label}/${key}`, bytes: stdout });
+          }
+        }
+      }
     }
-    if ((budgetLeg.stdout ?? "").length > 0) {
-      fail("lifecycle-output-limit", `${lang}: the oversize refusal wrote stdout bytes`);
-    }
-    lifecycleAccounting.outputLimitLegs += 1;
     // Hostile-admission stdout hygiene (issue #106 review r6 #2): a
     // request whose typed members are MISSING (not merely wrong) must
     // refuse with ZERO stdout bytes on every runtime — a runtime
@@ -725,10 +763,12 @@ const hygieneInvocations = (lang, args) => lang === 'php' ? [
   if (lifecycleAccounting.fileValidLegs !== expectedLegs) {
     fail("lifecycle-file-exchange-count", `executed ${lifecycleAccounting.fileValidLegs} valid file legs, expected ${expectedLegs} (one per SDK lane)`);
   }
-  if (lifecycleAccounting.outputLimitLegs !== expectedLegs) {
-    fail("lifecycle-output-limit-count", `executed ${lifecycleAccounting.outputLimitLegs} serializer-budget legs, expected ${expectedLegs} (one per SDK lane)`);
-  }
   const invocationCount = expectedLegs + (lifecycleLanguages.includes('php') ? 3 : 0);
+  for (const counter of ['outputLimitLegs', 'outputLimitControlLegs', 'deadlineTokenLegs']) {
+    if (lifecycleAccounting[counter] !== invocationCount * 4) {
+      fail('serve-limits-count', `${counter}: ${lifecycleAccounting[counter]} vs ${invocationCount * 4} (map/seq, stdin/file, PHP default/on/off/-n)`);
+    }
+  }
   const expectedHygiene = invocationCount * (8 + r10HostileRequests.length);
   if (lifecycleAccounting.stdoutHygieneLegs !== expectedHygiene) {
     fail('lifecycle-stdout-hygiene-count', `${lifecycleAccounting.stdoutHygieneLegs} vs ${expectedHygiene} (missing/short-seq and every r10 hostile request, PHP default/on/off/-n)`);

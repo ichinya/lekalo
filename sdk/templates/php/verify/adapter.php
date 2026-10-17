@@ -1324,7 +1324,8 @@ final class Decode {
             return self::refuse('decode', $nullReason);
         }
         if (isset($value['limits'])) {
-            $limits = $value['limits'];
+            // Normalize the admitted value itself, not a temporary view.
+            $limits = &$value['limits'];
             if (!self::structValue($limits, ['max_output_bytes', 'timeout_ms'], 'limits')) {
                 return self::refuse('decode', 'shape');
             }
@@ -1354,12 +1355,13 @@ final class Decode {
             return self::refuse('decode', $nullReason);
         }
         if (isset($value['profile_capabilities'])) {
-            $capabilities = $value['profile_capabilities'];
+            $capabilities = &$value['profile_capabilities'];
             if (!is_array($capabilities) || !array_is_list($capabilities) || self::rawObjectAt('profile_capabilities') || count($capabilities) === 0 || count($capabilities) > Protocol::BOUNDS['MAX_DECLARED_CAPABILITIES']) {
                 return self::refuse('decode', 'bounds');
             }
             $previous = null;
             foreach ($capabilities as $index => $capability) {
+                $capability = &$capabilities[$index];
                 if (!self::structValue($capability, ['id', 'support'], "profile_capabilities.{$index}")) {
                     return self::refuse('decode', 'shape');
                 }
@@ -1378,6 +1380,7 @@ final class Decode {
                     return self::refuse('decode', 'bounds');
                 }
                 $previous = (string) $capability['id'];
+                unset($capability);
             }
         }
         if (self::explicitNull($value, 'native_request')) {
@@ -1444,7 +1447,8 @@ final class Decode {
                 return self::refuse('decode', 'bounds');
             }
         }
-        $changes = $value['changes'] ?? null;
+        $value['changes'] ??= null;
+        $changes = &$value['changes'];
         if (!self::defaultStruct($changes, ['files', 'symbols'], 'native_request.changes')) {
             return self::refuse('decode', 'shape');
         }
@@ -1461,12 +1465,15 @@ final class Decode {
                 return self::refuse('decode', 'bounds');
             }
         }
-        $files = $changes['files'] ?? [];
-        $symbols = $changes['symbols'] ?? [];
+        $changes['files'] ??= [];
+        $changes['symbols'] ??= [];
+        $files = &$changes['files'];
+        $symbols = $changes['symbols'];
         if (count($files) > 1024 || count($symbols) > 1024) {
             return self::refuse('decode', 'bounds');
         }
         foreach ($files as $index => $change) {
+            $change = &$files[$index];
             if (!self::structValue($change, ['after_digest', 'before_digest', 'change', 'path'], "native_request.changes.files.{$index}")) {
                 return self::refuse('decode', 'shape');
             }
@@ -1485,6 +1492,7 @@ final class Decode {
                     return self::refuse('decode', 'bounds');
                 }
             }
+            unset($change);
         }
         foreach ($symbols as $symbol) {
             if (!is_string($symbol)) {
@@ -3225,10 +3233,8 @@ final class Serve {
         $bytes = Build::responseBytes($response);
         $ceiling = Protocol::BOUNDS['DEFAULT_MAX_OUTPUT_BYTES'];
         $declared = $request['limits']['max_output_bytes'] ?? null;
-        // Both admitted spellings bind the ceiling (issue #106 review r2
-        // #5): admission accepts integral floats (1.0), so emit must apply
-        // the ceiling through the same integral-number semantics — an
-        // is_int-only check silently ignored the float spelling.
+        // Admission normalizes map/positional limits before dispatch;
+        // the same integer-only semantics bind the accepted ceiling here.
         if (Decode::numberInRange($declared, 1, Protocol::BOUNDS['LIMITS_OUTPUT_MAX']) && $declared < $ceiling) {
             $ceiling = (int) $declared;
         }
