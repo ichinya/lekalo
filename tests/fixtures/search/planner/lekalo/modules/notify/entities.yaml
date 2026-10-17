@@ -1,0 +1,17 @@
+schema_version: "0.2.16"
+definitions:
+  - id: notify.text
+    kind: scalar
+    version: 1
+    description: "Human-readable notification text"
+    base: string
+  - id: notify.status
+    kind: entity
+    version: 1
+    description: "One notification status row"
+    fields:
+      - name: label
+        type: "notify.text"
+        required: true
+    identity:
+      - label

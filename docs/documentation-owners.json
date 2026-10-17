@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:5da049529ffe9fb3ef18afcc78e2e60a10fc9c8a64f258811a0273995b6df8ff",
+  "cliSourceDigest": "sha256:a0f2c0ec2ccc405e174988a4dc2066ea4fbaed97c9a2a150238c64246592dc95",
   "p0Pages": [
     {
       "page": "README.md",
@@ -2908,7 +2908,7 @@
       "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
-      "sourceDigest": "sha256:9fe4f700c4bce769385c32d536a3f00ca7d5d045f9e3f8ac9378c032df95dfb7",
+      "sourceDigest": "sha256:dac22d6cb0ac2de1768f6350ad1e91187d61a63770ce35e2951f9966f54b087d",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2953,7 +2953,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.8.0.json",
-      "sourceDigest": "sha256:e1d5df53abe183b7a2b536a4fbd1085a1567d09df9d8cd55db05a4dd172d871d",
+      "sourceDigest": "sha256:097c580319526ac535de6c848519ccda4e6d7619429c1265c2002feab95353a1",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3891,6 +3891,60 @@
       "source": "contracts/scenario-run.schema.v0.4.0.json",
       "sourceDigest": "sha256:f0ab66697ad7b2c48dea7180b301080586df3a4f3f09fc2700373ef7cbfad358",
       "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/search-diagnostics.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/search-diagnostics.schema.v0.8.0.json",
+      "sourceDigest": "sha256:ccdc129bf2ea7bd2391115152ce2aab9cc9ce754233028b6e5c2dd5bcccf86e2",
+      "owner": "docs/semantic-search.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/search-index.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/search-index.schema.v0.8.0.json",
+      "sourceDigest": "sha256:4639873592665406074b979d0d92477c6610f1743fdd22c6b238b9b237b1c9e6",
+      "owner": "docs/semantic-search.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/search-inputs.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/search-inputs.schema.v0.8.0.json",
+      "sourceDigest": "sha256:1e898f357872071a3460445ef89cfc5f044a5ceaf3c300b762603f2aaafe8192",
+      "owner": "docs/semantic-search.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/search-ownership-profile.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/search-ownership-profile.schema.v0.8.0.json",
+      "sourceDigest": "sha256:9871d1c282d7c091b9ce5fcd7e81bbf26947b3fe184696c5d47da8d00d71b1d5",
+      "owner": "docs/semantic-search.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/search-query.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/search-query.schema.v0.8.0.json",
+      "sourceDigest": "sha256:b9dd5fc85b2e2f3920275d4da0505384e20ac4772c66de703e297ab2bd217d17",
+      "owner": "docs/semantic-search.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/search-result.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/search-result.schema.v0.8.0.json",
+      "sourceDigest": "sha256:887488d7aaade61a8ecef0b0d1f7631c06e8cc71aed08b28616532a2846bdbf3",
+      "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

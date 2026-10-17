@@ -39,6 +39,7 @@ mod pilot_battery;
 mod portability;
 mod report_git;
 pub(crate) mod report_output;
+mod search;
 mod task_links;
 mod task_links_native;
 mod waivers;
@@ -766,6 +767,37 @@ enum Commands {
     Bindings {
         #[command(subcommand)]
         command: BindingsCommands,
+    },
+    /// Deterministic semantic search over the typed projection (issue
+    /// #93): `search` combines exact filters with lexical retrieval,
+    /// `find` applies exact filters alone, and `search-index` owns the
+    /// durable generation lifecycle. The core owns every decision; this
+    /// binary only admits inputs, persists the cache-owned store, and
+    /// maps exits.
+    Search {
+        /// Exactly one nonempty query.
+        query: String,
+        /// Opt in to the bounded, labeled fuzzy tier.
+        #[arg(long)]
+        fuzzy: bool,
+        #[command(flatten)]
+        page: crate::search::PageArgs,
+        #[command(flatten)]
+        filters: crate::search::SearchFilters,
+    },
+    /// Exact filtered lookup over the typed projection (issue #93):
+    /// never fuzzes a selector; repeated flags OR, different flags AND.
+    Find {
+        #[command(flatten)]
+        page: crate::search::PageArgs,
+        #[command(flatten)]
+        filters: crate::search::SearchFilters,
+    },
+    /// The durable search index lifecycle under the governed cache
+    /// custody (issue #93).
+    SearchIndex {
+        #[command(subcommand)]
+        command: crate::search::SearchIndexCommands,
     },
     /// Record, verify, and govern AI-written implementation in
     /// contracted mode (issue #40). The model is primary, the target
@@ -2802,6 +2834,18 @@ fn runtime() -> u8 {
                 program_args,
             ),
             Commands::Bindings { command } => run_bindings(command),
+            Commands::Search {
+                query,
+                fuzzy,
+                page,
+                filters,
+            } => crate::search::run_search(query, fuzzy, &page, &filters, cli.no_cache),
+            Commands::Find { page, filters } => {
+                crate::search::run_find(&page, &filters, cli.no_cache)
+            }
+            Commands::SearchIndex { command } => {
+                crate::search::run_search_index(command, cli.no_cache)
+            }
             Commands::Contract { command } => run_contract(command),
             Commands::Native { command } => match *command {
                 NativeCommands::Run { plan } => run_native_run(&plan),

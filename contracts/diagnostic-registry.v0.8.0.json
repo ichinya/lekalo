@@ -10017,6 +10017,197 @@
       "lifecycle": "active"
     },
     {
+      "id": "search.ambiguous",
+      "code": "LEK-SRCH-008",
+      "category": "semantic",
+      "default_severity": "info",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "search.ambiguous",
+      "default_message": "A search query or selector has multiple equally supported interpretations; every candidate is retained.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "candidates",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "search.coverage-incomplete",
+      "code": "LEK-SRCH-007",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "search.coverage-incomplete",
+      "default_message": "A search producer or domain is missing, stale, partial, or unsupported; absence is not proof.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "domain",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "search.cursor-invalid",
+      "code": "LEK-SRCH-005",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "search.cursor-invalid",
+      "default_message": "The search page cursor is malformed, oversized, or bound to a different query, policy, or index generation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "search.index-stale",
+      "code": "LEK-SRCH-004",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "search.index-stale",
+      "default_message": "The required search index pins no longer match the current admitted inputs or policy.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "pin",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "search.input-invalid",
+      "code": "LEK-SRCH-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "search.input-invalid",
+      "default_message": "A search input manifest or its typed producer attachment is malformed, mixed, or duplicate-keyed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "producer",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "search.query-invalid",
+      "code": "LEK-SRCH-001",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "search.query-invalid",
+      "default_message": "The search or find request violates the closed filter, selector, or cursor grammar.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "member",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "search.result-limit",
+      "code": "LEK-SRCH-006",
+      "category": "semantic",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid",
+        "denied"
+      ],
+      "message_id": "search.result-limit",
+      "default_message": "A search work, index, or output cap prevented a complete answer.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "limit",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "search.version-unsupported",
+      "code": "LEK-SRCH-002",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "search.version-unsupported",
+      "default_message": "The search query, result, index, or inputs contract version is outside the accepted registry.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        },
+        {
+          "name": "contract",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "semantic.command-effect-kind-mismatch",
       "code": "LEK-SEM-001",
       "category": "semantic",

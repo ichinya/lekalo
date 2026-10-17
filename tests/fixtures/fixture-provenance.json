@@ -325,6 +325,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "search",
+      "origin": "synthetic",
+      "note": "Issue #93: authored planner model, detected effect-graph snapshot, two provider-qualified trace manifests, a canonical observed index, an AI-lint waiver set, the search-inputs manifest, golden query/result/index documents, and the benchmark tasks with pre-authored answer sets. No private code, no runtime target scans, no benchmark timing claims."
+    },
+    {
       "family": "storage-engine",
       "origin": "synthetic"
     },

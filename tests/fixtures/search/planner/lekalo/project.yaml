@@ -1,0 +1,1 @@
+{"schema_version":"0.2.16","definitions":[{"id":"planner","kind":"project","version":1,"description":"Issue #93 semantic search planner example","derived_from":["PLANNER-REQ-001"]}]}

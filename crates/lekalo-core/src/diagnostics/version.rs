@@ -101,6 +101,11 @@ pub const MANAGED_REGISTRY_VERSION: &str = "0.8.0";
 /// pilot. Earlier producers keep their exact registry pins end to end.
 pub const TASKLINK_REGISTRY_VERSION: &str = "0.8.0";
 
+/// Issue #93 union successor: the merged 0.8.0 grand union plus the
+/// eight `search.*` rules LEK-SRCH-001..008. Predecessor producers keep
+/// their exact pins.
+pub const SEARCH_REGISTRY_VERSION: &str = "0.8.0";
+
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticSchemaVersion {
