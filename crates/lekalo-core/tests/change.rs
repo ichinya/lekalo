@@ -3329,6 +3329,107 @@ fn history_digest(bytes: &[u8]) -> String {
 }
 
 #[test]
+fn genuine_r10_no_op_upgrade_refuses_before_custody_or_publication() {
+    fn snapshot(path: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
+        let mut files = std::collections::BTreeMap::new();
+        for entry in std::fs::read_dir(path).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                files.extend(snapshot(&entry.path()));
+            } else {
+                files.insert(entry.path(), std::fs::read(entry.path()).unwrap());
+            }
+        }
+        files
+    }
+    let bytes = include_bytes!("../../../tests/fixtures/change/legacy/r10-no-op-history.json");
+    assert_eq!(
+        history_digest(bytes),
+        "sha256:7642c43decb40d5275b4727ab8defb76bafb3e71eda404c5608cbb411d4786a9"
+    );
+    let legacy: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+    let commands = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.act\n    kind: command\n    version: 1\n    input:\n      - name: title\n        type: tasks.text\n";
+    let noop = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [{"operation": "operation-input:set", "operationTarget": "tasks.act",
+            "definition": {"input": [{"name": "title", "type": {"ref": "tasks.text"}}]}}]
+    }))
+    .unwrap();
+    for pin_version in [None, Some(1), Some(2)] {
+        let sandbox = Sandbox::new("r10-noop-upgrade");
+        std::fs::write(
+            sandbox.root.join("lekalo/modules/tasks/commands.yaml"),
+            commands,
+        )
+        .unwrap();
+        std::fs::write(sandbox.history_path(), bytes).unwrap();
+        let project = sandbox.selection_str();
+        let pin_path = sandbox.root.join(".lekalo/change-history-pin.json");
+        if let Some(version) = pin_version {
+            let mut pin = serde_json::json!({
+                "schemaVersion": format!("lekalo/change-history-pin/{version}"),
+                "project": "tasks", "recordCount": 1,
+                "tipDigest": legacy["tip"]["recordDigest"], "historyDigest": history_digest(bytes)
+            });
+            if version == 2 {
+                pin["firstLocalSequence"] = serde_json::json!(2);
+            }
+            std::fs::create_dir_all(pin_path.parent().unwrap()).unwrap();
+            std::fs::write(&pin_path, serde_json::to_vec_pretty(&pin).unwrap()).unwrap();
+        }
+        let sources = snapshot(&sandbox.root.join("lekalo"));
+        let pin_before = std::fs::read(&pin_path).ok();
+        let mutation = add_priority_request();
+        let prepared = prepare(&sandbox, &mutation).unwrap();
+        let assert_refused = |result: Result<(), ChangeError>| {
+            assert!(
+                matches!(
+                    result,
+                    Err(ChangeError::HistoryInvalid {
+                        detail: "history-schema"
+                    })
+                ),
+                "pin {pin_version:?}: {result:?}"
+            );
+            assert_eq!(snapshot(&sandbox.root.join("lekalo")), sources);
+            assert_eq!(std::fs::read(&pin_path).ok(), pin_before);
+            assert!(!sandbox
+                .root
+                .join(".lekalo/pending-transactions.json")
+                .exists());
+            assert!(!sandbox.root.join(".lekalo/cache/change").exists());
+        };
+        assert_refused(change::initialize_custody(
+            Some(&project),
+            &history_digest(bytes),
+        ));
+        for (request, key) in [
+            (mutation.as_slice(), "new-mutation"),
+            (noop.as_slice(), "new-noop"),
+            (noop.as_slice(), "base-noop"),
+        ] {
+            assert_refused(apply_request(&sandbox, request, key, false).map(|_| ()));
+        }
+        assert_refused(
+            change::apply_prepared(
+                &prepared,
+                &ApplyOptions {
+                    idempotency_key: "sealed-mutation",
+                    expect_plan: None,
+                    allow_breaking: false,
+                },
+            )
+            .map(|_| ()),
+        );
+        // Invalid history is not repaired even for lookup; ordinary Model
+        // readers remain available, and valid audit-only lookup is covered
+        // by the checkout epoch test below.
+        assert_refused(change::lookup_receipt(Some(&project), "base-noop").map(|_| ()));
+        lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+    }
+}
+
+#[test]
 fn checkout_custody_epoch_allows_new_work_but_never_authorizes_imported_receipts() {
     let donor = Sandbox::new("epoch-donor");
     let request = add_priority_request();

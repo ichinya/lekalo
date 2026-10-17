@@ -15,7 +15,7 @@
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, openSync, closeSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, openSync, closeSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -862,6 +862,10 @@ if (noopCommit.code !== 0 || noopCommit.json?.state !== "no-op" || noopCommit.js
 if (!receiptValidate(noopCommit.json)) fail("r11-noop-receipt-schema", receiptValidate.errors);
 const noopHistory = JSON.parse(readFileSync(join(sandbox, "lekalo/change-history.json"), "utf8"));
 if (!historyValidate(noopHistory)) fail("r11-noop-history-schema", historyValidate.errors);
+if (noopHistory.records[0].operations.length !== 1 || noopHistory.records[0].receipt.operations.length !== 1) fail("r12-fresh-noop-empty-audit", noopHistory);
+const noopReplay = applyBatch([noop], "noop-key");
+if (noopReplay.code !== 0 || noopReplay.json?.state !== "replayed" || noopReplay.json.operations.length !== 1 ||
+    !receiptValidate(noopReplay.json)) fail("r12-fresh-noop-replay", noopReplay);
 const mixed = [noop, { operation: "entity-field:add", entity: "tasks.task", field: { name: "mixed", type: { ref: "tasks.text" } } }, noop];
 const mixedCommit = applyBatch(mixed, "mixed-key");
 if (mixedCommit.code !== 0 || mixedCommit.json?.state !== "committed") fail("r11-mixed-commit", mixedCommit);
@@ -871,6 +875,88 @@ if (JSON.stringify(mixedCommit.json.operations.map((row) => row.operation)) !== 
     JSON.stringify(mixedHistory.records[1].operations) !== JSON.stringify(mixed.map((row) => row.operation))) fail("r11-mixed-order", mixedCommit.json);
 if (readFileSync(commandPath, "utf8") !== commandBytes) fail("r11-noop-source-churn");
 rmSync(sandbox, { recursive: true, force: true });
+
+// r12 F1/F2: genuine r10 output, retained verbatim rather than synthesized
+// from a modern no-op. Empty operation arrays must never acquire custody
+// or contaminate a successful append, even with a matching legacy/local pin.
+function canonicalSnapshot(home) {
+  return readdirSync(home, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))
+    .flatMap((entry) => entry.isDirectory() ? canonicalSnapshot(join(home, entry.name))
+      : [[join(home, entry.name), readFileSync(join(home, entry.name)).toString("hex")]]);
+}
+const legacyBytes = readFileSync(join(root, "tests/fixtures/change/legacy/r10-no-op-history.json"));
+if (provDigest(legacyBytes) !== "sha256:7642c43decb40d5275b4727ab8defb76bafb3e71eda404c5608cbb411d4786a9") fail("r12-r10-fixture-byte-pin");
+const legacyHistory = JSON.parse(legacyBytes);
+if (historyValidate(legacyHistory) ||
+    !["/records/0/operations", "/records/0/receipt/operations"].every((path) =>
+      historyValidate.errors.some((error) => error.instancePath === path && error.keyword === "minItems"))) fail("r12-r10-fixture-must-be-invalid", historyValidate.errors);
+for (const pinVersion of [null, 1, 2]) {
+  freshSandbox(`r10-noop-upgrade-${pinVersion ?? "checkout"}`);
+  writeFileSync(join(sandbox, "lekalo/modules/tasks/commands.yaml"), commandBytes);
+  writeFileSync(join(sandbox, "lekalo/change-history.json"), legacyBytes);
+  const legacyPinPath = join(sandbox, ".lekalo/change-history-pin.json");
+  if (pinVersion !== null) {
+    mkdirSync(dirname(legacyPinPath), { recursive: true });
+    writeFileSync(legacyPinPath, JSON.stringify({ schemaVersion: `lekalo/change-history-pin/${pinVersion}`,
+      project: "tasks", recordCount: 1, tipDigest: legacyHistory.tip.recordDigest, historyDigest: provDigest(legacyBytes),
+      ...(pinVersion === 2 ? { firstLocalSequence: 2 } : {}) }));
+  }
+  const canonicalBefore = JSON.stringify(canonicalSnapshot(join(sandbox, "lekalo")));
+  const pinBefore = existsSync(legacyPinPath) ? readFileSync(legacyPinPath) : null;
+  const assertUnchanged = () => {
+    if (JSON.stringify(canonicalSnapshot(join(sandbox, "lekalo"))) !== canonicalBefore ||
+        (pinBefore === null ? existsSync(legacyPinPath) : !readFileSync(legacyPinPath).equals(pinBefore))) fail("r12-upgrade-mutated-originals", pinVersion);
+    if (existsSync(join(sandbox, ".lekalo/pending-transactions.json")) || existsSync(join(sandbox, ".lekalo/cache/change"))) fail("r12-upgrade-started-transaction", pinVersion);
+  };
+  const assertRefused = (result) => {
+    if (result.code !== 1 || result.json?.status !== "invalid" ||
+        !result.json?.reasonCodes?.includes("change.history-invalid") ||
+        result.json?.diagnostics?.[0]?.data?.detail !== "history-schema") fail("r12-upgrade-refusal", { pinVersion, result });
+    assertUnchanged();
+  };
+  assertRefused(run(["change", "custody-init", "--project", ".", "--expect-history", provDigest(legacyBytes), "--json"]));
+  assertRefused(applyField("priority", "after-r10-upgrade"));
+  assertRefused(applyBatch([noop], "after-r10-noop"));
+  assertRefused(applyBatch([noop], "base-noop"));
+  assertRefused(run(["change", "receipt", "--project", ".", "--idempotency-key", "base-noop", "--json"]));
+  const readOnly = run(["load", "--project", ".", "--json"]);
+  if (readOnly.code !== 0) fail("r12-upgrade-blocked-model-reader", readOnly);
+  assertUnchanged();
+  rmSync(sandbox, { recursive: true, force: true });
+}
+
+// Also reject a schema-invalid later row in an otherwise valid imported
+// prefix: foreign members, malformed discriminators, bounds and row types.
+for (const mutation of ["foreign-member", "foreign-family", "malformed-operation", "missing-status", "over-count", "non-object"]) {
+  freshSandbox(`operation-schema-${mutation}`);
+  const document = structuredClone(mixedHistory);
+  const record = document.records[1];
+  const row = record.receipt.operations[0];
+  if (mutation === "foreign-member") row.foreign = true;
+  if (mutation === "foreign-family") row.subjectFamily = "foreign";
+  if (mutation === "malformed-operation") { row.operation = "foreign"; record.operations[0] = "foreign"; }
+  if (mutation === "missing-status") delete row.status;
+  if (mutation === "over-count") {
+    record.operations = Array(101).fill(row.operation);
+    record.receipt.operations = Array.from({ length: 101 }, () => structuredClone(row));
+  }
+  if (mutation === "non-object") record.receipt.operations[0] = row.operation;
+  rechain(document);
+  if (historyValidate(document)) fail("r12-malformed-prefix-control", mutation);
+  const bytes = Buffer.from(JSON.stringify(document));
+  writeFileSync(join(sandbox, "lekalo/change-history.json"), bytes);
+  const sourceBefore = JSON.stringify(canonicalSnapshot(join(sandbox, "lekalo")));
+  for (const result of [
+    run(["change", "custody-init", "--project", ".", "--expect-history", provDigest(bytes), "--json"]),
+    applyField("priority", "schema-invalid-prefix"),
+  ]) {
+    if (result.code !== 1 || !result.json?.reasonCodes?.includes("change.history-invalid")) fail("r12-malformed-prefix-admitted", { mutation, result });
+    if (JSON.stringify(canonicalSnapshot(join(sandbox, "lekalo"))) !== sourceBefore ||
+        existsSync(join(sandbox, ".lekalo/change-history-pin.json")) || existsSync(join(sandbox, ".lekalo/pending-transactions.json")) ||
+        existsSync(join(sandbox, ".lekalo/cache/change"))) fail("r12-malformed-prefix-mutated", mutation);
+  }
+  rmSync(sandbox, { recursive: true, force: true });
+}
 
 // r11 F1: a valid near-4-MiB history followed by a REAL twenty-field
 // append must refuse before any source/history/pin/pending publication.
@@ -1001,6 +1087,8 @@ process.stdout.write(`${JSON.stringify({
     "two-file-partial-adoption-recovery",
     "cache-clear-preserves-writer-lock-and-custody",
     "live-noop-and-mixed-batch-history-schema",
+    "genuine-r10-noop-upgrade-refuses-with-originals-and-typed-diagnostic",
+    "schema-invalid-later-operation-arrays-never-adopted-or-republished",
     "near-cap-history-real-append-refuses-with-originals",
     "explicit-checkout-epoch-new-work-without-prefix-replay",
     "initialized-graft-never-laundered-by-local-append",

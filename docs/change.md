@@ -329,6 +329,20 @@ remain byte-identical. The schema-valid no-op receipt has no request/key,
 operations, files, history anchor, or transaction; no audit row is added.
 No history means ordinary first-use apply instead; it needs no init.
 
+History admission also enforces the unchanged closed Draft 2020-12 schema,
+not just the public hash chain. Every record and embedded receipt requires
+1–100 operation rows, with the schema's discriminator grammar, required
+members, closed objects, enums, and string bounds. In particular, genuine
+pre-r11 no-op records with `operations: []` are invalid legacy history:
+init, apply (including new-key no-op), replay, and receipt lookup refuse
+`change.history-invalid` (invalid 1, detail `history-schema`). No missing
+rows are guessed, no original source/history/custody bytes are rewritten,
+and no transaction is started. Restore a valid complete backup or await
+an explicit fidelity-preserving migration; init is not such a repair.
+Ordinary read-only Model loading and preview remain available, as does
+audit lookup of schema-valid histories without local custody or after
+source drift.
+
 All existing sequences become an immutable **audit-only prefix**. Their
 receipts stay readable, but they cannot authorize replay
 (`change.history-invalid`, detail `commit-custody-epoch`) or committed

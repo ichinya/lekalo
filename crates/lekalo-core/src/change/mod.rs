@@ -15,6 +15,7 @@ pub mod catalog;
 mod custody;
 pub mod diagnostic;
 pub mod edit;
+mod history_schema;
 pub mod plan;
 pub mod policy;
 pub mod receipt;

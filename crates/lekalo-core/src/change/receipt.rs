@@ -237,7 +237,9 @@ impl History {
     /// duplicated, tampered, or internally inconsistent history fails
     /// closed: replay never guesses. Duplicate JSON keys are refused before
     /// typing, every record is bound to its embedded receipt and to the
-    /// chain of all earlier records, and no member is defaulted.
+    /// chain of all earlier records, and no member is defaulted. The entire
+    /// document must also satisfy the frozen closed history schema, including
+    /// both operation arrays and every embedded operation row (r12).
     pub fn decode(bytes: &[u8]) -> Result<Self, super::diagnostic::ChangeError> {
         // A zero-byte ledger file is a corrupt document, not an empty
         // history (review finding 11): decode fails closed on it.
@@ -456,6 +458,11 @@ impl History {
         {
             return Err(super::diagnostic::ChangeError::HistoryInvalid { detail: "tip" });
         }
+        // Internal consistency is not schema admission: a genuine legacy
+        // no-op can have a valid chain but invalid empty operations arrays.
+        // Every reader/writer/init path shares this check; no custody or new
+        // history may be published by silently adopting or repairing it.
+        super::history_schema::validate(&value)?;
         Ok(Self {
             project,
             next_sequence,
@@ -818,6 +825,111 @@ fn verify_receipt_projection<'a>(
 mod tests {
     use super::*;
     use crate::change::ChangeError;
+
+    #[test]
+    fn schema_invalid_operation_arrays_refuse_decode_and_prospective_commit() {
+        let bytes = include_bytes!("../../../../tests/fixtures/change/golden/change-history.json");
+        let original = History::decode(bytes).unwrap();
+        let row = original.records[0].receipt["operations"][0].clone();
+        let mut cases = Vec::new();
+        for count in [0, super::version::MAX_OPERATIONS + 1] {
+            let mut history = original.clone();
+            history.records[0].operations = vec!["entity-field:add".to_owned(); count];
+            history.records[0].receipt["operations"] = serde_json::json!(vec![row.clone(); count]);
+            cases.push(history);
+        }
+        for operation in [
+            "foreign".to_owned(),
+            "Entity-field:add".to_owned(),
+            "entity_field:add".to_owned(),
+            format!("{}:add", "x".repeat(61)),
+        ] {
+            let mut history = original.clone();
+            history.records[0].operations = vec![operation.clone()];
+            history.records[0].receipt["operations"][0]["operation"] = serde_json::json!(operation);
+            cases.push(history);
+        }
+        for (member, value) in [
+            ("foreign", serde_json::json!(true)),
+            ("subject", serde_json::json!(7)),
+            ("subject", serde_json::json!("x".repeat(257))),
+            ("subjectFamily", serde_json::json!("foreign")),
+            ("status", serde_json::json!("committed")),
+            ("detail", Json::Null),
+            ("detail", serde_json::json!("x".repeat(257))),
+        ] {
+            let mut history = original.clone();
+            history.records[0].receipt["operations"][0][member] = value;
+            cases.push(history);
+        }
+        for missing in ["subject", "subjectFamily", "status"] {
+            let mut history = original.clone();
+            history.records[0].receipt["operations"][0]
+                .as_object_mut()
+                .unwrap()
+                .remove(missing);
+            cases.push(history);
+        }
+        for (index, mut history) in cases.into_iter().enumerate() {
+            // A fully recomputed public chain must not conceal schema-invalid
+            // rows. The refusal is schema admission, not hash tampering.
+            let record = &mut history.records[0];
+            let digest = record_digest(
+                GENESIS_DIGEST,
+                &history.project,
+                &record.intent_digest,
+                &record.receipt,
+            );
+            record.receipt["history"]["recordDigest"] = serde_json::json!(digest);
+            assert!(
+                matches!(
+                    History::decode(history.to_json_string().as_bytes()),
+                    Err(ChangeError::HistoryInvalid {
+                        detail: "history-schema"
+                    })
+                ),
+                "decode case {index}"
+            );
+            assert!(
+                matches!(
+                    history.encode_for_commit(),
+                    Err(ChangeError::HistoryInvalid {
+                        detail: "history-schema"
+                    })
+                ),
+                "commit case {index}"
+            );
+        }
+
+        // Both the operation count's inclusive upper bound and JSON Schema's
+        // character (not UTF-8 byte) bounds remain valid.
+        let mut boundary = original;
+        let record = &mut boundary.records[0];
+        record.operations = vec!["entity-field:add".to_owned(); super::version::MAX_OPERATIONS];
+        let mut row = row;
+        row["subject"] = serde_json::json!("é".repeat(256));
+        row["detail"] = serde_json::json!("é".repeat(256));
+        record.receipt["operations"] = serde_json::json!(vec![row; super::version::MAX_OPERATIONS]);
+        record.receipt["history"]["recordDigest"] = serde_json::json!(record_digest(
+            GENESIS_DIGEST,
+            &boundary.project,
+            &record.intent_digest,
+            &record.receipt
+        ));
+        boundary.encode_for_commit().unwrap();
+    }
+
+    #[test]
+    fn genuine_r10_no_op_history_is_schema_invalid_not_repaired() {
+        let bytes =
+            include_bytes!("../../../../tests/fixtures/change/legacy/r10-no-op-history.json");
+        assert!(matches!(
+            History::decode(bytes),
+            Err(ChangeError::HistoryInvalid {
+                detail: "history-schema"
+            })
+        ));
+    }
 
     #[test]
     fn history_capacity_is_checked_on_both_ingress_and_prospective_commit() {
