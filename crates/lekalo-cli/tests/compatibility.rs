@@ -76,7 +76,8 @@ fn the_projection_reports_exactly_the_three_families_in_order() {
     assert_eq!(families[1]["current"], "0.8.0");
     assert_eq!(families[2]["family"], "protocol");
     assert_eq!(families[2]["current"], "0.3.2");
-    assert_eq!(families[2]["versions"].as_array().map(Vec::len), Some(2));
+    assert_eq!(families[2]["versions"].as_array().map(Vec::len), Some(3));
     assert_eq!(families[2]["versions"][0]["version"], "0.3.2");
     assert_eq!(families[2]["versions"][1]["version"], "0.6.4");
+    assert_eq!(families[2]["versions"][2]["version"], "0.8.0");
 }

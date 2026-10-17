@@ -233,6 +233,7 @@ jobs:
         run: |
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-platform.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-boundaries.mjs
           node scripts/test-watch-equivalence.mjs
           node scripts/test-watch-faults.mjs
           node scripts/test-watch-successor.mjs

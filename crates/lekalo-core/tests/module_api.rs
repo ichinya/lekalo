@@ -3206,13 +3206,13 @@ fn r4_review_union_registry_and_boundary_rule_set_are_pinned() {
     // registry and this issue's module-api family. Every successor
     // accessor parses the same merged bytes and every landed family
     // resolves, so neither side of the merge can drop a pin
-    // (r8: 592 = 578 + 14 = 570 + 8 + 14).
+    // (watch: 599 = r8's 592 + 7 watch lifecycle rules).
     let module = lekalo_core::diagnostics::DiagnosticRegistry::module_successor().unwrap();
     let format = lekalo_core::diagnostics::DiagnosticRegistry::format_successor().unwrap();
     let adoption = lekalo_core::diagnostics::DiagnosticRegistry::adoption().unwrap();
     let m8 = lekalo_core::diagnostics::DiagnosticRegistry::m8().unwrap();
     let pilot = lekalo_core::diagnostics::DiagnosticRegistry::pilot().unwrap();
-    assert_eq!(module.len(), 592);
+    assert_eq!(module.len(), 599);
     assert_eq!(format.len(), module.len());
     assert_eq!(adoption.len(), module.len());
     assert_eq!(m8.len(), module.len());
@@ -3225,6 +3225,7 @@ fn r4_review_union_registry_and_boundary_rule_set_are_pinned() {
         "worklog-changelog.",
         "managed.",
         "tasklink.",
+        "watch.",
     ] {
         assert!(
             module.entries().any(|entry| entry.id().starts_with(family)),

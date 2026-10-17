@@ -1233,7 +1233,16 @@ fn registry_chain_keeps_pins_and_admits_tasklink_rules() {
     let tasklink = lekalo_core::diagnostics::DiagnosticRegistry::tasklink_successor().unwrap();
     assert_eq!(embedded.len(), 514);
     assert_eq!(successor.len(), embedded.len() + 8);
-    assert_eq!(tasklink.len(), successor.len() + 8);
+    // Tasklink's eight rules live in the shared M8 union alongside
+    // subsequently landed families, including watch's seven rules.
+    assert_eq!(tasklink.len(), 599);
+    assert_eq!(
+        tasklink
+            .entries()
+            .filter(|entry| entry.id().starts_with("tasklink."))
+            .count(),
+        8
+    );
     for entry in embedded.entries() {
         assert_eq!(successor.entry(entry.id()), Some(entry));
         assert_eq!(tasklink.entry(entry.id()), Some(entry));

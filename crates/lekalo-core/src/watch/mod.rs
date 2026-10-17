@@ -592,6 +592,21 @@ impl WatchService {
         let reference = if baseline { &empty } else { &previous_snapshot };
         let changes = diff(reference, snapshot);
 
+        // Two individually admitted inventories can have a delta twice
+        // the inventory bound. Refuse the pair before any work or commit;
+        // the bounded refusal carries the observed count, not a truncated
+        // successful change list (nor an over-limit target selection).
+        if let Err(error) = changes.admit() {
+            return self.capture_refused_outcome(
+                context,
+                source_revision,
+                previous_revision,
+                ChangeBatch::default(),
+                error,
+                files,
+                generated,
+            );
+        }
         // Admit before frontend/IR amplification or scratch writes.
         if let Err(error) = budget::admit(snapshot) {
             return self.capture_refused_outcome(
@@ -1351,16 +1366,28 @@ impl WatchService {
         };
         let mut entries = Vec::new();
         for row in changes.semantic_rows() {
-            let symbols_for_path = match row.kind {
-                ChangeKind::Deleted | ChangeKind::Modified => self
-                    .accepted
-                    .symbols_by_path
-                    .get(&row.path)
-                    .cloned()
-                    .or_else(|| symbols.get(&row.path).cloned())
-                    .unwrap_or_default(),
-                ChangeKind::Created => symbols.get(&row.path).cloned().unwrap_or_default(),
-            };
+            // Resolve both memberships against the CURRENT graph, never
+            // present a retired identity as a canonical current root.
+            // Old-only identities still participate in the old/new module
+            // reverse closures and capsule invalidations above. A path
+            // with no surviving surface remains explicit unknown evidence,
+            // exactly like the clean changed-input adapter.
+            let symbols_for_path: Vec<String> = self
+                .accepted
+                .symbols_by_path
+                .get(&row.path)
+                .into_iter()
+                .flatten()
+                .chain(symbols.get(&row.path).into_iter().flatten())
+                .filter(|id| {
+                    graph_result
+                        .as_ref()
+                        .is_ok_and(|g| g.resolve_id(id).is_some())
+                })
+                .cloned()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
             let file_change = match row.kind {
                 ChangeKind::Created => FileChange::Added,
                 ChangeKind::Modified => FileChange::Modified,

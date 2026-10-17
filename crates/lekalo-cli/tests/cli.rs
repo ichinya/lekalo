@@ -124,6 +124,26 @@ fn malformed_invocations_are_stable_usage_errors_and_never_exit_two() {
 }
 
 #[test]
+fn watch_json_refusal_has_stream_guidance_before_project_work() {
+    for args in [
+        vec!["--json", "watch"],
+        vec!["watch", "--json"],
+        vec!["watch", "--json-lines", "--json"],
+    ] {
+        let output = lekalo(&args);
+        assert_exit(&output, 1);
+        assert!(output.stdout.is_empty());
+        assert_json_document(&output.stderr);
+        let refusal: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(refusal["reasonCodes"], serde_json::json!(["cli.usage"]));
+        assert!(refusal["diagnostics"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Use --json-lines"));
+    }
+}
+
+#[test]
 fn escaped_json_literals_do_not_select_json_output() {
     let inspect = lekalo(&["inspect", "--", "--json"]);
     // The escaped literal becomes the inspect selector; it violates the

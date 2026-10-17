@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{scopes, version, wire, TargetFailure};
 
+/// Closed watch-selection changed-path bound, also enforced on revision pairs.
+pub const MAX_CHANGED_PATHS: usize = 4096;
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WatchSupport {
@@ -120,7 +123,7 @@ impl WatchSelection {
                         .as_ref()
                         .is_some_and(|module| id == module || id.starts_with(&format!("{module}.")))
             })
-            && self.changed_paths.len() <= 4096
+            && self.changed_paths.len() <= MAX_CHANGED_PATHS
             && sorted(&self.changed_paths)
             && self
                 .changed_paths
@@ -216,6 +219,17 @@ mod tests {
         selection.module = None;
         assert!(selection.valid());
         selection.changed_paths.push("../escape".into());
+        assert!(!selection.valid());
+    }
+
+    #[test]
+    fn changed_path_boundary_admits_4096_and_refuses_4097() {
+        let mut selection = selection();
+        selection.changed_paths = (0..MAX_CHANGED_PATHS)
+            .map(|i| format!("src/{i:04}.txt"))
+            .collect();
+        assert!(selection.valid());
+        selection.changed_paths.push("src/4096.txt".into());
         assert!(!selection.valid());
     }
 

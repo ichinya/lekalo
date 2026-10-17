@@ -95,7 +95,7 @@ async function trace({binary,project,env,flags,edits,check}) {
 export async function multiStageEquivalence({root,binary}) {
  const env={...process.env};delete env.LEKALO_PROJECT;let comparisons=0,settled=0;
  for(const fixture of ['project','project-successor']) {
- for(const scenario of ['semantic-and-format','parse-recovery','generated-and-lock']) {
+ for(const scenario of ['semantic-and-format','semantic-membership','parse-recovery','generated-and-lock']) {
   const project=mkdtempSync(join(tmpdir(),'lekalo-watch-stages-'));
   try {
    cpSync(join(root,'tests/fixtures/watch',fixture),project,{recursive:true});
@@ -109,6 +109,10 @@ export async function multiStageEquivalence({root,binary}) {
     ()=>writeFileSync(source,original.replace('version: 1','version: 2')),
     ()=>writeFileSync(source,readFileSync(source,'utf8')+'\n'),
     ()=>{const temp=source+'.tmp';writeFileSync(temp,readFileSync(source,'utf8').replace('version: 2','version: 3'));renameSync(temp,source);},
+   ]:scenario==='semantic-membership'?[
+    ()=>writeFileSync(source,original+'  - id: planner.extra\n    kind: scalar\n    version: 1\n    base: string\n'),
+    ()=>writeFileSync(source,original),
+    ()=>writeFileSync(source,original.replaceAll('planner.title','planner.newtitle')),
    ]:scenario==='parse-recovery'?[
     ()=>writeFileSync(source,'schema_version: [\n'),
     ()=>writeFileSync(source,original.replace('version: 1','version: 4')),

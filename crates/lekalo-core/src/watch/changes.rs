@@ -54,6 +54,25 @@ pub struct ChangeBatch {
 }
 
 impl ChangeBatch {
+    /// Admit a revision PAIR against both public result and adapter
+    /// selection bounds. An over-limit pair must not publish its rows.
+    pub fn admit(&self) -> Result<(), super::snapshot::CaptureError> {
+        if self.len() > super::request::limits::MAX_PENDING_PATHS {
+            return Err(super::snapshot::CaptureError::Limit {
+                limit: "changed-inputs",
+                count: self.len() as u64,
+            });
+        }
+        let paths = self.semantic_rows().count();
+        if paths > crate::target_protocol::watch::MAX_CHANGED_PATHS {
+            return Err(super::snapshot::CaptureError::Limit {
+                limit: "target-changed-paths",
+                count: paths as u64,
+            });
+        }
+        Ok(())
+    }
+
     /// Whether nothing changed.
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()

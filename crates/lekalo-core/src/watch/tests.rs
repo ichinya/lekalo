@@ -2,6 +2,8 @@ use super::*;
 use std::sync::atomic::AtomicBool;
 #[path = "fault_tests.rs"]
 mod faults;
+#[path = "pair_tests.rs"]
+mod pairs;
 
 fn project() -> tempfile::TempDir {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/watch/project");

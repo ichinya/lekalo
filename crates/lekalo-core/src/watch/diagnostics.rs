@@ -8,6 +8,22 @@ use crate::diagnostics::normalize::build;
 use crate::diagnostics::types::{token_value, DataObject, DataValue};
 use crate::diagnostics::Diagnostic;
 
+/// Usage refusal with fixed command-specific rendering advice. The
+/// machine identity and registry-owned classification stay `cli.usage`.
+pub fn json_usage_error() -> crate::DomainResult {
+    let mut diagnostic = assembled(build("cli.usage", None, None, DataObject::new()));
+    diagnostic
+        .message
+        .push_str(" Use --json-lines instead of --json with watch.");
+    crate::DomainResult::invalid(
+        crate::diagnostics::DiagnosticSet::try_from_unsorted(
+            vec![diagnostic],
+            crate::result::Status::Invalid,
+        )
+        .expect("registered usage refusal"),
+    )
+}
+
 fn assembled(
     diagnostic: Result<Diagnostic, crate::diagnostics::normalize::BuildError>,
 ) -> Diagnostic {

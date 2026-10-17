@@ -172,7 +172,15 @@ Describe's self-asserted digest is recorded separately from the verified lock
 pin. Watch admission caps Model inputs at 1 MiB, 256 modules, 2048 definitions
 and 32768 normalized nodes. The closed stream admits at most eight targets and
 4096 retained module partitions per target (plus global obligations); accumulated
-failed removals refuse observably before exceeding the wire bound. Session state uses a conservative 64 MiB charge
+failed removals refuse observably before exceeding the wire bound. Revision-pair
+admission also caps the complete changed-input list at 4096 rows, counting both
+sides of renames across semantic and generated trees. Over-limit pairs publish
+only a denied, partial-coverage resource-limit replacement with the observed
+count and no change rows; they execute no stage and never advance accepted state.
+Capture security/I/O refusals retain their original classified diagnostic; paths
+outside the frozen diagnostic location grammar (including `.lekalo/generated`)
+are deliberately unlocated, never truncated or renamed into a fictitious path.
+Session state uses a conservative 64 MiB charge
 with cache eviction before refusing mandatory state; this is not an RSS
 measurement. Output has one outstanding record (16 MiB maximum), a five-second
 acknowledgement deadline, and fail-stop behavior for slow/broken consumers.
@@ -192,12 +200,15 @@ audits remain follow-up work; sampled supervision is never a hard RSS promise.
 
 Validator instrumentation proves actual planner/dependent rule-subject visits
 without unrelated subjects, plus explicit global-input fallback. Twenty-eight
-clean validation comparisons are supplemented by 46 settled-stage comparisons
-over 24 revisions across predecessor and successor Models: validate, the
+clean validation comparisons are supplemented by settled-stage comparisons
+across predecessor and successor Models: validate, the
 complete impact payload/digest rebound to the
 same source-set base/candidate pair, and generate-check, including format-only
-saves, atomic replacement, invalid parse/recovery, generated drift and invalid
-lock/recovery. Invalid parse does not advance the accepted semantic baseline.
+saves, atomic replacement, definition additions/removals and semantic-ID
+replacement inside an existing document, invalid parse/recovery, generated drift
+and invalid lock/recovery. Impact roots use the union of old/current memberships
+resolved against the current graph; retired identities remain in old/new module
+reverse-closure selection and capsule invalidation, not fictitious current roots. Invalid parse does not advance the accepted semantic baseline.
 Real long-lived CLI fault probes verify crash -> invalid -> stale cancellation
 -> recovery, and negotiated selection with an unrelated failing partition
 surviving rapid planner saves and cancellation. The selected target failure is

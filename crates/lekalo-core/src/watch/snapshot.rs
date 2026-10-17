@@ -27,16 +27,38 @@ pub enum CaptureError {
     Limit { limit: &'static str, count: u64 },
     Io { path: String },
 }
+// Diagnostic v0.2.16 has an optional, narrower logical-path grammar
+// than the captured inventory (notably it cannot name `.lekalo`).
+// Preserve the original classified refusal but leave it unlocated when
+// that frozen representation cannot express the path. Never truncate or
+// manufacture a different location, and never broaden predecessor bytes.
+fn diagnostic_path(path: &str) -> Option<&str> {
+    let valid_start = path
+        .as_bytes()
+        .first()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+    (valid_start
+        && path.len() <= crate::diagnostics::types::limits::TOKEN_BYTES
+        && path.split('/').all(|part| {
+            !part.is_empty()
+                && part != "."
+                && part != ".."
+                && part
+                    .bytes()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || b"._-".contains(&c))
+        }))
+    .then_some(path)
+}
+
 impl CaptureError {
     pub fn domain_result(&self) -> crate::DomainResult {
         use crate::result::Status;
         match self {
             Self::Refused { code, path } => {
                 let diagnostic = crate::loader::error::Diagnostic::new(*code);
-                let diagnostic = if path.is_empty() {
-                    diagnostic
-                } else {
-                    diagnostic.with_path(path.clone())
+                let diagnostic = match diagnostic_path(path) {
+                    Some(path) => diagnostic.with_path(path),
+                    None => diagnostic,
                 };
                 crate::loader::diagnostic::failure(
                     if code.starts_with("structure.") {
@@ -61,12 +83,15 @@ impl CaptureError {
                 )
                 .expect("watch unstable registered"),
             ),
-            Self::Io { path } => crate::loader::diagnostic::failure(
-                Status::Invalid,
-                vec![crate::loader::error::Diagnostic::new("loader.io")
-                    .with_path(path.clone())
-                    .with_data(serde_json::json!({"detail":"read-failed"}))],
-            ),
+            Self::Io { path } => {
+                let diagnostic = crate::loader::error::Diagnostic::new("loader.io")
+                    .with_data(serde_json::json!({"detail":"read-failed"}));
+                let diagnostic = match diagnostic_path(path) {
+                    Some(path) => diagnostic.with_path(path),
+                    None => diagnostic,
+                };
+                crate::loader::diagnostic::failure(Status::Invalid, vec![diagnostic])
+            }
         }
     }
 }

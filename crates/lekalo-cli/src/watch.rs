@@ -535,7 +535,7 @@ pub fn run(args: WatchArgs, json_requested: bool, no_cache: bool) -> Result<u8, 
 
 fn run_inner(args: WatchArgs, json_requested: bool, no_cache: bool) -> Result<u8, DomainResult> {
     if json_requested {
-        return Err(DomainResult::usage_error());
+        return Err(core::diagnostics::json_usage_error());
     }
     let json = args.json_lines;
     let request = args.request(no_cache);
