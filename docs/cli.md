@@ -1167,6 +1167,7 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo change` | `lekalo change [OPTIONS] <COMMAND>` | [reference](change.md) |
 | `lekalo change command-effect:add` | `lekalo change command-effect:add [OPTIONS] --command <ID>` | [reference](change.md) |
 | `lekalo change command-effect:remove` | `lekalo change command-effect:remove [OPTIONS] --command <ID>` | [reference](change.md) |
+| `lekalo change custody-init` | `lekalo change custody-init [OPTIONS] --expect-history <DIGEST>` | [reference](change.md) |
 | `lekalo change definition:add` | `lekalo change definition:add [OPTIONS] --kind <KIND> --module <NAME> --name <NAME>` | [reference](change.md) |
 | `lekalo change entity-field:add` | `lekalo change entity-field:add [OPTIONS] --entity <ID> --name <NAME> --type <TYPE>` | [reference](change.md) |
 | `lekalo change entity-field:remove` | `lekalo change entity-field:remove [OPTIONS] --entity <ID> --name <NAME>` | [reference](change.md) |

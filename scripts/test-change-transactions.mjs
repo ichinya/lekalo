@@ -844,6 +844,139 @@ const replayAfterClear = applyField("priority", "r10-partial-adoption");
 if (replayAfterClear.code !== 0 || replayAfterClear.json?.state !== "replayed") fail("r10-replay-after-clear", replayAfterClear);
 
 rmSync(sandbox, { recursive: true, force: true });
+
+// r11 F2: real no-op history, not a schema-only fixture. Requested rows
+// survive both a wholly unchanged signature and a mixed ordered batch.
+freshSandbox("noop-audit");
+const commandPath = join(sandbox, "lekalo/modules/tasks/commands.yaml");
+const commandBytes = 'schema_version: "0.2.16"\ndefinitions:\n  - id: tasks.act\n    kind: command\n    version: 1\n    input:\n      - name: title\n        type: tasks.text\n';
+writeFileSync(commandPath, commandBytes);
+const noop = { operation: "operation-input:set", operationTarget: "tasks.act",
+  definition: { input: [{ name: "title", type: { ref: "tasks.text" } }] } };
+function applyBatch(operations, key) {
+  writeFileSync(join(sandbox, "batch.json"), JSON.stringify({ schemaVersion: "lekalo/change-request/v0.8.0", operations }));
+  return run(["change", "request", "--project", ".", "--request", "batch.json", "--apply", "--idempotency-key", key, "--json"]);
+}
+const noopCommit = applyBatch([noop], "noop-key");
+if (noopCommit.code !== 0 || noopCommit.json?.state !== "no-op" || noopCommit.json.operations.length !== 1) fail("r11-noop-row", noopCommit);
+if (!receiptValidate(noopCommit.json)) fail("r11-noop-receipt-schema", receiptValidate.errors);
+const noopHistory = JSON.parse(readFileSync(join(sandbox, "lekalo/change-history.json"), "utf8"));
+if (!historyValidate(noopHistory)) fail("r11-noop-history-schema", historyValidate.errors);
+const mixed = [noop, { operation: "entity-field:add", entity: "tasks.task", field: { name: "mixed", type: { ref: "tasks.text" } } }, noop];
+const mixedCommit = applyBatch(mixed, "mixed-key");
+if (mixedCommit.code !== 0 || mixedCommit.json?.state !== "committed") fail("r11-mixed-commit", mixedCommit);
+const mixedHistory = JSON.parse(readFileSync(join(sandbox, "lekalo/change-history.json"), "utf8"));
+if (!historyValidate(mixedHistory)) fail("r11-mixed-history-schema", historyValidate.errors);
+if (JSON.stringify(mixedCommit.json.operations.map((row) => row.operation)) !== JSON.stringify(mixed.map((row) => row.operation)) ||
+    JSON.stringify(mixedHistory.records[1].operations) !== JSON.stringify(mixed.map((row) => row.operation))) fail("r11-mixed-order", mixedCommit.json);
+if (readFileSync(commandPath, "utf8") !== commandBytes) fail("r11-noop-source-churn");
+rmSync(sandbox, { recursive: true, force: true });
+
+// r11 F1: a valid near-4-MiB history followed by a REAL twenty-field
+// append must refuse before any source/history/pin/pending publication.
+// The synthetic boundary prefix is deliberately given trusted local
+// custody; this is a capacity test, never a ledger-only forgery claim.
+freshSandbox("history-capacity");
+writeFileSync(join(sandbox, "lekalo/modules/tasks/commands.yaml"), commandBytes);
+const historyPath = join(sandbox, "lekalo/change-history.json");
+const pinPath = join(sandbox, ".lekalo/change-history-pin.json");
+const maxBytes = 4 * 1024 * 1024;
+const boundary = { ...structuredClone(noopHistory), records: [], nextSequence: 1 };
+let estimatedBytes = Buffer.byteLength(JSON.stringify(canonical(boundary), null, 2));
+for (let index = 1; index <= 4096; index += 1) {
+  const record = structuredClone(noopHistory.records[0]);
+  record.sequence = index;
+  record.keyDigest = provDigest(`boundary-${index}`);
+  record.receipt.keyDigest = record.keyDigest;
+  record.receipt.history.sequence = index;
+  record.receipt.transaction.id = `change-aabbccdd-${index}`;
+  // Extra indentation for a record inside the root records array.
+  const row = JSON.stringify(canonical(record), null, 2);
+  const rowBytes = Buffer.byteLength(row) + row.split("\n").length * 4 + 2;
+  if (estimatedBytes + rowBytes > maxBytes - 1024) break;
+  estimatedBytes += rowBytes;
+  boundary.records.push(record);
+}
+boundary.nextSequence = boundary.records.length + 1;
+rechain(boundary);
+const boundaryBytes = Buffer.from(JSON.stringify(canonical(boundary), null, 2));
+if (boundaryBytes.length > maxBytes || maxBytes - boundaryBytes.length > 4096) fail("r11-cap-fixture-not-near-bound", boundaryBytes.length);
+if (!historyValidate(boundary)) fail("r11-cap-fixture-schema", historyValidate.errors);
+mkdirSync(join(sandbox, ".lekalo"), { recursive: true });
+writeFileSync(historyPath, boundaryBytes);
+writeFileSync(pinPath, JSON.stringify({ schemaVersion: "lekalo/change-history-pin/1", project: boundary.project,
+  recordCount: boundary.records.length, tipDigest: boundary.tip.recordDigest, historyDigest: provDigest(boundaryBytes) }));
+const firstBefore = run(["change", "receipt", "--project", ".", "--idempotency-key", "boundary-1", "--json"]);
+if (firstBefore.code !== 0) fail("r11-cap-fixture-reader", firstBefore);
+const sourcePath = join(sandbox, "lekalo/modules/tasks/entities.yaml");
+const sourcesBefore = readFileSync(sourcePath);
+const pinBefore = readFileSync(pinPath);
+const capacityBatch = Array.from({ length: 20 }, (_, index) => ({ operation: "entity-field:add", entity: "tasks.task",
+  field: { name: `capacity_${index}`, type: { ref: "tasks.text" } } }));
+const capacityResult = applyBatch(capacityBatch, "capacity-crossing");
+if (capacityResult.code !== 3 || !capacityResult.json?.reasonCodes?.includes("change.precondition-failed") ||
+    capacityResult.json?.diagnostics?.[0]?.data?.detail !== "history-byte-limit") fail("r11-capacity-refusal", capacityResult);
+if (!readFileSync(sourcePath).equals(sourcesBefore) || !readFileSync(historyPath).equals(boundaryBytes) ||
+    !readFileSync(pinPath).equals(pinBefore)) fail("r11-capacity-mutated-originals");
+if (existsSync(join(sandbox, ".lekalo/pending-transactions.json")) || existsSync(join(sandbox, ".lekalo/cache/change"))) fail("r11-capacity-started-transaction");
+const firstAfter = run(["change", "receipt", "--project", ".", "--idempotency-key", "boundary-1", "--json"]);
+if (firstAfter.code !== 0) fail("r11-capacity-stranded-history", firstAfter);
+const boundaryReplay = applyBatch([noop], "boundary-1");
+if (boundaryReplay.code !== 0 || boundaryReplay.json?.state !== "replayed") fail("r11-capacity-stranded-replay", boundaryReplay);
+rmSync(sandbox, { recursive: true, force: true });
+
+// r11 F3: ordinary canonical-only checkouts may explicitly start a local
+// epoch, but not even a later valid append may authorize imported rows.
+const epochDonor = freshSandbox("epoch-donor");
+if (applyField("priority", "epoch-old").code !== 0 || applyField("escalation", "epoch-second").code !== 0) fail("r11-epoch-donor");
+freshSandbox("epoch-checkout");
+cpSync(join(epochDonor, "lekalo"), join(sandbox, "lekalo"), { recursive: true });
+const importedBytes = readFileSync(join(sandbox, "lekalo/change-history.json"));
+const importedSources = readFileSync(join(sandbox, "lekalo/modules/tasks/entities.yaml"));
+const noInit = applyField("local_one", "epoch-local");
+if (noInit.code !== 1) fail("r11-implicit-prefix-trust", noInit);
+const staleInit = run(["change", "custody-init", "--project", ".", "--expect-history", provDigest("stale"), "--json"]);
+if (staleInit.code !== 3 || existsSync(join(sandbox, ".lekalo/change-history-pin.json"))) fail("r11-epoch-stale-pin", staleInit);
+const initialized = run(["change", "custody-init", "--project", ".", "--expect-history", provDigest(importedBytes), "--json"]);
+if (initialized.code !== 0 || !receiptValidate(initialized.json)) fail("r11-epoch-init", { initialized, errors: receiptValidate.errors });
+if (!readFileSync(join(sandbox, "lekalo/change-history.json")).equals(importedBytes) ||
+    !readFileSync(join(sandbox, "lekalo/modules/tasks/entities.yaml")).equals(importedSources)) fail("r11-epoch-init-mutated-canonical");
+for (const [name, key] of [["local_one", "epoch-local"], ["local_two", "epoch-next"]]) {
+  const local = applyField(name, key);
+  if (local.code !== 0 || local.json?.state !== "committed") fail("r11-epoch-local-commit", local);
+  const replay = applyField(name, key);
+  if (replay.code !== 0 || replay.json?.state !== "replayed") fail("r11-epoch-local-replay", replay);
+  const old = applyField("priority", "epoch-old");
+  if (old.code !== 1 || old.json?.diagnostics?.[0]?.data?.detail !== "commit-custody-epoch") fail("r11-epoch-prefix-laundered", old);
+  const pin = JSON.parse(readFileSync(join(sandbox, ".lekalo/change-history-pin.json"), "utf8"));
+  if (pin.firstLocalSequence !== 3) fail("r11-epoch-boundary-reset", pin);
+}
+const epochPin = readFileSync(join(sandbox, ".lekalo/change-history-pin.json"));
+const reinit = run(["change", "custody-init", "--project", ".", "--expect-history", provDigest(readFileSync(join(sandbox, "lekalo/change-history.json"))), "--json"]);
+if (reinit.code !== 3 || !readFileSync(join(sandbox, ".lekalo/change-history-pin.json")).equals(epochPin)) fail("r11-epoch-rebind", reinit);
+const auditOld = run(["change", "receipt", "--project", ".", "--idempotency-key", "epoch-old", "--json"]);
+if (auditOld.code !== 0 || auditOld.json?.state !== "committed") fail("r11-epoch-audit-lookup", auditOld);
+rmSync(sandbox, { recursive: true, force: true });
+rmSync(epochDonor, { recursive: true, force: true });
+
+// Even an initialized, fully rechained endpoint forgery stays audit-only
+// after an unrelated legitimate local commit (the old graft bypass).
+freshSandbox("epoch-graft");
+const graftSource = join(sandbox, "lekalo/modules/tasks/entities.yaml");
+const graft = structuredClone(genuine);
+graft.records[0].receipt.files[0].afterDigest = provDigest(readFileSync(graftSource));
+graft.records[0].receipt.files[0].beforeDigest = provDigest("invented preimage");
+rechain(graft);
+const graftBytes = Buffer.from(JSON.stringify(graft));
+writeFileSync(join(sandbox, "lekalo/change-history.json"), graftBytes);
+const graftInit = run(["change", "custody-init", "--project", ".", "--expect-history", provDigest(graftBytes), "--json"]);
+if (graftInit.code !== 0) fail("r11-graft-epoch-init", graftInit);
+if (applyField("unrelated", "graft-local").code !== 0) fail("r11-graft-local-commit");
+const graftBeforeReplay = readFileSync(graftSource);
+const graftReplay = applyField("priority", "r10-custody");
+if (graftReplay.code !== 1 || graftReplay.json?.diagnostics?.[0]?.data?.detail !== "commit-custody-epoch") fail("r11-graft-epoch-laundered", graftReplay);
+if (!readFileSync(graftSource).equals(graftBeforeReplay)) fail("r11-graft-epoch-replay-mutated");
+rmSync(sandbox, { recursive: true, force: true });
 process.stdout.write(`${JSON.stringify({
   ok: true,
   gate: "test-change-transactions.mjs",
@@ -867,6 +1000,10 @@ process.stdout.write(`${JSON.stringify({
     "two-record-tail-truncation",
     "two-file-partial-adoption-recovery",
     "cache-clear-preserves-writer-lock-and-custody",
+    "live-noop-and-mixed-batch-history-schema",
+    "near-cap-history-real-append-refuses-with-originals",
+    "explicit-checkout-epoch-new-work-without-prefix-replay",
+    "initialized-graft-never-laundered-by-local-append",
     heldLockFlow,
   ],
 }, null, 2)}\n`);

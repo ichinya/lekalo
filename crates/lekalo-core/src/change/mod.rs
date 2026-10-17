@@ -496,6 +496,9 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
             operation,
         )?;
         if edit.is_empty() {
+            // No byte edit is still a resolved requested operation. Keep
+            // its audit row in request order, including in mixed batches.
+            resolved_rows.push(row);
             continue;
         }
         let after = apply_edits_descending(&working, &edit);
@@ -850,7 +853,7 @@ pub fn apply_request(options: &ApplyRequestOptions) -> Result<Receipt, ChangeErr
             // project must actually carry the record's committed semantic
             // delta or a later committed successor of it.
             verify_record_postcondition(&root, &history, record)?;
-            custody::verify(&root, Some(&history_bytes))?;
+            custody::verify(&root, Some(&history_bytes))?.require_local(record.sequence)?;
             return replayed_receipt(record);
         }
         custody::verify(&root, Some(&history_bytes))?;
@@ -920,7 +923,7 @@ pub fn apply_prepared(
         Some(bytes) => History::decode(bytes)?,
     };
     verify_history_project(&root, &history)?;
-    custody::verify(&root, history_bytes.as_deref())?;
+    let custody = custody::verify(&root, history_bytes.as_deref())?;
     let key = receipt::key_digest(options.idempotency_key);
     if let Some(record) = history.by_key(&key) {
         if record.request_digest != prepared.request_digest() {
@@ -939,6 +942,7 @@ pub fn apply_prepared(
         // A genuine-but-grafted ledger never mints replay authority
         // (r6, finding devin F1; r8 chain-endpoint semantics).
         verify_record_postcondition(&root, &history, record)?;
+        custody.require_local(record.sequence)?;
         return replayed_receipt(record);
     }
 
@@ -1194,7 +1198,9 @@ pub fn apply_prepared(
             })?,
     };
     history = history.with_appended(record);
-    let final_history_bytes = history.to_json_string().into_bytes();
+    // Admit the complete prospective ledger BEFORE creating any journal,
+    // pending record, backup, source replacement, or custody publication.
+    let final_history_bytes = history.encode_for_commit()?;
 
     // The history sidecar replacement joins the same transaction so the
     // ledger and the sources commit together; source replacements restore
@@ -1215,7 +1221,7 @@ pub fn apply_prepared(
     // replacement set: rollback restores it, committed recovery verifies it.
     // Never reconstruct it from a ledger an editor can freely rechain.
     let before_pin = custody::read(&root)?;
-    let after_pin = custody::encode(&history, &final_history_bytes);
+    let after_pin = custody.encode(&history, &final_history_bytes);
     plans.push(ReplacementPlan {
         logical: custody::LOGICAL_PATH.to_owned(),
         before_digest: receipt::bytes_digest(before_pin.as_deref().unwrap_or_default()),
@@ -1246,6 +1252,48 @@ pub fn apply_prepared(
     }
     transaction.finalize(&final_history_bytes)?;
     Ok(receipt)
+}
+
+/// Initialize a checkout's local custody epoch without trusting any prior
+/// receipt for replay. Requires the exact reviewed history-byte digest and
+/// a valid Model/history/project under the shared writer lock. Existing
+/// custody (even malformed or mismatched) is never replaced by this API.
+/// Only subsequently committed records acquire local replay authority;
+/// canonical source and history bytes are not changed or discarded.
+pub fn initialize_custody(project: Option<&str>, expect_history: &str) -> Result<(), ChangeError> {
+    if expect_digest(expect_history).is_none() {
+        return Err(ChangeError::RequestInvalid {
+            detail: "expect-history",
+        });
+    }
+    let root = resolve_root(project)?;
+    let _lock = crate::project_writer::WriterLock::mutation(
+        &root,
+        crate::project_writer::MutationFamily::Change,
+    )
+    .map_err(change_mutation_refusal)?;
+    refuse_while_recovery_pending(&root)?;
+    let load = crate::loader::load_validated_root(root.clone()).map_err(ChangeError::LoadFailed)?;
+    let compilation = ir::compile(&load.model)
+        .map_err(|failure| ChangeError::LoadFailed(failure.into_result()))?;
+    let profile = ValidationProfile::embedded_default()
+        .map_err(|_| ChangeError::RequestInvalid { detail: "profile" })?;
+    if let Err(set) = crate::validator::validate(&compilation, profile) {
+        return Err(ChangeError::LoadFailed(DomainResult::invalid(set)));
+    }
+    let bytes = read_history_bytes(&root)?.ok_or(ChangeError::PreconditionFailed {
+        subject: "history".to_owned(),
+        detail: "history-missing",
+    })?;
+    if receipt::bytes_digest(&bytes) != expect_history {
+        return Err(ChangeError::PreconditionFailed {
+            subject: "history".to_owned(),
+            detail: "expect-history",
+        });
+    }
+    let history = History::decode(&bytes)?;
+    verify_history_project(&root, &history)?;
+    custody::initialize(&root, &history, &bytes)
 }
 
 /// Look up the committed receipt of one idempotency key without mutating.

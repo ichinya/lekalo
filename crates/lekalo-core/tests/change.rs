@@ -2270,6 +2270,15 @@ fn unchanged_input_signature_is_a_byte_identical_no_op() {
     let receipt = apply_request(&sandbox, &request, "sig-preserve-v1", false).expect("applies");
     assert_eq!(receipt.state(), ReceiptState::NoOp);
     assert_eq!(
+        receipt.operations.len(),
+        1,
+        "no-op keeps its requested audit row"
+    );
+    assert_eq!(receipt.operations[0].operation, "operation-input:set");
+    let history = change::receipt::History::decode(&std::fs::read(sandbox.history_path()).unwrap())
+        .expect("no-op history round-trips");
+    assert_eq!(history.records[0].operations, ["operation-input:set"]);
+    assert_eq!(
         std::fs::read(&commands_path).expect("commands"),
         commands.as_bytes(),
         "the unchanged signature keeps every byte (comment included)"
@@ -3270,4 +3279,269 @@ fn recovery_prunes_orphaned_pending_registry_records() {
         registry["records"].as_array().expect("records").is_empty(),
         "the prune is idempotent"
     );
+}
+
+#[test]
+fn mixed_no_op_and_mutating_batch_keeps_every_operation_in_request_order() {
+    let sandbox = Sandbox::new("mixed-noop");
+    let commands = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.act\n    kind: command\n    version: 1\n    input:\n      - name: title\n        type: tasks.text\n";
+    let path = sandbox.root.join("lekalo/modules/tasks/commands.yaml");
+    std::fs::write(&path, commands).unwrap();
+    let no_op = serde_json::json!({
+        "operation": "operation-input:set", "operationTarget": "tasks.act",
+        "definition": { "input": [{ "name": "title", "type": { "ref": "tasks.text" } }] }
+    });
+    let mutation: serde_json::Value = serde_json::from_slice(&add_priority_request()).unwrap();
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": "lekalo/change-request/v0.8.0",
+        "operations": [no_op, mutation["operations"][0], no_op]
+    }))
+    .unwrap();
+    let receipt = apply_request(&sandbox, &request, "mixed-key", false).unwrap();
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    let order = [
+        "operation-input:set",
+        "entity-field:add",
+        "operation-input:set",
+    ];
+    assert_eq!(
+        receipt
+            .operations
+            .iter()
+            .map(|row| row.operation.as_str())
+            .collect::<Vec<_>>(),
+        order
+    );
+    let history =
+        change::receipt::History::decode(&std::fs::read(sandbox.history_path()).unwrap()).unwrap();
+    assert_eq!(history.records[0].operations, order);
+    assert_eq!(std::fs::read(path).unwrap(), commands.as_bytes());
+    assert_eq!(
+        apply_request(&sandbox, &request, "mixed-key", false)
+            .unwrap()
+            .operations,
+        receipt.operations
+    );
+}
+
+fn history_digest(bytes: &[u8]) -> String {
+    format!("sha256:{}", lekalo_core::digest::sha256_hex(bytes))
+}
+
+#[test]
+fn checkout_custody_epoch_allows_new_work_but_never_authorizes_imported_receipts() {
+    let donor = Sandbox::new("epoch-donor");
+    let request = add_priority_request();
+    apply_request(&donor, &request, "donor-key", false).unwrap();
+    let checkout = Sandbox::new("epoch-checkout");
+    copy_dir(&donor.root.join("lekalo"), &checkout.root.join("lekalo"));
+    let bytes = std::fs::read(checkout.history_path()).unwrap();
+    let sources = checkout.entities_bytes();
+    let project = checkout.selection_str();
+    let next = add_field_request("local_one");
+    assert!(matches!(
+        apply_request(&checkout, &next, "local-one", false),
+        Err(ChangeError::HistoryInvalid {
+            detail: "commit-custody"
+        })
+    ));
+    change::initialize_custody(Some(&project), &history_digest(&bytes)).unwrap();
+    assert_eq!(std::fs::read(checkout.history_path()).unwrap(), bytes);
+    assert_eq!(checkout.entities_bytes(), sources);
+    let pin_path = checkout.root.join(".lekalo/change-history-pin.json");
+    let pin_before = std::fs::read(&pin_path).unwrap();
+    assert!(
+        change::initialize_custody(Some(&project), &history_digest(&bytes)).is_err(),
+        "never rebind an existing pin"
+    );
+    assert_eq!(std::fs::read(&pin_path).unwrap(), pin_before);
+    assert_eq!(
+        change::lookup_receipt(Some(&project), "donor-key")
+            .unwrap()
+            .unwrap()
+            .state(),
+        ReceiptState::Committed
+    );
+    for (field, key) in [("local_one", "local-one"), ("local_two", "local-two")] {
+        assert!(matches!(
+            apply_request(&checkout, &request, "donor-key", false),
+            Err(ChangeError::HistoryInvalid {
+                detail: "commit-custody-epoch"
+            })
+        ));
+        let local = add_field_request(field);
+        assert_eq!(
+            apply_request(&checkout, &local, key, false)
+                .unwrap()
+                .state(),
+            ReceiptState::Committed
+        );
+        assert_eq!(
+            apply_request(&checkout, &local, key, false)
+                .unwrap()
+                .state(),
+            ReceiptState::Replayed
+        );
+        let pin: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&pin_path).unwrap()).unwrap();
+        assert_eq!(
+            pin["firstLocalSequence"], 2,
+            "append cannot launder the imported prefix"
+        );
+    }
+    assert!(matches!(
+        apply_request(&checkout, &request, "donor-key", false),
+        Err(ChangeError::HistoryInvalid {
+            detail: "commit-custody-epoch"
+        })
+    ));
+}
+
+#[test]
+fn initializing_a_rechained_graft_does_not_launder_it_through_a_new_commit() {
+    let donor = Sandbox::new("epoch-graft-donor");
+    let request = add_priority_request();
+    apply_request(&donor, &request, "grafted-key", false).unwrap();
+    let recipient = Sandbox::new("epoch-graft-recipient");
+    let mut history: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(donor.history_path()).unwrap()).unwrap();
+    history["records"][0]["receipt"]["files"][0]["afterDigest"] =
+        serde_json::json!(history_digest(&recipient.entities_bytes()));
+    history["records"][0]["receipt"]["files"][0]["beforeDigest"] =
+        serde_json::json!(history_digest(b"invented preimage"));
+    rechain_history(&mut history);
+    let bytes = serde_json::to_vec_pretty(&history).unwrap();
+    change::receipt::History::decode(&bytes).unwrap();
+    std::fs::write(recipient.history_path(), &bytes).unwrap();
+    let prepared = prepare(&recipient, &request).unwrap();
+    change::initialize_custody(Some(&recipient.selection_str()), &history_digest(&bytes)).unwrap();
+    let before = recipient.entities_bytes();
+    assert!(matches!(
+        change::apply_prepared(
+            &prepared,
+            &ApplyOptions {
+                idempotency_key: "grafted-key",
+                expect_plan: None,
+                allow_breaking: false
+            }
+        ),
+        Err(ChangeError::HistoryInvalid {
+            detail: "commit-custody-epoch"
+        })
+    ));
+    apply_request(
+        &recipient,
+        &add_field_request("legitimate"),
+        "new-key",
+        false,
+    )
+    .unwrap();
+    assert!(matches!(
+        apply_request(&recipient, &request, "grafted-key", false),
+        Err(ChangeError::HistoryInvalid {
+            detail: "commit-custody-epoch"
+        })
+    ));
+    assert!(!String::from_utf8(recipient.entities_bytes())
+        .unwrap()
+        .contains("name: priority"));
+    assert_ne!(
+        recipient.entities_bytes(),
+        before,
+        "only the unrelated new operation committed"
+    );
+}
+
+#[test]
+fn custody_initialization_respects_shared_lock_and_unresolved_recovery_barriers() {
+    let sandbox = Sandbox::new("epoch-barriers");
+    let project = sandbox.selection_str();
+    apply_request(&sandbox, &add_priority_request(), "imported", false).unwrap();
+    let bytes = std::fs::read(sandbox.history_path()).unwrap();
+    let source = sandbox.entities_bytes();
+    let expected = history_digest(&bytes);
+    let pin_path = sandbox.root.join(".lekalo/change-history-pin.json");
+    std::fs::remove_file(&pin_path).unwrap();
+
+    let holder = change::test_only_acquire_writer_lock(Some(&project)).unwrap();
+    assert!(matches!(
+        change::initialize_custody(Some(&project), &expected),
+        Err(ChangeError::PreconditionFailed { detail: "held", .. })
+    ));
+    assert!(!pin_path.exists());
+    drop(holder);
+
+    let recovery = sandbox
+        .root
+        .join(".lekalo/import/adoption/recovery")
+        .join("a".repeat(32))
+        .join("b".repeat(32));
+    std::fs::create_dir_all(&recovery).unwrap();
+    std::fs::write(recovery.join("journal.json"), b"{}").unwrap();
+    std::fs::write(recovery.join("recovered.json"), b"{}").unwrap();
+    assert!(matches!(
+        change::initialize_custody(Some(&project), &expected),
+        Err(ChangeError::PreconditionFailed {
+            detail: "adoption-journal",
+            ..
+        })
+    ));
+    assert!(!pin_path.exists());
+    assert_eq!(std::fs::read(sandbox.history_path()).unwrap(), bytes);
+    assert_eq!(sandbox.entities_bytes(), source);
+    assert!(recovery.join("journal.json").exists());
+    std::fs::remove_dir_all(recovery).unwrap();
+
+    let transaction = "change-epochbarrier";
+    let journal = plant_journal(
+        &sandbox,
+        transaction,
+        "staging",
+        serde_json::json!([]),
+        false,
+    );
+    assert!(change::initialize_custody(Some(&project), &expected).is_err());
+    assert!(!pin_path.exists());
+    assert!(journal.join("journal.json").exists());
+    change::recover_transaction(Some(&project), transaction).unwrap();
+    change::initialize_custody(Some(&project), &expected).unwrap();
+    assert_eq!(std::fs::read(sandbox.history_path()).unwrap(), bytes);
+    assert_eq!(sandbox.entities_bytes(), source);
+}
+
+#[test]
+fn custody_initialization_validates_expectations_model_history_and_existing_pin() {
+    let sandbox = Sandbox::new("epoch-validation");
+    let project = sandbox.selection_str();
+    assert!(change::initialize_custody(Some(&project), "bad").is_err());
+    assert!(change::initialize_custody(Some(&project), &history_digest(b"")).is_err());
+    apply_request(&sandbox, &add_priority_request(), "old", false).unwrap();
+    let bytes = std::fs::read(sandbox.history_path()).unwrap();
+    let pin_path = sandbox.root.join(".lekalo/change-history-pin.json");
+    std::fs::remove_file(&pin_path).unwrap();
+    assert!(matches!(
+        change::initialize_custody(Some(&project), &history_digest(b"stale")),
+        Err(ChangeError::PreconditionFailed {
+            detail: "expect-history",
+            ..
+        })
+    ));
+    assert!(!pin_path.exists());
+    let source = sandbox.entities_bytes();
+    std::fs::write(sandbox.entities_path(), "not a Model").unwrap();
+    assert!(change::initialize_custody(Some(&project), &history_digest(&bytes)).is_err());
+    assert!(!pin_path.exists());
+    std::fs::write(sandbox.entities_path(), &source).unwrap();
+    std::fs::write(sandbox.history_path(), "{}").unwrap();
+    assert!(change::initialize_custody(Some(&project), &history_digest(b"{}")).is_err());
+    assert!(!pin_path.exists());
+    std::fs::write(sandbox.history_path(), &bytes).unwrap();
+    std::fs::write(&pin_path, "malformed existing custody").unwrap();
+    assert!(change::initialize_custody(Some(&project), &history_digest(&bytes)).is_err());
+    assert_eq!(
+        std::fs::read(&pin_path).unwrap(),
+        b"malformed existing custody"
+    );
+    assert_eq!(std::fs::read(sandbox.history_path()).unwrap(), bytes);
+    assert_eq!(sandbox.entities_bytes(), source);
 }

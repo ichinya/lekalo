@@ -18,6 +18,10 @@ use crate::digest::sha256_hex;
 /// Maximum canonical history bytes accepted before decoding.
 pub(crate) const MAX_HISTORY_BYTES: usize = 4 * 1024 * 1024;
 
+/// The published history schema's record-count bound, shared by both
+/// decoding and prospective commit admission (independent of byte size).
+pub(crate) const MAX_HISTORY_RECORDS: usize = 4096;
+
 /// The exact member count of one canonical history record.
 const RECORD_MEMBERS: usize = 8;
 
@@ -274,6 +278,11 @@ impl History {
             .get("records")
             .and_then(Json::as_array)
             .ok_or(super::diagnostic::ChangeError::HistoryInvalid { detail: "records" })?;
+        if records_value.len() > MAX_HISTORY_RECORDS {
+            return Err(super::diagnostic::ChangeError::HistoryInvalid {
+                detail: "record-limit",
+            });
+        }
         let mut records = Vec::with_capacity(records_value.len());
         let mut seen_keys = std::collections::BTreeSet::new();
         // The chain digest starts at the empty-bytes sentinel; every
@@ -496,6 +505,32 @@ impl History {
             "records": records,
         });
         serde_json::to_string_pretty(&document).unwrap_or_default()
+    }
+
+    /// Encode a prospective commit only if the same reader that will
+    /// serve receipt/replay can accept it, with no loss or repair. Capacity
+    /// is a registered bounded precondition refusal, not a failed commit:
+    /// the writer has not started a transaction and must retain every row.
+    pub(crate) fn encode_for_commit(&self) -> Result<Vec<u8>, super::ChangeError> {
+        if self.records.len() > MAX_HISTORY_RECORDS {
+            return Err(super::ChangeError::PreconditionFailed {
+                subject: "history".to_owned(),
+                detail: "history-record-limit",
+            });
+        }
+        let bytes = self.to_json_string().into_bytes();
+        if bytes.len() > MAX_HISTORY_BYTES {
+            return Err(super::ChangeError::PreconditionFailed {
+                subject: "history".to_owned(),
+                detail: "history-byte-limit",
+            });
+        }
+        if Self::decode(&bytes)? != *self {
+            return Err(super::ChangeError::HistoryInvalid {
+                detail: "history-round-trip",
+            });
+        }
+        Ok(bytes)
     }
 
     /// Look up one record by exact key digest.
@@ -777,4 +812,47 @@ fn verify_receipt_projection<'a>(
         return invalid("receipt-history");
     }
     Ok(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::change::ChangeError;
+
+    #[test]
+    fn history_capacity_is_checked_on_both_ingress_and_prospective_commit() {
+        let bytes = include_bytes!("../../../../tests/fixtures/change/golden/change-history.json");
+        let history = History::decode(bytes).unwrap();
+        let encoded = history.encode_for_commit().unwrap();
+        assert_eq!(History::decode(&encoded).unwrap(), history);
+
+        let mut over_records = history.clone();
+        over_records.records = vec![history.records[0].clone(); MAX_HISTORY_RECORDS + 1];
+        assert!(matches!(
+            over_records.encode_for_commit(),
+            Err(ChangeError::PreconditionFailed {
+                detail: "history-record-limit",
+                ..
+            })
+        ));
+        let mut document: Json = serde_json::from_slice(bytes).unwrap();
+        document["records"] = serde_json::json!(vec![Json::Null; MAX_HISTORY_RECORDS + 1]);
+        assert!(matches!(
+            History::decode(&serde_json::to_vec(&document).unwrap()),
+            Err(ChangeError::HistoryInvalid {
+                detail: "record-limit"
+            })
+        ));
+
+        let mut over_bytes = history;
+        over_bytes.records[0].receipt["operations"][0]["detail"] =
+            serde_json::json!("x".repeat(MAX_HISTORY_BYTES));
+        assert!(matches!(
+            over_bytes.encode_for_commit(),
+            Err(ChangeError::PreconditionFailed {
+                detail: "history-byte-limit",
+                ..
+            })
+        ));
+    }
 }

@@ -3,9 +3,12 @@
 //! A public hash chain proves internal consistency, not that a transaction ran.
 //! This non-cache pin is published/restored in the SAME transaction as sources
 //! and history. A ledger-only edit (even a fully recomputed chain) cannot mint
-//! replay authority. Missing custody is never reconstructed from claimed file
-//! outcomes or the current Model. Copying/deleting the entire runtime custody
-//! and ledger is a different trust boundary, like editing the sources directly.
+//! replay authority. An explicit checkout initialization may pin existing
+//! history ONLY as an audit-only prefix: its trust epoch starts at the NEXT
+//! sequence. Appending preserves that boundary; no old receipt becomes local
+//! by rechaining, initialization, or a later legitimate commit. Copying/editing
+//! the entire runtime custody and ledger is a different trust boundary, like
+//! editing the sources directly.
 
 use std::path::Path;
 
@@ -14,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use super::{receipt, ChangeError};
 
 pub(crate) const LOGICAL_PATH: &str = ".lekalo/change-history-pin.json";
-const SCHEMA_VERSION: &str = "lekalo/change-history-pin/1";
+const SCHEMA_VERSION: &str = "lekalo/change-history-pin/2";
 const MAX_BYTES: usize = 1024;
 
 #[derive(Deserialize, Serialize)]
@@ -25,6 +28,49 @@ struct Pin {
     record_count: u64,
     tip_digest: String,
     history_digest: String,
+    first_local_sequence: u64,
+}
+
+/// The originally emitted local pin: all of its records were committed
+/// locally. Keep genuine pre-epoch pins usable, but do not allow the new
+/// epoch boundary to default or disappear in a v2 document.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct LegacyPin {
+    schema_version: String,
+    project: String,
+    record_count: u64,
+    tip_digest: String,
+    history_digest: String,
+}
+
+/// Verified custody of exact history bytes, with the immutable local
+/// authorization boundary carried forward on every append.
+pub(crate) struct VerifiedCustody {
+    first_local_sequence: u64,
+}
+
+impl VerifiedCustody {
+    pub(crate) fn require_local(&self, sequence: u64) -> Result<(), ChangeError> {
+        if sequence < self.first_local_sequence {
+            return Err(ChangeError::HistoryInvalid {
+                detail: "commit-custody-epoch",
+            });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn encode(&self, history: &receipt::History, bytes: &[u8]) -> Vec<u8> {
+        serde_json::to_vec_pretty(&Pin {
+            schema_version: SCHEMA_VERSION.to_owned(),
+            project: history.project.clone(),
+            record_count: history.records.len() as u64,
+            tip_digest: history.tip_digest(),
+            history_digest: receipt::bytes_digest(bytes),
+            first_local_sequence: self.first_local_sequence,
+        })
+        .expect("custody pin serializes")
+    }
 }
 
 fn invalid() -> ChangeError {
@@ -44,38 +90,86 @@ pub(crate) fn read(root: &Path) -> Result<Option<Vec<u8>>, ChangeError> {
     }
 }
 
-pub(crate) fn encode(history: &receipt::History, bytes: &[u8]) -> Vec<u8> {
-    serde_json::to_vec_pretty(&Pin {
-        schema_version: SCHEMA_VERSION.to_owned(),
-        project: history.project.clone(),
-        record_count: history.records.len() as u64,
-        tip_digest: history.tip_digest(),
-        history_digest: receipt::bytes_digest(bytes),
-    })
-    .expect("custody pin serializes")
+/// Initialization publishes one atomic, no-clobber private file; it does
+/// not alter Model/history and therefore needs no multi-file recovery
+/// journal. The caller holds the shared writer lock and validated both.
+pub(crate) fn initialize(
+    root: &Path,
+    history: &receipt::History,
+    bytes: &[u8],
+) -> Result<(), ChangeError> {
+    if read(root)?.is_some() {
+        return Err(ChangeError::PreconditionFailed {
+            subject: "custody".to_owned(),
+            detail: "custody-present",
+        });
+    }
+    let pin = VerifiedCustody {
+        first_local_sequence: history.next_sequence,
+    }
+    .encode(history, bytes);
+    super::transaction::initialize_custody_pin(root, &pin)
+}
+
+#[cfg(test)]
+fn encode(history: &receipt::History, bytes: &[u8]) -> Vec<u8> {
+    VerifiedCustody {
+        first_local_sequence: 1,
+    }
+    .encode(history, bytes)
 }
 
 /// Verify both presence and all accepted-history facts, including the exact
 /// ledger bytes. An absent ledger is first-use ONLY if custody is absent too.
-pub(crate) fn verify(root: &Path, history_bytes: Option<&[u8]>) -> Result<(), ChangeError> {
+pub(crate) fn verify(
+    root: &Path,
+    history_bytes: Option<&[u8]>,
+) -> Result<VerifiedCustody, ChangeError> {
     let pin_bytes = read(root)?;
     let (bytes, pin_bytes) = match (history_bytes, pin_bytes) {
-        (None, None) => return Ok(()),
+        (None, None) => {
+            return Ok(VerifiedCustody {
+                first_local_sequence: 1,
+            })
+        }
         (Some(bytes), Some(pin)) => (bytes, pin),
         _ => return Err(invalid()),
     };
     let value = super::request::unique_json(&pin_bytes).map_err(|_| invalid())?;
-    let pin: Pin = serde_json::from_value(value).map_err(|_| invalid())?;
+    let pin: Pin = if value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_str)
+        == Some("lekalo/change-history-pin/1")
+    {
+        let legacy: LegacyPin = serde_json::from_value(value).map_err(|_| invalid())?;
+        if legacy.schema_version != "lekalo/change-history-pin/1" {
+            return Err(invalid());
+        }
+        Pin {
+            schema_version: SCHEMA_VERSION.to_owned(),
+            project: legacy.project,
+            record_count: legacy.record_count,
+            tip_digest: legacy.tip_digest,
+            history_digest: legacy.history_digest,
+            first_local_sequence: 1,
+        }
+    } else {
+        serde_json::from_value(value).map_err(|_| invalid())?
+    };
     let history = receipt::History::decode(bytes)?;
     if pin.schema_version != SCHEMA_VERSION
         || pin.project != history.project
         || pin.record_count != history.records.len() as u64
         || pin.tip_digest != history.tip_digest()
         || pin.history_digest != receipt::bytes_digest(bytes)
+        || pin.first_local_sequence == 0
+        || pin.first_local_sequence > history.next_sequence
     {
         return Err(invalid());
     }
-    Ok(())
+    Ok(VerifiedCustody {
+        first_local_sequence: pin.first_local_sequence,
+    })
 }
 
 #[cfg(test)]
@@ -116,6 +210,7 @@ mod tests {
             "recordCount",
             "tipDigest",
             "historyDigest",
+            "firstLocalSequence",
             "extra",
         ] {
             let mut bad = valid.clone();
@@ -130,6 +225,47 @@ mod tests {
             verify(root.path(), Some(&edited_bytes)).is_err(),
             "exact committed bytes, not only a mutable chain"
         );
+    }
+
+    #[test]
+    fn epoch_is_closed_bounded_and_legacy_pins_keep_original_local_authority() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join(".lekalo")).unwrap();
+        let path = root.path().join(LOGICAL_PATH);
+        let bytes = include_bytes!("../../../../tests/fixtures/change/golden/change-history.json");
+        let history = receipt::History::decode(bytes).unwrap();
+        let pin = VerifiedCustody {
+            first_local_sequence: history.next_sequence,
+        }
+        .encode(&history, bytes);
+        std::fs::write(&path, &pin).unwrap();
+        let custody = verify(root.path(), Some(bytes)).unwrap();
+        assert!(custody.require_local(1).is_err());
+        assert!(custody.require_local(history.next_sequence).is_ok());
+        let value: serde_json::Value = serde_json::from_slice(&pin).unwrap();
+        for boundary in [
+            serde_json::Value::Null,
+            serde_json::json!(0),
+            serde_json::json!(history.next_sequence + 1),
+        ] {
+            let mut bad = value.clone();
+            bad["firstLocalSequence"] = boundary;
+            std::fs::write(&path, serde_json::to_vec(&bad).unwrap()).unwrap();
+            assert!(verify(root.path(), Some(bytes)).is_err());
+        }
+        let mut legacy = value;
+        legacy.as_object_mut().unwrap().remove("firstLocalSequence");
+        std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        assert!(
+            verify(root.path(), Some(bytes)).is_err(),
+            "v2 never defaults an absent boundary"
+        );
+        legacy["schemaVersion"] = serde_json::json!("lekalo/change-history-pin/1");
+        std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        verify(root.path(), Some(bytes))
+            .unwrap()
+            .require_local(1)
+            .unwrap();
     }
 
     #[test]
@@ -148,6 +284,8 @@ mod tests {
         let linked = std::os::windows::fs::symlink_file(&foreign, &path).is_ok();
         if linked {
             assert!(verify(root.path(), Some(bytes)).is_err());
+            assert!(initialize(root.path(), &history, bytes).is_err());
+            assert_eq!(std::fs::read(&foreign).unwrap(), encode(&history, bytes));
         } else {
             eprintln!("skipped: symlink privilege unavailable");
         }

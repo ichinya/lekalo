@@ -57,6 +57,16 @@ pub(crate) enum ChangeCommands {
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
     },
+    /// Initialize a checkout's local trust epoch. Existing records remain
+    /// audit-only; only future local commits can replay. Never replaces a pin.
+    CustodyInit {
+        /// Digest of the exact reviewed canonical history bytes.
+        #[arg(long, value_name = "DIGEST")]
+        expect_history: String,
+        /// Project root selector, relative to the invocation directory.
+        #[arg(long, value_name = "DIR")]
+        project: Option<String>,
+    },
     /// Recover one interrupted change transaction; readers stay blocked
     /// until this succeeds.
     Recover {
@@ -557,6 +567,29 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
                 detail: "unknown",
             }
             .into(),
+            Err(error) => error.into(),
+        },
+        ChangeCommands::CustodyInit {
+            expect_history,
+            project,
+        } => match change::initialize_custody(project.as_deref(), &expect_history) {
+            Ok(()) => receipt_result(
+                &change::Receipt {
+                    status: "valid".to_owned(),
+                    state: "no-op".to_owned(),
+                    plan_id: None,
+                    request_digest: None,
+                    key_digest: None,
+                    operations: Vec::new(),
+                    files: Vec::new(),
+                    policy: None,
+                    history: None,
+                    transaction: None,
+                    diagnostic_ids: Vec::new(),
+                    replayed: false,
+                },
+                "local custody epoch initialized; earlier records remain audit-only",
+            ),
             Err(error) => error.into(),
         },
         ChangeCommands::Recover {

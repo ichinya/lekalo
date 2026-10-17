@@ -850,14 +850,17 @@ fn verify_history_custody(root: &Path, transaction: &str) -> Result<(), ChangeEr
             transaction: transaction.to_owned(),
         })?;
     super::verify_history_project(root, &history)?;
-    super::custody::verify(root, Some(&bytes))?;
+    let custody = super::custody::verify(root, Some(&bytes))?;
     let named = history.records.iter().any(|record| {
-        record
-            .receipt
-            .get("transaction")
-            .and_then(|wire| wire.get("id"))
-            .and_then(Json::as_str)
-            == Some(transaction)
+        // Initialization never turns an imported audit row into evidence
+        // of a local transaction, including on the recovery surface.
+        custody.require_local(record.sequence).is_ok()
+            && record
+                .receipt
+                .get("transaction")
+                .and_then(|wire| wire.get("id"))
+                .and_then(Json::as_str)
+                == Some(transaction)
             && record
                 .receipt
                 .get("transaction")
@@ -1582,6 +1585,20 @@ fn temp_suffix() -> String {
 /// same-volume, never truncates a pre-existing linked entry, and cannot be
 /// predicted and hard-linked before creation (round 2, finding 2).
 fn write_same_dir(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    publish_same_dir(target, bytes, false)
+}
+
+/// Publish only the fixed custody home, atomically and without replacing
+/// ANY existing entry (including a link). No multi-file state changes.
+pub(super) fn initialize_custody_pin(root: &Path, bytes: &[u8]) -> Result<(), ChangeError> {
+    let target = validated_target(root, super::custody::LOGICAL_PATH)?;
+    publish_same_dir(&target, bytes, true).map_err(|_| ChangeError::CommitFailed {
+        transaction: "custody-init".to_owned(),
+        detail: "custody-publish",
+    })
+}
+
+fn publish_same_dir(target: &Path, bytes: &[u8], create_only: bool) -> std::io::Result<()> {
     let file_name = target
         .file_name()
         .map(|name| name.to_os_string())
@@ -1620,6 +1637,15 @@ fn write_same_dir(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
             return Err(error);
         }
         drop(file);
+        // An atomic no-replace rename never leaves a second hard link
+        // behind on process death (the no-follow reader rejects nlink > 1).
+        if create_only {
+            let result = rename_no_replace(&temp, target);
+            if result.is_err() {
+                let _ = std::fs::remove_file(&temp);
+            }
+            return result;
+        }
         return match std::fs::rename(&temp, target) {
             Ok(()) => Ok(()),
             Err(error) => {
@@ -1631,10 +1657,72 @@ fn write_same_dir(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
     Err(last_error)
 }
 
+/// No overwrite fallback: if the platform cannot atomically publish a
+/// new name, initialization refuses instead of weakening custody.
+#[cfg(unix)]
+fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "android",
+        target_vendor = "apple",
+        target_os = "redox"
+    ))]
+    {
+        use rustix::fs::{renameat_with, RenameFlags, CWD};
+        renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE).map_err(Into::into)
+    }
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_vendor = "apple",
+        target_os = "redox"
+    )))]
+    {
+        let _ = (from, to);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "atomic-no-replace",
+        ))
+    }
+}
+
+#[cfg(windows)]
+fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
+    let from: Vec<u16> = from.as_os_str().encode_wide().chain(Some(0)).collect();
+    let to: Vec<u16> = to.as_os_str().encode_wide().chain(Some(0)).collect();
+    // No MOVEFILE_REPLACE_EXISTING and no COPY_ALLOWED: same-volume
+    // atomic publication, and an existing file/link is never replaced.
+    if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), 0) } == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::project_writer::WriterLock;
+
+    #[test]
+    fn custody_initialization_is_atomic_no_clobber_and_singly_linked() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join(".lekalo")).unwrap();
+        let target = root.path().join(super::super::custody::LOGICAL_PATH);
+        initialize_custody_pin(root.path(), b"complete pin").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"complete pin");
+        assert_eq!(
+            Fs::open(root.path())
+                .unwrap()
+                .read_file_opt(".lekalo", "change-history-pin.json", 1024)
+                .unwrap(),
+            Some(b"complete pin".to_vec())
+        );
+        assert!(initialize_custody_pin(root.path(), b"replacement").is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"complete pin");
+    }
 
     /// The writer lock denies a second holder while the first is alive.
     #[test]

@@ -147,7 +147,9 @@ file diff (byte-identity outside declared edit ranges, refusal instead
 of guessing for comment-adjacent or ambiguous layouts,
 `change.source-preservation-unavailable`, denied 3). Setting an
 UNCHANGED signature plans no byte edit at all — comments, quoting, and
-formatting stay verbatim; a changed signature performs proven bounded
+formatting stay verbatim. Every requested/resolved operation still keeps
+its audit row in original order, including no-op rows in mixed batches;
+a changed signature performs proven bounded
 per-item edits only, and member reorders refuse explicitly instead of
 reformatting the block. A field rename rewrites the entity's own
 governed `identity` references with it. `definition:add` can create a
@@ -254,6 +256,17 @@ holder still denies (`change.precondition-failed`). The rollback
 reports receipt state `rolled-back` — never `committed` — as a flat
 change-receipt document.
 
+History is bounded independently by **4,194,304 encoded bytes** and
+**4,096 records**. Before beginning a transaction the writer checks both
+limits and round-trips the entire prospective history through the same
+decoder used by receipt/replay. Capacity refuses with
+`change.precondition-failed` (denied 3), detail `history-byte-limit` or
+`history-record-limit`; all original sources, history rows, and custody
+remain untouched, with no journal/pending record created. Existing
+receipts/replays remain usable. There is no implicit rotation, deletion,
+or truncation of audit rows; an archival/continuation contract is not
+implemented in this increment.
+
 The canonical history is a tamper-evident chain: each record carries a
 digest over the previous record's digest, the project identity, the
 record's exact execution-intent digest, and its own pinned fields plus
@@ -281,7 +294,8 @@ custody** (`.lekalo/change-history-pin.json`, outside the disposable
 cache). The sealed writer journals and publishes this closed pin in the
 same transaction as sources/history; ordinary failure restores the old
 pin and committed recovery verifies it. It binds the exact accepted
-history bytes, project, record count, and chain tip. A ledger-only editor
+history bytes, project, record count, chain tip, and the first locally
+authorized sequence of its trust epoch. A ledger-only editor
 cannot mint it by substituting a different in-project file, rewriting
 after-digests to current bytes, fabricating a later successor, or
 emptying the source set (even relabeling the claim as no-op). Missing,
@@ -291,15 +305,54 @@ history. A removed ledger with surviving custody is not first-use.
 `cache clear` preserves this pin and the persistent `writer.lock` leaf;
 no-op mutating entries may create that lock without changing sources.
 
+### New checkout: initialize a local trust epoch
+
 The canonical audit/receipt store remains the history, not the custody
 pin: read-only lookup remains available after source drift or a checkout
-without local custody, but it never authorizes replay. A clone or backup
-that omits custody intentionally cannot claim a local commit/replay;
-restore the original trusted custody with the complete project backup,
-not by synthesizing it from the ledger. Editing/copying both the entire
-runtime custody and the ledger is outside the ledger-only trust boundary,
-like editing the canonical sources directly. This is local provenance,
-not cryptographic authentication against a full-project writer.
+without local custody, but it never authorizes replay. A normal source
+checkout intentionally omits the ignored `.lekalo/` pin. To perform NEW
+semantic work in that checkout, first review its canonical Model and
+history, compute the SHA-256 of the **exact history file bytes**, then run:
+
+```sh
+sha256sum lekalo/change-history.json
+lekalo change custody-init --project . --expect-history sha256:<64hex> --json
+# Now apply a new operation under a fresh idempotency key as usual.
+```
+
+`custody-init` is an explicit runtime-only initialization, not a change
+record or a claim that old transactions ran here. Under the shared writer
+lock and all sibling recovery barriers it validates the complete Model,
+closed history, project binding, and expected byte digest; it atomically
+creates (never replaces) the no-follow custody pin. Sources and history
+remain byte-identical. The schema-valid no-op receipt has no request/key,
+operations, files, history anchor, or transaction; no audit row is added.
+No history means ordinary first-use apply instead; it needs no init.
+
+All existing sequences become an immutable **audit-only prefix**. Their
+receipts stay readable, but they cannot authorize replay
+(`change.history-invalid`, detail `commit-custody-epoch`) or committed
+recovery (the recovery barrier remains), even if a forged prefix was
+fully rechained to match current file bytes.
+Subsequent locally committed rows alone acquire replay authority. Every
+append preserves the original epoch boundary, so a legitimate new commit
+cannot launder an imported claim. Restoring the original trusted pin
+with a complete matching project backup is the alternative when old
+local replay authority must be preserved; never synthesize that pin.
+
+Missing/malformed history, stale expectations, invalid Models, foreign
+project IDs, linked homes, held locks, and pending recovery refuse init.
+An existing pin (valid, stale, or malformed) is never overwritten or
+rebound by this command; investigate or restore it instead. A source
+checkout of a different revision should start without another revision's
+runtime state and explicitly initialize its own epoch, not copy a donor's
+pin. Valid legacy local pins remain accepted and upgrade on the next
+commit with the original first-local boundary of sequence 1.
+
+Editing/copying both the entire runtime custody and the ledger is outside
+the ledger-only trust boundary, like editing canonical sources directly.
+This is local provenance, not cryptographic authentication against a
+full-project writer.
 
 The raw idempotency key never enters any wire surface: only its
 `sha256:` digest is stored. Receipt states (`committed`, `replayed`,
