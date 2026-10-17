@@ -1,0 +1,7 @@
+{
+  "logical": false,
+  "name": "capability-underscore",
+  "scopeGrammar": false,
+  "capability": "scan_symbols",
+  "tokenOk": true
+}

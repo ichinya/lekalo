@@ -262,21 +262,45 @@ function fail(request, errorClass, code, message) {
 
 const request = JSON.parse(readRequest());
 
+// In-serve fault knobs (issue #106 review r4 #7): the same closed
+// vocabulary as the SDK reference templates, so the lifecycle recipe
+// matrix stays uniform across lanes. callback-error answers with a
+// closed error envelope (the callback-failure contract), callback-hang
+// stalls past every deadline, and log-verbose floods bounded stderr
+// without disturbing the run.
+if (fault("handler-crash")) {
+  throw new Error("callback exploded inside the control handler");
+}
+if (fault("callback-error")) {
+  fail(request, "infrastructure", "callback-error", "the handler deliberately refused");
+  process.exit(0);
+}
+if (fault("log-verbose")) {
+  for (let index = 0; index < 200; index += 1) process.stderr.write(`verbose lifecycle tick ${index}\n`);
+}
+
 if (fault("crash")) process.exit(3);
 if (fault("garbage")) {
   process.stdout.write("<this is not json>");
   process.exit(0);
 }
-if (fault("hang")) {
-  setTimeout(() => process.exit(0), 60_000);
-} else if (fault("noise")) {
-  const chatter = "x".repeat(1024);
-  const interval = setInterval(() => process.stderr.write(chatter), 1);
+if (fault("callback-hang")) {
+  // The handler stalls past every deadline; the host terminates.
   setTimeout(() => {
-    clearInterval(interval);
     respond(request, {});
     process.exit(0);
-  }, 100);
+  }, 60_000);
+} else if (fault("hang")) {
+  setTimeout(() => process.exit(0), 60_000);
+} else if (fault("noise")) {
+  // The stderr-bound class (issue #106 review r4 #7): one 2MB unbounded
+  // burst on stderr exactly like the SDK templates' noise knob — the
+  // battery's stderr bounds must refuse the run. The response itself
+  // stays the ordinary one, so the failure is attributable to the
+  // output bound, not a broken envelope (the old chatter branch
+  // answered describe with an empty payload, masking the class).
+  process.stderr.write("x".repeat(2_000_000));
+  respond(request, request.operation === "describe" ? { capabilities: capabilities(request.protocol_version) } : {});
 } else if (fault("boom")) {
   fail(request, "invalid", "fake-invalid", "injected operation failure");
 } else {

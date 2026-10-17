@@ -1,0 +1,13 @@
+{
+  "accept": true,
+  "name": "lint-era-describe",
+  "operation": "describe",
+  "protocolVersion": "0.6.4",
+  "request": {
+    "operation": "describe",
+    "project_root": ".",
+    "protocol": "lekalo.target/v1",
+    "protocol_version": "0.6.4",
+    "request_id": "req-ee21374a5b3a92737679d4380ffb5a050495e6f8907e5d29945543214e2280d6"
+  }
+}

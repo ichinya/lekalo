@@ -1,0 +1,7 @@
+{
+  "logical": false,
+  "name": "scope-dot-home-recursive",
+  "scopeGrammar": true,
+  "scopeOk": true,
+  "value": ".lekalo/generated/sdk-reference/**"
+}

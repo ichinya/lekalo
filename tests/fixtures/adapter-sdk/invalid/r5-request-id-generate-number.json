@@ -1,0 +1,1 @@
+{"dry_run":true,"ir_path":".lekalo/ir/planner.json","limits":{"max_output_bytes":8388608,"timeout_ms":60000},"operation":"generate","project_root":".","protocol":"lekalo.target/v1","protocol_version":"0.3.2","request_id":5,"target":"sdk-reference"}

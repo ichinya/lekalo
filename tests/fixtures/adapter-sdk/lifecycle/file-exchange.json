@@ -1,0 +1,6 @@
+{
+  "adapterMode": "cooperative",
+  "case": "file-exchange",
+  "adapter": "file-only",
+  "expectedTerminal": "ok"
+}

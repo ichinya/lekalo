@@ -1,0 +1,7 @@
+{
+  "logical": false,
+  "name": "capability-lint",
+  "scopeGrammar": false,
+  "capability": "lint.ai-readability",
+  "tokenOk": true
+}

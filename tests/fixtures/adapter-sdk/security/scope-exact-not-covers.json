@@ -1,0 +1,7 @@
+{
+  "covers": false,
+  "logical": true,
+  "name": "scope-exact-not-covers",
+  "path": "gen/other.txt",
+  "scope": "gen/out.txt"
+}

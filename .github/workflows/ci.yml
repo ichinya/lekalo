@@ -103,6 +103,14 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-workspace-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-provider-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-contracts.mjs
+      - name: Run the adapter-SDK schema, digest, and generator gates (issue #106)
+        # CI permits only the read-only generator --check; --write stays a
+        # local development action. The emitted outputs and records are
+        # pinned by committed digests, so drift fails here.
+        run: |
+          set -euo pipefail
+          node scripts/generate-adapter-sdk.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-adapter-sdk-contracts.mjs
       - name: Execute protocol semantic vectors through production Rust decoding
         run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites
@@ -159,6 +167,13 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+      # The standalone adapter-SDK Rust workspace (sdk/rust, its own
+      # [workspace]) is not covered by the root workspace (issue #106):
+      # its generated modules pin their layout with #[rustfmt::skip], so
+      # formatting can never fight the generator's byte --check.
+      - name: Rustfmt (adapter SDK workspace)
+        working-directory: sdk/rust
+        run: cargo fmt --all -- --check
 
   clippy:
     name: Clippy
@@ -169,6 +184,9 @@ jobs:
         with:
           components: clippy
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Clippy (adapter SDK workspace)
+        working-directory: sdk/rust
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   msrv:
     name: Rust 1.80.0 MSRV (${{ matrix.os }})
@@ -673,6 +691,29 @@ jobs:
       - name: Run the target adapter conformance suite against the reference adapter
         timeout-minutes: 10
         run: cargo run --locked -p lekalo-cli -- adapter test --profile strict --report junit --timeout-ms 60000 node tests/fixtures/target-protocol/fake-adapter.mjs --lekalo-adapter-variant fluent
+      - name: Run the adapter-SDK vector parity gate (issue #106)
+        # Four provisioned runtimes (Node ships with the runner, Go/PHP
+        # are provisioned above, Rust by the toolchain step) replay the
+        # shared corpus; a missing runtime is a failed setup, not a skip.
+        # The lane also runs the real per-language lifecycle lanes, the
+        # file-transport exchange, and the full-corpus production oracle
+        # (issue #106 review r2 #8/#10).
+        timeout-minutes: 15
+        run: node scripts/test-adapter-sdk-vectors.mjs --language all
+      - name: Run the adapter-SDK Go unit smoke (issue #106 review r2 #17)
+        # The Go SDK ships its own smoke suite beside the vectors runner
+        # so `go test ./...` exercises the runtime directly.
+        run: go test ./...
+        working-directory: sdk/go
+      - name: Run the adapter-SDK conformance and package gates (issue #106)
+        # The host binary was built above in this job, so the confined
+        # strict battery, the feature-limited examples, and the packed
+        # release-candidate verification run on every OS.
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          node scripts/test-adapter-sdk-conformance.mjs --language all --profile strict --repeats 3 --timeout-ms 60000
+          node scripts/test-adapter-sdk-packages.mjs --verify
       - name: Remove the CI-only AppArmor launcher prerequisite
         if: always() && runner.os == 'Linux' && steps.apparmor.outcome == 'success'
         timeout-minutes: 1

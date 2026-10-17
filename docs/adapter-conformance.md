@@ -17,9 +17,10 @@ Everything after the program path is passed to the adapter verbatim
 
 ## Checks and classes
 
-The closed catalog carries twenty-eight checks in fixed order (the
-five `transport.*` rows were added by issue #70 and the five
-`storage.*` rows by issue #117). Every check
+The closed catalog carries twenty-nine checks in fixed order (the
+five `transport.*` rows were added by issue #70, the five
+`storage.*` rows by issue #117, and `classification.preservation`
+by issue #87). Every check
 has one inherent failure class; a recorded failure carries the class of
 what actually failed, so a crash during a feature check is a
 process-class failure and a refusal during any exchange is a

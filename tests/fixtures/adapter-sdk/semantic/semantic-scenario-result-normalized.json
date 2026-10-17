@@ -1,0 +1,28 @@
+{
+  "expect": "accept",
+  "kind": "scenario-result",
+  "name": "semantic-scenario-result-normalized",
+  "normalizedFindings": [
+    {
+      "code": "scenario-missing",
+      "path": "src/main.ts"
+    },
+    {
+      "code": "scenario-missing",
+      "path": "src/util.ts"
+    }
+  ],
+  "result": {
+    "findings": [
+      {
+        "code": "scenario-missing",
+        "path": "src/util.ts"
+      },
+      {
+        "code": "scenario-missing",
+        "path": "src/main.ts"
+      }
+    ],
+    "status": "fail"
+  }
+}

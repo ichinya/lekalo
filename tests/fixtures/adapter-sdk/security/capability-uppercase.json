@@ -1,0 +1,7 @@
+{
+  "logical": false,
+  "name": "capability-uppercase",
+  "scopeGrammar": false,
+  "capability": "Scan.Symbols",
+  "tokenOk": false
+}

@@ -1,0 +1,6 @@
+{
+  "logical": false,
+  "name": "path-nfc-denied",
+  "requiresNfc": true,
+  "value": "café/x.ts"
+}
