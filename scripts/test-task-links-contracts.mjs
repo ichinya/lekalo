@@ -10,6 +10,7 @@
 // (default) fails closed when the built binary is missing.
 
 import { createRequire } from "node:module";
+import { ACCEPTED_M8_REGISTRY_FAMILIES } from "./lib/registry-union.mjs";
 import { cpSync, mkdtempSync, readFileSync, existsSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve } from "node:path";
@@ -105,16 +106,7 @@ for (const [name, path] of Object.entries(schemas)) {
     }
   }
   const added = successor.entries.filter((entry) => !predecessorIds.has(entry.id));
-  const landedFamilies = [
-    "format.",
-    "adoption.",
-    "portability.",
-    "worklog-changelog.",
-    "managed.",
-    "tasklink.",
-    "module-api.",
-    "watch.",
-  ];
+  const landedFamilies = ACCEPTED_M8_REGISTRY_FAMILIES;
   const foreign = added.filter(
     (entry) => !landedFamilies.some((family) => entry.id.startsWith(family)),
   );

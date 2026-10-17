@@ -66,6 +66,11 @@ pub const MANAGED_REGISTRY_BYTES: &[u8] =
 pub const TASKLINK_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
 
+/// The issue #93 union successor bytes (the same merged union registry
+/// as the other 0.8.0 family constants; adds the eight `search.*` rules).
+pub const SEARCH_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
 /// Why the embedded registry could not be trusted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RegistryError {
@@ -303,19 +308,33 @@ impl DiagnosticRegistry {
         REGISTRY.as_ref().map_err(Clone::clone)
     }
 
+    /// The issue #93 union successor: every 0.6.5 rule plus the closed
+    /// `search.*` family, never a runtime extension.
+    pub fn search() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    SEARCH_REGISTRY_BYTES,
+                    super::version::SEARCH_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
     pub fn for_version(version: &str) -> Result<&'static Self, RegistryError> {
         match version {
             REGISTRY_VERSION => Self::embedded(),
             super::version::SUCCESSOR_REGISTRY_VERSION => Self::successor(),
-            // All seven family constants name the merged 0.8.0 union
-            // registry; either accessor parses the same bytes.
+            // All eight family constants name the merged 0.8.0 union
+            // registry; any accessor parses the same bytes.
             v if v == super::version::FORMAT_REGISTRY_VERSION
                 || v == super::version::ADOPTION_REGISTRY_VERSION
                 || v == super::version::M8_REGISTRY_VERSION
                 || v == super::version::PILOT_REGISTRY_VERSION
                 || v == super::version::MODULE_REGISTRY_VERSION
                 || v == super::version::MANAGED_REGISTRY_VERSION
-                || v == super::version::TASKLINK_REGISTRY_VERSION =>
+                || v == super::version::TASKLINK_REGISTRY_VERSION
+                || v == super::version::SEARCH_REGISTRY_VERSION =>
             {
                 Self::module_successor()
             }

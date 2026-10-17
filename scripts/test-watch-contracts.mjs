@@ -7,7 +7,7 @@ import {readFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {assertRegistryUnion} from './lib/registry-union.mjs';
+import {ACCEPTED_M8_REGISTRY_FAMILIES,assertRegistryUnion} from './lib/registry-union.mjs';
 const require=createRequire(import.meta.url);
 assert.equal(require('ajv/package.json').version,'8.17.1');
 const Ajv=require('ajv/dist/2020').default;
@@ -61,7 +61,7 @@ invalid(validateEvent,{...events[2],result:{...result,rawSource:'secret'}});
 // only the live integrated families (not an arbitrary foreign namespace).
 const predecessor=JSON.parse(readFileSync(resolve(root,'contracts/diagnostic-registry.v0.6.5.json'),'utf8'));
 const successor=JSON.parse(readFileSync(resolve(root,'contracts/diagnostic-registry.v0.8.0.json'),'utf8'));
-const unionPolicy={families:['format.','adoption.','portability.','worklog-changelog.','managed.','module-api.','tasklink.','watch.'],ownPrefix:'watch.',ownCount:7};
+const unionPolicy={families:ACCEPTED_M8_REGISTRY_FAMILIES,ownPrefix:'watch.',ownCount:7};
 const union=registry=>assertRegistryUnion(predecessor,registry,unionPolicy);
 union(successor);
 for(const [mutate,reason] of [

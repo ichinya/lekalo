@@ -7,6 +7,7 @@
 // NODE_PATH / LEKALO_AJV_NODE_PATH.
 
 import { createRequire } from "node:module";
+import { ACCEPTED_M8_REGISTRY_FAMILIES } from "./lib/registry-union.mjs";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -90,7 +91,7 @@ if (registry.registry_version !== "0.8.0") fail("registry-version");
 if (registry.closed !== true) fail("registry-not-closed");
 const byId = new Map(predecessor.entries.map((entry) => [entry.id, entry]));
 const formatEntries = registry.entries.filter((entry) => entry.id.startsWith("format."));
-const landedFamilies = ["format.", "adoption.", "portability.", "worklog-changelog.", "managed.", "module-api.", "tasklink.", "watch."];
+const landedFamilies = ACCEPTED_M8_REGISTRY_FAMILIES;
 const additions = registry.entries.filter((entry) => !byId.has(entry.id));
 if (registry.entries.length !== predecessor.entries.length + additions.length || additions.length === 0) {
   fail("registry-not-a-union");

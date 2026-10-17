@@ -1,0 +1,535 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.search-index-schema@0.8.0",
+  "title": "Lekalo Search Index",
+  "description": "Closed durable snapshot of one issue #93 search index generation (dev.lekalo.search-index@0.8.0, wire lekalo/search-index/v0.8.0). Canonical bytes are compact UTF-8 JSON with byte-sorted object keys and no trailing LF; the `digest` is the SHA-256 over exactly those bytes of the snapshot with an empty digest field. Generations are immutable and stored under the governed cache custody (.lekalo/cache/search/** of the accepted lekalo.cache authority kind) under their bare 64-hex digest names; publication of `current.json` is atomic. Descriptions are bounded privacy-admitted metadata; raw source text, file bodies, prompt/tool output, and hidden lexical tokens are never persisted.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "recipe",
+    "digest",
+    "policyDigest",
+    "inputs",
+    "cards",
+    "postings",
+    "qualifiedIds"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/search-index/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.search-index@0.8.0"
+    },
+    "recipe": {
+      "const": "semantic-search/1"
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "policyDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "The admitted security/policy facts bound into every cursor; policy tightening rebinds pages coherently."
+    },
+    "inputs": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/inputPin"
+      }
+    },
+    "cards": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": {
+        "$ref": "#/$defs/card"
+      }
+    },
+    "postings": {
+      "type": "object",
+      "maxProperties": 1000000,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^\\S{1,192}$": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "qualifiedIds": {
+      "type": "object",
+      "maxProperties": 100000,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[A-Za-z0-9_][A-Za-z0-9_.:/#-]{0,255}$": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      }
+    },
+    "modelDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "The digest of the canonical Model compilation bytes this generation was built over: the Model partition pin of the warm-reuse/freshness oracle."
+    },
+    "admission": {
+      "$ref": "#/$defs/admissionConfig"
+    },
+    "coverage": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/coverageRow"
+      }
+    }
+  },
+  "$defs": {
+    "inputPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "path"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "diagnostics",
+            "error-contract",
+            "effects",
+            "observed-index",
+            "ownership-profile",
+            "requirements",
+            "trace",
+            "waivers"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9.@/-]*$",
+          "description": "The exact contract identity the producing manifest pinned, when it did; a freshness re-admission replays the identical admission semantics."
+        }
+      }
+    },
+    "card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "kind",
+        "confidence",
+        "freshness",
+        "completeness",
+        "provenance"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:/#-]*$"
+        },
+        "kind": {
+          "enum": [
+            "module",
+            "scalar",
+            "enum",
+            "value-object",
+            "entity",
+            "command",
+            "query",
+            "policy",
+            "event",
+            "effect",
+            "endpoint",
+            "scenario",
+            "target-binding",
+            "requirement",
+            "binding",
+            "diagnostic",
+            "waiver",
+            "gate"
+          ]
+        },
+        "subkind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "module": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "signatures": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/signatureRef"
+          }
+        },
+        "relations": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/relationWitness"
+          }
+        },
+        "effects": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/relationWitness"
+          }
+        },
+        "bindings": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/nativeBinding"
+          }
+        },
+        "locations": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/sourceSpan"
+          }
+        },
+        "requirements": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 192,
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+          }
+        },
+        "scenarios": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 192,
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+          }
+        },
+        "gates": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 192,
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+          }
+        },
+        "portability": {
+          "enum": [
+            "portable",
+            "target-specific"
+          ]
+        },
+        "visibility": {
+          "enum": [
+            "module",
+            "project"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "canonical",
+            "verified",
+            "extracted",
+            "inferred",
+            "unknown"
+          ]
+        },
+        "freshness": {
+          "enum": [
+            "current",
+            "stale",
+            "as-recorded",
+            "unknown"
+          ]
+        },
+        "completeness": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "unsupported",
+            "withheld"
+          ]
+        },
+        "omitted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provenance": {
+          "enum": [
+            "ir",
+            "effects",
+            "trace",
+            "requirements",
+            "observed",
+            "diagnostics",
+            "waivers"
+          ]
+        },
+        "ownership": {
+          "enum": [
+            "module",
+            "project",
+            "observed"
+          ],
+          "description": "Artifact ownership recorded by an admitted producer (module | project | observed) — a distinct typed property from Model visibility."
+        }
+      }
+    },
+    "signatureRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "id"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "input",
+            "output",
+            "error",
+            "type",
+            "external"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+        }
+      }
+    },
+    "relationWitness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation",
+        "other",
+        "direction",
+        "trust",
+        "confidence"
+      ],
+      "properties": {
+        "relation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192
+        },
+        "other": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "direction": {
+          "enum": [
+            "outgoing",
+            "incoming"
+          ]
+        },
+        "trust": {
+          "enum": [
+            "declared",
+            "detected",
+            "stale"
+          ]
+        },
+        "confidence": {
+          "enum": [
+            "canonical",
+            "verified",
+            "extracted",
+            "inferred",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "nativeBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "target",
+        "path",
+        "status"
+      ],
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "path": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9._/-]*$"
+        },
+        "symbol": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "status": {
+          "enum": [
+            "explicit",
+            "confirmed",
+            "inferred"
+          ]
+        }
+      }
+    },
+    "sourceSpan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "admissionConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "digest",
+        "maxPostings"
+      ],
+      "description": "The admitting manifest configuration the build ran under: path, canonical-bytes digest, and the posting cap it selected. Absent for a canonical-only build; a revoked or edited manifest is freshness drift.",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[A-Za-z0-9._-][A-Za-z0-9._/-]*$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "maxPostings": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "coverageRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "domain",
+        "state"
+      ],
+      "properties": {
+        "domain": {
+          "enum": [
+            "ir",
+            "effects",
+            "trace",
+            "requirements",
+            "bindings",
+            "diagnostics",
+            "waivers",
+            "errors",
+            "profiles"
+          ]
+        },
+        "state": {
+          "enum": [
+            "complete",
+            "partial",
+            "unknown",
+            "unsupported",
+            "withheld"
+          ]
+        }
+      }
+    }
+  }
+}

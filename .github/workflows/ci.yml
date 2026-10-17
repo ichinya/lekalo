@@ -100,6 +100,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-transport-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-openapi-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-run-history-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-search-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-workspace-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-provider-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-contracts.mjs
@@ -365,6 +366,16 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-run-history-cli.mjs
+      - name: Run the semantic search live and benchmark gates (issue #93)
+        # The comparison leg needs ripgrep, preinstalled on GitHub
+        # runners; the binary is the workspace build above. Both gates
+        # fail closed when their inputs are missing.
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-search-cli.mjs
+          node scripts/bench-search.mjs
       - name: Run the architecture profile contract gate (issue #84)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules

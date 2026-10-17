@@ -1,0 +1,315 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.search-query-schema@0.8.0",
+  "title": "Lekalo Search Query",
+  "description": "Closed normalized request grammar of the issue #93 semantic search service (dev.lekalo.search-query@0.8.0, wire lekalo/search-query/v0.8.0). Shared by the CLI and in-process consumers: `search` combines exact filters with deterministic lexical retrieval (optionally bounded-labeled fuzzy); `find` applies exact filters alone. Repeated values of one filter OR; different filters AND, evaluated before any lexical work. Query length is 1..512 Unicode scalar values with at most 32 normalized terms; page limits are 1..=100. A cursor is opaque bounded data bound to the normalized query, the policy digest, and the immutable index generation; it grants no read authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "recipe",
+    "mode",
+    "limit",
+    "filters"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/search-query/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.search-query@0.8.0"
+    },
+    "recipe": {
+      "const": "semantic-search/1"
+    },
+    "mode": {
+      "enum": [
+        "find",
+        "search"
+      ]
+    },
+    "fuzzy": {
+      "type": "boolean",
+      "description": "Opt-in bounded fuzzy tier (labeled lexical-fuzzy on hits); legal in search mode only."
+    },
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "description": "The lexical query; required in search mode, absent in find mode."
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "cursor": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "filters": {
+      "$ref": "#/$defs/filters"
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"
+    },
+    "selector": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:/#-]*$"
+    },
+    "logicalPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+    },
+    "filters": {
+      "type": "object",
+      "additionalProperties": false,
+      "unevaluatedProperties": false,
+      "properties": {
+        "ids": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "kinds": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "module",
+              "scalar",
+              "enum",
+              "value-object",
+              "entity",
+              "command",
+              "query",
+              "policy",
+              "event",
+              "effect",
+              "endpoint",
+              "scenario",
+              "target-binding",
+              "requirement",
+              "binding",
+              "diagnostic",
+              "waiver",
+              "gate"
+            ]
+          }
+        },
+        "modules": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "reads": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/selector"
+          }
+        },
+        "writes": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/selector"
+          }
+        },
+        "calls": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "requirements": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/selector"
+          }
+        },
+        "requirementSources": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9-]*$"
+          }
+        },
+        "bindingPaths": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[A-Za-z0-9._-][A-Za-z0-9._/-]*$"
+          }
+        },
+        "nativeSymbols": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/#@-]*$"
+          }
+        },
+        "targets": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/selector"
+          }
+        },
+        "types": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "inputTypes": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "outputTypes": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "errors": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/semanticId"
+          }
+        },
+        "relations": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "module-import",
+              "entity-field",
+              "value-object-field",
+              "event-payload",
+              "command-effect",
+              "effect-entity",
+              "scenario-covers",
+              "command-input",
+              "query-returns",
+              "query-reads",
+              "policy-applies-to",
+              "endpoint-invokes",
+              "effect-emits",
+              "derived-from",
+              "implements",
+              "binds",
+              "covers",
+              "verifies",
+              "evidences",
+              "binds-target"
+            ]
+          }
+        },
+        "relatedTo": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/selector"
+          }
+        },
+        "ownerships": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "module",
+              "project",
+              "observed"
+            ]
+          }
+        },
+        "portabilities": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "portable",
+              "target-specific"
+            ]
+          }
+        },
+        "profiles": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/selector"
+          }
+        },
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+          }
+        },
+        "waivers": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/#@\\\\-]*$"
+          }
+        },
+        "includeStale": {
+          "type": "boolean",
+          "description": "Add visibly stale rows; never excluded or sensitive rows."
+        },
+        "effectScope": {
+          "enum": [
+            "exact",
+            "overlapping"
+          ],
+          "description": "Exact admits only the named field; overlapping also admits entity-wide effects labeled possible field overlap. Legal with reads/writes only."
+        }
+      }
+    }
+  }
+}

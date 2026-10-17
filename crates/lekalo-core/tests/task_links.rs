@@ -1234,8 +1234,25 @@ fn registry_chain_keeps_pins_and_admits_tasklink_rules() {
     assert_eq!(embedded.len(), 514);
     assert_eq!(successor.len(), embedded.len() + 8);
     // Tasklink's eight rules live in the shared M8 union alongside
-    // subsequently landed families, including watch's seven rules.
-    assert_eq!(tasklink.len(), 599);
+    // subsequently landed families. Pin their presence, not the shared
+    // total, and preserve predecessor shapes below as the union grows.
+    for family in [
+        "format.",
+        "adoption.",
+        "portability.",
+        "worklog-changelog.",
+        "managed.",
+        "module-api.",
+        "search.",
+        "watch.",
+    ] {
+        assert!(
+            tasklink
+                .entries()
+                .any(|entry| entry.id().starts_with(family)),
+            "family {family} missing from the union successor"
+        );
+    }
     assert_eq!(
         tasklink
             .entries()

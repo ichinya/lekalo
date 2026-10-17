@@ -1,5 +1,12 @@
 // Additive diagnostic-family admission, never a milestone-wide fixed count.
 import assert from 'node:assert/strict';
+// One closed admission table for every family gate on the merged M8 line.
+// Counts remain family-owned; adding a sibling must not weaken predecessor
+// presence/shape checks or turn this into an arbitrary namespace allowlist.
+export const ACCEPTED_M8_REGISTRY_FAMILIES = Object.freeze([
+ 'format.','adoption.','portability.','worklog-changelog.','managed.',
+ 'module-api.','tasklink.','search.','watch.',
+]);
 export function assertRegistryUnion(predecessor,successor,{families,ownPrefix,ownCount}) {
  const before=new Map(predecessor.entries.map(entry=>[entry.id,entry]));
  const after=new Map(successor.entries.map(entry=>[entry.id,entry]));

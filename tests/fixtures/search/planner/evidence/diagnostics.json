@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "lekalo/search-diagnostics/v0.8.0",
+  "identity": "dev.lekalo.search-diagnostics@0.8.0",
+  "project": "planner",
+  "metadata": {
+    "findingCount": 2
+  },
+  "findings": [
+    {
+      "id": "focus-concurrency-001",
+      "rule": "planner.focus-concurrency",
+      "subject": "planner.focus_task",
+      "severity": "warning",
+      "disposition": "active"
+    },
+    {
+      "id": "status-fallback-002",
+      "rule": "notify.status-fallback",
+      "subject": "notify.get_status",
+      "severity": "info",
+      "disposition": "waived"
+    }
+  ]
+}

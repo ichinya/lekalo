@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.search-inputs-schema@0.8.0",
+  "title": "Lekalo Search Inputs",
+  "description": "Closed project-scoped input manifest of the issue #93 search service (dev.lekalo.search-inputs@0.8.0, wire lekalo/search-inputs/v0.8.0). Only explicitly supported typed producers are legal; every entry names the producer kind, the project-relative document path, and optional exact contract identity and digest expectations. A generic arbitrary JSON row is never searchable evidence. The manifest never selects a cache home, never overrides exclusions, never changes classification, and never confers source read authority. Paths are lexical logical paths: absolute paths and traversal segments are refused, never rewritten. Duplicate JSON keys are rejected before decoding.",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "projectId",
+    "inputs"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/search-inputs/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.search-inputs@0.8.0"
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]*$",
+      "description": "The exact project the manifest is scoped to; a mixed project manifest is search.input-invalid."
+    },
+    "inputs": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/input"
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxPostings": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    }
+  },
+  "$defs": {
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "path"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "diagnostics",
+            "error-contract",
+            "effects",
+            "observed-index",
+            "ownership-profile",
+            "requirements",
+            "trace",
+            "waivers"
+          ],
+          "description": "The closed typed producer kinds this issue admits."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$",
+          "description": "Project-relative logical path of the saved producer document."
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^dev\\.lekalo\\.[a-z0-9-]+(\\.[a-z0-9-]+)*@[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "description": "The exact contract identity the document must carry."
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "The exact SHA-256 over the document bytes; a mismatch is search.input-invalid."
+        }
+      }
+    }
+  }
+}

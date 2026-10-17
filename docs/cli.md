@@ -1325,6 +1325,7 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo expressions eval` | `lekalo expressions eval [OPTIONS] --vectors <FILE> <PATH>` | [reference](expressions.md) |
 | `lekalo expressions render` | `lekalo expressions render [OPTIONS] --target <TARGET> <PATH>` | [reference](expressions.md) |
 | `lekalo expressions validate` | `lekalo expressions validate [OPTIONS] <PATH>` | [reference](expressions.md) |
+| `lekalo find` | `lekalo find [OPTIONS]` | [reference](semantic-search.md) |
 | `lekalo format` | `lekalo format [OPTIONS] [PATH]` | [reference](format.md) |
 | `lekalo generate` | `lekalo generate [OPTIONS] [PROGRAM_ARGS]...` | [reference](orchestration.md) |
 | `lekalo graph` | `lekalo graph [OPTIONS] <COMMAND>` | [reference](graph.md) |
@@ -1422,6 +1423,11 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo requirements trace` | `lekalo requirements trace [OPTIONS] <PATH>` | [reference](requirements.md) |
 | `lekalo requirements validate` | `lekalo requirements validate [OPTIONS] <PATH>` | [reference](requirements.md) |
 | `lekalo scan` | `lekalo scan [OPTIONS] --target <TARGET> [PROGRAM_ARGS]...` | [reference](observed-mode.md) |
+| `lekalo search` | `lekalo search [OPTIONS] <QUERY>` | [reference](semantic-search.md) |
+| `lekalo search-index` | `lekalo search-index [OPTIONS] <COMMAND>` | [reference](semantic-search.md) |
+| `lekalo search-index build` | `lekalo search-index build [OPTIONS]` | [reference](semantic-search.md) |
+| `lekalo search-index status` | `lekalo search-index status [OPTIONS]` | [reference](semantic-search.md) |
+| `lekalo search-index update` | `lekalo search-index update [OPTIONS]` | [reference](semantic-search.md) |
 | `lekalo status` | `lekalo status [OPTIONS]` | [reference](doctor.md) |
 | `lekalo storage` | `lekalo storage [OPTIONS] <COMMAND>` | [reference](storage-engine.md) |
 | `lekalo storage capabilities` | `lekalo storage capabilities [OPTIONS] --projection <PATH> <PATH>` | [reference](storage-engine.md) |

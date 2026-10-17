@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "lekalo/trace-manifest/v0.2.16",
+  "identity": "dev.lekalo.trace-manifest@0.2.16",
+  "manifestId": "search-trace-aifhub-partial",
+  "projectRef": "planner",
+  "completeness": "partial",
+  "sourceRevision": "cccccccccccccccccccccccccccccccccccccccc",
+  "modelRef": {
+    "schemaVersion": "0.2.16",
+    "digest": "sha256:21b281bacf1edd5721906ec234f45df88e79841b278e2c5ea311acefe860180a"
+  },
+  "exportProfile": "requirement-to-scenario",
+  "nodes": [
+    {
+      "nodeId": "requirement:PLANNER-REQ-001",
+      "nodeKind": "requirement",
+      "requirementId": "PLANNER-REQ-001",
+      "externalRefs": [
+        {
+          "system": "aifhub",
+          "originalId": "PLANNER-REQ-001"
+        }
+      ]
+    },
+    {
+      "nodeId": "symbol:planner.refocus_task",
+      "nodeKind": "symbol",
+      "semanticId": "planner.refocus_task"
+    }
+  ],
+  "relations": [
+    {
+      "relationId": "sha256:b374643d50c0740f3131f393bf8346ff100127c25bac3568719ddfe315a2212c",
+      "relationKind": "implements",
+      "fromNode": "symbol:planner.refocus_task",
+      "toNode": "requirement:PLANNER-REQ-001",
+      "occurrence": "requirements.refocus_task",
+      "provenance": {
+        "origin": "declared",
+        "sourceSystem": "aifhub",
+        "sourceRevision": "cccccccccccccccccccccccccccccccccccccccc",
+        "sourceDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "recordedBy": "lekalo.core"
+      },
+      "confidence": "exact",
+      "status": "candidate",
+      "evidenceRefs": []
+    }
+  ],
+  "gaps": [
+    {
+      "gapKind": "missing-gate",
+      "status": "candidate",
+      "anchorNode": "requirement:PLANNER-REQ-001",
+      "expected": "aifhub.native.gate.focus"
+    }
+  ]
+}

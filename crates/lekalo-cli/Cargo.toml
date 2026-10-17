@@ -17,6 +17,7 @@ rustix = { workspace = true, features = ["process"] }
 
 [dev-dependencies]
 serde_json.workspace = true
+sha2.workspace = true
 lekalo-core.workspace = true
 
 [dependencies]
