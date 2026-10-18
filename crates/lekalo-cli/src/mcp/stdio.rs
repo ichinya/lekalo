@@ -165,8 +165,7 @@ impl Writer {
     /// frame policy and the largest correlated refusal at this cap.
     pub fn admits_id(&self, id: &serde_json::Value) -> bool {
         id_admitted(id)
-            && self.limit_refusal(id, "protocol-error", usize::MAX).len() + 1
-                <= self.max_response_bytes
+            && self.limit_refusal(id, "protocol-error", usize::MAX).len() <= self.max_response_bytes
     }
 
     /// The bound this writer enforces.
@@ -297,7 +296,7 @@ impl Writer {
             serde_json::Value::Null
         };
         let text = self.limit_refusal(&bounded_id, surface, encoded);
-        if text.len() + 1 <= self.max_response_bytes {
+        if text.len() < self.max_response_bytes {
             return self.send(&text);
         }
         // An unadmitted id or tiny cap must not black-hole a pending
@@ -306,7 +305,7 @@ impl Writer {
         let compact = serde_json::json!({"jsonrpc":"2.0", "id":null,
             "error":{"code":INVALID_REQUEST_CODE,"message":"mcp.request-limit"}})
         .to_string();
-        compact.len() + 1 <= self.max_response_bytes && self.send(&compact)
+        compact.len() < self.max_response_bytes && self.send(&compact)
     }
 }
 

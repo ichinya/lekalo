@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:623be07f6768ca2e8638845d58ac46c15ba1dfa47c8bdecce7ad99f1c8de3375",
+  "cliSourceDigest": "sha256:4162908f22a4db6ff67cc2cc4ef300fb790c5733180ee5c19cc20f78fc5b519d",
   "p0Pages": [
     {
       "page": "README.md",

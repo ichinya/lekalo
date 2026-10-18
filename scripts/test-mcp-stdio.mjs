@@ -33,7 +33,9 @@ if (ajvVersion !== "8.17.1") {
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs")], { cwd: root });
+// The live-line base ref is overridable (LEKALO_UNION_BASE) so a fixer
+// task can pin the merge-base its HEAD was cut from.
+execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs"), ...(process.env.LEKALO_UNION_BASE ? ["--base", process.env.LEKALO_UNION_BASE] : [])], { cwd: root });
 const fail = (reason, detail) => {
   process.stderr.write(`mcp-stdio ${reason}: ${JSON.stringify(detail ?? "")}\n`);
   process.exit(1);

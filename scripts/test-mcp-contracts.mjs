@@ -30,9 +30,10 @@ if (ajvVersion !== "8.17.1") {
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-// The same live-line union guard runs in every MCP gate, before any
+// The live-line union guard runs in every MCP gate, before any
 // schema/host qualification can mistake a stale registry for success.
-execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs")], { cwd: root });
+// The base ref is overridable (LEKALO_UNION_BASE) for merge-base pinning.
+execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs"), ...(process.env.LEKALO_UNION_BASE ? ["--base", process.env.LEKALO_UNION_BASE] : [])], { cwd: root });
 execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs"), "--selftest"], { cwd: root });
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
