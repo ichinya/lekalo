@@ -83,15 +83,132 @@ pub fn spawn_if_active(command: &mut Command) -> std::io::Result<Option<Child>> 
     })
 }
 
-/// Supervise the two read-only Git adapters through the same bounded seam.
-/// Pipes drain concurrently under a hard capture cap; cancellation, deadline,
-/// and output overflow terminate/reap the process tree before releasing work.
+/// Overrides precede the subcommand, where Git actually parses them.
+/// Optional locks alone do not prevent fsmonitor hooks, clean filters,
+/// submodule helpers, or partial-clone lazy fetches (r8 F1).
+const NEUTRAL_GIT_CONFIG: [(&str, &str); 10] = [
+    ("core.fsmonitor", "false"),
+    ("core.untrackedCache", "false"),
+    ("core.pager", ""),
+    ("core.commitGraph", "false"),
+    ("core.multiPackIndex", "false"),
+    ("submodule.recurse", "false"),
+    ("commit.gpgsign", "false"),
+    ("tag.gpgsign", "false"),
+    ("protocol.allow", "never"),
+    ("protocol.file.allow", "never"),
+];
+
+#[cfg(windows)]
+const NULL_FILE: &str = "NUL";
+#[cfg(not(windows))]
+const NULL_FILE: &str = "/dev/null";
+
+/// Admit the adapters' exact argument shapes, not just read-like command
+/// names: e.g. `diff --output=...` is a write even though `diff` is a read.
+fn admitted_git_args(args: &[&str]) -> bool {
+    let resolved = |revision: &str| {
+        revision == "HEAD" || lekalo_core::impact::input::is_revision_grammar(revision)
+    };
+    match args {
+        ["status", "--porcelain"] | ["ls-files", "--others", "--exclude-standard", "-z"] => true,
+        ["rev-parse", "--verify", "--quiet", revision] => {
+            let selector = revision.strip_suffix("^{commit}").unwrap_or(revision);
+            !selector.is_empty()
+                && !selector.starts_with('-')
+                && selector.len() <= 512
+                && !selector.chars().any(char::is_control)
+        }
+        ["diff", "--name-status", "--no-renames", "-z", one] => resolved(one),
+        ["diff", "--name-status", "--no-renames", "-z", one, two] => resolved(one) && resolved(two),
+        ["rev-list", "--max-count=1", "--parents", revision] => resolved(revision),
+        _ => false,
+    }
+}
+
+fn neutral_git(command: &Command) -> Command {
+    let mut rebuilt = Command::new(command.get_program());
+    rebuilt.arg("--no-pager");
+    for (key, value) in NEUTRAL_GIT_CONFIG {
+        rebuilt.arg("-c").arg(format!("{key}={value}"));
+    }
+    for key in ["core.hooksPath", "core.attributesFile"] {
+        rebuilt.arg("-c").arg(format!("{key}={NULL_FILE}"));
+    }
+    rebuilt
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_SYSTEM", NULL_FILE)
+        .env("GIT_CONFIG_GLOBAL", NULL_FILE)
+        .env("GIT_ATTR_NOSYSTEM", "1")
+        .env("GIT_NO_LAZY_FETCH", "1")
+        .env("GIT_ALLOW_PROTOCOL", "")
+        .env("GIT_TERMINAL_PROMPT", "0");
+    // Native Git on Windows needs the OS directory, not the launcher's
+    // Git config, tracing, repository selectors, or helper environment.
+    #[cfg(windows)]
+    if let Some(system_root) = std::env::var_os("SystemRoot") {
+        rebuilt.env("SystemRoot", system_root);
+    }
+    if let Some(directory) = command.get_current_dir() {
+        rebuilt.current_dir(directory);
+    }
+    rebuilt.stdin(std::process::Stdio::null());
+    rebuilt.stdout(std::process::Stdio::piped());
+    rebuilt.stderr(std::process::Stdio::piped());
+    rebuilt
+}
+
+/// Hermetic read-only Git adapter seam (r8 F1). In particular, Git can
+/// invoke clean/process filters even for name-only worktree comparisons.
+/// Discover only filter KEY NAMES with Git's non-executing config reader,
+/// then override every driver before the admitted fact command starts.
 pub fn git_output(command: &mut Command) -> io::Result<Output> {
+    let args: Option<Vec<&str>> = command.get_args().map(|arg| arg.to_str()).collect();
+    let args = args
+        .filter(|args| admitted_git_args(args))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "unadmitted Git read"))?;
+    let head = args[0];
+    let mut config = neutral_git(command);
+    config.args([
+        "config",
+        "--null",
+        "--name-only",
+        "--get-regexp",
+        r"^filter\..*\.(clean|smudge|process|required)$",
+    ]);
+    let filters = bounded_output(&mut config)?;
+    if !filters.status.success() && filters.status.code() != Some(1) {
+        return Err(io::Error::other("Git configuration unavailable"));
+    }
+    let keys = std::str::from_utf8(&filters.stdout)
+        .map_err(|_| io::Error::other("Git filter configuration unavailable"))?;
+    let mut rebuilt = neutral_git(command);
+    for key in keys.split('\0').filter(|key| !key.is_empty()) {
+        let (driver, _) = key
+            .rsplit_once('.')
+            .ok_or_else(|| io::Error::other("Git filter key"))?;
+        for suffix in ["clean=", "smudge=", "process=", "required=false"] {
+            rebuilt.arg("-c").arg(format!("{driver}.{suffix}"));
+        }
+    }
+    rebuilt.arg(head);
+    if head == "status" {
+        rebuilt.arg("--ignore-submodules=all");
+    } else if head == "diff" {
+        rebuilt.args(["--no-ext-diff", "--no-textconv", "--ignore-submodules=all"]);
+    }
+    rebuilt.args(&args[1..]);
+    bounded_output(&mut rebuilt)
+}
+
+/// Shared lifetime supervision, also exercised with deterministic process
+/// fixtures: drain both pipes under a hard cap and reap the entire tree.
+fn bounded_output(command: &mut Command) -> io::Result<Output> {
     const CAP: usize = 4 * 1024 * 1024;
     const TIMEOUT: Duration = Duration::from_secs(5);
-    // A Git-read grant is never permission to refresh/write the index,
-    // even if a launcher explicitly inherited GIT_OPTIONAL_LOCKS=1.
-    command.env("GIT_OPTIONAL_LOCKS", "0");
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -338,8 +455,9 @@ mod tests {
             let guard = WorkGuard::new(if cancel { 30_000 } else { 1500 });
             let worker_guard = guard.clone();
             let mut command = fixture_command("root", &marker);
-            let worker =
-                std::thread::spawn(move || with_guard(worker_guard, || git_output(&mut command)));
+            let worker = std::thread::spawn(move || {
+                with_guard(worker_guard, || bounded_output(&mut command))
+            });
             let deadline = Instant::now() + Duration::from_secs(5);
             while (!marker.exists() || !leaf.exists()) && Instant::now() < deadline {
                 std::thread::sleep(Duration::from_millis(10));
@@ -367,8 +485,135 @@ mod tests {
         let scratch = tempfile::tempdir().unwrap();
         let mut command = fixture_command("flood", &scratch.path().join("unused"));
         let started = Instant::now();
-        assert!(git_output(&mut command).is_err());
+        assert!(bounded_output(&mut command).is_err());
         assert!(started.elapsed() < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn the_git_seam_neutralizes_repository_configured_helpers() {
+        // omp r8 F1: with a hostile repository config present, the seam
+        // must not let Git execute it. A configured fsmonitor hook (the
+        // reviewer's exact vector) is inert under `-c core.fsmonitor=false`.
+        let scratch = tempfile::tempdir().unwrap();
+        let repo = scratch.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        assert!(Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(&repo)
+            .status()
+            .unwrap()
+            .success());
+        let mut command = Command::new("git");
+        command
+            .current_dir(&repo)
+            .args(["status", "--porcelain"])
+            .env("GIT_OPTIONAL_LOCKS", "1")
+            .env("GIT_CONFIG_GLOBAL", scratch.path().join("global.ini"))
+            .env("GIT_CONFIG_SYSTEM", scratch.path().join("system.ini"))
+            .env("HOME", scratch.path())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        std::fs::write(
+            scratch.path().join("global.ini"),
+            "[core]\n\tpager = hostile\n",
+        )
+        .unwrap();
+        let output = git_output(&mut command).expect("read-only status must succeed");
+        assert!(
+            output.status.success(),
+            "git status must succeed hermetically"
+        );
+        assert!(
+            output.stdout.is_empty(),
+            "a clean repo has no porcelain rows"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_configured_fsmonitor_hook_never_executes_under_the_seam() {
+        // The reviewer's concrete vector (omp r8 F1): repository-configured
+        // `core.fsmonitor` executes a native binary on every `status`, even
+        // with optional locks disabled. Under the neutralized seam the
+        // marker the "hook" would write must stay absent.
+        let scratch = tempfile::tempdir().unwrap();
+        let repo = scratch.path().join("repo");
+        let marker = scratch.path().join("fsmonitor-marker");
+        std::fs::create_dir_all(&repo).unwrap();
+        assert!(Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(&repo)
+            .status()
+            .unwrap()
+            .success());
+        let hook = scratch.path().join("fake-fsmonitor");
+        std::fs::write(
+            &hook,
+            format!("#!/bin/sh\necho x > '{}\'\nsleep 30\n", marker.display()),
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(
+            repo.join(".git/config"),
+            format!("[core]\n\tfsmonitor = {}\n", hook.display()),
+        )
+        .unwrap();
+        std::fs::write(repo.join("tracked.txt"), "x\n").unwrap();
+        assert!(Command::new("git")
+            .arg("add")
+            .arg("tracked.txt")
+            .current_dir(&repo)
+            .status()
+            .unwrap()
+            .success());
+        let mut command = Command::new("git");
+        command
+            .current_dir(&repo)
+            .args(["status", "--porcelain"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        let output = git_output(&mut command).expect("read-only status must succeed");
+        assert!(output.status.success());
+        assert!(
+            !marker.exists(),
+            "the repository fsmonitor hook must never start"
+        );
+    }
+
+    #[test]
+    fn non_read_only_git_heads_are_not_admitted_by_the_seam() {
+        // Admission is a runtime refusal, including release builds.
+        let scratch = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(scratch.path().join("repo/.git")).unwrap();
+        let mut command = Command::new("git");
+        command
+            .current_dir(scratch.path().join("repo"))
+            .args(["push", "--dry-run"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        assert_eq!(
+            git_output(&mut command).unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert!(!admitted_git_args(&[
+            "diff",
+            "--output=outside.txt",
+            "HEAD"
+        ]));
+        assert!(!admitted_git_args(&[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--option^{commit}"
+        ]));
+        assert!(admitted_git_args(&[
+            "diff",
+            "--name-status",
+            "--no-renames",
+            "-z",
+            "HEAD"
+        ]));
     }
 
     #[test]

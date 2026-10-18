@@ -129,6 +129,11 @@ enum HeaderOutcome {
         method: String,
         params: Option<Value>,
     },
+    /// A structurally valid request whose scalar id exceeds the
+    /// correlation bound (r8 omp F6): answered with a NULL-id refusal
+    /// on the session's error budget. The id is deliberately NOT carried:
+    /// it is never echoed (sanitize-by-shape).
+    Overlong,
     /// An invalid request envelope: answered with `-32600` when an id is
     /// known, dropped silently when the frame is a notification.
     Invalid { id: Value },
@@ -141,6 +146,12 @@ fn header_from_value(document: &Value) -> HeaderOutcome {
         Some(Value::Number(number)) => Some(Value::Number(number.clone())),
         _ => None,
     };
+    if scalar_id
+        .as_ref()
+        .is_some_and(|id| !super::stdio::id_admitted(id))
+    {
+        return HeaderOutcome::Overlong;
+    }
     let method = document.get("method").and_then(Value::as_str);
     let has_id = id_member.is_some();
     match (method, has_id) {
@@ -164,7 +175,12 @@ fn header_from_value(document: &Value) -> HeaderOutcome {
         (Some(method), true) => {
             // The envelope must be exactly JSON-RPC 2.0, and the id must
             // be a scalar; explicit null ids and structured ids are
-            // invalid requests (r2 F14).
+            // invalid requests (r2 F14). An admitted scalar id is ALSO
+            // bounded (r8 omp F6): a valid-but-huge id would consume the
+            // whole response budget in both the reply and its refusal
+            // twin, so beyond the admission bound the request is refused
+            // with a NULL-id `-32600` — never a
+            // silently unanswered request.
             let jsonrpc_ok = document.get("jsonrpc").and_then(Value::as_str) == Some("2.0");
             if !jsonrpc_ok || scalar_id.is_none() {
                 return HeaderOutcome::Invalid {
@@ -177,8 +193,9 @@ fn header_from_value(document: &Value) -> HeaderOutcome {
                     id: scalar_id.unwrap_or(Value::Null),
                 };
             }
+            let id = scalar_id.unwrap_or(Value::Null);
             HeaderOutcome::Request(Incoming {
-                id: scalar_id.unwrap_or(Value::Null),
+                id,
                 method: method.to_owned(),
                 params: document.get("params").cloned(),
             })
@@ -308,6 +325,15 @@ fn process_frame(
             handle_notification(session, &method, params);
             return true;
         }
+        HeaderOutcome::Overlong => {
+            // A bounded refusal ships (the id is not echoed) and the
+            // session continues: the host cannot correlate on that id,
+            // but the protocol outcome is explicit — never a black-
+            // holed request, never a dropped session (r8 omp F6).
+            return session
+                .writer
+                .send_error(&Value::Null, INVALID_REQUEST, "mcp.request-limit");
+        }
         HeaderOutcome::Invalid { id } => {
             session
                 .writer
@@ -315,6 +341,11 @@ fn process_frame(
             return true;
         }
     };
+    if !session.writer.admits_id(&incoming.id) {
+        return session
+            .writer
+            .send_error(&Value::Null, INVALID_REQUEST, "mcp.request-limit");
+    }
     // The lifecycle gate: before `notifications/initialized`, the only
     // served requests are `initialize` and `ping` (hosts probe during the
     // handshake); every other method is refused.
@@ -747,6 +778,12 @@ fn drain_while_waiting(
                     if let Some(HeaderOutcome::Request(incoming)) = header {
                         session.writer.send_error(
                             &incoming.id,
+                            INVALID_REQUEST,
+                            "mcp.request-limit",
+                        );
+                    } else if let Some(HeaderOutcome::Overlong) = header {
+                        session.writer.send_error(
+                            &Value::Null,
                             INVALID_REQUEST,
                             "mcp.request-limit",
                         );
@@ -1371,12 +1408,22 @@ fn build_resource_checked(
         .projects
         .get(&scope.project)
         .ok_or_else(|| refused(scope, "project", "unregistered"))?;
-    let before = execution::admitted_inputs_for(entry)
+    let allow_git = session.catalog.core.admits_git_changed_mode();
+    let before = execution::admit_project_inputs(entry, allow_git)
         .ok_or_else(|| refused(scope, "inputs", "unavailable"))?;
-    let document = build_resource(session, scope, family, qualifier)?;
-    let after = execution::admitted_inputs_for(entry)
-        .ok_or_else(|| refused(scope, "inputs", "unavailable"))?;
-    if before != after {
+    let document = build_resource(session, scope, family, qualifier, &before.git)?;
+    let after = execution::admitted_inputs_for(entry, allow_git).ok_or_else(|| {
+        execution::refusal_envelope(
+            "lekalo_inspect",
+            Some(&scope.project),
+            scope.group.as_deref(),
+            lekalo_core::mcp::diagnostic::snapshot_stale_set("model"),
+            "unavailable",
+            "snapshot-stale",
+            "mcp.snapshot-stale",
+        )
+    })?;
+    if before.inputs != after {
         return Err(execution::refusal_envelope(
             "lekalo_inspect",
             Some(&scope.project),
@@ -1411,6 +1458,7 @@ fn build_resource(
     scope: &UriScope,
     family: Family,
     qualifier: Option<&str>,
+    git: &lekalo_core::doctor::GitFacts,
 ) -> Result<String, String> {
     let entry = session
         .catalog
@@ -1530,11 +1578,10 @@ fn build_resource(
             // Git admission as the tool surface — no `git` process is ever
             // reachable from a read of this family without the explicit
             // changed-mode grant.
-            let result = if session.catalog.core.admits_git_changed_mode() {
-                crate::run_status(project, None)
-            } else {
-                crate::run_status_without_git(project)
-            };
+            let result = crate::run_status_with_git(
+                lekalo_core::loader::LoadSelection { project },
+                git.clone(),
+            );
             match result {
                 result @ lekalo_core::DomainResult::Valid { .. } => {
                     let raw = result.to_json_string();

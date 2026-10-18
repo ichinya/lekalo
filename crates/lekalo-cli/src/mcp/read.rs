@@ -376,16 +376,9 @@ fn open_no_follow(path: &Path) -> Result<std::fs::File, ReadRefusal> {
     use std::os::unix::fs::OpenOptionsExt;
     std::fs::OpenOptions::new()
         .read(true)
-        .custom_flags(libc_like_nofollow())
+        .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
         .open(path)
         .map_err(|_| ReadRefusal::Unreadable)
-}
-
-#[cfg(unix)]
-fn libc_like_nofollow() -> i32 {
-    // O_NOFOLLOW = 0o400000 on Linux and macOS (0x20000); no libc crate
-    // dependency is admitted, so the constant is spelled once here.
-    0o400000
 }
 
 #[cfg(not(unix))]
@@ -396,6 +389,21 @@ fn open_no_follow(path: &Path) -> Result<std::fs::File, ReadRefusal> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn the_final_component_open_refuses_a_symlink_on_this_platform() {
+        // r8 F5: test the syscall itself, bypassing the component walk.
+        // rustix supplies the target's real O_NOFOLLOW (the Linux
+        // literal is O_NOCTTY on macOS and would follow this link).
+        let temporary = tempfile::tempdir().expect("tempdir");
+        let root = temporary.path();
+        std::fs::write(root.join("real.json"), b"{}").expect("write");
+        std::os::unix::fs::symlink(root.join("real.json"), root.join("link.json"))
+            .expect("symlink");
+        assert!(open_no_follow(&root.join("link.json")).is_err());
+        assert!(open_no_follow(&root.join("real.json")).is_ok());
+    }
 
     #[test]
     fn admitted_reads_stay_inside_the_grant() {

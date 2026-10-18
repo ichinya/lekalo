@@ -13,6 +13,29 @@ use serde_json::Value;
 use super::policy;
 use super::version::TIMEOUT_MS_CEILING;
 
+/// The schema's value semantics for its `type:"integer"` members (r8
+/// omp F4, LOW): every mathematical integer in range is admitted —
+/// including the integral floating spellings (`5000.0`, `3e0`) that
+/// checked JSON decoding produces as `Number`s with `f64` parts — not
+/// only the `u64`-backed spellings `as_u64` accepts. Fractional,
+/// non-finite, negative, and out-of-range values still refuse, exactly
+/// like the published schema (Ajv integer type + `minimum`/`maximum`).
+fn as_integer(value: &Value) -> Option<u64> {
+    if let Some(unsigned) = value.as_u64() {
+        return Some(unsigned);
+    }
+    let real = value.as_f64()?;
+    if !real.is_finite() || real < 0.0 || real.fract() != 0.0 {
+        return None;
+    }
+    // Within u64 reach (the schema bounds are far below 2^64); the cast
+    // is exact because the fractional part is proven zero.
+    if real >= 18446744073709551616.0 {
+        return None;
+    }
+    Some(real as u64)
+}
+
 /// The exact seven read tool names, in catalog order.
 pub const TOOL_NAMES: [&str; 7] = [
     "lekalo_inspect",
@@ -354,9 +377,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
     let timeout_ms = match arguments.get("timeoutMs") {
         None => None,
         Some(value) => Some(
-            value
-                .as_u64()
-                .ok_or(RequestError::Params(ParamsError { field: "timeoutMs" }))?,
+            as_integer(value).ok_or(RequestError::Params(ParamsError { field: "timeoutMs" }))?,
         ),
     };
     if let Err(reason) = policy::admit_id(&project_id) {
@@ -473,7 +494,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
             let depth = match arguments.get("depth") {
                 None => None,
                 Some(value) => {
-                    let depth = value.as_u64().ok_or(field("depth"))?;
+                    let depth = as_integer(value).ok_or(field("depth"))?;
                     if depth == 0 || depth > 256 {
                         return Err(field("depth"));
                     }
@@ -580,7 +601,7 @@ pub fn parse_request(tool: &str, arguments: &Value) -> Result<ToolRequest, Reque
             };
             let budget = arguments
                 .get("budget")
-                .and_then(|value| value.as_u64())
+                .and_then(as_integer)
                 .ok_or(field("budget"))?;
             if budget == 0 || budget > 1_000_000 {
                 return Err(field("budget"));
@@ -791,6 +812,40 @@ pub enum RequestError {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn integral_json_number_spellings_reach_the_typed_grammar() {
+        // r8 omp F4: the schema's `type:"integer"` is a value semantic;
+        // checked decoding produces integral `f64`-backed spellings
+        // (`5000.0`, `3e0`, `1000.0`) the parser must admit like Ajv.
+        let context = |budget: &Value| {
+            parse_request(
+                "lekalo_context",
+                &json!({"projectId": "p", "mode": "symbol", "symbol": "planner.focus_task", "budget": budget}),
+            )
+        };
+        assert!(context(&json!(5000.0)).is_ok(), "integral decimal spelling");
+        assert!(context(&json!(5000)).is_ok(), "plain integer spelling");
+        assert!(context(&json!(5.5)).is_err(), "fractional value");
+        assert!(context(&json!(-5000.0)).is_err(), "negative value");
+        assert!(context(&json!(5e100)).is_err(), "out-of-range reach");
+        let impact = |depth: &Value| {
+            parse_request(
+                "lekalo_impact",
+                &json!({"projectId": "p", "mode": "symbol", "symbol": "planner.focus_task", "depth": depth}),
+            )
+        };
+        assert!(impact(&json!(3e0)).is_ok(), "integral exponent spelling");
+        assert!(impact(&json!(3.5)).is_err(), "fractional depth");
+        let inspect = |timeout: &Value| {
+            parse_request(
+                "lekalo_inspect",
+                &json!({"projectId": "p", "symbol": "planner.focus_task", "timeoutMs": timeout}),
+            )
+        };
+        assert!(inspect(&json!(1000.0)).is_ok(), "integral timeout spelling");
+        assert!(inspect(&json!(1000.5)).is_err(), "fractional timeout");
+    }
 
     #[test]
     fn catalog_is_the_exact_seven_read_tools() {

@@ -38,6 +38,7 @@ use lekalo_core::DomainResult;
 use super::catalog::ServerCatalog;
 use super::read;
 use super::snapshot::{domain_digest, snapshot_ref, Inputs};
+use super::work;
 
 /// A completed tool execution: the closed output-contract envelope and
 /// whether the transport must mark it as an error result.
@@ -915,16 +916,23 @@ fn pin_artifacts(root: &std::path::Path, inputs: &mut Inputs) -> Option<()> {
 /// the bindings-home leg are admitted-input pins — a lock byte edit or
 /// a generated/removed bindings home cannot hide behind an unchanged
 /// ref. A load failure is `None`; the caller fails closed.
-pub(crate) fn admitted_inputs_for(entry: &super::catalog::ProjectEntry) -> Option<Inputs> {
-    admit_project_inputs(entry).map(|admitted| admitted.inputs)
+pub(crate) fn admitted_inputs_for(
+    entry: &super::catalog::ProjectEntry,
+    allow_git: bool,
+) -> Option<Inputs> {
+    admit_project_inputs(entry, allow_git).map(|admitted| admitted.inputs)
 }
 
-struct AdmittedProject {
-    inputs: Inputs,
+pub(crate) struct AdmittedProject {
+    pub inputs: Inputs,
     trust: lekalo_core::doctor::TrustInputs,
+    pub git: lekalo_core::doctor::GitFacts,
 }
 
-fn admit_project_inputs(entry: &super::catalog::ProjectEntry) -> Option<AdmittedProject> {
+pub(crate) fn admit_project_inputs(
+    entry: &super::catalog::ProjectEntry,
+    allow_git: bool,
+) -> Option<AdmittedProject> {
     if super::work::should_stop() {
         return None;
     }
@@ -962,6 +970,50 @@ fn admit_project_inputs(entry: &super::catalog::ProjectEntry) -> Option<Admitted
     pin_governed_tree(&entry.root, ".lekalo/cache", &mut inputs)?;
     pin_governed_tree(&entry.root, ".lekalo/consumer/bindings", &mut inputs)?;
     pin_artifacts(&entry.root, &mut inputs)?;
+    // omp r8 F2: the Git facts the granted operations serve are admitted
+    // inputs like model/lock/cache bytes. A git change during evaluation
+    // (e.g. an empty local commit between the pre- and post-read pins)
+    // must move the snapshot, never hide behind an unchanged ref. The
+    // digest is the bounded fact triple itself — never a repository hash.
+    if work::should_stop() {
+        return None;
+    }
+    let git_facts = if allow_git {
+        crate::doctor_git::git_facts(&entry.root)
+    } else {
+        lekalo_core::doctor::GitFacts {
+            state: lekalo_core::doctor::GitState::Unavailable,
+            commit: None,
+            dirty: None,
+        }
+    };
+    inputs.insert(
+        "git:state".to_owned(),
+        domain_digest("git-state", format!("{:?}", git_facts.state).as_bytes()),
+    );
+    match git_facts.state {
+        lekalo_core::doctor::GitState::Available => {
+            let commit = git_facts
+                .commit
+                .as_deref()
+                .filter(|commit| lekalo_core::impact::input::is_revision_grammar(commit))?;
+            inputs.insert(
+                "git:commit".to_owned(),
+                domain_digest("git-commit", commit.as_bytes()),
+            );
+        }
+        // No repository / unusable Git is a pinned absence: the status
+        // projection degrades to typed unavailable facts and must not
+        // change identity behind an unchanged ref either.
+        lekalo_core::doctor::GitState::NotARepository
+        | lekalo_core::doctor::GitState::Unavailable => {
+            inputs.insert("git:commit".to_owned(), "absent".to_owned());
+        }
+    }
+    inputs.insert(
+        "git:dirty".to_owned(),
+        domain_digest("git-dirty", format!("{:?}", git_facts.dirty).as_bytes()),
+    );
     // The full doctor reads these two finite adapter-state dependencies.
     // Admit them before evaluation, pin exact content AND file identity,
     // and pass the same bytes into the check rather than reopening paths.
@@ -987,7 +1039,11 @@ fn admit_project_inputs(entry: &super::catalog::ProjectEntry) -> Option<Admitted
         inventory: admit_adapter(lekalo_core::doctor::TrustInputs::INVENTORY_FILE)?,
         revocations: admit_adapter(lekalo_core::doctor::TrustInputs::REVOCATIONS_FILE)?,
     };
-    Some(AdmittedProject { inputs, trust })
+    Some(AdmittedProject {
+        inputs,
+        trust,
+        git: git_facts,
+    })
 }
 
 /// The stale-snapshot refusal: authorized input bytes changed during
@@ -1011,6 +1067,18 @@ fn run(
     scope: &Scope,
     family: &Family,
 ) -> Result<ToolOutput, String> {
+    run_checked(catalog, request, scope, family, || {})
+}
+
+/// The checkpoint permits deterministic mutation between admission and
+/// evaluation in regression tests without timing races or a runtime knob.
+fn run_checked(
+    catalog: &ServerCatalog,
+    request: &ToolRequest,
+    scope: &Scope,
+    family: &Family,
+    after_admission: impl FnOnce(),
+) -> Result<ToolOutput, String> {
     if let ToolRequest::TraceExport { manifest_ref, .. } = request {
         return run_trace_export(catalog, scope, family, request.tool_name(), manifest_ref);
     }
@@ -1030,7 +1098,8 @@ fn run(
     let project = Some(entry.selector.clone());
     // Fail closed when the admitted inputs cannot even be pinned before
     // the read (r2 F7): an unpinnable candidate is never evaluated.
-    let Some(admitted_before) = admit_project_inputs(entry) else {
+    let Some(admitted_before) = admit_project_inputs(entry, catalog.core.admits_git_changed_mode())
+    else {
         return Ok(refusal(
             family,
             request.tool_name(),
@@ -1041,6 +1110,7 @@ fn run(
             "mcp.backend-unavailable",
         ));
     };
+    after_admission();
     let result = match request {
         ToolRequest::Inspect {
             symbol, include, ..
@@ -1176,17 +1246,18 @@ fn run(
             profile_id,
             ..
         } => run_target_status(
-            catalog,
             project.clone(),
             target_id.as_deref(),
             profile_id.as_deref(),
             &admitted_before.trust,
+            &admitted_before.git,
         ),
         ToolRequest::TraceExport { .. } => unreachable!("matched above"),
     };
     // The admitted inputs are re-checked after the run; a change or a
     // re-check failure discards the candidate (r2 F7, fail closed).
-    let Some(inputs_after) = admitted_inputs_for(entry) else {
+    let Some(inputs_after) = admitted_inputs_for(entry, catalog.core.admits_git_changed_mode())
+    else {
         return Ok(stale(family, request.tool_name(), scope));
     };
     let mut inputs = Inputs::new();
@@ -1247,11 +1318,11 @@ fn run(
 /// the named panels (a filtered check set with its own derived verdict)
 /// instead of being validated and discarded.
 fn run_target_status(
-    catalog: &ServerCatalog,
     project: Option<String>,
     target_id: Option<&str>,
     profile_id: Option<&str>,
     trust_inputs: &lekalo_core::doctor::TrustInputs,
+    git: &lekalo_core::doctor::GitFacts,
 ) -> DomainResult {
     const PANELS: [&str; 4] = ["lock", "inventory", "trust", "profiles"];
     let mut selected: Vec<&str> = Vec::new();
@@ -1276,15 +1347,9 @@ fn run_target_status(
     // `ready` panel against the schema's checks.minItems=1.
     let doctor = selected.iter().any(|panel| *panel != "lock");
     let result = if doctor {
-        crate::run_doctor_for_mcp(
-            project,
-            catalog.core.admits_git_changed_mode(),
-            trust_inputs,
-        )
-    } else if catalog.core.admits_git_changed_mode() {
-        crate::run_status(project, None)
+        crate::run_doctor_for_mcp(project, git, trust_inputs)
     } else {
-        crate::run_status_without_git(project)
+        crate::run_status_with_git(LoadSelection { project }, git.clone())
     };
     if selected.is_empty() {
         return result;
@@ -1580,6 +1645,91 @@ mod tests {
             assert_eq!(value["status"], "denied");
             assert_eq!(value["diagnostics"][0]["registry_version"], "0.8.0");
         }
+    }
+
+    #[test]
+    fn git_changes_at_the_evaluation_checkpoint_refuse_as_stale() {
+        use std::process::{Command, Output};
+        fn copy(source: &std::path::Path, target: &std::path::Path) {
+            std::fs::create_dir_all(target).unwrap();
+            for entry in std::fs::read_dir(source).unwrap() {
+                let entry = entry.unwrap();
+                let next = target.join(entry.file_name());
+                if entry.file_type().unwrap().is_dir() {
+                    copy(&entry.path(), &next);
+                } else {
+                    std::fs::copy(entry.path(), next).unwrap();
+                }
+            }
+        }
+        let scratch = tempfile::Builder::new()
+            .prefix("mcp-r8-")
+            .tempdir_in(".")
+            .unwrap();
+        copy(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/inspect/planner"),
+            scratch.path(),
+        );
+        let git = |args: &[&str]| {
+            let output: Output = Command::new("git")
+                .args([
+                    "-c",
+                    "user.name=MCP",
+                    "-c",
+                    "user.email=mcp@example.invalid",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .current_dir(scratch.path())
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git(&["init", "--quiet"]);
+        git(&["-c", "core.autocrlf=false", "add", "."]);
+        git(&["commit", "--quiet", "-m", "fixture"]);
+        let selector = scratch.path().file_name().unwrap().to_str().unwrap();
+        let mut catalog = ServerCatalog::single(selector, scratch.path());
+        catalog.core = catalog.core.with_git_changed_mode(true);
+        let request = lekalo_core::mcp::tools::parse_request(
+            "lekalo_target_status",
+            &json!({"projectId":"project"}),
+        )
+        .unwrap();
+        let output = run_checked(
+            &catalog,
+            &request,
+            &Scope {
+                project: "project",
+                group: None,
+            },
+            &family_of("lekalo_target_status"),
+            || {
+                git(&[
+                    "commit",
+                    "--quiet",
+                    "--allow-empty",
+                    "-m",
+                    "changed during evaluation",
+                ]);
+            },
+        )
+        .unwrap();
+        let document: Value = serde_json::from_str(&output.envelope).unwrap();
+        assert_eq!(
+            document["failure"]["failureClass"], "snapshot-stale",
+            "{document}"
+        );
+        assert!(
+            document.get("result").is_none(),
+            "no mixed-snapshot candidate ships"
+        );
     }
 
     #[test]

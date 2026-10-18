@@ -11,10 +11,15 @@
 //!
 //! PEM markers, credential headers, bare bearer schemes, drive-letter
 //! and UNC paths, rooted POSIX directory spellings, home-relative paths,
-//! and common private dotfiles refuse. Numeric-index JSON pointers such
-//! as `/definitions/20` stay available; absolute API routes may refuse
-//! because bytes alone cannot distinguish them from host paths. Relative
-//! project paths and scheme-qualified URLs remain available.
+//! and the conventional credential-bearing dotfile class refuse. Path
+//! boundaries are fail-closed (r8): any byte that cannot continue a
+//! relative path segment is a boundary, and a filesystem scheme
+//! (`file:`, `ssh:`) is a filesystem reference — only hierarchical
+//! `http(s)://`/`lekalo://` URLs stay exempt. Numeric-index JSON
+//! pointers such as `/definitions/20` stay available; absolute API
+//! routes may refuse because bytes alone cannot distinguish them from
+//! host paths. Relative project paths and scheme-qualified URLs remain
+//! available.
 //!
 //! A closed Cyrillic/Greek lookalike map covers common homoglyph keys;
 //! this is NOT a general Unicode normalization or an exhaustive secret
@@ -61,7 +66,7 @@ const NEEDLES: [(&str, &str); 8] = [
 /// below (`contains_drive_letter_path`, `contains_unc_path`,
 /// `contains_posix_root_path`, r4 F1/r6 F4), which the segment list
 /// could never cover.
-const PRIVATE_PATH_NEEDLES: [&str; 13] = [
+const PRIVATE_PATH_NEEDLES: [&str; 25] = [
     "/home/",
     "/root/",
     "/users/",
@@ -76,11 +81,32 @@ const PRIVATE_PATH_NEEDLES: [&str; 13] = [
     ".aws",
     ".gnupg",
     ".config",
+    // omp r8 F4 + devin r8 F1 (same class): the conventional
+    // credential-bearing dotfile class refuses, not only an enumerated
+    // prefix list. The needles below cover the conventional credential
+    // stores (`.pgpass`, `.my.cnf`, `.kube/`, `.docker/`, `.gitconfig`,
+    // `.boto`, `.s3cfg`, `.dockercfg`, `.terraformrc`, `.vault-token`,
+    // `.azure/`, `.git/config`); the `.git` stem also covers the git
+    // config spelling. The closed map stays reviewed by hand — a
+    // Existing substring refusals remain conservative; the component
+    // matcher below also covers the unlisted hidden-file class.
     ".netrc",
     ".npmrc",
     ".pypirc",
     ".git-credentials",
+    ".gitconfig",
     ".keystore",
+    ".pgpass",
+    ".my.cnf",
+    ".kube",
+    ".docker",
+    ".git",
+    ".boto",
+    ".s3cfg",
+    ".dockercfg",
+    ".terraformrc",
+    ".vault-token",
+    ".azure",
 ];
 
 /// The closed confusable (homoglyph) fold (r6 F7): the Cyrillic and
@@ -209,8 +235,13 @@ fn contains_unc_path(folded: &[u8]) -> bool {
             continue;
         }
         let ordinary = |byte: Option<&u8>| {
+            // r8 (omp F3): the span test is byte-local, so a quote byte
+            // (or its serialized escape) cannot continue a real server
+            // or share segment — the former span test let a following
+            // quote truncate the match and ship the share name.
             byte.is_some_and(|byte| {
-                !matches!(byte, b'\\' | b'/' | b'"' | b'\'') && !byte.is_ascii_whitespace()
+                !matches!(byte, b'\\' | b'/' | b'"' | b'\'' | b'>' | b'<')
+                    && !byte.is_ascii_whitespace()
             })
         };
         let mut cursor = index;
@@ -322,7 +353,7 @@ fn contains_posix_root_path(folded: &[u8]) -> bool {
         let mut end = index + 1;
         while end < folded.len()
             && !folded[end].is_ascii_whitespace()
-            && !matches!(folded[end], b'"' | b'\'' | b')' | b']' | b',' | b'}')
+            && !matches!(folded[end], b'"' | b'\'' | b')' | b']' | b',' | b'}' | b'>')
         {
             end += 1;
         }
@@ -339,34 +370,60 @@ fn contains_posix_root_path(folded: &[u8]) -> bool {
     false
 }
 
-/// Common assignment/punctuation boundaries for both UNC and POSIX paths.
-/// A scheme colon in `https://...` is not a boundary; an assignment colon
-/// in `path:/var/...` is. Relative project segments remain non-boundaries.
+/// Fail-closed path-boundary semantics (r8, omp F3 + devin F1). The
+/// former positive list of "characters that may open a path" kept
+/// lagging behind real prose (markdown code spans, angle quotes, and
+/// ordinary punctuation let rooted paths ship). The rule is now the
+/// negation: a path candidate is boundary-rooted when the byte before
+/// it CANNOT continue a relative path segment — i.e. anything that is
+/// not a segment character (`alnum . - _ ~`). Only the first slash of
+/// a separator run needs checking; revisiting the run would be quadratic.
+/// Only exact hierarchical web/project schemes are exempt.
 fn path_boundary(bytes: &[u8], index: usize) -> bool {
     if index == 0 {
         return true;
     }
     let previous = bytes[index - 1];
+    if matches!(previous, b'/' | b'\\') {
+        return false;
+    }
     if previous == b':' {
+        // Scheme-colon exemption (r8: omp F3/devin F1): a real
+        // hierarchical WEB URL (`http`/`https`/the project's own
+        // `lekalo` scheme, followed by `//`) is not a filesystem
+        // reference. A bare `file:/etc/shadow` colon, and any other
+        // scheme spelling, stays a boundary — `file`/`ssh`/`ftp` name
+        // host paths, so their colon must neutralize the check.
         let prefix = &bytes[..index - 1];
         let start = prefix
             .iter()
             .rposition(|byte| !byte.is_ascii_alphanumeric() && !matches!(byte, b'+' | b'-' | b'.'))
             .map_or(0, |at| at + 1);
-        // Preserve the explicit benign URL controls, not arbitrary
-        // `path:` assignments masquerading as a scheme.
-        if matches!(
-            &prefix[start..],
-            b"http" | b"https" | b"lekalo" | b"file" | b"ftp" | b"ssh"
-        ) {
+        if bytes.get(index + 1) == Some(&b'/')
+            && bytes.get(index + 2).is_some_and(|byte| {
+                !byte.is_ascii_whitespace() && !matches!(byte, b'/' | b'\\' | b'"' | b'\'')
+            })
+            && matches!(&prefix[start..], b"http" | b"https" | b"lekalo")
+        {
             return false;
         }
+        return true;
     }
-    previous.is_ascii_whitespace()
-        || matches!(
-            previous,
-            b'"' | b'\'' | b'(' | b'[' | b'{' | b'=' | b':' | b';' | b','
-        )
+    !matches!(previous, b'.' | b'-' | b'_' | b'~') && !previous.is_ascii_alphanumeric()
+}
+
+/// A hidden-file component is a private-path class, not an ever-growing
+/// list of credential-product names. Dots inside normal identifiers,
+/// versions, filenames, and decimal numbers are not component openers.
+fn contains_dotfile_path(bytes: &[u8]) -> bool {
+    bytes.iter().enumerate().any(|(index, byte)| {
+        *byte == b'.'
+            && bytes
+                .get(index + 1)
+                .is_some_and(|next| next.is_ascii_alphanumeric() || *next == b'_')
+            && (path_boundary(bytes, index)
+                || index > 0 && matches!(bytes[index - 1], b'/' | b'\\'))
+    })
 }
 
 /// Screen one outgoing envelope. `Ok(())` ships; `Err(reason)` refuses
@@ -376,7 +433,7 @@ fn path_boundary(bytes: &[u8], index: usize) -> bool {
 pub fn screen_envelope(envelope: &str) -> Result<(), &'static str> {
     // The transport bounds response size. Scan its complete byte span:
     // fixed overlap cannot preserve arbitrary compound keys/paths.
-    screen_bytes(envelope.as_bytes())?;
+    screen_bytes(envelope.as_bytes(), false)?;
     // Serialized whitespace/quotes are not client-visible boundaries.
     // Screen every decoded JSON string too, including member names, so
     // real newlines/tabs and Unicode escapes cannot hide a private path.
@@ -384,11 +441,11 @@ pub fn screen_envelope(envelope: &str) -> Result<(), &'static str> {
         let mut pending = vec![&document];
         while let Some(value) = pending.pop() {
             match value {
-                serde_json::Value::String(text) => screen_bytes(text.as_bytes())?,
+                serde_json::Value::String(text) => screen_bytes(text.as_bytes(), true)?,
                 serde_json::Value::Array(items) => pending.extend(items),
                 serde_json::Value::Object(members) => {
                     for (key, value) in members {
-                        screen_bytes(key.as_bytes())?;
+                        screen_bytes(key.as_bytes(), true)?;
                         pending.push(value);
                     }
                 }
@@ -399,7 +456,13 @@ pub fn screen_envelope(envelope: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn screen_bytes(bytes: &[u8]) -> Result<(), &'static str> {
+/// `decoded` marks the per-JSON-string pass: value spans there are the
+/// COMPLETE assigned value, so an empty quoted prefix followed by
+/// material is a nonempty assignment (r8 omp F3). The raw serialized
+/// envelope keeps the lenient closer rule — its spans run into the
+/// envelope's own quote/brace structure, and the decoded pass owns the
+/// completeness judgement.
+fn screen_bytes(bytes: &[u8], decoded: bool) -> Result<(), &'static str> {
     // One folded copy carries every matcher (r3 F1): the confusable
     // fold (r6 F7) is applied before the case fold, so `pаssword`
     // (Cyrillic `а`) and `authorization:` spelled with a homoglyph are
@@ -427,10 +490,11 @@ fn screen_bytes(bytes: &[u8]) -> Result<(), &'static str> {
     if contains_drive_letter_path(&folded)
         || contains_unc_path(&folded)
         || contains_posix_root_path(&folded)
+        || contains_dotfile_path(&folded)
     {
         return Err("private-absolute-path");
     }
-    if contains_assigned_token(&translated) {
+    if contains_assigned_token(&translated, decoded) {
         return Err("assigned-credential");
     }
     Ok(())
@@ -500,7 +564,7 @@ fn quote_equivalent(text: &[u8], index: usize) -> Option<usize> {
 /// rule and ship). An isolated opener carries no material. Once content
 /// precedes another quote boundary, fail closed even for an unterminated
 /// embedded assignment; the enclosing JSON quote is not proof of emptiness.
-fn carries_token(bytes: &[u8]) -> bool {
+fn carries_token(bytes: &[u8], decoded: bool) -> bool {
     if let Some(width) = quote_equivalent(bytes, 0) {
         let opener = &bytes[..width];
         let mut cursor = width;
@@ -510,9 +574,25 @@ fn carries_token(bytes: &[u8]) -> bool {
             // escaped content, not a delimiter. The other quote kind
             // is always content (r7: a leading apostrophe is not empty).
             if bytes[cursor..].starts_with(opener) {
-                return cursor > width;
+                // Quoted material always carries content.
+                if cursor > width {
+                    return true;
+                }
+                // An empty quoted prefix establishes emptiness only for
+                // the COMPLETE assignment (r8 omp F3): in a decoded
+                // string, `password=""R8CANARY` still assigns the
+                // trailing material as the value. A structural closer
+                // (`}`/`]`/`,`) after the quoted value terminates the
+                // assignment — an empty JSON-string member stays empty.
+                // In the raw serialized span the bytes after the closer
+                // are the envelope's own structure; the decoded pass
+                // owns this judgement.
+                if !decoded {
+                    return false;
+                }
+                let tail = trim_space(&bytes[cursor + opener.len()..]);
+                return !tail.is_empty() && !matches!(tail[0], b',' | b'}' | b']');
             }
-            // Only an EXACT immediate closer can establish emptiness.
             // Once material precedes another quote, fail closed too:
             // it may be the enclosing JSON string's delimiter after an
             // unterminated embedded assignment (an existing refusal).
@@ -580,7 +660,7 @@ fn credential_key(key: &[u8], raw_key: &[u8]) -> bool {
         || key.windows(3).skip(1).any(|part| part == b"key")
 }
 
-fn contains_assigned_token(translated: &[u8]) -> bool {
+fn contains_assigned_token(translated: &[u8], decoded: bool) -> bool {
     // Keep this a byte scan: unrelated non-ASCII text must not disable
     // credential matching elsewhere in the envelope.
     let text: Vec<u8> = translated.iter().map(u8::to_ascii_lowercase).collect();
@@ -621,7 +701,7 @@ fn contains_assigned_token(translated: &[u8]) -> bool {
         };
         cursor += 1;
         let value = trim_space(&text[cursor..]);
-        if !is_token_count(raw_key, quoted, separator, value) && carries_token(value) {
+        if !is_token_count(raw_key, quoted, separator, value) && carries_token(value, decoded) {
             return true;
         }
     }
@@ -889,6 +969,108 @@ mod tests {
             "/modules/2/id",
             "lekalo/modules/planner/commands.yaml",
             "and//or",
+        ] {
+            assert_eq!(
+                screen_envelope(&serde_json::json!({"description": control}).to_string()),
+                Ok(()),
+                "{control}"
+            );
+        }
+    }
+
+    #[test]
+    fn r8_boundaries_filesystem_urls_and_dotfile_peers_refuse() {
+        // omp F3/devin F1: markdown code spans, angle quotes, and
+        // ordinary prose punctuation cannot open a live rooted path.
+        for prefix in [
+            "`", "<", ">", "|", "!", ")", "]", "}", "%", "&", "#", "@", "$", "^", "*", "?",
+        ] {
+            for path in ["/var/log/auth.log", r"\\server\share\x"] {
+                let description = format!("{prefix}{path}");
+                let envelope = serde_json::json!({"description": description}).to_string();
+                assert_eq!(
+                    screen_envelope(&envelope),
+                    Err("private-absolute-path"),
+                    "{description}"
+                );
+            }
+        }
+        // Filesystem URLs are filesystem references, not benign web
+        // URLs: the scheme colon does not exempt the rooted-path
+        // matchers, and a bare scheme colon (no `//`) is a boundary.
+        for spelling in [
+            "file:///var/log/auth.log",
+            "file:///opt/company/keys/service.pem",
+            "file://internal-server/private-share/salaries.txt",
+            "file:/etc/shadow",
+            "ssh:/etc/passwd",
+            "x|/etc/shadow",
+            "nothttp://etc/shadow",
+            "https:///etc/shadow",
+        ] {
+            let envelope = serde_json::json!({"description": spelling}).to_string();
+            assert_eq!(
+                screen_envelope(&envelope),
+                Err("private-absolute-path"),
+                "{spelling}"
+            );
+        }
+        // An empty quoted prefix is emptiness only for the COMPLETE
+        // assignment: material after the closer is the assigned value.
+        for assignment in [
+            r#"password=""R8CANARY"#,
+            "password=''R8CANARY",
+            r#"{"password":""R8CANARY}"#,
+            "{\"password\":''R8CANARY}",
+        ] {
+            let envelope = serde_json::json!({"description": assignment}).to_string();
+            assert_eq!(
+                screen_envelope(&envelope),
+                Err("assigned-credential"),
+                "{assignment}"
+            );
+        }
+        // omp F4: the conventional credential-bearing dotfile class
+        // refuses, not only the enumerated five.
+        for dotfile in [
+            ".pgpass",
+            ".my.cnf",
+            ".kube/config",
+            ".docker/config.json",
+            ".gitconfig",
+            ".boto",
+            ".s3cfg",
+            ".dockercfg",
+            ".terraformrc",
+            ".vault-token",
+            ".azure/config",
+            ".git/config",
+            ".credentials",
+            ".gitcookies",
+            ".curlrc",
+            "nested/.service-auth/settings",
+        ] {
+            let envelope = serde_json::json!({"description": dotfile}).to_string();
+            assert_eq!(
+                screen_envelope(&envelope),
+                Err("private-absolute-path"),
+                "{dotfile}"
+            );
+        }
+        // Controls: benign hierarchical web URLs, complete empty
+        // assignments, and relative-path continuations stay available.
+        for control in [
+            "https://x.test/a/b",
+            "http://example.com/path",
+            "lekalo://planner/symbol/x",
+            r#"password="""#,
+            "{\"password\":\"\"}",
+            "x./var relative",
+            "a-b/c",
+            "a_b/c",
+            "planner.focus_task",
+            "model.v0.8.0.json",
+            "dev.lekalo.inspect@0.8.0",
         ] {
             assert_eq!(
                 screen_envelope(&serde_json::json!({"description": control}).to_string()),

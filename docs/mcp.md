@@ -140,14 +140,24 @@ admitted bytes instead of reopening their paths. `lekalo_target_status`
 spawns `git` only when the catalog admits `git.changedMode`; without
 admission it serves typed unavailable Git facts. Both Git-read adapters
 force `GIT_OPTIONAL_LOCKS=0`, overriding launcher settings: a read grant
-never permits an implicit `.git/index` refresh write. Secret-shaped tool
+never permits an implicit `.git/index` refresh write. The bounded Git
+seam clears inherited Git configuration/environment, disables fsmonitor,
+hooks, pagers, external diff/textconv, submodule recursion and lazy fetch,
+and denies all transport protocols. It discovers filter names through
+Git's non-executing config reader and disables clean/smudge/process
+filters before a fact read; repository-configured helpers cannot execute.
+The admitted snapshot includes the exact Git state, commit and dirty
+facts consumed by status/doctor and the targets resource. Their post-read
+recheck refuses drift as `mcp.snapshot-stale`; without a Git grant these
+pins are typed unavailable and no Git process starts. Secret-shaped tool
 or resource output refuses with `mcp.sensitive-output` rather than
 redacting contract members silently: the screening pass is
 spelling-canonical — it folds ASCII case and a closed set of common
 Cyrillic/Greek lookalikes, removes `_`/`-` symmetrically, and recognizes
 plain, single and JSON-escaped quoted assignments. Value delimiters
-must match the opening quote's kind and escape context; a leading
-opposite quote cannot disguise a nonempty credential as empty. Credential stems
+must match the opening quote's kind and escape context; neither a leading
+opposite quote nor an empty quoted prefix followed by material can
+disguise a nonempty credential as empty. Credential stems
 anywhere in assigned identifier keys refuse, including plurals and
 unlisted compounds (`secrets`, `mysecret`, `secret_value`,
 `aws_access_key_id`) and compound `key` names in snake/kebab/camel and
@@ -169,9 +179,14 @@ five-segment vocabulary. Numeric-index JSON pointers such as
 because their bytes are indistinguishable from host paths. Common
 private dotfile spellings (`.env`, `.ssh`, `.aws`, `.gnupg`, `.config`,
 `.netrc`, `.npmrc`, `.pypirc`, `.git-credentials`, `.keystore`)
-refuse anywhere, including Windows separator spellings. UNC and POSIX
-matchers share assignment/punctuation boundaries, and decoded JSON
-strings are screened too: escaped newlines/tabs cannot hide a path.
+refuse anywhere, including Windows separator spellings. Hidden-file
+components also refuse as a class, including `.pgpass`, `.my.cnf`,
+`.kube/`, `.docker/`, and unlisted peers; dots within ordinary identifiers,
+filenames and versions stay benign. UNC and POSIX matchers treat every
+non-segment byte as a boundary, including code spans, angle brackets and
+pipes. Filesystem schemes (`file:/...`, `file:///...`) are not benign URL
+exceptions. Decoded JSON strings are screened too: escaped newlines/tabs
+cannot hide a path.
 Relative project paths and benign URLs (`https://...`, `lekalo://...`)
 remain available except for the
 established broader `/home/`, `/root/`, `/users/`, and dotfile needles:
@@ -191,8 +206,14 @@ calls (a timed-out worker keeps holding its slot until it finishes, so
 the bound counts real in-flight work), **16 queued requests** (excess
 frames refuse with `mcp.request-limit` on their own ids while cancel and
 EOF retain priority), 128 semantic roots, page size 100 (ceiling 500), 256 watched
-identities, nesting depth 64. Caller parameters and catalog
-configuration may reduce a limit, never raise one. Deadlines answer the
+identities, nesting depth 64. Request ids are limited to 512 **encoded**
+JSON bytes and must reserve room for a correlated output-limit refusal
+inside the effective response cap. An unadmitted id gets a bounded null-id
+`-32600 mcp.request-limit` refusal before execution; the session remains
+usable unless even that compact response cannot fit. Integral numeric
+spellings such as `5000.0` and `3e0` follow the input schemas' integer
+value semantics; fractional/out-of-range values refuse. Caller parameters
+and catalog configuration may reduce a limit, never raise one. Deadlines answer the
 typed `mcp.timeout` tool error while the client is still waiting;
 abandoned workers cannot deliver a late success.
 `notifications/cancelled` identifies the request by `requestId` (the
@@ -267,6 +288,7 @@ cargo test --locked -p lekalo-cli --test mcp
 cargo test --locked -p lekalo-cli --test mcp_review
 cargo test --locked -p lekalo-cli --test mcp_r5
 cargo test --locked -p lekalo-cli --test mcp_r7
+cargo test --locked -p lekalo-cli --test mcp_r8
 cargo test --locked -p lekalo-cli --bin lekalo mcp::work::tests
 ```
 
@@ -283,6 +305,12 @@ CI treats that as a failure, never silently accepts. The r7 wire tests
 also inventory a Git-enabled session (including index bytes/mtime),
 refuse aliased adapter state, and pin trust-state changes; the worker
 unit tests prove child/descendant termination and bounded pipe capture.
+The r8 tests prove hostile-helper controls really execute outside MCP but
+not inside it, pin Git-only changes, refuse boundary/dotfile disclosures
+on both surfaces, and exercise numeric spellings and request-id budgets.
+A deterministic evaluation checkpoint also proves mid-read Git drift
+returns snapshot-stale rather than a mixed candidate. Unix no-follow flags
+come from the target-aware rustix constants with a symlink-open regression.
 The union matrix removes each landed family against all eleven family
 gates, and the classification gate resolves every local schema reference,
 including otherwise-unused definitions.

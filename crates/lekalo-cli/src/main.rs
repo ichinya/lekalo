@@ -5427,24 +5427,21 @@ fn run_doctor(project: Option<String>, fix: bool, traces: Vec<String>) -> Domain
     lekalo_core::doctor::report(&selection, &git, &options)
 }
 
-/// MCP's selected adapter/capability panels need the actual doctor-kind
-/// checks, but Git remains behind the trusted changed-mode catalog grant.
-/// This reuses the ordinary read-only doctor report with unavailable Git
-/// facts when that grant is absent (issue #33 r4 F4).
+/// MCP's selected panels consume the exact pre-admitted Git and trust
+/// inputs; they never recollect facts outside the snapshot (r8 F2).
 fn run_doctor_for_mcp(
     project: Option<String>,
-    allow_git: bool,
+    git: &lekalo_core::doctor::GitFacts,
     trust_inputs: &lekalo_core::doctor::TrustInputs,
 ) -> DomainResult {
     let selection = selection_for(&project);
-    let git = doctor_git_facts_with(&selection, allow_git);
     let options = lekalo_core::doctor::Options {
         kind: lekalo_core::doctor::model::ReportKind::Doctor,
         phase: None,
         fix: false,
         traces: Vec::new(),
     };
-    lekalo_core::doctor::report_with_trust_inputs(&selection, &git, &options, Some(trust_inputs))
+    lekalo_core::doctor::report_with_trust_inputs(&selection, git, &options, Some(trust_inputs))
 }
 
 /// `lekalo status`: the freshness panel plus the exact revisions.
@@ -5522,9 +5519,8 @@ fn run_status_envelope(project: Option<String>) -> DomainResult {
     run_status_with_git(selection, git)
 }
 
-/// The shared status assembly over pre-collected Git facts; the no-git
-/// MCP projection hands in the typed unavailable facts without spawning
-/// any process.
+/// Shared status assembly over pre-collected Git facts. MCP passes its
+/// admitted facts (typed unavailable without a grant), never a fresh read.
 fn run_status_with_git(
     selection: LoadSelection,
     git: lekalo_core::doctor::GitFacts,
@@ -5534,20 +5530,6 @@ fn run_status_with_git(
         ..lekalo_core::doctor::Options::default()
     };
     lekalo_core::doctor::report(&selection, &git, &options)
-}
-
-/// The MCP no-git status projection (issue #33, F9): the exact status
-/// envelope with Git facts degraded to `unavailable`; no `git` process
-/// is spawned from the MCP surface unless the catalog explicitly admits
-/// changed-mode Git access.
-pub(crate) fn run_status_without_git(project: Option<String>) -> DomainResult {
-    let selection = selection_for(&project);
-    let git = lekalo_core::doctor::GitFacts {
-        state: lekalo_core::doctor::GitState::Unavailable,
-        commit: None,
-        dirty: None,
-    };
-    run_status_with_git(selection, git)
 }
 
 /// `lekalo readiness --phase PHASE`: the phase-gated readiness report.

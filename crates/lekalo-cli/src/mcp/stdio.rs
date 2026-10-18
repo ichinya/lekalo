@@ -15,6 +15,20 @@ use lekalo_core::mcp::version::{MAX_FRAME_BYTES, MAX_NESTING_DEPTH};
 /// The JSON-RPC interstitial-error code the writer's own refusals use.
 const INVALID_REQUEST_CODE: i64 = -32600;
 
+/// The request-ID ceiling in encoded JSON bytes (r8 F6). The writer
+/// additionally reserves space for the correlated output-limit refusal
+/// within the effective response cap, which may be smaller than this.
+pub const MAX_REQUEST_ID_BYTES: usize = 512;
+
+/// Measure the serialized spelling, not decoded length: JSON escapes
+/// can expand a short string sixfold. Structured and null ids refuse.
+pub(crate) fn id_admitted(id: &serde_json::Value) -> bool {
+    matches!(
+        id,
+        serde_json::Value::String(_) | serde_json::Value::Number(_)
+    ) && serde_json::to_vec(id).is_ok_and(|bytes| bytes.len() <= MAX_REQUEST_ID_BYTES)
+}
+
 /// Why one incoming frame failed admission or parsing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FrameError {
@@ -147,6 +161,14 @@ impl Writer {
         }
     }
 
+    /// A request may execute only when its id fits BOTH the ordinary
+    /// frame policy and the largest correlated refusal at this cap.
+    pub fn admits_id(&self, id: &serde_json::Value) -> bool {
+        id_admitted(id)
+            && self.limit_refusal(id, "protocol-error", usize::MAX).len() + 1
+                <= self.max_response_bytes
+    }
+
     /// The bound this writer enforces.
     #[allow(dead_code)]
     #[cfg(test)]
@@ -175,7 +197,10 @@ impl Writer {
     /// be able to correlate the refusal to its pending call) and cannot
     /// exceed the bound because its own bytes are checked before the
     /// write; a refusal envelope over the bound itself is dropped
-    /// without a write (nothing partial ships).
+    /// without a write (nothing partial ships). With the request-id
+    /// admission bound (r8 omp F6) the drop arm is unreachable for
+    /// admitted ids: both the envelope and its refusal twin reserve
+    /// their id bytes within the effective bound.
     pub fn send_result(&self, id: &serde_json::Value, result: serde_json::Value) -> bool {
         let frame = self.envelope_frame(
             id,
@@ -234,27 +259,10 @@ impl Writer {
         })
     }
 
-    /// Measure the complete encoded frame (payload + LF) against the
-    /// effective bound and either write it or substitute the compact
-    /// typed `mcp.output-limit` refusal. The refusal carries the request
-    /// id (bounded: an unspellable id degenerates to null by the same
-    /// rule the envelope applies, r2 F5), the registered diagnostic
-    /// identity, and the byte counts — never the refused payload. A bound
-    /// too small for even the refusal drops the write entirely: nothing
-    /// partial ever ships.
-    fn write_measured(&self, frame: String, surface: &str, id: &serde_json::Value) -> bool {
-        let encoded = frame.len() + 1;
-        if encoded <= self.max_response_bytes {
-            return self.send(&frame);
-        }
-        let bounded_id = match id {
-            serde_json::Value::String(text) => serde_json::Value::String(text.clone()),
-            serde_json::Value::Number(number) => serde_json::Value::Number(number.clone()),
-            _ => serde_json::Value::Null,
-        };
-        let refusal = serde_json::json!({
+    fn limit_refusal(&self, id: &serde_json::Value, surface: &str, actual: usize) -> String {
+        serde_json::json!({
             "jsonrpc": "2.0",
-            "id": bounded_id,
+            "id": id,
             "error": {
                 "code": INVALID_REQUEST_CODE,
                 "message": lekalo_core::mcp::diagnostic::OUTPUT_LIMIT,
@@ -263,17 +271,42 @@ impl Writer {
                     "registry": "0.8.0",
                     "surface": surface,
                     "limit": self.max_response_bytes,
-                    "actual": encoded
+                    "actual": actual
                 }
             }
-        });
-        let text = serde_json::to_string(&refusal).unwrap_or_default();
-        if text.len() + 1 > self.max_response_bytes {
-            // Even the refusal exceeds the bound: no partial frame ever
-            // ships, so the write is dropped entirely.
-            return false;
+        })
+        .to_string()
+    }
+
+    /// Measure the complete encoded frame (payload + LF) against the
+    /// effective bound and either write it or substitute the compact
+    /// typed `mcp.output-limit` refusal. The refusal carries the request
+    /// id (bounded: an unspellable id degenerates to null by the same
+    /// rule the envelope applies, r2 F5), the registered diagnostic
+    /// identity, and the byte counts — never the refused payload. When
+    /// correlation cannot fit, a compact null-id request-limit refusal
+    /// is used; an unrepresentably small cap returns false.
+    fn write_measured(&self, frame: String, surface: &str, id: &serde_json::Value) -> bool {
+        let encoded = frame.len() + 1;
+        if encoded <= self.max_response_bytes {
+            return self.send(&frame);
         }
-        self.send(&text)
+        let bounded_id = if self.admits_id(id) {
+            id.clone()
+        } else {
+            serde_json::Value::Null
+        };
+        let text = self.limit_refusal(&bounded_id, surface, encoded);
+        if text.len() + 1 <= self.max_response_bytes {
+            return self.send(&text);
+        }
+        // An unadmitted id or tiny cap must not black-hole a pending
+        // request while keeping the session alive. Try a compact null-id
+        // refusal; false tells the caller that even this cannot ship.
+        let compact = serde_json::json!({"jsonrpc":"2.0", "id":null,
+            "error":{"code":INVALID_REQUEST_CODE,"message":"mcp.request-limit"}})
+        .to_string();
+        compact.len() + 1 <= self.max_response_bytes && self.send(&compact)
     }
 }
 
@@ -372,6 +405,45 @@ mod tests {
     }
 
     #[test]
+    fn id_admission_reserves_the_refusal_budget() {
+        // Exercise the real writer at reduced caps, not a hypothetical
+        // frame-size floor (the launcher may configure a much lower cap).
+        let id = serde_json::json!("x".repeat(MAX_REQUEST_ID_BYTES - 2));
+        assert!(id_admitted(&id));
+        for cap in [256, 512, 2048] {
+            for id in [
+                serde_json::json!(7),
+                serde_json::json!("x".repeat(100)),
+                id.clone(),
+            ] {
+                let shared = std::sync::Arc::default();
+                let writer =
+                    Writer::new(Box::new(SharedBuffer(std::sync::Arc::clone(&shared))), cap);
+                if !writer.admits_id(&id) {
+                    continue;
+                }
+                assert!(writer.send_result(&id, serde_json::json!({"content":"x".repeat(8192)})));
+                let written = shared.lock().unwrap().clone();
+                assert!(written.len() <= cap);
+                let frame: serde_json::Value = serde_json::from_slice(&written).unwrap();
+                assert_eq!(frame["id"], id);
+                assert_eq!(frame["error"]["message"], "mcp.output-limit");
+            }
+        }
+        assert!(!id_admitted(&serde_json::Value::String(
+            "x".repeat(MAX_REQUEST_ID_BYTES + 1)
+        )));
+        assert!(!id_admitted(&serde_json::Value::String(
+            "\u{0001}".repeat(100)
+        )));
+        let writer = Writer::new(Box::new(Vec::<u8>::new()), 512);
+        assert!(writer.admits_id(&serde_json::json!(7)));
+        assert!(!writer.admits_id(&serde_json::json!("x".repeat(512 - 2))));
+        assert!(id_admitted(&serde_json::Value::Number(7.into())));
+        assert!(!id_admitted(&serde_json::Value::Bool(true)));
+    }
+
+    #[test]
     fn depth_is_bounded() {
         let mut deep = String::new();
         for _ in 0..MAX_NESTING_DEPTH {
@@ -459,16 +531,13 @@ mod tests {
         {
             let writer = Writer::new(Box::new(SharedBuffer(std::sync::Arc::clone(&shared))), 128);
             let result = serde_json::json!({"content": "x".repeat(4096)});
-            assert!(writer.send_result(&serde_json::json!({"structured": true}), result) || true);
+            assert!(writer.send_result(&serde_json::json!({"structured": true}), result));
         }
         let written = String::from_utf8(shared.lock().expect("buffer").clone()).expect("utf8");
-        if written.is_empty() {
-            // Under a 128-byte bound even the refusal cannot ship: the
-            // write is dropped entirely (nothing partial ever ships).
-            return;
-        }
+        assert!(written.len() <= 128);
         let document: serde_json::Value = serde_json::from_str(&written).expect("one frame");
         assert!(document["id"].is_null());
+        assert_eq!(document["error"]["message"], "mcp.request-limit");
     }
 
     #[test]
