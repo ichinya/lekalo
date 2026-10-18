@@ -26,12 +26,15 @@ use crate::versioning::VersionRegistry;
 /// The exact committed Model 0.2.16 schema bytes.
 pub const MODEL_SCHEMA_CURRENT_BYTES: &[u8] =
     include_bytes!("../../../../contracts/model.schema.v0.2.16.json");
+pub const MODEL_SCHEMA_SUCCESSOR_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/model.schema.v0.8.0.json");
 
 /// The exact committed Model schema bytes for one accepted version
 /// spelling; `None` for versions without a committed schema artifact.
 pub fn model_schema_bytes_for(spelling: &str) -> Option<&'static [u8]> {
     match spelling {
         "0.2.16" => Some(MODEL_SCHEMA_CURRENT_BYTES),
+        "0.8.0" => Some(MODEL_SCHEMA_SUCCESSOR_BYTES),
         _ => None,
     }
 }
@@ -70,11 +73,21 @@ pub fn model_pin(version: &ContractVersion<ModelContract>) -> Result<ContractPin
 
 /// Recompute the IR-family pin from the published identity.
 pub fn ir_pin() -> Result<ContractPin, LockFailure> {
-    let identity = crate::ir::IDENTITY;
-    let version = identity
-        .rsplit('@')
-        .next()
-        .ok_or(LockFailure::SchemaInvalid)?;
+    ir_pin_for(crate::ir::VERSION)
+}
+
+/// Exact source-bound IR pin; unknown spellings never alias the legacy IR.
+pub fn ir_pin_for(version: &str) -> Result<ContractPin, LockFailure> {
+    let identity = match version {
+        crate::ir::version::VERSION => crate::ir::IDENTITY,
+        crate::ir::version::SUCCESSOR_VERSION => crate::ir::version::SUCCESSOR_IDENTITY,
+        _ => {
+            return Err(LockFailure::ComponentVersionUnsupported {
+                family: "ir",
+                version: version.to_owned(),
+            })
+        }
+    };
     Ok(ContractPin::new(
         SemVer::parse(version)?,
         identity_line_digest(identity),
@@ -104,7 +117,7 @@ pub fn embedded_contract_pins(
     Ok((
         registry_pin(registry)?,
         model_pin(model_version)?,
-        ir_pin()?,
+        ir_pin_for(model_version.as_str())?,
         protocol_pin(registry)?,
     ))
 }
@@ -331,7 +344,11 @@ impl LockVerifier {
             &model_pin_of_spelling(lock.model_pin().version().as_str())?,
             "model",
         )?;
-        check_pin(lock.ir_pin(), &ir_pin()?, "ir")?;
+        check_pin(
+            lock.ir_pin(),
+            &ir_pin_for(lock.model_pin().version().as_str())?,
+            "ir",
+        )?;
         let protocol = protocol_pin(registry)?;
         match (lock.target_protocol(), protocol) {
             (None, None) => {}

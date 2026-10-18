@@ -1,0 +1,482 @@
+{
+  "affected": {
+    "modules": [],
+    "reason": "baseline",
+    "scope": "full"
+  },
+  "capsuleInvalidations": [
+    "planner.left",
+    "planner.right",
+    "planner.title",
+    "unrelated.name"
+  ],
+  "changedInputs": [
+    {
+      "class": "semantic",
+      "kind": "created",
+      "newSha256": "sha256:f1c941e912e12b89d1517a6c462dd40d25c3949e8beaefb4f70faf7dc509d095",
+      "path": "lekalo/modules/planner/entities.yaml"
+    },
+    {
+      "class": "semantic",
+      "kind": "created",
+      "newSha256": "sha256:5344803efab47b15e433fa1ac9a631eea89c465595406691f7db4d1a07d9711e",
+      "path": "lekalo/modules/planner/module.yaml"
+    },
+    {
+      "class": "semantic",
+      "kind": "created",
+      "newSha256": "sha256:8cb6b37eab222eb0de54cc2e8e9eaab39d24e8ea0cfe655b7603b5043f45ffdc",
+      "path": "lekalo/modules/unrelated/entities.yaml"
+    },
+    {
+      "class": "semantic",
+      "kind": "created",
+      "newSha256": "sha256:31a544823814a8d7e46b5e3b39658d209b7f91db73e196e71b322c7ebcc382ea",
+      "path": "lekalo/modules/unrelated/module.yaml"
+    },
+    {
+      "class": "semantic",
+      "kind": "created",
+      "newSha256": "sha256:f9499b7103964f18cf415c15cc2609eac461042845cf922d062a2deec3caa8fc",
+      "path": "lekalo/project.yaml"
+    }
+  ],
+  "counts": {
+    "changedFiles": 5,
+    "diagnostics": 0,
+    "executedUnits": 2,
+    "reusedUnits": 0
+  },
+  "diagnostics": [],
+  "diagnosticsMode": "replace",
+  "identity": "dev.lekalo.watch-result@0.8.0",
+  "impact": {
+    "algorithm": "dev.lekalo.impact.algorithm@0.2.16",
+    "artifacts": {
+      "complete": false,
+      "confidence": "unknown",
+      "frontier": 0,
+      "omitted": 0,
+      "provenance": [
+        "evidence"
+      ],
+      "reasonRefs": [
+        "impact.evidence-unknown"
+      ],
+      "returned": 0,
+      "state": "unknown"
+    },
+    "completeness": {
+      "complete": false,
+      "confidence": "unknown",
+      "frontier": 0,
+      "omitted": 0,
+      "provenance": [
+        "canonical-ir"
+      ],
+      "reasonRefs": [
+        "impact.evidence-unknown"
+      ],
+      "returned": 7,
+      "state": "incomplete"
+    },
+    "diagnosticRefs": [
+      "impact.evidence-unknown",
+      "impact.evidence-unknown",
+      "impact.evidence-unknown"
+    ],
+    "digest": "sha256:932fef0a76bffa618b170c4d243b0ce18c527c445ba90b13d5814acd0e3a9446",
+    "direct": {
+      "complete": true,
+      "confidence": "canonical",
+      "frontier": 0,
+      "omitted": 0,
+      "provenance": [
+        "canonical-ir"
+      ],
+      "reasonRefs": [],
+      "returned": 0,
+      "state": "complete"
+    },
+    "evidence": {
+      "complete": false,
+      "confidence": "unknown",
+      "frontier": 0,
+      "items": [
+        {
+          "confidence": "canonical",
+          "reasonRefs": [
+            "impact.changed-input-incomplete"
+          ],
+          "state": "complete",
+          "surface": "changed-inputs"
+        },
+        {
+          "confidence": "unknown",
+          "reasonRefs": [
+            "impact.evidence-unknown"
+          ],
+          "state": "unknown",
+          "surface": "detected-evidence"
+        },
+        {
+          "confidence": "canonical",
+          "reasonRefs": [
+            "impact.reason.effect-read"
+          ],
+          "state": "complete",
+          "surface": "effects"
+        },
+        {
+          "confidence": "canonical",
+          "reasonRefs": [
+            "impact.evidence-unknown"
+          ],
+          "state": "complete",
+          "surface": "graph"
+        },
+        {
+          "confidence": "unknown",
+          "reasonRefs": [
+            "impact.evidence-unknown"
+          ],
+          "state": "unknown",
+          "surface": "manifests"
+        },
+        {
+          "confidence": "canonical",
+          "reasonRefs": [
+            "impact.reason.scenario-covers"
+          ],
+          "state": "complete",
+          "surface": "scenarios"
+        },
+        {
+          "confidence": "unknown",
+          "reasonRefs": [
+            "impact.evidence-unknown"
+          ],
+          "state": "unsupported",
+          "surface": "tests"
+        }
+      ],
+      "omitted": 0,
+      "provenance": [
+        "canonical-ir",
+        "evidence"
+      ],
+      "reasonRefs": [
+        "impact.evidence-unknown"
+      ],
+      "returned": 7,
+      "state": "incomplete"
+    },
+    "explanations": [],
+    "gates": {
+      "complete": true,
+      "confidence": "canonical",
+      "frontier": 0,
+      "items": [
+        {
+          "confidence": "canonical",
+          "evidenceState": "canonical",
+          "gateId": "impact.gate.authorization",
+          "owner": "authorization",
+          "reasonRefs": [
+            "impact.reason.authorization-policy"
+          ],
+          "required": false,
+          "state": "not-required"
+        },
+        {
+          "confidence": "canonical",
+          "evidenceState": "canonical",
+          "gateId": "impact.gate.binding-artifact",
+          "owner": "bindings",
+          "reasonRefs": [
+            "impact.reason.binding-referenced"
+          ],
+          "required": false,
+          "state": "not-required"
+        },
+        {
+          "confidence": "canonical",
+          "evidenceState": "canonical",
+          "gateId": "impact.gate.effect-review",
+          "owner": "effects",
+          "reasonRefs": [
+            "impact.reason.effect-write"
+          ],
+          "required": false,
+          "state": "not-required"
+        },
+        {
+          "confidence": "canonical",
+          "evidenceState": "canonical",
+          "gateId": "impact.gate.migration",
+          "owner": "migration",
+          "reasonRefs": [
+            "impact.reason.rename-history"
+          ],
+          "required": false,
+          "state": "not-required"
+        },
+        {
+          "confidence": "canonical",
+          "evidenceState": "canonical",
+          "gateId": "impact.gate.portability",
+          "owner": "portability",
+          "reasonRefs": [
+            "impact.reason.target-specific"
+          ],
+          "required": false,
+          "state": "not-required"
+        },
+        {
+          "confidence": "canonical",
+          "evidenceState": "canonical",
+          "gateId": "impact.gate.public-contract",
+          "owner": "public",
+          "reasonRefs": [
+            "impact.reason.public-visibility",
+            "impact.reason.kind-public-surface"
+          ],
+          "required": true,
+          "state": "selected"
+        },
+        {
+          "confidence": "canonical",
+          "evidenceState": "canonical",
+          "gateId": "impact.gate.scenario",
+          "owner": "scenarios",
+          "reasonRefs": [
+            "impact.reason.scenario-covers"
+          ],
+          "required": false,
+          "state": "not-required"
+        },
+        {
+          "confidence": "canonical",
+          "evidenceState": "canonical",
+          "gateId": "impact.gate.semantic-validate",
+          "owner": "validation",
+          "reasonRefs": [
+            "impact.reason.changed-input"
+          ],
+          "required": true,
+          "state": "selected"
+        },
+        {
+          "confidence": "canonical",
+          "evidenceState": "canonical",
+          "gateId": "impact.gate.transaction",
+          "owner": "transaction",
+          "reasonRefs": [
+            "impact.reason.transaction-group"
+          ],
+          "required": false,
+          "state": "not-required"
+        }
+      ],
+      "omitted": 0,
+      "provenance": [
+        "canonical-ir"
+      ],
+      "reasonRefs": [],
+      "returned": 9,
+      "state": "complete"
+    },
+    "identity": "dev.lekalo.impact@0.8.0",
+    "input": {
+      "baseRevisionRef": null,
+      "candidateRevisionRef": "69c47360248e545be44292e70a43b84199e6e2899470740dd5515dc2f0c4eef6",
+      "changedInputDigest": "sha256:8c00cfe4b002aeb9a019bb0f239e0c71b6cbbe440a0a32604bcf7f83816b7a5e",
+      "mode": "worktree"
+    },
+    "mandatoryPublic": {
+      "complete": true,
+      "confidence": "canonical",
+      "frontier": 0,
+      "omitted": 0,
+      "provenance": [
+        "canonical-ir"
+      ],
+      "reasonRefs": [],
+      "returned": 0,
+      "state": "complete"
+    },
+    "modelVersion": "0.8.0",
+    "project": "watch_fixture",
+    "request": {
+      "depth": 3,
+      "kinds": [],
+      "module": null,
+      "profile": "default",
+      "relations": [],
+      "target": null
+    },
+    "risks": {
+      "complete": true,
+      "confidence": "canonical",
+      "frontier": 0,
+      "items": [
+        {
+          "confidence": "canonical",
+          "dimension": "public_contract",
+          "evidenceRefs": [],
+          "reasonRefs": [
+            "impact.reason.public-visibility",
+            "impact.reason.kind-public-surface"
+          ],
+          "required": true,
+          "state": "complete",
+          "subjectRefs": [
+            "entity:planner.left",
+            "entity:planner.right",
+            "module:planner",
+            "module:unrelated",
+            "project:watch_fixture",
+            "type:planner.title",
+            "type:unrelated.name"
+          ]
+        }
+      ],
+      "omitted": 0,
+      "provenance": [
+        "canonical-ir"
+      ],
+      "reasonRefs": [],
+      "returned": 1,
+      "state": "complete"
+    },
+    "roots": [
+      "project:watch_fixture",
+      "module:planner",
+      "module:unrelated",
+      "type:planner.title",
+      "type:unrelated.name",
+      "entity:planner.left",
+      "entity:planner.right"
+    ],
+    "scenarios": {
+      "complete": true,
+      "confidence": "canonical",
+      "frontier": 0,
+      "omitted": 0,
+      "provenance": [
+        "canonical-ir"
+      ],
+      "reasonRefs": [],
+      "returned": 0,
+      "state": "complete"
+    },
+    "schemaVersion": "lekalo/impact/v0.8.0",
+    "targets": {
+      "complete": true,
+      "confidence": "canonical",
+      "frontier": 0,
+      "omitted": 0,
+      "provenance": [
+        "canonical-ir"
+      ],
+      "reasonRefs": [],
+      "returned": 0,
+      "state": "complete"
+    },
+    "tests": {
+      "complete": false,
+      "confidence": "unknown",
+      "frontier": 0,
+      "omitted": 0,
+      "provenance": [
+        "evidence"
+      ],
+      "reasonRefs": [
+        "impact.evidence-unknown"
+      ],
+      "returned": 0,
+      "state": "unsupported"
+    },
+    "transitive": {
+      "complete": true,
+      "confidence": "canonical",
+      "frontier": 0,
+      "omitted": 0,
+      "provenance": [
+        "canonical-ir"
+      ],
+      "reasonRefs": [],
+      "returned": 0,
+      "state": "complete"
+    }
+  },
+  "pins": {
+    "adapters": [],
+    "modelVersion": "0.8.0",
+    "registryVersion": "0.8.0",
+    "revisions": {
+      "graphDigest": "sha256:cc4c36cd848613299a1eed4093e1c11da7d9f2aad415ed6b69ae9e036715b6ac",
+      "irDigest": "sha256:1849c6a1918abf222ce69b4d8f677877e4f34ea754a58fcd879a5cfe5d8fa82c",
+      "modelDigest": "sha256:6906e0cfda35a72bb59883e427f04735764acee3a0f83c3b0d1ef76a71c51e67",
+      "profileDigest": "sha256:15940a3eb98e181593b180d62f8d1005402e062cfb8c51e245b49a2257a463c7",
+      "sourceMapDigest": "sha256:e7718f959b1f6f020222959a8654ecec47cbc1135561d2e040f312998b64388a"
+    },
+    "versions": {
+      "artifactManifest": "lekalo/artifact-manifest/v0.2.16",
+      "core": "0.8.0",
+      "diagnostic": "lekalo/diagnostic/v0.2.16",
+      "graph": "0.8.0",
+      "impact": "0.8.0",
+      "ir": "0.8.0",
+      "lock": "lekalo/lock/v0.3.2",
+      "targetCapabilities": "dev.lekalo.target-capabilities@0.6.4",
+      "targetProtocol": "0.3.2",
+      "validationProfile": "0.6.4"
+    }
+  },
+  "pipelineCounts": {
+    "assembledGraphEdges": 3,
+    "assembledGraphNodes": 7,
+    "decodedDefinitions": 0,
+    "decodedDocuments": 5,
+    "emittedGraphUnits": 7,
+    "graphCyclePasses": 1,
+    "reusedDefinitions": 0,
+    "reusedDocuments": 0,
+    "reusedGraphUnits": 0
+  },
+  "schemaVersion": "lekalo/watch-result/v0.8.0",
+  "sourceRevision": "sha256:69c47360248e545be44292e70a43b84199e6e2899470740dd5515dc2f0c4eef6",
+  "stages": [
+    {
+      "coverage": "complete",
+      "reason": "baseline",
+      "stage": "validate",
+      "state": "executed"
+    },
+    {
+      "coverage": "complete",
+      "stage": "impact",
+      "state": "executed"
+    },
+    {
+      "coverage": "complete",
+      "stage": "generate-check",
+      "state": "not-requested"
+    }
+  ],
+  "status": "valid",
+  "work": [
+    {
+      "module": "planner",
+      "sha256": "sha256:f6acb8742b5c0cc3f529264510dc6add0dcd950687e667eaf5f5e82e14bb03f6",
+      "state": "executed"
+    },
+    {
+      "module": "unrelated",
+      "sha256": "sha256:d5370790f50aa69818034a487aaaa262f7243d16cd3cb52ce8fd25a13373fc9b",
+      "state": "executed"
+    }
+  ]
+}

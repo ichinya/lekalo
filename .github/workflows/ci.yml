@@ -71,6 +71,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-semantic-diff-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-transaction-concurrency-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-format-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-authorization-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-error-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-client-sdk-contracts.mjs
@@ -244,6 +245,18 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
+      - name: Run read-only watch native and poll probes (issue #95)
+        timeout-minutes: 10
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-platform.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-boundaries.mjs
+          node scripts/test-watch-equivalence.mjs
+          node scripts/test-watch-faults.mjs
+          node scripts/test-watch-successor.mjs
+          node scripts/test-watch-consumers.mjs
       - name: Run the live portability contract gate (issue #19)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules

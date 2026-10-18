@@ -44,6 +44,7 @@ export function discoverCommands(bin) {
   return rows.sort((a,b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 const commandOwners = {
+  watch:"cli",
   search:"semantic-search", find:"semantic-search", "search-index":"semantic-search",
   "architecture-profile":"architecture-profile", evaluation:"framework-lift", metrics:"metrics-export", waivers:"waivers", managed:"managed-mode",
   change:"change",
@@ -63,6 +64,7 @@ export function commandOwner(command) {
   return `docs/${commandOwners[top]}.md`;
 }
 const families = {
+  "watch-event":"cli", "watch-result":"cli",
   "managed-ownership":"managed-mode", "managed-coverage":"managed-mode", "managed-generation-plan":"managed-mode", "managed-generation-record":"managed-mode", "managed-transaction":"managed-mode", "managed-rollback-plan":"managed-mode", "managed-equivalence":"managed-mode",
   "architecture-rule-catalog":"architecture-profile", "architecture-profile":"architecture-profile", "architecture-profile-resolved":"architecture-profile", "architecture-profile-lock":"architecture-profile", "architecture-profile-report":"architecture-profile", "architecture-profile-diff":"architecture-profile", "architecture-adoption":"architecture-profile",
   "change-catalog":"change", "change-history":"change", "change-plan":"change", "change-policy":"change", "change-receipt":"change", "change-request":"change",

@@ -3202,21 +3202,24 @@ fn r4_review_mapping_roles_bind_to_their_positional_argument() {
 #[test]
 fn r4_review_union_registry_and_boundary_rule_set_are_pinned() {
     // r4 review F1: the 0.8.0 successor must be the union of the live M8
-    // format/adoption/portability/worklog-changelog/managed/tasklink
     // registry and this issue's module-api family. Every successor
     // accessor parses the same merged bytes and every landed family
-    // resolves, so neither side of the merge can drop a pin
-    // (r8: 592 = 578 + 14 = 570 + 8 + 14).
+    // resolves, so neither side of a merge can drop a pin. Preserve
+    // predecessor entries exactly, not a milestone-wide fixed total:
+    // landed search/watch siblings grow the shared union additively.
     let module = lekalo_core::diagnostics::DiagnosticRegistry::module_successor().unwrap();
     let format = lekalo_core::diagnostics::DiagnosticRegistry::format_successor().unwrap();
     let adoption = lekalo_core::diagnostics::DiagnosticRegistry::adoption().unwrap();
     let m8 = lekalo_core::diagnostics::DiagnosticRegistry::m8().unwrap();
     let pilot = lekalo_core::diagnostics::DiagnosticRegistry::pilot().unwrap();
-    assert_eq!(module.len(), 592);
-    assert_eq!(format.len(), module.len());
-    assert_eq!(adoption.len(), module.len());
-    assert_eq!(m8.len(), module.len());
-    assert_eq!(pilot.len(), module.len());
+    let predecessor = lekalo_core::diagnostics::DiagnosticRegistry::successor().unwrap();
+    for entry in predecessor.entries() {
+        assert_eq!(module.entry(entry.id()), Some(entry));
+    }
+    assert_eq!(format, module);
+    assert_eq!(adoption, module);
+    assert_eq!(m8, module);
+    assert_eq!(pilot, module);
     for family in [
         "module-api.",
         "format.",
@@ -3225,6 +3228,8 @@ fn r4_review_union_registry_and_boundary_rule_set_are_pinned() {
         "worklog-changelog.",
         "managed.",
         "tasklink.",
+        "search.",
+        "watch.",
     ] {
         assert!(
             module.entries().any(|entry| entry.id().starts_with(family)),

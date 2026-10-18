@@ -37,6 +37,12 @@ pub const FORMAT_REGISTRY_BYTES: &[u8] =
 pub const ADOPTION_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
 
+/// The issue #95 union successor: the merged registry plus the closed
+/// `watch.*` family. Same merged file as the format/adoption unions;
+/// each family appends, none clobbers a predecessor rule.
+pub const WATCH_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
 /// The issue #19 M8 union successor registry bytes (the same merged
 /// union registry as the other 0.8.0 family constants).
 pub const M8_REGISTRY_BYTES: &[u8] =

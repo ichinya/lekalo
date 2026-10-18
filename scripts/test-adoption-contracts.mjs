@@ -9,6 +9,7 @@
 // test-adoption-refactor.mjs and test-adoption-hybrid.mjs, which must
 // run after `cargo build --workspace --locked` in the same job.
 import { createRequire } from "node:module";
+import { ACCEPTED_M8_REGISTRY_FAMILIES } from "./lib/registry-union.mjs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -91,6 +92,16 @@ if (!validateRegistry(registry80)) fail("registry-invalid", validateRegistry.err
 // Derive additive families from data; unrelated live families ride along.
 registryUnion(registry65, registry80);
 const ids65 = new Map(registry65.entries.map((entry) => [entry.id, entry]));
+const landedFamilies = ACCEPTED_M8_REGISTRY_FAMILIES;
+const additions = registry80.entries.filter((entry) => !ids65.has(entry.id));
+if (registry80.entries.length !== registry65.entries.length + additions.length || additions.length === 0) {
+  fail("registry-count", { v08: registry80.entries.length, v065: registry65.entries.length });
+}
+for (const entry of additions) {
+  if (!landedFamilies.some((family) => entry.id.startsWith(family))) {
+    fail("registry-addition-outside-landed-families", entry.id);
+  }
+}
 for (const entry of registry80.entries) {
   const predecessor = ids65.get(entry.id);
   if (predecessor) {

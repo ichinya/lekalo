@@ -2599,6 +2599,17 @@
       "status": "implemented"
     },
     {
+      "id": "cli:watch",
+      "kind": "command",
+      "command": "watch",
+      "usage": "lekalo watch [OPTIONS]",
+      "helpDigest": "sha256:b79d437b1f8a8275374702bfd0d7015e913bde25501154048f348bde5f963824",
+      "summary": "Read-only incremental validation and drift checks on source saves",
+      "leaf": true,
+      "owner": "docs/cli.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:--help",
       "kind": "global",
       "owner": "docs/cli.md",
@@ -3482,6 +3493,15 @@
       "kind": "contract",
       "source": "contracts/impact.schema.v0.2.16.json",
       "sourceDigest": "sha256:a846784c17c9c93a122528656b075827c07cd8309e56652f41b02e052f93bf1f",
+      "owner": "docs/impact.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/impact.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/impact.schema.v0.8.0.json",
+      "sourceDigest": "sha256:f69708caa85e7d25c690fcfa8844a6e35ada25f1e7235d2a93d4564c97d0c542",
       "owner": "docs/impact.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4387,6 +4407,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/target-protocol.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/target-protocol.schema.v0.8.0.json",
+      "sourceDigest": "sha256:fa7be2dd60dee889b9f26c40944fec807677b156a7560ccf8241f0c957a86172",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/task-links-evidence.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/task-links-evidence.schema.v0.8.0.json",
@@ -4572,6 +4601,24 @@
       "source": "contracts/waiver-input.schema.v0.6.5.json",
       "sourceDigest": "sha256:061d6713a74da631ac2c812efb23c19e30acb6c7a064fb1a4fd011bfce3ae176",
       "owner": "docs/waivers.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/watch-event.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/watch-event.schema.v0.8.0.json",
+      "sourceDigest": "sha256:c3194c8abc223b2361e89c7c4d1cf577f0bcc4f65130d89369788c25a9370a0c",
+      "owner": "docs/cli.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/watch-result.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/watch-result.schema.v0.8.0.json",
+      "sourceDigest": "sha256:d0ea5d8af4c8a66f3e0d93b16d1c5bd25e7676100605a5673a38d6aeb8edb097",
+      "owner": "docs/cli.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

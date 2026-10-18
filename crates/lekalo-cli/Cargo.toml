@@ -23,7 +23,6 @@ path = "src/bin/adapter-sdk-oracle.rs"
 rustix = { workspace = true, features = ["process"] }
 
 [dev-dependencies]
-tempfile.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 lekalo-core.workspace = true
@@ -33,3 +32,5 @@ clap.workspace = true
 lekalo-core.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true
+notify.workspace = true
+tempfile.workspace = true

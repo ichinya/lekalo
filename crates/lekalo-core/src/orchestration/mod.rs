@@ -54,3 +54,23 @@ pub fn locked_check(selection: &LoadSelection) -> Result<(), crate::result::Doma
         .map_err(|failure| crate::result::DomainResult::from(&Failure::Artifact(failure)))?;
     generate::locked_preflight(&prepared)
 }
+
+pub(crate) fn watch_locked_preflight(
+    prepared: &crate::artifacts::check::Prepared,
+    adapter: &crate::lockfile::ResolvedAdapter,
+    discovered: &crate::target_protocol::discovery::DiscoveredAdapter,
+) -> Result<(), crate::DomainResult> {
+    let executable =
+        catalog::binding_failure(adapter, discovered).map_err(|f| crate::DomainResult::from(&f))?;
+    generate::locked_preflight_with(prepared, &generate::locked_inventory(adapter, &executable))
+}
+
+pub(crate) fn locked_check_captured(
+    root: &std::path::Path,
+    model: &crate::loader::NormalizedModel,
+    compilation: &crate::ir::Compilation,
+) -> Result<(), crate::DomainResult> {
+    let prepared = crate::artifacts::check::Prepared::prepare_captured(root, model, compilation)
+        .map_err(|failure| crate::DomainResult::from(&Failure::Artifact(failure)))?;
+    generate::locked_preflight(&prepared)
+}

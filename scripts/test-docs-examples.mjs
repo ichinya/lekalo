@@ -148,7 +148,7 @@ function inventory(base, logicalBase=relative(ROOT,base).replaceAll("\\","/")) {
   walk(base);
   return result;
 }
-const INPUTS=["scripts","adapters","contracts","tests/fixtures","docs","README.md","Cargo.toml","Cargo.lock","crates"];
+const INPUTS=["scripts","adapters","contracts","tests/fixtures","docs","README.md","Cargo.toml","Cargo.lock","crates",".gitattributes"];
 const sourceBefore = INPUTS.map(path=>statSync(safePath(path)).isDirectory()?inventory(safePath(path)):sha(readFileSync(safePath(path))));
 const root=realpathSync.native(mkdtempSync(join(tmpdir(),"lekalo-docs-105-")));
 const owned = path => assert.ok(resolve(path).startsWith(root+sep),"temporary path escapes owned replay root");
@@ -168,6 +168,14 @@ function repositoryCopy() {
   if(repository) return repository;
   repository=join(root,"repository"); mkdirSync(repository);
   for(const path of INPUTS) copy(safePath(path),join(repository,path));
+  // Provenance checks Git's real clean-filter custody (including the
+  // tracked binary fixtures). A filesystem copy has no index; create a
+  // private local one with the copied attributes, never borrow the user's
+  // repository or silently skip the binary-filter regression.
+  for(const argv of [["init","-q"],["-c","core.autocrlf=false","add","--",".gitattributes","tests/fixtures"]]) {
+    const git=spawnSync("git",argv,{cwd:repository,encoding:"utf8"});
+    assert.equal(git.status,0,"private provenance replay index unavailable");
+  }
   const copiedBin=join(repository,"target/debug",basename(bin)); mkdirSync(dirname(copiedBin),{recursive:true}); cpSync(bin,copiedBin);
   if(lane==="planner") {
     const vendor=safePath("tests/fixtures/php-laravel/planner/vendor");

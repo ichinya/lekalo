@@ -154,7 +154,7 @@ pub(super) fn semantic_phase(context: &mut Context, profile: &ValidationProfile)
     if profile.is_enabled("semantic.entity-identity-field-missing") {
         entity_identity(context, profile);
     }
-    if profile.is_enabled("semantic.type-recursion") {
+    if context.check_recursion() && profile.is_enabled("semantic.type-recursion") {
         type_recursion(context, profile);
     }
     if profile.is_enabled("semantic.visibility-boundary-violation") {
@@ -356,8 +356,7 @@ fn emit_kind(
 
 /// `semantic.type-ref-unresolved`: a type leaf names an unknown symbol.
 fn unresolved_type_refs(context: &mut Context, profile: &ValidationProfile) {
-    let project = context.project();
-    for definition in &project.definitions {
+    for definition in context.subjects() {
         let subject = definition.id().as_str().to_owned();
         for site in all_sites(definition) {
             if is_type_site(&site.suffix) && resolve(context, site.target).is_none() {
@@ -381,8 +380,7 @@ fn unresolved_refs(
     rule_id: &str,
     field: &'static str,
 ) {
-    let project = context.project();
-    for definition in &project.definitions {
+    for definition in context.subjects() {
         let subject = definition.id().as_str().to_owned();
         for site in all_sites(definition) {
             if is_field(&site.suffix, field) && resolve(context, site.target).is_none() {
@@ -395,8 +393,7 @@ fn unresolved_refs(
 /// `semantic.type-ref-kind-mismatch`: a resolved type leaf names a
 /// definition that is not a named type.
 fn type_ref_kinds(context: &mut Context, profile: &ValidationProfile) {
-    let project = context.project();
-    for definition in &project.definitions {
+    for definition in context.subjects() {
         let subject = definition.id().as_str().to_owned();
         for site in all_sites(definition) {
             if !is_type_site(&site.suffix) {
@@ -428,8 +425,7 @@ fn ref_kinds(
     field: &'static str,
     expected: &[&str],
 ) {
-    let project = context.project();
-    for definition in &project.definitions {
+    for definition in context.subjects() {
         let subject = definition.id().as_str().to_owned();
         for site in all_sites(definition) {
             if !is_field(&site.suffix, field) {
@@ -456,8 +452,7 @@ fn ref_kinds(
 /// `semantic.entity-identity-field-missing`: an identity names a field the
 /// entity does not declare.
 fn entity_identity(context: &mut Context, profile: &ValidationProfile) {
-    let project = context.project();
-    for definition in &project.definitions {
+    for definition in context.subjects() {
         let Definition::Entity(entity) = definition else {
             continue;
         };
@@ -633,8 +628,7 @@ fn cycles<'a>(edges: &'a BTreeMap<&'a str, BTreeSet<&'a str>>) -> Vec<Vec<&'a st
 /// `semantic.visibility-boundary-violation`: a reference crosses a module
 /// boundary into a module-private symbol.
 fn cross_module_visibility(context: &mut Context, profile: &ValidationProfile) {
-    let project = context.project();
-    for definition in &project.definitions {
+    for definition in context.subjects() {
         let Some(owner) = Context::owner(definition.id().as_str()) else {
             continue;
         };
@@ -667,8 +661,7 @@ fn cross_module_visibility(context: &mut Context, profile: &ValidationProfile) {
 /// `semantic.public-output-private-type`: a project-visible query returns a
 /// module-private named type.
 fn public_output(context: &mut Context, profile: &ValidationProfile) {
-    let project = context.project();
-    for definition in &project.definitions {
+    for definition in context.subjects() {
         let Definition::Query(query) = definition else {
             continue;
         };
@@ -702,8 +695,7 @@ fn public_output(context: &mut Context, profile: &ValidationProfile) {
 /// `semantic.portable-target-reference`: a portable definition directly
 /// references a target-specific definition.
 fn portability(context: &mut Context, profile: &ValidationProfile) {
-    let project = context.project();
-    for definition in &project.definitions {
+    for definition in context.subjects() {
         if definition.common().portability != Some(Portability::Portable) {
             continue;
         }

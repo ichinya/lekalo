@@ -10,6 +10,7 @@
 // test-search-cli.mjs in the build-test lane.
 
 import { createRequire } from "node:module";
+import { ACCEPTED_M8_REGISTRY_FAMILIES } from "./lib/registry-union.mjs";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -112,16 +113,7 @@ for (const [id, code] of expected) {
 // family-scoped instead: every addition beyond the pinned predecessor
 // must belong to a known landed family, and the search family must
 // carry exactly its eight rules (erosion control).
-const landedFamilies = [
-  "adoption.",
-  "format.",
-  "managed.",
-  "module-api.",
-  "portability.",
-  "tasklink.",
-  "worklog-changelog.",
-  "search.",
-];
+const landedFamilies = ACCEPTED_M8_REGISTRY_FAMILIES;
 const familyScopeVerdict = (registry) => {
   const familyAdded = registry.entries.filter((entry) => !predecessorIds.has(entry.id));
   const foreign = familyAdded.filter(
@@ -173,7 +165,7 @@ if (!scope.ok) fail(scope.reason, scope);
 {
   const template = successor.entries.find((entry) => entry.id === "search.ambiguous");
   const byId = (a, b) => (a.id < b.id ? -1 : 1);
-  const neighbors = ["adoption.", "tasklink.", "worklog-changelog."].map((family, index) => ({
+  const neighbors = ["adoption.", "tasklink.", "worklog-changelog.", "watch."].map((family, index) => ({
     ...template,
     id: `${family}registry-union-sim-${index}`,
     code: `LEK-SIM-${String(index).padStart(3, "0")}`,

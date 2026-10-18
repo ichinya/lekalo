@@ -1,0 +1,5 @@
+schema_version: "0.8.0"
+definitions:
+  - id: unrelated
+    kind: module
+    version: 1

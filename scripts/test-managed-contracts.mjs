@@ -3,6 +3,7 @@
 // live binary's typed refusals. Acceptance is read-only; a missing binary,
 // schema, or fixture fails the lane instead of skipping.
 import assert from 'node:assert/strict';
+import { ACCEPTED_M8_REGISTRY_FAMILIES } from './lib/registry-union.mjs';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -32,6 +33,11 @@ const predecessor = read('contracts/diagnostic-registry.v0.6.5.json');
 const registry = read(`contracts/diagnostic-registry.v${version}.json`);
 // Other landed families are additive data, not an exhaustive count list.
 registryUnion(predecessor, registry);
+const predecessorIds = new Set(predecessor.entries.map(entry => entry.id));
+const landedFamilies = ACCEPTED_M8_REGISTRY_FAMILIES;
+const additions = registry.entries.filter(entry => !predecessorIds.has(entry.id));
+assert.equal(registry.entries.length, predecessor.entries.length + additions.length);
+assert.ok(additions.every(entry => landedFamilies.some(family => entry.id.startsWith(family))), 'only landed families extend the registry');
 for (const entry of predecessor.entries) {
   assert.deepEqual(registry.entries.find((candidate) => candidate.id === entry.id), entry, 'predecessor entry changed');
 }

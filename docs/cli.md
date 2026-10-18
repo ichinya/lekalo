@@ -1,6 +1,6 @@
 # CLI reference
 
-Status: **Implemented** handlers at product `0.6.5`. Owner: CLI maintainers. The checked [command index](#command-index) below inventories recursive live help, including groups and nested leaves. Earlier issue-specific sections are historical examples; exact live usage and each specialist owner govern current syntax. Native production execution remains **Planned**; a handler returning unsupported is not target qualification. Model/IR stay `0.2.16`; [diagnostics](diagnostics.md) owns exits and streams.
+Status: **Implemented** handlers at product `0.8.0` (watch remains experimental; see below). Owner: CLI maintainers. The checked [command index](#command-index) below inventories recursive live help, including groups and nested leaves. Earlier issue-specific sections are historical examples; exact live usage and each specialist owner govern current syntax. Native production execution remains **Planned**; a handler returning unsupported is not target qualification. Model/IR stay `0.2.16`; [diagnostics](diagnostics.md) owns exits and streams.
 
 
 Issue #3 introduces a target-neutral Rust core and the `lekalo` command-line
@@ -106,6 +106,137 @@ and impact engines resolve them through the kind-qualified node identity.
 `--json` is global and may appear before or after a subcommand. Both
 `lekalo --json --version` and `lekalo --version --json` select JSON output.
 Root and per-command help remain clap help text rather than a domain failure.
+
+### `lekalo watch` (experimental, issue #95)
+
+The implementation is a read-only incremental developer loop. Its functional
+successor-pin gap is implemented; native macOS qualification remains explicitly
+bounded by [the target protocol evidence boundary](target-protocol.md#issue-95-delivery-evidence-boundary). Bare `lekalo watch` selects validation. Explicit
+`--validate`, `--impact`, and `--generate-check` select those stages; `--strict`,
+`--module`, `--locked`, and the invocation-relative `--project` selector retain
+their command policies. Use `--json-lines` for the separate versioned stream;
+global `--json` is refused. Human output projects the same replacement results.
+
+`--backend auto|native|poll` defaults to native with an observable auto-only poll
+fallback. `--debounce-ms`/`--max-wait-ms` default to 150/1000; polling and independent
+reconciliation use content inventories, not event ordering or timestamps. Runs
+consume immutable captured inputs outside the project. No source, generated,
+lock, observed-index, history or SQLite cache writes are authorized. Generated
+files are drift inputs only when `--generate-check` is selected; watch never
+calls generation, formatting, cleanup, installation or native production gates.
+
+Global `--no-cache` bypasses session-only document, IR, graph and validation
+reuse. `pipelineCounts` distinguishes decoded/reused documents and definitions,
+emitted/reused graph source units, and the mandatory global graph assembly and
+cycle obligations. Selection uses old/new dependency closures; successful
+settled revisions replace the complete effective diagnostic set. Cancelled
+runs cannot commit. The closed event/result schemas are
+`dev.lekalo.watch-event@0.8.0` and `dev.lekalo.watch-result@0.8.0`.
+
+`--target` now runs ephemeral locked scan/validation against captured inputs,
+without an observed index or scan receipt. Legacy adapters receive the visible
+`adapter-full-scope` fallback. An adapter must explicitly advertise protocol
+0.8.0 and `watch: {selection: true, model_versions: [...]}` in the upgraded
+describe to receive the closed `watch_request`: a snapshot-bound module
+partition (including removed symbols) or mandatory global obligations, with
+exact Model/IR version and captured IR digest pins. Both scan and validate
+verify those pins before disclosure. Successor Models require explicit
+Model **and** IR `0.8.0` admission; legacy fallback applies only to `0.2.16`. Each response echoes the selection
+digest. `pins.adapters[].work` records actual executed/reused partitions and
+the source revision of their last execution; untouched diagnostic partitions
+are retained, not discarded. A planner-only save executes planner/dependent
+partitions plus global obligations, never unrelated module validation.
+Generated-only saves reuse target results without even describe.
+Entry checksums precede describe, including startup preparation. Only committed project-source
+adapters with full `scan.symbols` and scan/validate operations are supported;
+installed/registry supplies, overlapping generated read/write scopes, build
+read roots, implicit environment/network/child grants, and hosts without an
+admitted resource-control lane are refused. Windows uses the 2 GiB job
+memory cap and one-process cap. Linux qualifies with bubblewrap, prlimit and
+kernel >= 5.14: watch explicitly opts into an 8 GiB address-space cap and a
+64-task per-user-namespace bound. Address space includes reservations, not
+RSS/commit charge; resource enforcement is honestly `degraded`, and the task
+bound is not a prohibition on individual forks. Other command policies are
+unchanged. macOS watch uses deny-default seatbelt with explicit `process-fork`
+denial and a fail-closed parent-side `proc_pidinfo` resident-memory supervisor.
+The 2 GiB resident threshold is sampled at the transport poll interval (5 ms),
+so overshoot between samples is possible: this is `degraded` supervision,
+**not** a hard allocation ceiling or Windows-job equivalent. Missing sampler
+or sandbox support refuses admission; a failed sample or threshold crossing
+kills/reaps the owned process before replacement. Ordinary command policies
+retain their previous enforcement records.
+
+Results pin component versions, captured Model/IR/source-map/graph/lock/profile
+and manifest digests, and verified adapter/capability/protocol identities.
+Describe's self-asserted digest is recorded separately from the verified lock
+pin. Watch admission caps Model inputs at 1 MiB, 256 modules, 2048 definitions
+and 32768 normalized nodes. The closed stream admits at most eight targets and
+4096 retained module partitions per target (plus global obligations); accumulated
+failed removals refuse observably before exceeding the wire bound. Revision-pair
+admission also caps the complete changed-input list at 4096 rows, counting both
+sides of renames across semantic and generated trees. Over-limit pairs publish
+only a denied, partial-coverage resource-limit replacement with the observed
+count and no change rows; they execute no stage and never advance accepted state.
+Capture security/I/O refusals retain their original classified diagnostic; paths
+outside the frozen diagnostic location grammar (including `.lekalo/generated`)
+are deliberately unlocated, never truncated or renamed into a fictitious path.
+Session state uses a conservative 64 MiB charge
+with cache eviction before refusing mandatory state; this is not an RSS
+measurement. Output has one outstanding record (16 MiB maximum), a five-second
+acknowledgement deadline, and fail-stop behavior for slow/broken consumers.
+Cancellation allows fifteen seconds for worker termination; unproven teardown
+emits `recovery-required` with `action: stop`, never a fake cancellation or an
+overlapping replacement. An unterminated final line after output failure is
+not a complete replacement.
+
+Watch admits exact source-bound Model/IR/graph pairs **0.2.16** and **0.8.0**.
+The successor includes typed relations and secondary uniqueness, a separately
+versioned impact `0.8.0` payload (unchanged impact algorithm), exact lock and
+artifact-check input pins, and independent settled-stage oracle comparisons.
+Unknown, mixed, undeclared or stale pins refuse without launching scan/validate;
+no implicit conversion or protocol-only inference is allowed. The complete
+successor result and refusal classifications are golden-pinned. Broader CPU/RSS
+audits remain follow-up work; sampled supervision is never a hard RSS promise.
+
+Validator instrumentation proves actual planner/dependent rule-subject visits
+without unrelated subjects, plus explicit global-input fallback. Twenty-eight
+clean validation comparisons are supplemented by settled-stage comparisons
+across predecessor and successor Models: validate, the
+complete impact payload/digest rebound to the
+same source-set base/candidate pair, and generate-check, including format-only
+saves, atomic replacement, definition additions/removals and semantic-ID
+replacement inside an existing document, invalid parse/recovery, generated drift
+and invalid lock/recovery. Impact roots use the union of old/current memberships
+resolved against the current graph; retired identities remain in old/new module
+reverse-closure selection and capsule invalidation, not fictitious current roots. Invalid parse does not advance the accepted semantic baseline.
+Real long-lived CLI fault probes verify crash -> invalid -> stale cancellation
+-> recovery, and negotiated selection with an unrelated failing partition
+surviving rapid planner saves and cancellation. The selected target failure is
+compared to a clean full `verify` adapter component for predecessor inputs;
+its IR is produced independently by `load --ir --no-cache` in a private oracle
+copy. Successor targets compare with an independent fresh no-cache locked
+watch cycle; ordinary `verify` does not implicitly acquire successor pins.
+A fresh no-cache core service additionally compares the complete retained
+diagnostic set. Generated saves stay quiet
+for multiple reconciliation intervals; cache/build feedback remains excluded.
+
+Windows native/poll and a complete Debian WSL inotify/poll pass cover burst
+edits, atomic replacement, parent rename/deletion and drift. Later WSL reruns
+and even shell startup hit host deadlines; the retained full pass and this
+intermittent revalidation bound are [golden-pinned](target-protocol.md#issue-95-delivery-evidence-boundary),
+not an unconditional stable-Linux-host claim. Hermetic notify traces
+exercise the real callback/channel/dirty-reader paths for inotify overflow,
+FSEvents rescan/error, split rename and metadata/identical-byte events; they do
+not substitute for a native macOS result. Real slow/broken pipe probes verify
+fail-stop output. Linux target tests inspect the actual namespace resource
+limits, not just declared values. The macOS supervisor threshold, sample failure,
+cancellation and kill/reap paths are driver-qualified through the production
+pump on any host; these synthetic samples do **not** execute `proc_pidinfo` or
+seatbelt. The Darwin cfg also cross-compiles; that is not a native runtime test.
+The same real target crash/selection probes now run on macOS in CI rather than
+accepting terminal refusal. CI includes Linux/macOS/Windows, but wiring is not
+evidence of a hosted pass. The acceptance authority remains
+[issue-95-research.md](m8/issue-95-research.md).
 
 ### `lekalo init`
 
@@ -1357,3 +1488,4 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo waivers add` | `lekalo waivers add [OPTIONS] --id <ID> --target <TARGET> --owner <OWNER> --approver <APPROVER> --approval-ref <APPROVAL_REF> --reason <REASON> <SELECTOR>` | [reference](waivers.md) |
 | `lekalo waivers audit` | `lekalo waivers audit [OPTIONS]` | [reference](waivers.md) |
 | `lekalo waivers list` | `lekalo waivers list [OPTIONS]` | [reference](waivers.md) |
+| `lekalo watch` | `lekalo watch [OPTIONS]` | [reference](cli.md) |

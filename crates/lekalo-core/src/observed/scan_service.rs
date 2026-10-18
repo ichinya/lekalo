@@ -364,6 +364,40 @@ pub fn run(
     })
 }
 
+/// Pure watch seam: validate the inventory through the accepted observed
+/// decoder, without loading/updating an index or publishing any receipt.
+pub(crate) fn validate_ephemeral(
+    ctx: &super::ObservedContext,
+    outcome: &CallOutcome,
+    target: &str,
+    profile: Option<&str>,
+) -> Result<(), DomainResult> {
+    let project = ctx
+        .model
+        .project
+        .as_ref()
+        .ok_or_else(|| invalid_set("project-missing"))?;
+    let entries = outcome
+        .response
+        .result
+        .as_ref()
+        .and_then(|result| result.entries.as_deref())
+        .unwrap_or(&[]);
+    let request = ScanRequest {
+        target,
+        profile,
+        command: AdapterCommand {
+            program: std::path::PathBuf::new(),
+            args: Vec::new(),
+        },
+        limits: crate::target_protocol::transport::TransportLimits::default(),
+    };
+    let document = build_document(ctx, outcome, entries, &project.id, &request)?;
+    let bytes = serde_json::to_vec(&document).map_err(|_| invalid_set("document-shape"))?;
+    super::wire::parse_scan(&bytes, ctx.model.model_version).map_err(DomainResult::invalid)?;
+    Ok(())
+}
+
 /// The registered invalid set for a refused document, owned by the
 /// observed scan classification tags.
 fn invalid_set(detail: &'static str) -> DomainResult {

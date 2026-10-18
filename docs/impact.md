@@ -14,6 +14,15 @@ The contract version is independent of the product release, of the
 Model/IR/graph/effect versions, and of the diagnostic registry
 ([ADR-0017](adr/0017-impact.md)).
 
+Successor Model `0.8.0` inputs select the exact
+[`lekalo/impact/v0.8.0` contract](../contracts/impact.schema.v0.8.0.json),
+identity `dev.lekalo.impact@0.8.0`, with `modelVersion: "0.8.0"` and the
+unchanged algorithm identity `dev.lekalo.impact.algorithm@0.2.16`.
+Predecessor inputs retain their `0.2.16` serialization and schema; no implicit
+upgrade, downgrade or alias is allowed. Watch pins the same source-bound
+payload, compares it against a clean command over the identical base/candidate
+pair, and embeds both closed contracts with Model/IR/graph pin consistency.
+
 ## Commands
 
 ```text

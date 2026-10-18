@@ -1,0 +1,6 @@
+schema_version: "0.8.0"
+definitions:
+  - id: unrelated.name
+    kind: scalar
+    version: 1
+    base: string

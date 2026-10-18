@@ -223,19 +223,18 @@ for (const name of [
 // ---------------------------------------------------------------------------
 // 4. Contract parity with the Rust side.
 // ---------------------------------------------------------------------------
-const registry = JSON.parse(
-  readText("crates/lekalo-core/src/versioning/contracts/version-registry.v0.6.4.json"),
-);
-if (registry.registryVersion !== "0.6.4") {
-  fail("parity:registry", "the version registry artifact moved");
-}
+const embedded = readText("crates/lekalo-core/src/versioning/registry.rs")
+  .match(/REGISTRY_BYTES[^;]*include_bytes!\("(contracts\/version-registry\.v[0-9.]+\.json)"\)/)?.[1];
+if (!embedded) throw new Error("the Rust embedded registry path is missing");
+const registry = JSON.parse(readText(`crates/lekalo-core/src/versioning/${embedded}`));
 const golden = JSON.parse(readText(`${validDir}/contract-only.lock.json`));
 if (golden.contracts.registry.version !== registry.registryVersion) {
   fail("parity:registry-pin", "the lock registry pin must match the embedded registry");
 }
 const irFamily = registry.families.ir;
-if (golden.contracts.ir.version !== irFamily.current) {
-  fail("parity:ir-pin", "the lock IR pin must match the registry current IR");
+if (!irFamily.versions.some(record => record.version === golden.contracts.ir.version && record.state !== "retired")
+    || golden.contracts.ir.version !== golden.contracts.model.version) {
+  fail("parity:ir-pin", "the lock IR pin must be accepted and match its exact source Model, not an unrelated registry current");
 }
 const modelFamily = registry.families.model;
 if (!modelFamily.versions.some((record) => record.version === golden.contracts.model.version)) {

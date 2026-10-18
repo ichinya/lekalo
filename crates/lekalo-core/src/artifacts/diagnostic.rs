@@ -114,7 +114,30 @@ impl From<&ArtifactFailure> for DomainResult {
                     .iter()
                     .map(|finding| {
                         let (rule, _) = drift_rule_by_name(finding.verdict);
-                        one(rule, Some(finding.path.clone()), finding_data(finding))
+                        // The frozen diagnostic symbol slot is a semantic
+                        // id, never an artifact path. Its path grammar does
+                        // not admit the leading-dot runtime home either.
+                        let symbol = finding
+                            .owner
+                            .as_ref()
+                            .filter(|id| id.contains('.'))
+                            .cloned();
+                        let ordinary_path = finding
+                            .path
+                            .as_bytes()
+                            .first()
+                            .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+                            && finding.path.bytes().all(|c| {
+                                c.is_ascii_lowercase()
+                                    || c.is_ascii_digit()
+                                    || matches!(c, b'/' | b'.' | b'_' | b'-')
+                            });
+                        let source = ordinary_path.then(|| crate::diagnostics::SourceLocation {
+                            path: Some(finding.path.clone()),
+                            range: None,
+                        });
+                        build(rule, symbol, source, finding_data(finding))
+                            .expect("artifact drift is registered")
                     })
                     .collect();
                 DomainResult::invalid(DomainResult::from_wire_set(Status::Invalid, diagnostics))

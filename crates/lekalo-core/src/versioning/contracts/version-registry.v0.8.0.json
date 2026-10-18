@@ -55,6 +55,12 @@
           "state": "supported",
           "classification": "additive",
           "reason": "Issue #76 adds read-only lint with closed lint_request/lint_evidence and capability lint.ai-readability. Protocol 0.3.2 retains its frozen members."
+        },
+        {
+          "version": "0.8.0",
+          "state": "supported",
+          "classification": "additive",
+          "reason": "Issue #95 adds an explicit watch selection declaration, closed snapshot-bound module/global partition requests, and echoed selection digests. Frozen 0.3.2/0.6.4 remain unchanged; legacy adapters receive complete full-scope fallback, never unnegotiated selection members."
         }
       ],
       "migrations": []

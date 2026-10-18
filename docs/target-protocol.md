@@ -1,18 +1,54 @@
 # Target adapter process protocol
 
-Status: **Implemented** host protocol `lekalo.target/v1` at exact contract `0.3.2`, product `0.6.4`, source base `a56ee578`. Owner: adapter-host maintainers. [ADR-0025](adr/0025-target-protocol.md). Model/IR remain `0.2.16`; active diagnostic registry is `0.6.4`. Supported operations are describe, scan, bind, validate, generate, verify, plan-clean, clean and the read-only native-plan extension. Operation availability depends on the adapter and profile; declaration is not successful execution.
+Status: **Implemented** host protocol `lekalo.target/v1` with bootstrap contract `0.3.2` and explicitly negotiated successors `0.6.4` (lint) and `0.8.0` (watch selection), product `0.8.0`. Owner: adapter-host maintainers. [ADR-0025](adr/0025-target-protocol.md). Source-bound Model/IR pairs are `0.2.16` and `0.8.0`; ordinary operations retain their predecessor admission, and watch requires the explicit pins below. The ordinary diagnostic registry is `0.6.4`; watch emits the merged `0.8.0` union. Supported operations are describe, scan, bind, validate, generate, verify, plan-clean, clean and the read-only native-plan extension. Operation availability depends on the adapter and profile; declaration is not successful execution.
 
 The exact [current schema](../contracts/target-protocol.schema.v0.3.2.json) and production decoder govern this checkout. Historical base/extension paragraphs below describe negotiation history; they do not admit a historical contract absent from the current registry. [Workflow provider discovery](provider-contract.md) is separate. [Native gates](native-gates.md) document planning; production native execution is **Planned**. [Architecture](architecture.md), [security](security.md), [Node adapter](../adapters/node-typescript/README.md), [PHP adapter](../adapters/php-laravel/README.md).
 
 ## Version negotiation and capability discovery
 
-This checkout probes and accepts the **exact set `0.3.2` and `0.6.4`**: `BASE_VERSION`, `VERSION` and the closed `SUPPORTED_VERSIONS` set in `crates/lekalo-core/src/target_protocol/version.rs` (the additive `0.6.4` lint seam of issue #76 is negotiated only after an adapter explicitly advertises it). A historical frozen schema does not grant runtime acceptance. The adapter must explicitly declare a version supported by this producer; arbitrary newer/older strings are refused.
+This checkout probes at **exactly `0.3.2`** (`BASE_VERSION`/`VERSION`) and upgrades only to a supported version the adapter explicitly declares and proves through a second describe at that exact version. The ascending `SUPPORTED_VERSIONS` set in `crates/lekalo-core/src/target_protocol/version.rs` admits 0.3.2, 0.6.4 and 0.8.0. The frozen predecessor schemas retain their exact members and bytes; arbitrary newer/older strings are refused.
 
 Describe reports exact adapter identity/digest, protocol versions, operations, transports, target/profile choices, read/write scopes and capabilities. The closed capability object includes exact `ir_versions`, a bounded map of named support states (`full`, `partial`, `unsupported`, `unknown`) and optional declared constraints. Names must resolve in the embedded capability-definition registry. Missing or unknown evidence does not mean supported.
 
-Discovery sends only describe, without project IR or write authority. An IR-carrying operation requires explicit compatibility with the core's `0.2.16` IR. Incompatible candidates are filtered before disclosure. A declared digest is distinct from verified entry bytes; capability provenance distinguishes declared, read-only probed and planned/applied verified evidence.
+Discovery sends only describe, without project IR or write authority. An ordinary IR-carrying operation requires explicit compatibility with the core's `0.2.16` IR; a selected watch operation instead requires the exact captured IR version plus an explicit accepted source Model version. Incompatible candidates are filtered before disclosure. A declared digest is distinct from verified entry bytes; capability provenance distinguishes declared, read-only probed and planned/applied verified evidence.
 
 Selection filters IR compatibility before required capability support. Partial support requires explicit `allow_partial`; unknown support cannot satisfy a required capability. Survivors and refusal reasons are deterministic. Cache/lock custody includes adapter identity, actual bytes, negotiated protocol, IR and capability-definition/profile digests; changes invalidate the snapshot. [Target profiles](target-profile.md), [lock](lockfile.md), [adapter conformance](adapter-conformance.md).
+
+## Read-only watch selection (0.8.0)
+
+The [watch protocol successor](../contracts/target-protocol.schema.v0.8.0.json)
+adds optional `capabilities.watch: {selection: true, model_versions: ["0.2.16", "0.8.0"]}`
+on the upgraded describe. `model_versions` is a nonempty sorted exact set;
+its admitted pairs are Model/IR `0.2.16` and `0.8.0`, and `ir_versions` must
+independently declare the requested IR. Neither a protocol upgrade nor scan
+support implies successor Model support. Only that declaration, at exactly
+0.8.0, admits `watch_request` on scan/validate. Predecessor Models may use a
+visible complete full-scope legacy fallback; successor Models never downgrade.
+The closed request carries `source_revision`, `pins` (`model_version`,
+`ir_version`, `ir_digest`), `scope` (`module` or `global`), the module
+for module scope, sorted owned `symbols` (old and current, including deletions)
+and sorted `changed_paths`. Global scope has no module or symbols and runs only
+mandatory project-level obligations. Full captured IR is resolution context,
+not permission to revalidate unrelated module partitions.
+
+Selected responses must echo `evidence.watch_digest`, SHA-256 over compact
+UTF-8 JSON of the selection with recursively byte-sorted object keys and no
+trailing newline. Unknown members, explicit nulls, unsupported versions,
+unsafe paths, unknown or mixed Model/IR pins, wrong/missing digests and scan
+entries outside the selected module are refused. Scan and validate both name
+the captured `ir_path`; before either child launch, the host verifies the exact
+IR bytes against `ir_digest`, its `contract` discriminator and `modelVersion`.
+A stale pin refuses before disclosure, not as a full-scope fallback. The
+response digest covers the pins as well as the scope and source revision. Every request is still bound by the ordinary request ID,
+verified adapter/capability identity, read-only confinement and deadline. The
+host retains untouched diagnostic partitions and invalidates deleted ones;
+[watch delivery](cli.md#lekalo-watch-experimental-issue-95) records actual
+executed/reused partition provenance. Captured successor runs use exact
+Model/IR/graph/impact `0.8.0` pins, including typed relations and secondary
+uniqueness; predecessor canonical bytes and pins remain unchanged. Lock
+schema digests, compiled IR identity pins and read-only artifact checks follow
+the captured source version. The complete successor result and six pre-spawn
+refusal cases are pinned under `tests/fixtures/watch/golden/`.
 
 ## Scan entry evidence
 
@@ -168,6 +204,35 @@ project reads remain confined to the private view. Projects inside an
 allowed system runtime tree are refused. Missing or unsupported confinement
 fails closed, with no ambient fallback. Linux/macOS behavioral qualification
 comes from the exact-candidate hosted gates, never from Windows tests.
+
+### Issue #95 delivery evidence boundary
+
+The committed [platform qualification golden](../tests/fixtures/watch/golden/platform-qualification.json)
+records delivery evidence, **not** automatic adapter/host support. Windows
+native/poll, immutable target cycles, cancellation/recovery and successor pin
+refusals are exercised locally. WSL2 Linux is available again in this dispatch;
+all six watch gates pass on Linux kernel `6.18.33.2-microsoft-standard-WSL2`
+with bubblewrap/prlimit, including native/poll events, cancellation/recovery,
+both Model versions, successor locked target cycles and output backpressure.
+The complete pass is retained as qualified evidence, not discarded because
+of a later environment failure. Subsequent reruns hit 30-second deadlines in
+clean non-watch `validate` and watch-oracle subprocesses, and a later WSL exec
+probe could not start its shell within its deadline. Revalidation is therefore
+**intermittently blocked by the WSL host environment**; no blanket stable-host
+or other-kernel claim is made. The golden pins both the full pass and this
+observable revalidation boundary, without weakening confinement or timeouts.
+No native macOS host is available here: macOS runtime behavior is **not
+qualified by this delivery**, and cross-compilation or Windows/Linux passes
+are never substituted for native evidence. The three-OS CI watch gate,
+including `test-watch-successor.mjs`, remains required before claiming native
+macOS qualification.
+
+macOS admission still requires deny-default seatbelt, process-fork denial and
+working sampled resident-memory supervision. That supervision is degraded,
+not a hard allocation/RSS ceiling; absent or failed enforcement refuses or
+terminates/reaps the owned process, with no ambient fallback. The golden and
+contract gate pin this environmental boundary explicitly; they are not a
+successful macOS runtime test.
 
 The executable and a first-argument script are copied into a private runtime.
 Additional external runtime assets/packages need an explicit bundle

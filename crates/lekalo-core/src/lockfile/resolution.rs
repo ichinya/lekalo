@@ -63,7 +63,16 @@ impl ResolutionRequest {
         Self {
             registry_version: registry.registry_version().clone(),
             model_version: model_version.clone(),
-            ir_version: ContractVersion::<IrContract>::current(),
+            // A compiled IR follows its exact source Model contract;
+            // never lock successor bytes under the legacy default pin.
+            ir_version: if model_version.as_str() == crate::ir::version::SUCCESSOR_VERSION {
+                ContractVersion::<IrContract>::parse_canonical(
+                    crate::ir::version::SUCCESSOR_VERSION,
+                )
+                .expect("successor IR constant is canonical")
+            } else {
+                ContractVersion::<IrContract>::current()
+            },
             protocol_version: registry.protocol().current().cloned(),
             core_version,
             target: None,

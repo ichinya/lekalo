@@ -24,6 +24,10 @@ saphyr-parser = "=0.0.8"
 sha2 = "0.10.9"
 unicode-normalization = "0.1"
 tempfile = "3"
+# notify 6.1.1 declares Rust 1.60 in its released crate manifest.
+# The pinned dependency graph still needs the workspace's Rust 1.80
+# and Windows/Linux/macOS CI checks; no cross-platform pass is implied.
+notify = "=6.1.1"
 
 [workspace.dependencies.rustix]
 version = "1"

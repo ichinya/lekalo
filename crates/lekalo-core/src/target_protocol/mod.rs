@@ -27,11 +27,14 @@ mod conformance;
 pub mod diagnostic;
 pub mod discovery;
 pub mod evidence;
+#[cfg(any(target_os = "macos", test))]
+mod memory;
 pub mod plan;
 pub mod scopes;
 pub mod selection;
 pub mod transport;
 pub mod version;
+pub mod watch;
 pub mod wire;
 
 use std::sync::atomic::AtomicBool;
@@ -232,6 +235,9 @@ pub struct TargetClient {
     /// strict implicit budget; `scan_service`/`catalog` set it from the
     /// resolved manifest after the trust/consistency gates.
     budget: SessionBudget,
+    /// Watch opts into resource controls on every exchange (including
+    /// macOS' honestly degraded sampled supervisor, not a hard cap).
+    bounded_read_only: bool,
 }
 
 impl Default for TargetClient {
@@ -242,13 +248,28 @@ impl Default for TargetClient {
 
 impl TargetClient {
     /// Build one client with explicit transport limits.
+    /// Watch requires both admitted resource controls and process
+    /// containment. This is availability, not successful execution or
+    /// a claim that macOS sampling is a hard memory allocation ceiling.
+    pub(crate) fn bounded_read_only_available() -> bool {
+        let report = confinement::ConfinementReport::compute(
+            confinement::SandboxPolicy::strict().with_bounded_resources(true),
+        );
+        report.memory_limit().is_some() && report.process_limit().is_some()
+    }
+
     pub fn new(limits: transport::TransportLimits) -> Self {
         Self {
             limits,
             described: None,
             binding: None,
             budget: SessionBudget::strict_implicit(),
+            bounded_read_only: false,
         }
+    }
+
+    pub(crate) fn require_bounded_read_only(&mut self) {
+        self.bounded_read_only = true;
     }
 
     /// Set the session's confinement budget (issue #89). Called after
@@ -340,8 +361,13 @@ impl TargetClient {
         );
         envelope.request_id = wire::request_id(&envelope);
         let serialized = serialize(&envelope)?;
-        let sandbox =
-            confinement::Sandbox::new(cwd, &[], &[], false, confinement::SandboxPolicy::strict())?;
+        let sandbox = confinement::Sandbox::new(
+            cwd,
+            &[],
+            &[],
+            false,
+            confinement::SandboxPolicy::strict().with_bounded_resources(self.bounded_read_only),
+        )?;
         // Safe discovery discloses nothing but the request bytes: the
         // handshake runs with empty scopes and an empty environment
         // regardless of the session budget (issue #89).
@@ -401,6 +427,30 @@ impl TargetClient {
         _fs: &Fs,
         cancel: Option<&AtomicBool>,
     ) -> Result<CallOutcome, TargetFailure> {
+        self.call_selected(command, request, cwd, cancel, None)
+    }
+
+    /// Read-only partition exchange; legacy sessions are refused before
+    /// selection bytes are serialized or any process is launched.
+    pub(crate) fn call_watch(
+        &mut self,
+        command: &AdapterCommand,
+        request: CallRequest<'_>,
+        cwd: &std::path::Path,
+        cancel: Option<&AtomicBool>,
+        selection: &watch::WatchSelection,
+    ) -> Result<CallOutcome, TargetFailure> {
+        self.call_selected(command, request, cwd, cancel, Some(selection))
+    }
+
+    fn call_selected(
+        &mut self,
+        command: &AdapterCommand,
+        request: CallRequest<'_>,
+        cwd: &std::path::Path,
+        cancel: Option<&AtomicBool>,
+        selection: Option<&watch::WatchSelection>,
+    ) -> Result<CallOutcome, TargetFailure> {
         let applying = request.operation == Operation::Clean
             || (request.operation == Operation::Generate && request.dry_run == Some(false));
         let planning = request.operation == Operation::PlanClean
@@ -422,6 +472,31 @@ impl TargetClient {
             });
         }
         let capabilities = described.capabilities.clone();
+        if selection.is_some()
+            && (described.negotiated_version != version::WATCH_VERSION
+                || !capabilities.watch.as_ref().is_some_and(|s| s.selection))
+        {
+            return Err(TargetFailure::CapabilityUnsupported {
+                detail: "watch-selection",
+            });
+        }
+        if let Some(selection) = selection {
+            if !selection.valid() {
+                return Err(TargetFailure::RequestInvalid {
+                    detail: "watch-selection",
+                });
+            }
+            if !capabilities.watch.as_ref().is_some_and(|support| {
+                support
+                    .model_versions
+                    .contains(&selection.pins.model_version)
+            }) || !capabilities
+                .ir_versions
+                .contains(&selection.pins.ir_version)
+            {
+                return Err(TargetFailure::IrUnsupported);
+            }
+        }
         // Issue #89: the manifest-enforced budget is the ceiling. The
         // described scopes pass through the budget check before any
         // sandbox exists; exceeding scopes refuse as
@@ -454,10 +529,10 @@ impl TargetClient {
             })?;
         // Refuse undeclared IR support before disclosing project IR.
         if request.operation.requires_ir()
-            && !capabilities
-                .ir_versions
-                .iter()
-                .any(|declared| declared == crate::ir::version::VERSION)
+            && !capabilities.ir_versions.iter().any(|declared| {
+                declared
+                    == selection.map_or(crate::ir::version::VERSION, |s| s.pins.ir_version.as_str())
+            })
         {
             return Err(TargetFailure::IrUnsupported);
         }
@@ -491,6 +566,25 @@ impl TargetClient {
             .is_some_and(|path| !inputs.get(path).is_some_and(|value| value != "directory"))
         {
             return Err(TargetFailure::RequestInvalid { detail: "ir-input" });
+        }
+        if let Some(selection) = selection {
+            let ir = request.ir_path.ok_or(TargetFailure::RequestInvalid {
+                detail: "watch-ir-pin",
+            })?;
+            let (dir, name) = ir.rsplit_once('/').unwrap_or(("", ir));
+            let bytes = fs
+                .read_file_opt(dir, name, version::MAX_FILE_BYTES)
+                .map_err(|_| TargetFailure::RequestInvalid {
+                    detail: "watch-ir-pin",
+                })?
+                .ok_or(TargetFailure::RequestInvalid {
+                    detail: "watch-ir-pin",
+                })?;
+            if !selection.pins.matches_ir(&bytes) {
+                return Err(TargetFailure::RequestInvalid {
+                    detail: "watch-ir-pin",
+                });
+            }
         }
         let context = plan::sha256_hex(&canonical_bytes(&(
             &root,
@@ -543,6 +637,7 @@ impl TargetClient {
         envelope.dry_run = dry_run;
         envelope.plan_id = plan_request;
         envelope.lint_request = request.lint_request.cloned();
+        envelope.watch_request = selection.cloned();
         if let Some(native) = request.native_request {
             envelope.native_request = Some(native.clone());
         }
@@ -566,7 +661,8 @@ impl TargetClient {
             &effective.read,
             &effective.write,
             applying,
-            confinement::SandboxPolicy::from_budget(&self.budget),
+            confinement::SandboxPolicy::from_budget(&self.budget)
+                .with_bounded_resources(self.bounded_read_only),
         )?;
         let stage_fs = Fs::open(&sandbox.project).map_err(|_| TargetFailure::TransportFailed {
             detail: "sandbox-view",
@@ -586,6 +682,11 @@ impl TargetClient {
         );
         let response = self.interpret(exchange, &envelope)?;
         self.validate_response_payload(&request, &response, &capabilities)?;
+        if response.evidence.watch_digest != selection.map(watch::WatchSelection::digest) {
+            return Err(TargetFailure::ResponseInvalid {
+                detail: ResponseInvalidity::Evidence,
+            });
+        }
         let writes = response.writes.clone().unwrap_or_default();
 
         let mut outcome_plan_id = None;
@@ -1042,6 +1143,7 @@ fn base_envelope(
         native_request: None,
 
         lint_request: None,
+        watch_request: None,
     }
 }
 
@@ -1082,6 +1184,9 @@ fn snapshot_scopes(fs: &Fs, write_scopes: &[String]) -> Result<plan::Snapshot, T
 fn transport_failure(error: transport::TransportFailure) -> TargetFailure {
     match error {
         transport::TransportFailure::Spawn => TargetFailure::TransportFailed { detail: "spawn" },
+        transport::TransportFailure::ResourceLimit => TargetFailure::TransportFailed {
+            detail: "resident-memory-limit",
+        },
         transport::TransportFailure::RequestWrite => TargetFailure::TransportFailed {
             detail: "request-write",
         },

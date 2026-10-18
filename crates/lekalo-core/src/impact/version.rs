@@ -19,6 +19,30 @@ pub const IDENTITY: &str = "dev.lekalo.impact@0.2.16";
 /// The exact wire discriminator of the impact contract.
 pub const SCHEMA_VERSION: &str = "lekalo/impact/v0.2.16";
 
+/// Successor payloads preserve the algorithm but bind Model 0.8.0 explicitly.
+pub const SUCCESSOR_VERSION: &str = "0.8.0";
+pub const SUCCESSOR_IDENTITY: &str = "dev.lekalo.impact@0.8.0";
+pub const SUCCESSOR_SCHEMA_VERSION: &str = "lekalo/impact/v0.8.0";
+
+pub const fn version_for(model: crate::loader::ModelVersion) -> &'static str {
+    match model {
+        crate::loader::ModelVersion::Current => VERSION,
+        crate::loader::ModelVersion::Successor => SUCCESSOR_VERSION,
+    }
+}
+pub const fn identity_for(model: crate::loader::ModelVersion) -> &'static str {
+    match model {
+        crate::loader::ModelVersion::Current => IDENTITY,
+        crate::loader::ModelVersion::Successor => SUCCESSOR_IDENTITY,
+    }
+}
+pub const fn schema_version_for(model: crate::loader::ModelVersion) -> &'static str {
+    match model {
+        crate::loader::ModelVersion::Current => SCHEMA_VERSION,
+        crate::loader::ModelVersion::Successor => SUCCESSOR_SCHEMA_VERSION,
+    }
+}
+
 /// The exact identity of the deterministic v1 impact algorithm.
 pub const ALGORITHM: &str = "dev.lekalo.impact.algorithm@0.2.16";
 

@@ -7,6 +7,7 @@
 // NODE_PATH / LEKALO_AJV_NODE_PATH.
 
 import { createRequire } from "node:module";
+import { ACCEPTED_M8_REGISTRY_FAMILIES } from "./lib/registry-union.mjs";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -93,8 +94,18 @@ const byId = new Map(predecessor.entries.map((entry) => [entry.id, entry]));
 const formatEntries = registry.entries.filter((entry) => entry.id.startsWith("format."));
 // All other live/future milestone families are additive data. The owner
 // below pins format's closed set; the shared guard proves predecessor
-// presence/byte identity without an exhaustive hardcoded family list.
+// presence/byte identity, and the accepted-family table bounds additions.
 registryUnion(predecessor, registry);
+const landedFamilies = ACCEPTED_M8_REGISTRY_FAMILIES;
+const additions = registry.entries.filter((entry) => !byId.has(entry.id));
+if (registry.entries.length !== predecessor.entries.length + additions.length || additions.length === 0) {
+  fail("registry-not-a-union");
+}
+for (const entry of additions) {
+  if (!landedFamilies.some((family) => entry.id.startsWith(family))) {
+    fail("registry-addition-outside-landed-families", entry.id);
+  }
+}
 for (const entry of registry.entries) {
   const previous = byId.get(entry.id);
   if (previous && JSON.stringify(previous) !== JSON.stringify(entry)) {

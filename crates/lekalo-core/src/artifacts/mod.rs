@@ -74,6 +74,17 @@ impl GenerateService {
         check::run_check(&prepared)
     }
 
+    /// Read-only captured-input check; internal callers must supply a
+    /// freshly materialized governed root and its exact loaded Model/IR.
+    pub(crate) fn check_captured(
+        root: &std::path::Path,
+        model: &crate::loader::NormalizedModel,
+        compilation: &crate::ir::Compilation,
+    ) -> Result<CheckReceipt, ArtifactFailure> {
+        let prepared = check::Prepared::prepare_captured(root, model, compilation)?;
+        check::run_check(&prepared)
+    }
+
     /// `lekalo generate --clean --dry-run`: compute the deterministic
     /// clean plan without touching a single byte.
     pub fn clean_plan(selection: &LoadSelection) -> Result<CleanPlanReceipt, ArtifactFailure> {

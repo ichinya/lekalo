@@ -1867,14 +1867,12 @@ fn recovery_keeps_the_committed_public_manifest() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+#[cfg(windows)]
 #[test]
 fn stale_recovery_lock_clear_never_escapes_the_project() {
     // The mutation lock is cleared only through the confined capability:
     // a junctioned custody home refuses before any outside byte moves
-    // (finding 11). Windows-only: junctions are an NTFS reparse concept.
-    if !cfg!(windows) {
-        return;
-    }
+    // (finding 11). Compile-gated: junctions are an NTFS reparse concept.
     let root = project_root("recovery-lock");
     let ownership = ownership_doc();
     let coverage = coverage_doc();
