@@ -1,0 +1,66 @@
+{
+  "identity": "dev.lekalo.change-history@0.8.0",
+  "nextSequence": 2,
+  "project": "tasks",
+  "records": [
+    {
+      "files": [
+        "lekalo/modules/tasks/entities.yaml"
+      ],
+      "intentDigest": "sha256:be559fffeadea9b7295b84c387e898eb1c755c041e12f1d18648a294366a05ae",
+      "keyDigest": "sha256:426fcff9463b3f01eb47cc6e5f40b36d473534083837305a5500634e1a624ca7",
+      "operations": [
+        "entity-field:add"
+      ],
+      "planId": "sha256:a72a4dfc5bd0058be53a1aef5a53cb68ffba0edc5c004455fc249507ecdc0de2",
+      "receipt": {
+        "diagnosticIds": [],
+        "files": [
+          {
+            "afterDigest": "sha256:60ff5c08036f30b9ae8e2771d2d6f080eb92ee321eac1cc16abccc4cbaa3bab1",
+            "beforeDigest": "sha256:dc401ad9d6a36a57ff957196bf51f8b95a646722acbf350a08233802b6cae40d",
+            "outcome": "replaced",
+            "path": "lekalo/modules/tasks/entities.yaml"
+          }
+        ],
+        "history": {
+          "recordDigest": "sha256:7141534dfe802f3bc8cbd1fcc1a514fb7a70a9c393dea79529562ee02f333347",
+          "sequence": 1
+        },
+        "identity": "dev.lekalo.change-receipt@0.8.0",
+        "keyDigest": "sha256:426fcff9463b3f01eb47cc6e5f40b36d473534083837305a5500634e1a624ca7",
+        "operations": [
+          {
+            "operation": "entity-field:add",
+            "status": "resolved",
+            "subject": "tasks.task",
+            "subjectFamily": "entity"
+          }
+        ],
+        "planId": "sha256:a72a4dfc5bd0058be53a1aef5a53cb68ffba0edc5c004455fc249507ecdc0de2",
+        "policy": {
+          "allowBreaking": false,
+          "evidence": null,
+          "expectPlan": null,
+          "policyDigest": null
+        },
+        "replayed": false,
+        "requestDigest": "sha256:d4512aa94f9458bb36a78869e4db527ec8bde05527ed56550dc5e81134e20f6a",
+        "schemaVersion": "lekalo/change-receipt/v0.8.0",
+        "state": "committed",
+        "status": "valid",
+        "transaction": {
+          "id": "change-a72a4dfc-1",
+          "state": "committed"
+        }
+      },
+      "requestDigest": "sha256:d4512aa94f9458bb36a78869e4db527ec8bde05527ed56550dc5e81134e20f6a",
+      "sequence": 1
+    }
+  ],
+  "schemaVersion": "lekalo/change-history/v0.8.0",
+  "tip": {
+    "recordDigest": "sha256:7141534dfe802f3bc8cbd1fcc1a514fb7a70a9c393dea79529562ee02f333347",
+    "sequence": 1
+  }
+}

@@ -58,11 +58,21 @@ still a successful status: the command reports, it never repairs.
 
 Clears every cache entry under `.lekalo/cache/**` — the store, its
 WAL/SHM sidecars, and the quarantine home — after path containment and
-reparse/link checks, with two standing custody exceptions:
-`.lekalo/cache/migrations/` (issue #9) and `.lekalo/cache/format/`
+reparse/link checks, with four standing custody exceptions:
+`.lekalo/cache/migrations/` (issue #9), `.lekalo/cache/format/`
 (issue #94, the formatter transaction home: its journal is the
 fail-closed reader signal and its backups are the only recovery
-material) are never touched. `--yes` is required
+material), and `.lekalo/cache/change/` (issue #73, the change
+transaction home: journals and digest-verified backups are the only
+recovery authority for a torn change) are never touched. The shared
+`.lekalo/cache/writer.lock` leaf is also never unlinked, even while a
+writer holds it: unlink/recreate could split exclusion across two inodes.
+All four entries are excluded from disposable-byte accounting. The
+non-cache `.lekalo/change-history-pin.json` commit custody is outside
+this command's scope and survives clear as well. Moreover,
+while any live change transaction still holds a journal, the clear
+refuses outright with `change.recovery-required` (exit 3) and removes
+nothing — run `lekalo change recover` first. `--yes` is required
 (the CI-safe explicit confirmation); without it the command is a
 `cli.usage` failure (exit 1). A denied or unreadable cache home is a
 `structure.*` denial (exit 3). There is no hidden repair, install, or
@@ -74,10 +84,13 @@ update.
 .lekalo/cache/
   cache.sqlite            the store (WAL mode; -wal/-shm sidecars)
   quarantine/             whole-file quarantine of corrupt stores
+  writer.lock             persistent shared writer-lock custody; never cleared
   migrations/             issue #9 custody: journals and immutable
                           backups; never written or cleared here
   format/                 issue #94 custody: formatter journals and
                           immutable backups; never written or cleared here
+  change/                 issue #73 custody: change journals and verified
+                          backups; never written or cleared here
 ```
 
 The historical `.lekalo/cache.sqlite` placement is denied, as is any cache

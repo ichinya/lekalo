@@ -27,6 +27,7 @@ type ProfileAttachment = lekalo_core::storage_engine_profile::StorageEngineProfi
 mod adoption;
 mod ai_lint;
 mod architecture_profile;
+mod change;
 mod coupling;
 mod doctor_git;
 mod evaluation;
@@ -249,6 +250,13 @@ enum Commands {
     Migrate {
         #[command(flatten)]
         migrate: MigrateArgs,
+    },
+    /// Semantic operations instead of direct YAML/code edits (issue #73):
+    /// typed requests, validated candidates, bounded plans, and one
+    /// durable, idempotent transaction writer.
+    Change {
+        #[command(subcommand)]
+        command: change::ChangeCommands,
     },
     /// Print the embedded contract version registry.
     Compatibility,
@@ -2585,6 +2593,7 @@ fn runtime() -> u8 {
             Commands::Load { project, spans, ir } => run_load(project, spans, ir, cli.no_cache),
             Commands::Format { args } => format::run(args),
             Commands::Migrate { migrate } => run_migrate(migrate),
+            Commands::Change { command } => change::run(command),
             Commands::Validate {
                 project,
                 module,

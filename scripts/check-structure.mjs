@@ -16,9 +16,22 @@ const MODULE_FILES = new Set(["module", ...KIND_FILES]);
 const CANONICAL_ROOT_ENTRIES = new Set([
   "project.yaml", "modules", "targets", "authorization.yaml",
   "transport.yaml", "scenarios", "test-port.json",
-  "classification.json", "classification-policy.json"
+  "classification.json", "classification-policy.json",
+  // Issue #72: the conventional query-model home (optional).
+  "query-model.yaml",
+  // Issue #58: the PHP type-generation input home (optional).
+  "types",
+  // Issue #59: the PHP operations-generation input home (optional).
+  "operations",
+  // Issue #60: the PHP routes-generation input home (optional).
+  "routes",
+  // Issue #73: the canonical change audit history sidecar (optional).
+  "change-history.json"
 ]);
 const RUNTIME_ENTRIES = new Set(["import", "cache", "generated", "consumer", "privacy", "adapters"]);
+// The closed runtime top-level files: the issue #73 change provenance
+// registry (anchors transaction journals outside the transaction cache).
+const RUNTIME_FILES = new Set(["pending-transactions.json", "change-history-pin.json"]);
 // The governed issue #32 adapter store (docs/canonical-structure.md).
 const RUNTIME_ADAPTERS_CHILDREN = new Set([
   "packages", "quarantine", "staging", "evidence", "inventory.json"
@@ -170,6 +183,9 @@ function runtimePlacementFailure(entry, logicalPath) {
   const runtimePath = logicalPath.slice(".lekalo/".length);
   const segments = runtimePath.split("/");
   const top = segments[0];
+  if (segments.length === 1 && RUNTIME_FILES.has(top)) {
+    return entry.isFile() ? null : denied(["structure.runtime-unexpected-entry", logicalPath]);
+  }
   if (!RUNTIME_ENTRIES.has(top)) return denied(["structure.runtime-unexpected-entry", logicalPath]);
   if (segments.length === 1) return entry.isDirectory() ? null : denied(["structure.runtime-unexpected-entry", logicalPath]);
   if (["import", "cache", "generated"].includes(top)) return null;

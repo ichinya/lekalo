@@ -123,6 +123,7 @@ pub struct NormalizedModel {
 }
 
 /// One loaded source document plus its exact original bytes.
+#[derive(Clone)]
 pub(crate) struct LoadedDocument {
     pub document: Document,
     pub bytes: Vec<u8>,
@@ -299,8 +300,15 @@ pub(crate) fn load_validated_root_opt_with_overlay(
 
     // Phase 2b (issue #9): fail closed while a migration journal or runtime
     // migration lock exists; readers never observe a half-migrated project.
+    // Issue #73 extends the same barrier to interrupted change transactions
+    // under `.lekalo/cache/change`.
     if let Some(code) = crate::versioning::migration_recovery_code(&fs) {
         return failure(Status::Invalid, vec![Diagnostic::new(code)]);
+    }
+    if let Some(code) = crate::change::recovery_barrier_code(&fs) {
+        // The change rule is admitted for the denied class: the barrier
+        // outcome is denied (exit 3) instead of invalid.
+        return failure(Status::Denied, vec![Diagnostic::new(code)]);
     }
 
     // Phase 2c (issue #94): the same fail-closed rule for an interrupted
@@ -314,6 +322,21 @@ pub(crate) fn load_validated_root_opt_with_overlay(
             return failure(Status::Invalid, vec![Diagnostic::new(code)]);
         }
     }
+
+    // NOTE (issue #73 r8, devin F1/F3 + omp F3): an interrupted adoption
+    // installation deliberately does NOT gate this reader path. The
+    // adoption journals are registered in the SHARED-WRITER sibling
+    // barrier (project_writer.rs) with a precise stranded predicate —
+    // every non-adoption mutating writer refuses until an explicit
+    // adoption recovery resolves the journal — while Model readers stay
+    // open by contract: adoption's compare-and-swap writes are per-file
+    // atomic renames (an interrupted apply leaves each file internally
+    // consistent, never a half-written document), and the family's own
+    // self-heal contract (pinned by test-adoption-refactor.mjs) requires
+    // its mutating entries — including re-apply and the root-resolved
+    // recovery surfaces — to stay reachable while a journal is stranded;
+    // a reader barrier here would strand the resolver behind the very
+    // state it exists to resolve.
 
     // Phase 3: capability-safe enumeration and reads.
     let mut sources: Vec<(String, DocKind)> =

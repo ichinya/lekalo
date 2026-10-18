@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:a0f2c0ec2ccc405e174988a4dc2066ea4fbaed97c9a2a150238c64246592dc95",
+  "cliSourceDigest": "sha256:bb414ba3301a2706e13980bacf228f338fba7a4b4029c73c2d731200b8b796e2",
   "p0Pages": [
     {
       "page": "README.md",
@@ -476,6 +476,171 @@
       "status": "implemented"
     },
     {
+      "id": "cli:change",
+      "kind": "command",
+      "command": "change",
+      "usage": "lekalo change [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:5d4bb6e446c64af17f1cd5e5e421b9a2ce4bbe10ac86a972e62b8ca8072ca07a",
+      "summary": "Semantic operations instead of direct YAML/code edits (issue #73): typed requests, validated candidates, bounded plans, and one durable, idempotent transaction writer",
+      "leaf": false,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change command-effect:add",
+      "kind": "command",
+      "command": "change command-effect:add",
+      "usage": "lekalo change command-effect:add [OPTIONS] --command <ID>",
+      "helpDigest": "sha256:9af0a63619bb59bc6db8977d6f79e97d1969fe54afdece554c1b84f9a3da3022",
+      "summary": "Append one effect reference to a command",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change command-effect:remove",
+      "kind": "command",
+      "command": "change command-effect:remove",
+      "usage": "lekalo change command-effect:remove [OPTIONS] --command <ID>",
+      "helpDigest": "sha256:3c537086c290f0654786e05b32529d780bd11ed338bff3eecf0bb1d9d159ab08",
+      "summary": "Remove one effect reference from a command",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change custody-init",
+      "kind": "command",
+      "command": "change custody-init",
+      "usage": "lekalo change custody-init [OPTIONS] --expect-history <DIGEST>",
+      "helpDigest": "sha256:b3e7971dd2471151764919d05d4a42edcf3e18c9c3e6c94bcfd16041f113c87e",
+      "summary": "Initialize a checkout's local trust epoch. Existing records remain audit-only; only future local commits can replay. Never replaces a pin",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change definition:add",
+      "kind": "command",
+      "command": "change definition:add",
+      "usage": "lekalo change definition:add [OPTIONS] --kind <KIND> --module <NAME> --name <NAME>",
+      "helpDigest": "sha256:52e546f4ad0029b6daf397fdbbd236af3fbffcd079d61ff91334eb596d7408d2",
+      "summary": "Add one command, query, event, policy, or scenario definition",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change entity-field:add",
+      "kind": "command",
+      "command": "change entity-field:add",
+      "usage": "lekalo change entity-field:add [OPTIONS] --entity <ID> --name <NAME> --type <TYPE>",
+      "helpDigest": "sha256:21ed7ccbefc958783006d7895f299071ce8de4f46474d9f9cfd083ea4851ffae",
+      "summary": "Add one field to an entity or value-object",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change entity-field:remove",
+      "kind": "command",
+      "command": "change entity-field:remove",
+      "usage": "lekalo change entity-field:remove [OPTIONS] --entity <ID> --name <NAME>",
+      "helpDigest": "sha256:6066ebb8ce77f89366a25ed13533e4e10a7b34bbfb68dd3f14642d4e7f6e25fe",
+      "summary": "Remove one field from an entity or value-object",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change entity-field:rename",
+      "kind": "command",
+      "command": "change entity-field:rename",
+      "usage": "lekalo change entity-field:rename [OPTIONS] --entity <ID> --name <NAME> --to <NAME>",
+      "helpDigest": "sha256:5c0f4fc30b3ed6280982db8190fff4b20ca79c18a7aa6534d34b0d649eb0d0f0",
+      "summary": "Rename one field of an entity or value-object in place",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change enum-case:add",
+      "kind": "command",
+      "command": "change enum-case:add",
+      "usage": "lekalo change enum-case:add [OPTIONS] --enum <ID> --name <NAME>",
+      "helpDigest": "sha256:a90ec52d84eb7c1efb8e98dd78c8f6212b44d11cadfac7009eae0b6636a3ed5a",
+      "summary": "Add one case to an enum definition",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change enum-case:change",
+      "kind": "command",
+      "command": "change enum-case:change",
+      "usage": "lekalo change enum-case:change [OPTIONS] --enum <ID> --name <NAME>",
+      "helpDigest": "sha256:8c2a08952774a23646fce76151fcbd0467e32ac94e06a78f8494d41b6468e9fd",
+      "summary": "Rename or redescribe one existing enum case",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change operation-input:set",
+      "kind": "command",
+      "command": "change operation-input:set",
+      "usage": "lekalo change operation-input:set [OPTIONS] --operation <ID> --input-json <JSON>",
+      "helpDigest": "sha256:800499848b20b0910aa325ef8b2082a8b8c97f3fa8e8ab0e632383a9dd385e89",
+      "summary": "Replace a command's input field list",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change operation-output:set",
+      "kind": "command",
+      "command": "change operation-output:set",
+      "usage": "lekalo change operation-output:set [OPTIONS] --operation <ID> --type <TYPE>",
+      "helpDigest": "sha256:2bc817536e7715f6eabc0fab7bf7adc3bf60c4aaa994a6ffba86d41847b8007d",
+      "summary": "Replace a query's return type",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change receipt",
+      "kind": "command",
+      "command": "change receipt",
+      "usage": "lekalo change receipt [OPTIONS] --idempotency-key <KEY>",
+      "helpDigest": "sha256:8c9bb6ab2faf283c695014e6841e1b608b730f5249dea701c434127a262ab49d",
+      "summary": "Print the committed receipt of one idempotency key",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change recover",
+      "kind": "command",
+      "command": "change recover",
+      "usage": "lekalo change recover [OPTIONS] --transaction <ID>",
+      "helpDigest": "sha256:68efaaa1330df9abaed9426934bf881925d938e487b93c7980ca2fcb55e2d6a9",
+      "summary": "Recover one interrupted change transaction; readers stay blocked until this succeeds",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change request",
+      "kind": "command",
+      "command": "change request",
+      "usage": "lekalo change request [OPTIONS] --request <FILE>",
+      "helpDigest": "sha256:20e3104408ce6ce447d032f7d74fc51b990e637231471713d7f9748fdb7b0298",
+      "summary": "Run the complete JSON request surface from a file",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:classification",
       "kind": "command",
       "command": "classification",
@@ -803,6 +968,17 @@
       "summary": "Validate one attachment: exhaustive static typing, canonical bytes, and the required capability set",
       "leaf": true,
       "owner": "docs/expressions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:find",
+      "kind": "command",
+      "command": "find",
+      "usage": "lekalo find [OPTIONS]",
+      "helpDigest": "sha256:3a152b4411dbfb60bb5b904502ba832d31b8bbe085bf546ff3ecf124465c0a56",
+      "summary": "Exact filtered lookup over the typed projection (issue #93): never fuzzes a selector; repeated flags OR, different flags AND",
+      "leaf": true,
+      "owner": "docs/semantic-search.md",
       "status": "implemented"
     },
     {
@@ -1873,6 +2049,61 @@
       "status": "implemented"
     },
     {
+      "id": "cli:search",
+      "kind": "command",
+      "command": "search",
+      "usage": "lekalo search [OPTIONS] <QUERY>",
+      "helpDigest": "sha256:b8c9443b8e1b6f01f7a9d0c1922cc5b0a7b5937cfcc3315ac1e16741e38fd314",
+      "summary": "Deterministic semantic search over the typed projection (issue #93): `search` combines exact filters with lexical retrieval, `find` applies exact filters alone, and `search-index` owns the durable generation lifecycle. The core owns every decision; this binary only admits inputs, persists the cache-owned store, and maps exits",
+      "leaf": true,
+      "owner": "docs/semantic-search.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:search-index",
+      "kind": "command",
+      "command": "search-index",
+      "usage": "lekalo search-index [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:2e4a75ef61a184c4d2904fdd127ca31e7ac63a23f2b7970dc9d580f76e159066",
+      "summary": "The durable search index lifecycle under the governed cache custody (issue #93)",
+      "leaf": false,
+      "owner": "docs/semantic-search.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:search-index build",
+      "kind": "command",
+      "command": "search-index build",
+      "usage": "lekalo search-index build [OPTIONS]",
+      "helpDigest": "sha256:5223095f907b930b4cfcf9fd9a7dffeb6015caff572019a9f088c80222da5dbc",
+      "summary": "Build and publish one index generation from the admitted inputs",
+      "leaf": true,
+      "owner": "docs/semantic-search.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:search-index status",
+      "kind": "command",
+      "command": "search-index status",
+      "usage": "lekalo search-index status [OPTIONS]",
+      "helpDigest": "sha256:419816aa1e302a06458bdcf12f5e343fdc041cb02811bcce7f7ee94e40814e25",
+      "summary": "The read-only status of the durable index store",
+      "leaf": true,
+      "owner": "docs/semantic-search.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:search-index update",
+      "kind": "command",
+      "command": "search-index update",
+      "usage": "lekalo search-index update [OPTIONS]",
+      "helpDigest": "sha256:98d697db35fa5fbe22a17a2bacfded609ff4a65b9f38c2e81b7c635272a1a43f",
+      "summary": "Incrementally recompute the index from the admitted inputs",
+      "leaf": true,
+      "owner": "docs/semantic-search.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:status",
       "kind": "command",
       "command": "status",
@@ -2734,6 +2965,69 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/change-catalog.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-catalog.schema.v0.8.0.json",
+      "sourceDigest": "sha256:9e0e0f44ddd5342484a02c6ff200bbdb71ce0806589a0487ae6ce3442db5bd87",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/change-catalog.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-catalog.v0.8.0.json",
+      "sourceDigest": "sha256:285b2650daf231efd2bea9f8ba8acd4ad94faa22f931e0deee7c50fa13c28c84",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/change-history.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-history.schema.v0.8.0.json",
+      "sourceDigest": "sha256:b498c67687164d89759f6276cf51ba7907141b8a1b3bfe193cebdae26fce46b1",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/change-plan.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-plan.schema.v0.8.0.json",
+      "sourceDigest": "sha256:833e2b22a0565e7083b3093a13981f8962e64e9644e9a603a1c9b2f9b4df9ee6",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/change-policy.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-policy.schema.v0.8.0.json",
+      "sourceDigest": "sha256:26185c3331d029234b679f226c3055a4acfbf0f2cece0a0b654d01526c5400fc",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/change-receipt.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-receipt.schema.v0.8.0.json",
+      "sourceDigest": "sha256:370aace43b37e0cf182bb09fd329d56914b5ac6fb812808e65167bb14ac54b9f",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/change-request.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/change-request.schema.v0.8.0.json",
+      "sourceDigest": "sha256:834ff3e27eb936cccc64670f6624f5f6338180ecb4ae27f90ee5c203ab6d26db",
+      "owner": "docs/change.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/ci-report.schema.v0.6.3.json",
       "kind": "contract",
       "source": "contracts/ci-report.schema.v0.6.3.json",
@@ -2926,7 +3220,7 @@
       "id": "contract:contracts/diagnostic-registry.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.schema.v0.8.0.json",
-      "sourceDigest": "sha256:dac22d6cb0ac2de1768f6350ad1e91187d61a63770ce35e2951f9966f54b087d",
+      "sourceDigest": "sha256:4f942ba8914caeefa171b42045ab28bda7d7cee72fbb13056116b53c8d8b53a2",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2971,7 +3265,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.8.0.json",
-      "sourceDigest": "sha256:097c580319526ac535de6c848519ccda4e6d7619429c1265c2002feab95353a1",
+      "sourceDigest": "sha256:2a2f1e59dc71afae26976e4ca6ade94c489094a6624ed4e9914fa19b40b300f3",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

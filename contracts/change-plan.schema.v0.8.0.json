@@ -1,0 +1,644 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/change-plan.schema.v0.8.0.json",
+  "title": "Lekalo change plan",
+  "description": "Closed contract of one prepared semantic change (issue #73). A plan is produced only by the change service: it pins the request, catalog, policy, and every input byte by digest, resolves each operation against typed semantic identities, carries the owner-produced semantic diff, the exact bounded file diff, and the impact and generation projections, and summarizes breaking classes. No caller-supplied executable patch authority exists; the only writable form of a plan is the service-created sealed plan an application run revalidates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "status",
+    "schemaVersion",
+    "identity",
+    "planId",
+    "requestDigest",
+    "catalogDigest",
+    "policyDigest",
+    "mode",
+    "equal",
+    "operations",
+    "inputs",
+    "fileEdits",
+    "fileDiff",
+    "semanticDiff",
+    "impact",
+    "generation",
+    "breakingClasses",
+    "policyAllowed",
+    "complete",
+    "completeReason"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/change-plan/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.change-plan@0.8.0"
+    },
+    "planId": {
+      "$ref": "#/$defs/sha256"
+    },
+    "requestDigest": {
+      "$ref": "#/$defs/sha256"
+    },
+    "catalogDigest": {
+      "$ref": "#/$defs/sha256"
+    },
+    "policyDigest": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "mode": {
+      "enum": [
+        "preview",
+        "apply"
+      ]
+    },
+    "equal": {
+      "type": "boolean"
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/resolvedOperation"
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/inputPin"
+      }
+    },
+    "fileEdits": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/fileEdit"
+      }
+    },
+    "fileDiff": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/fileDiff"
+      }
+    },
+    "semanticDiff": {
+      "$ref": "#/$defs/semanticDiffSummary"
+    },
+    "impact": {
+      "$ref": "#/$defs/impactProjection"
+    },
+    "generation": {
+      "$ref": "#/$defs/generationProjection"
+    },
+    "breakingClasses": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/compatibilityClass"
+      }
+    },
+    "policyAllowed": {
+      "type": "boolean"
+    },
+    "complete": {
+      "type": "boolean"
+    },
+    "completeReason": {
+      "anyOf": [
+        {
+          "enum": [
+            "change.file-diff-limit",
+            "change.patch-limit"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "const": "valid",
+      "description": "The envelope status of the run; only valid runs carry a plan or receipt payload."
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "operationId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$"
+    },
+    "token": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "resolvedOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "subject",
+        "subjectFamily",
+        "status"
+      ],
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/operationId"
+        },
+        "subject": {
+          "$ref": "#/$defs/token"
+        },
+        "subjectFamily": {
+          "enum": [
+            "project",
+            "module",
+            "scalar",
+            "enum",
+            "value-object",
+            "entity",
+            "command",
+            "query",
+            "policy",
+            "event",
+            "effect",
+            "endpoint",
+            "scenario",
+            "target-binding",
+            "none"
+          ]
+        },
+        "status": {
+          "enum": [
+            "resolved",
+            "unsupported"
+          ]
+        },
+        "detail": {
+          "$ref": "#/$defs/token"
+        }
+      }
+    },
+    "inputPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "digest"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "fileEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "beforeDigest",
+        "afterDigest"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "beforeDigest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "afterDigest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "fileDiff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "before",
+        "after",
+        "patch"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "before": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "after": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "patch": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/patchLine"
+          }
+        }
+      }
+    },
+    "patchLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "beforeLine",
+        "afterLine",
+        "text"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "equal",
+            "insert",
+            "delete"
+          ]
+        },
+        "beforeLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "afterLine": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    },
+    "semanticDiffSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "equal",
+        "classification",
+        "changes",
+        "complete",
+        "completeReason"
+      ],
+      "properties": {
+        "equal": {
+          "type": "boolean"
+        },
+        "classification": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/compatibilityClass"
+          }
+        },
+        "changes": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/changeRecord"
+          }
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "completeReason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/token"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "changeRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changeId",
+        "kind",
+        "subject",
+        "reasons"
+      ],
+      "properties": {
+        "changeId": {
+          "$ref": "#/$defs/sha256"
+        },
+        "kind": {
+          "$ref": "#/$defs/changeKind"
+        },
+        "subject": {
+          "$ref": "#/$defs/subject"
+        },
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/token"
+          }
+        }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "id"
+      ],
+      "properties": {
+        "family": {
+          "$ref": "#/$defs/subjectFamily"
+        },
+        "id": {
+          "$ref": "#/$defs/token"
+        },
+        "member": {
+          "$ref": "#/$defs/token"
+        }
+      }
+    },
+    "changeKind": {
+      "enum": [
+        "symbol.added",
+        "symbol.removed",
+        "symbol.renamed",
+        "symbol.replaced",
+        "symbol.tombstoned",
+        "symbol.kind-changed",
+        "symbol.visibility-changed",
+        "symbol.portability-changed",
+        "symbol.version-changed",
+        "symbol.derived-from-changed",
+        "module.imports-changed",
+        "field.added",
+        "field.removed",
+        "field.type-changed",
+        "field.nullability-changed",
+        "field.presence-changed",
+        "type.shape-changed",
+        "type.member-added",
+        "type.member-removed",
+        "signature.input-added",
+        "signature.input-removed",
+        "signature.input-type-changed",
+        "signature.input-presence-changed",
+        "signature.output-changed",
+        "signature.reads-changed",
+        "signature.effects-changed",
+        "invariant.identity-changed",
+        "policy.decision-changed",
+        "policy.scope-changed",
+        "effect.operation-changed",
+        "effect.entity-changed",
+        "effect.emits-changed",
+        "endpoint.method-changed",
+        "endpoint.path-changed",
+        "endpoint.invokes-changed",
+        "scenario.summary-changed",
+        "scenario.covers-changed",
+        "binding.target-changed"
+      ]
+    },
+    "compatibilityClass": {
+      "enum": [
+        "unknown",
+        "data-loss-risk",
+        "storage-migration-required",
+        "wire-breaking",
+        "source-breaking",
+        "behavioral",
+        "target-specific",
+        "additive"
+      ]
+    },
+    "subjectFamily": {
+      "enum": [
+        "project",
+        "module",
+        "scalar",
+        "enum",
+        "value-object",
+        "entity",
+        "command",
+        "query",
+        "policy",
+        "event",
+        "effect",
+        "endpoint",
+        "scenario",
+        "target-binding"
+      ]
+    },
+    "impactProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "seeds",
+        "affected",
+        "complete"
+      ],
+      "properties": {
+        "seeds": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/seedEntry"
+          }
+        },
+        "affected": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/affectedEntry"
+          }
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      }
+    },
+    "seedEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "id",
+        "side"
+      ],
+      "properties": {
+        "family": {
+          "$ref": "#/$defs/subjectFamily"
+        },
+        "id": {
+          "$ref": "#/$defs/token"
+        },
+        "member": {
+          "$ref": "#/$defs/token"
+        },
+        "side": {
+          "enum": [
+            "base",
+            "candidate"
+          ]
+        }
+      }
+    },
+    "affectedEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "subjectFamily",
+        "direction",
+        "via"
+      ],
+      "properties": {
+        "subject": {
+          "$ref": "#/$defs/token"
+        },
+        "subjectFamily": {
+          "$ref": "#/$defs/subjectFamily"
+        },
+        "direction": {
+          "enum": [
+            "base",
+            "candidate"
+          ]
+        },
+        "via": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/token"
+          }
+        }
+      }
+    },
+    "generationProjection": {
+      "description": "The generation plan of the change: every declared target pinned by its exact document digest, the project lock pinned when present, and explicit unknown states. Generation itself is never executed by the change service; execution stays separately authorized.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "executed",
+        "targets",
+        "lock",
+        "complete",
+        "note"
+      ],
+      "properties": {
+        "executed": {
+          "const": false
+        },
+        "targets": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/targetPlan"
+          }
+        },
+        "lock": {
+          "description": "The pinned project lockfile when one exists; null means the lock is absent and generation planning is incomplete until `lekalo lock` runs.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/lockPin"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "targetPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "file",
+        "digest",
+        "status",
+        "action"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/token"
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "status": {
+          "enum": [
+            "planned",
+            "opaque",
+            "unreadable"
+          ]
+        },
+        "action": {
+          "$ref": "#/$defs/token"
+        }
+      }
+    },
+    "lockPin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "digest"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

@@ -36,7 +36,7 @@ export function discoverCommands(bin) {
     assert.equal(result.status, 0, `help failed: ${args.join(" ")}`);
     assert.equal(result.stderr, "");
     const help = result.stdout.replaceAll("lekalo.exe", "lekalo");
-    const children = [...(help.match(/Commands:\n([\s\S]*?)(?:\n\n|$)/)?.[1] ?? "").matchAll(/^  ([a-z][a-z-]*)\s{2,}/gm)].map(x => x[1]);
+    const children = [...(help.match(/Commands:\n([\s\S]*?)(?:\n\n|$)/)?.[1] ?? "").matchAll(/^  ([a-z][a-z0-9:-]*)\s{2,}/gm)].map(x => x[1]);
     if (args.length) rows.push({ id: `cli:${args.join(" ")}`, kind: "command", command: args.join(" "), usage: help.match(/^Usage: (.+)$/m)?.[1], helpDigest: sha(help), summary: help.split("\n")[0], leaf: children.length === 0 });
     children.forEach(child => visit([...args, child]));
   };
@@ -46,6 +46,7 @@ export function discoverCommands(bin) {
 const commandOwners = {
   search:"semantic-search", find:"semantic-search", "search-index":"semantic-search",
   "architecture-profile":"architecture-profile", evaluation:"framework-lift", metrics:"metrics-export", waivers:"waivers", managed:"managed-mode",
+  change:"change",
   load:"loader", migrate:"versioning", compatibility:"versioning", provider:"provider-contract", validate:"validation", inspect:"inspect", impact:"impact", context:"context", "context-budget":"context-budget", coupling:"coupling", "ai-lint":"ai-lint", format:"format", diff:"semantic-diff", graph:"graph", effects:"effect-graph", lock:"lockfile", update:"lockfile", trace:"trace-manifest", requirements:"requirements", transport:"transport-http", openapi:"openapi", "query-model":"query-model", expressions:"expressions", "storage-profile":"storage-engine-profile", classification:"classification", dataflow:"classification", privacy:"privacy-runtime", generate:"orchestration", verify:"orchestration", init:"bootstrap", module:"bootstrap", adapter:"adapter-install", cache:"cache", history:"run-history", doctor:"doctor", status:"doctor", readiness:"doctor", observe:"observed-mode", scan:"observed-mode", bindings:"bindings", contract:"contracted-mode", native:"native-gates", nfr:"nfr",
   adoption:"adoption", portability:"portability", pilot:"@m8-issue-51", api:"module-api",
   "task-links":"task-external-links",
@@ -64,6 +65,7 @@ export function commandOwner(command) {
 const families = {
   "managed-ownership":"managed-mode", "managed-coverage":"managed-mode", "managed-generation-plan":"managed-mode", "managed-generation-record":"managed-mode", "managed-transaction":"managed-mode", "managed-rollback-plan":"managed-mode", "managed-equivalence":"managed-mode",
   "architecture-rule-catalog":"architecture-profile", "architecture-profile":"architecture-profile", "architecture-profile-resolved":"architecture-profile", "architecture-profile-lock":"architecture-profile", "architecture-profile-report":"architecture-profile", "architecture-profile-diff":"architecture-profile", "architecture-adoption":"architecture-profile",
+  "change-catalog":"change", "change-history":"change", "change-plan":"change", "change-policy":"change", "change-receipt":"change", "change-request":"change",
   "framework-lift-baseline":"framework-lift", "framework-lift-task":"framework-lift", "framework-lift-campaign":"framework-lift", "framework-lift-arm":"framework-lift", "framework-lift-result":"framework-lift",
   "evaluation-export-input":"metrics-export", "metrics-aggregation-definition":"metrics-export", "public-metrics":"metrics-export", "metrics-export-manifest":"metrics-export", "metrics-export-preview":"metrics-export",
   "waiver-input":"waivers", "waiver-audit":"waivers",

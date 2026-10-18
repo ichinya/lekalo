@@ -27,8 +27,10 @@ pub const SUCCESSOR_REGISTRY_BYTES: &[u8] =
 ///
 /// After the milestone integration merges this file also carries the
 /// issue #136 `adoption.*`, issue #19 `portability.*`, issue #51
-/// `worklog-changelog.*`, and issue #41 `managed.*` families (the
-/// grand union registry).
+/// After the milestone integration merges this file also carries the
+/// issue #136 `adoption.*`, issue #19 `portability.*`, issue #51
+/// `worklog-changelog.*`, issue #41 `managed.*`, and issue #73
+/// `change.*` families (the grand union registry).
 pub const FORMAT_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
 
@@ -63,6 +65,13 @@ pub const TASKLINK_REGISTRY_BYTES: &[u8] =
 /// The issue #93 union successor bytes (the same merged union registry
 /// as the other 0.8.0 family constants; adds the eight `search.*` rules).
 pub const SEARCH_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
+/// The issue #73 union successor: every merged 0.8.0 entry (the 0.6.5
+/// union plus the closed `format.*`/`adoption.*`/`portability.*`/
+/// `worklog-changelog.*`/`managed.*`/`module-api.*`/`search.*` families)
+/// plus the closed `change.*` family (`LEK-CHANGE-001..012`).
+pub const CHANGE_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
 
 /// Why the embedded registry could not be trusted.
@@ -206,7 +215,8 @@ impl DiagnosticRegistry {
     ///
     /// After the milestone integration merges this registry also carries
     /// the issue #136 `adoption.*`, issue #19 `portability.*`, issue #51
-    /// `worklog-changelog.*`, and issue #41 `managed.*` families.
+    /// `worklog-changelog.*`, issue #41 `managed.*`, and issue #73 `change.*`
+    /// families.
     pub fn format_successor() -> Result<&'static Self, RegistryError> {
         static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
             LazyLock::new(|| {
@@ -218,12 +228,9 @@ impl DiagnosticRegistry {
         REGISTRY.as_ref().map_err(Clone::clone)
     }
 
-    /// The issue #136 union successor (the merged format, adoption,
-    /// portability, and worklog-changelog registry since the milestone
-    /// integration merges).
-    /// The issue #136 union successor (the merged `format.*` + `adoption.*`
-    /// + `portability.*` + `worklog-changelog.*` + `managed.*` registry
-    ///   since the milestone integration merges).
+    /// The issue #136 union successor (the merged `format.*`, `adoption.*`,
+    /// `portability.*`, `worklog-changelog.*`, and `managed.*` registry
+    /// since the milestone integration merges).
     pub fn adoption() -> Result<&'static Self, RegistryError> {
         static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
             LazyLock::new(|| {
@@ -315,12 +322,26 @@ impl DiagnosticRegistry {
         REGISTRY.as_ref().map_err(Clone::clone)
     }
 
+    /// The issue #73 union successor (0.8.0): the merged
+    /// format/adoption/portability/worklog-changelog/managed union plus
+    /// the change family. Predecessor producers keep their exact pins.
+    pub fn change_successor() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    CHANGE_REGISTRY_BYTES,
+                    super::version::CHANGE_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
     pub fn for_version(version: &str) -> Result<&'static Self, RegistryError> {
         match version {
             REGISTRY_VERSION => Self::embedded(),
             super::version::SUCCESSOR_REGISTRY_VERSION => Self::successor(),
-            // All eight family constants name the merged 0.8.0 union
-            // registry; any accessor parses the same bytes.
+            // All nine family constants name the merged 0.8.0 union
+            // registry; every family accessor parses the same bytes.
             v if v == super::version::FORMAT_REGISTRY_VERSION
                 || v == super::version::ADOPTION_REGISTRY_VERSION
                 || v == super::version::M8_REGISTRY_VERSION
@@ -328,7 +349,8 @@ impl DiagnosticRegistry {
                 || v == super::version::MODULE_REGISTRY_VERSION
                 || v == super::version::MANAGED_REGISTRY_VERSION
                 || v == super::version::TASKLINK_REGISTRY_VERSION
-                || v == super::version::SEARCH_REGISTRY_VERSION =>
+                || v == super::version::SEARCH_REGISTRY_VERSION
+                || v == super::version::CHANGE_REGISTRY_VERSION =>
             {
                 Self::module_successor()
             }

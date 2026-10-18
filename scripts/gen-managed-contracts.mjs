@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { registryUnion } from './lib/registry-union.mjs';
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const version = '0.8.0';
@@ -206,18 +207,26 @@ export function artifacts(union = read(`contracts/diagnostic-registry.v${version
     allowed_fix_ids: [],
     lifecycle: 'active',
   }));
-  // This generator owns only managed.*. Compose that slice over the
-  // committed union, preserving every sibling family and frozen entry.
-  for (const entry of predecessor.entries) {
-    assert.deepEqual(union.entries.find(candidate => candidate.id === entry.id), entry, `predecessor entry changed: ${entry.id}`);
-  }
+  // The 0.8.0 registry is the merged milestone union: this generator owns
+  // the managed family and carries every other merged family (format,
+  // adoption, portability, worklog-changelog, change) verbatim from the
+  // committed successor, so the artifact stays one sorted closed union.
+  const committed = read(`contracts/diagnostic-registry.v${version}.json`);
+  registryUnion(predecessor, committed); // Never silently repair a dropped predecessor.
+  const predecessorIds = new Set(predecessor.entries.map(entry => entry.id));
+  const carried = committed.entries.filter(
+    entry => !predecessorIds.has(entry.id) && !entry.id.startsWith('managed.'),
+  );
   const registry = {
     ...union,
     schema_version: `lekalo/diagnostic-registry/v${version}`,
     identity: `dev.lekalo.diagnostic-registry@${version}`,
     registry_version: version,
-    entries: [...union.entries.filter(entry => !entry.id.startsWith('managed.')), ...entries].sort((a, b) => (a.id < b.id ? -1 : 1)),
+    entries: [...predecessor.entries, ...carried, ...entries].sort((a, b) => (a.id < b.id ? -1 : 1)),
   };
+  const registrySchema = JSON.parse(JSON.stringify(read('contracts/diagnostic-registry.schema.v0.6.4.json')).replaceAll('0.6.4', version));
+  registryUnion(predecessor, registry);
+  registrySchema.description = 'Merged additive milestone union successor: every frozen 0.6.5 predecessor entry is preserved verbatim and every landed family is carried from the committed successor, without an exhaustive family list or total. Each family owner pins its own closed rule set; the shared union guard requires predecessor presence and byte identity, sorted unique IDs, and unique codes. The data-fields `name` grammar is `^[A-Za-z][A-Za-z0-9]{0,31}$` (all existing data names conform). Wire diagnostics remain v0.2.16; predecessor producer registries keep their exact pins.';
   files.set(`contracts/diagnostic-registry.v${version}.json`, pretty(registry));
   // The shared registry schema (including the description of all landed
   // families and their union grammar) is not owned by this generator.

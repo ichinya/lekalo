@@ -150,9 +150,12 @@ const expectedNew = [
   "worklog-changelog.replay-scope-invalid",
   "worklog-changelog.evidence-incomplete",
 ];
+// The 0.8.0 registry is the merged milestone union, so the set of ids
+// new over 0.6.5 spans every merged family; this gate pins the pilot
+// family itself: exactly the seven worklog-changelog.* ids, nothing
+// more, nothing less.
 const actualNew = registry.entries
   .filter((entry) => entry.id.startsWith("worklog-changelog."))
-  .filter((entry) => !predecessor655.entries.some((candidate) => candidate.id === entry.id))
   .map((entry) => entry.id)
   .sort();
 if (JSON.stringify(actualNew) !== JSON.stringify(expectedNew.slice().sort())) {

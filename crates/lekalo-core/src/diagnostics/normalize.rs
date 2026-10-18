@@ -60,9 +60,9 @@ pub(crate) fn build(
         } else {
             // The merged 0.8.0 union registry covers the format, adoption,
             // portability, worklog-changelog, managed, module-api,
-            // tasklink, and search families; every family accessor parses
-            // the same bytes.
-            DiagnosticRegistry::module_successor().map_err(|_| BuildError::Registry)?
+            // tasklink, search, and change families; every family
+            // accessor parses the same bytes.
+            DiagnosticRegistry::change_successor().map_err(|_| BuildError::Registry)?
         }
     };
     let entry = registry

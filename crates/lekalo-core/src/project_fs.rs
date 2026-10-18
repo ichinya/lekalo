@@ -680,6 +680,24 @@ pub struct Fs {
 pub type FsResult<T> = Result<T, FsErrorKind>;
 
 impl Fs {
+    /// Read one full logical file path (for example `lekalo/project.yaml`)
+    /// with the same no-follow, link- and hardlink-refusing discipline as
+    /// [`Fs::read_file_opt`] (r8, devin F3 + omp F5/F6 residual: the
+    /// ledger, pin, and postcondition reads of the change family route
+    /// through here, so no serde-decoded or journaled path can ever make
+    /// the reader follow a link out of the root). `Err(NotFound)` when
+    /// the file does not exist; any other failure is fail-closed `Io`.
+    pub fn read_logical(&self, logical: &str, max: usize) -> Result<Option<Vec<u8>>, FsErrorKind> {
+        if crate::project_fs::path_violation(logical).is_some() {
+            return Err(FsErrorKind::Io);
+        }
+        let (directory, name) = match logical.rsplit_once('/') {
+            Some((directory, name)) => (directory, name),
+            None => ("", logical),
+        };
+        self.read_file_opt(directory, name, max)
+    }
+
     /// Reject every component of an absolute path that is a symlink, Windows
     /// reparse point, or (on Windows) an 8.3/case alias of a longer name.
     ///
@@ -802,7 +820,7 @@ impl Fs {
 }
 
 /// The closed set of canonical `lekalo/` root entries.
-pub(crate) const CANONICAL_ROOT_ENTRIES: [&str; 13] = [
+pub(crate) const CANONICAL_ROOT_ENTRIES: [&str; 14] = [
     "project.yaml",
     "modules",
     "targets",
@@ -819,6 +837,10 @@ pub(crate) const CANONICAL_ROOT_ENTRIES: [&str; 13] = [
     // Issue #72: the conventional query-model home the client-SDK
     // evidence derivation binds (optional).
     "query-model.yaml",
+    // Issue #73: the canonical change audit history sidecar (optional).
+    // The change service owns it; the loader never decodes it as model
+    // input (docs/canonical-structure.md).
+    "change-history.json",
     // Issue #58: the PHP type-generation input home (optional).
     "types",
     // Issue #59: the PHP operations-generation input home (optional).
@@ -839,6 +861,12 @@ const RUNTIME_ENTRIES: [&str; 6] = [
     "privacy",
     "adapters",
 ];
+
+/// The closed runtime top-level FILES under `.lekalo/`: the durable
+/// change provenance registry (issue #73) anchors transaction journals
+/// OUTSIDE the transaction cache home, so a journal planted into
+/// `.lekalo/cache` alone can never mint recovery authority.
+const RUNTIME_FILES: [&str; 2] = ["pending-transactions.json", "change-history-pin.json"];
 
 /// The closed children of `.lekalo/adapters/` — the custody tree the
 /// adapter package model owns (docs/canonical-structure.md).
@@ -871,6 +899,10 @@ fn runtime_placement_failure(entry_type: EntryType, logical: &str) -> Option<Sca
     let runtime = logical.strip_prefix(".lekalo/")?;
     let segments: Vec<&str> = runtime.split('/').collect();
     let top = segments[0];
+    if segments.len() == 1 && RUNTIME_FILES.contains(&top) {
+        return (entry_type != EntryType::File)
+            .then(|| StructureReason::new("structure.runtime-unexpected-entry").at(logical));
+    }
     if !RUNTIME_ENTRIES.contains(&top) {
         return Some(StructureReason::new("structure.runtime-unexpected-entry").at(logical));
     }
@@ -1298,6 +1330,17 @@ mod tests {
     #[test]
     fn runtime_placement_mirrors_the_checker_containers() {
         assert!(runtime_placement_failure(EntryType::Directory, ".lekalo/import/notes").is_none());
+        // The change provenance registry: exactly a file at the top level.
+        assert!(
+            runtime_placement_failure(EntryType::File, ".lekalo/pending-transactions.json")
+                .is_none()
+        );
+        assert!(runtime_placement_failure(
+            EntryType::Directory,
+            ".lekalo/pending-transactions.json"
+        )
+        .is_some());
+        assert!(runtime_placement_failure(EntryType::File, ".lekalo/pending-other.json").is_some());
         assert!(
             runtime_placement_failure(EntryType::Directory, ".lekalo/consumer/model").is_none()
         );

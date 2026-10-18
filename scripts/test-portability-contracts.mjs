@@ -16,6 +16,7 @@ import { appendFileSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSyn
 import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { registryUnion } from "./lib/registry-union.mjs";
 
 const require = createRequire(import.meta.url);
 let Ajv2020;
@@ -82,12 +83,8 @@ if (union.identity !== "dev.lekalo.diagnostic-registry@0.8.0") fail("registry-id
 if (union.registry_version !== "0.8.0") fail("registry-version", union.registry_version);
 const predecessorIds = new Set(predecessor.entries.map((entry) => entry.id));
 const unionIds = new Set(union.entries.map((entry) => entry.id));
-if (union.entries.length !== unionIds.size) {
-  fail("registry-size", `${union.entries.length} entries vs ${unionIds.size} unique ids`);
-}
-if ([...predecessorIds].some((id) => !unionIds.has(id))) {
-  fail("registry-size", "union dropped a predecessor id");
-}
+// Validate the actual additive union, including all live milestone families.
+registryUnion(predecessor, union);
 for (const entry of predecessor.entries) {
   if (!unionIds.has(entry.id)) fail("registry-dropped", entry.id);
   const successorEntry = union.entries.find((candidate) => candidate.id === entry.id);

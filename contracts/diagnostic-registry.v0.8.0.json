@@ -666,6 +666,21 @@
       "lifecycle": "active"
     },
     {
+      "id": "adoption.writer-locked",
+      "code": "LEK-ADOPT-010",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "adoption.writer-locked",
+      "default_message": "Another mutating writer holds the project-wide mutation lock; the adoption run was refused without any write.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "ai-lint.baseline-incomparable",
       "code": "LEK-AILINT-005",
       "category": "compatibility",
@@ -1450,6 +1465,290 @@
       "default_message": "The partial-failure case violates a schedule or reference invariant.",
       "location_requirement": "none",
       "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "change.commit-failed",
+      "code": "LEK-CHANGE-009",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "change.commit-failed",
+      "default_message": "The change transaction failed and its originals were restored.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "transaction",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "change.compatibility-denied",
+      "code": "LEK-CHANGE-004",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "change.compatibility-denied",
+      "default_message": "The change candidate has breaking classes the effective policy does not allow.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "classes",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "change.history-invalid",
+      "code": "LEK-CHANGE-012",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "change.history-invalid",
+      "default_message": "The canonical change history is malformed, unordered, or fails integrity.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "change.idempotency-conflict",
+      "code": "LEK-CHANGE-006",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "change.idempotency-conflict",
+      "default_message": "The idempotency key is already bound to a different change intent.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "key",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "change.operation-unsupported",
+      "code": "LEK-CHANGE-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported"
+      ],
+      "message_id": "change.operation-unsupported",
+      "default_message": "The requested change operation is not available in this implementation.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "operation",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "change.precondition-failed",
+      "code": "LEK-CHANGE-005",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "change.precondition-failed",
+      "default_message": "An expected precondition changed between preparation and application.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "change.recovery-required",
+      "code": "LEK-CHANGE-010",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "change.recovery-required",
+      "default_message": "An interrupted change transaction blocks readers until explicit recovery.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "transaction",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "change.request-invalid",
+      "code": "LEK-CHANGE-001",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "change.request-invalid",
+      "default_message": "The change request or one operation payload is malformed or out of bounds.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "operation",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "change.required-evidence-unavailable",
+      "code": "LEK-CHANGE-011",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "change.required-evidence-unavailable",
+      "default_message": "Required impact, generation, or ownership evidence is missing or stale.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "capability",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "change.source-preservation-unavailable",
+      "code": "LEK-CHANGE-007",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "change.source-preservation-unavailable",
+      "default_message": "No proven non-overlapping source edit exists for the accepted change.",
+      "location_requirement": "path",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "change.subject-conflict",
+      "code": "LEK-CHANGE-003",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "change.subject-conflict",
+      "default_message": "The change target is missing, ambiguous, of the wrong kind, or already present.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "change.write-boundary-denied",
+      "code": "LEK-CHANGE-008",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "change.write-boundary-denied",
+      "default_message": "A change destination violates the write boundary or path safety rules.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
         {
           "name": "detail",
           "type": "token"

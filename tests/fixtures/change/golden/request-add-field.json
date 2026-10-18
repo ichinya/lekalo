@@ -1,0 +1,1 @@
+{"schemaVersion":"lekalo/change-request/v0.8.0","operations":[{"operation":"entity-field:add","entity":"tasks.task","field":{"name":"priority","type":{"ref":"tasks.priority"}}}]}

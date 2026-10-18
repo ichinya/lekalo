@@ -91,6 +91,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "change",
+      "origin": "synthetic",
+      "note": "Issue #73: authored field-vertical project (project/module/entities with a closed priority enum), contract goldens, and a pinned genuine r10 no-op history emitted over that synthetic project (legacy/README.md). No private project or runtime custody/cache bytes; every live test uses a disposable sandbox."
+    },
+    {
       "family": "ci-report",
       "origin": "synthetic"
     },

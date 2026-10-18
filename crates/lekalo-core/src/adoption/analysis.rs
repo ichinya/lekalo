@@ -34,6 +34,20 @@ pub fn context(selection: &crate::loader::LoadSelection) -> Result<AdoptionConte
     })
 }
 
+/// Resolve the project root WITHOUT a Model load, for the recovery
+/// surfaces (`adoption recovery` view and `adoption recovery --restore`).
+/// The r8 reader barrier fails Model loads closed while an installation
+/// journal is stranded — the very state these surfaces exist to resolve
+/// — so they must not depend on a full load. Every structure boundary
+/// (selection grammar, root discovery, directory containment) stays
+/// armed exactly as in [`context`]; only the Model read is deferred, and
+/// the recovery path itself authenticates its journal before any effect.
+pub fn recovery_root(
+    selection: &crate::loader::LoadSelection,
+) -> Result<std::path::PathBuf, DomainResult> {
+    crate::loader::root_for_selection(selection)
+}
+
 /// The outcome type of every adoption service.
 pub type Outcome<T> = Result<T, DomainResult>;
 

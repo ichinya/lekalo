@@ -11,6 +11,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { registryUnion } from "./lib/registry-union.mjs";
 
 const require = createRequire(import.meta.url);
 let Ajv2020;
@@ -90,16 +91,10 @@ if (registry.registry_version !== "0.8.0") fail("registry-version");
 if (registry.closed !== true) fail("registry-not-closed");
 const byId = new Map(predecessor.entries.map((entry) => [entry.id, entry]));
 const formatEntries = registry.entries.filter((entry) => entry.id.startsWith("format."));
-const landedFamilies = ["format.", "adoption.", "portability.", "worklog-changelog.", "managed.", "module-api.", "tasklink."];
-const additions = registry.entries.filter((entry) => !byId.has(entry.id));
-if (registry.entries.length !== predecessor.entries.length + additions.length || additions.length === 0) {
-  fail("registry-not-a-union");
-}
-for (const entry of additions) {
-  if (!landedFamilies.some((family) => entry.id.startsWith(family))) {
-    fail("registry-addition-outside-landed-families", entry.id);
-  }
-}
+// All other live/future milestone families are additive data. The owner
+// below pins format's closed set; the shared guard proves predecessor
+// presence/byte identity without an exhaustive hardcoded family list.
+registryUnion(predecessor, registry);
 for (const entry of registry.entries) {
   const previous = byId.get(entry.id);
   if (previous && JSON.stringify(previous) !== JSON.stringify(entry)) {

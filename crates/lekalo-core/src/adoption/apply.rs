@@ -46,6 +46,21 @@ pub fn apply(
 ) -> Outcome<AdoptionReceipt> {
     let document =
         wire::refactor_plan_of_bytes(plan_bytes).map_err(|error| error.domain_result())?;
+    // Shared cross-service writer serialization (r6, findings devin F2 +
+    // omp F2): the adoption installer joins the one project-wide mutation
+    // lock before any verification run, snapshot, or CAS install, so a
+    // change/migration/format writer can never interleave with its
+    // journaled writes. Refusals project through the adoption family's
+    // own closed rules (r8, devin F4 + omp F4): the busy rule is
+    // denied-allowed, sibling recovery rules ride at their admitted
+    // status.
+    let _shared = match crate::project_writer::WriterLock::mutation(
+        &ctx.root,
+        crate::project_writer::MutationFamily::Adoption,
+    ) {
+        Ok(lock) => lock,
+        Err(refusal) => return Err(diagnostic::shared_writer_refusal(refusal)),
+    };
     let value = serde_json::to_value(&document).expect("plan serializes");
     let recomputed = wire::digest(
         "adoption-refactor-plan",
@@ -379,6 +394,19 @@ pub fn rollback(
             "confirmation-mismatch",
         )));
     }
+    // Shared cross-service writer serialization (r8, devin F1/F3 + omp
+    // F3): rollback is a MUTATING adoption writer — it joins the one
+    // project-wide mutation lock for its whole conflict-preflight ->
+    // restore window, so a change/migration/format/generate writer can
+    // never interleave with the snapshotted restores. Refusals project
+    // through the adoption family's closed rules.
+    let _shared = match crate::project_writer::WriterLock::mutation(
+        &ctx.root,
+        crate::project_writer::MutationFamily::Adoption,
+    ) {
+        Ok(lock) => lock,
+        Err(refusal) => return Err(diagnostic::shared_writer_refusal(refusal)),
+    };
     // Conflict detection: every mutated path must still hold the exact
     // post-state the receipt recorded. Presence follows the recorded
     // action, never an action-name guess: created paths must be gone,

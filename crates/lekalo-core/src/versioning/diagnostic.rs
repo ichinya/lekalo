@@ -103,6 +103,12 @@ impl From<&VersioningFailure> for DomainResult {
             VersioningFailure::RecoveryRequired => {
                 ("versioning.recovery-required", Status::Invalid)
             }
+            // The shared cross-service writer serialization (r6, devin F2
+            // + omp F2): another service's writer holds the project-wide
+            // mutation lock, or a sibling's interrupted transaction blocks
+            // mutation under it. The registered infrastructure in-progress
+            // rule denies the run without any write.
+            VersioningFailure::Serialized => ("versioning.migration-in-progress", Status::Invalid),
             // The accepted #9 mapping keeps transaction-phase refusals under
             // the backup-failed rule; the logical path is not echoed.
             VersioningFailure::DeniedPath(_) | VersioningFailure::Io { .. } => {

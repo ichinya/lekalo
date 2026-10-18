@@ -106,6 +106,12 @@ pub const TASKLINK_REGISTRY_VERSION: &str = "0.8.0";
 /// their exact pins.
 pub const SEARCH_REGISTRY_VERSION: &str = "0.8.0";
 
+/// Issue #73 union successor: the merged 0.8.0 format/adoption/
+/// portability/worklog-changelog/managed union plus the closed `change.*`
+/// family (`LEK-CHANGE-001..012`). Predecessor producers keep their exact
+/// pins.
+pub const CHANGE_REGISTRY_VERSION: &str = "0.8.0";
+
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticSchemaVersion {

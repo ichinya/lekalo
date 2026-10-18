@@ -8,6 +8,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { root, version, generate, artifacts, shapes } from './gen-managed-contracts.mjs';
+import { registryUnion } from './lib/registry-union.mjs';
 
 const require = createRequire((process.env.LEKALO_AJV_NODE_PATH || join(root, 'scripts')) + '/');
 assert.equal(require('ajv/package.json').version, '8.17.1', 'exact Ajv gate dependency');
@@ -24,15 +25,13 @@ const families = Object.keys(shapes);
 const schemas = new Map(families.map((family) => [family, ajv.compile(read(`contracts/${family}.schema.v${version}.json`))]));
 assert.equal(families.length, 7);
 
-// 3. The registry union: every 0.6.5 entry byte-identical and exactly
-//    twelve managed rules coexist with the landed sibling families.
+// 3. The registry union: every 0.6.5 entry byte-identical plus the
+//    merged milestone families and the twelve managed rules,
+//    id-sorted, code-unique, closed schema valid.
 const predecessor = read('contracts/diagnostic-registry.v0.6.5.json');
 const registry = read(`contracts/diagnostic-registry.v${version}.json`);
-const predecessorIds = new Set(predecessor.entries.map(entry => entry.id));
-const landedFamilies = ['format.', 'adoption.', 'portability.', 'worklog-changelog.', 'managed.', 'module-api.', 'tasklink.'];
-const additions = registry.entries.filter(entry => !predecessorIds.has(entry.id));
-assert.equal(registry.entries.length, predecessor.entries.length + additions.length);
-assert.ok(additions.every(entry => landedFamilies.some(family => entry.id.startsWith(family))), 'only landed families extend the registry');
+// Other landed families are additive data, not an exhaustive count list.
+registryUnion(predecessor, registry);
 for (const entry of predecessor.entries) {
   assert.deepEqual(registry.entries.find((candidate) => candidate.id === entry.id), entry, 'predecessor entry changed');
 }

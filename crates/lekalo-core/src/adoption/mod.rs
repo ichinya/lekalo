@@ -31,14 +31,17 @@ pub mod wire;
 /// The outcome type of every adoption service.
 pub type Outcome<T> = Result<T, crate::result::DomainResult>;
 
-pub use analysis::{analyze, context, AdoptionContext, AnalysisScope, UseCaseRecord};
+pub use analysis::{
+    analyze, context, recovery_root, AdoptionContext, AnalysisScope, UseCaseRecord,
+};
 pub use apply::{apply as apply_refactor, rollback, rollback_preview};
 pub use confirmation::{apply as confirm_apply, plan as confirm_plan, ConfirmRequest};
 pub use coverage::{
     coverage, coverage_digest, impact_report, load_coverage, status_report, trace_report,
 };
 pub use transaction::{
-    load_journal, recover, recovery_view, RecoveryOutcome, RecoveryStep, RecoveryView,
+    load_journal, recover, recovery_barrier_code, recovery_view, RecoveryOutcome, RecoveryStep,
+    RecoveryView,
 };
 /// The CLI-facing refusal constructor for unreadable input files.
 pub fn diagnostic_input_invalid(field: &str, reason: &str) -> crate::diagnostics::DiagnosticSet {

@@ -276,6 +276,21 @@ pub fn apply(
     let index = index
         .ok_or_else(|| DomainResult::invalid(diagnostic::input_invalid_set("index", "missing")))?;
 
+    // Shared cross-service writer serialization (r8, devin F1/F3 + omp
+    // F3): the confirmed installer is a MUTATING adoption writer — it
+    // joins the one project-wide mutation lock before any pin
+    // re-fingerprint, snapshot, or compare-and-swap install, so a
+    // change/migration/format/generate writer can never interleave with
+    // its journaled writes. Refusals project through the adoption
+    // family's closed rules.
+    let _shared = match crate::project_writer::WriterLock::mutation(
+        &ctx.root,
+        crate::project_writer::MutationFamily::Adoption,
+    ) {
+        Ok(lock) => lock,
+        Err(refusal) => return Err(diagnostic::shared_writer_refusal(refusal)),
+    };
+
     // Re-fingerprint every consumed input before any write: the same
     // consumed set the plan pinned — evidence sources plus the planned
     // write paths (F4). The plan's `pins.sources` never carries pins

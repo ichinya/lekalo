@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { registryUnion } from "./lib/registry-union.mjs";
 
 const require = createRequire(import.meta.url);
 let Ajv2020;
@@ -79,9 +80,7 @@ for (const [family, path] of committedDocs) {
 
 // ---------------------------------------------------------------------------
 // 2. The diagnostic-registry 0.8.0 union successor: full 0.6.5 union
-//    preserved verbatim plus the landed 0.8.0 families (the nine
-//    `adoption.*` rules, the `format.*`, `portability.*`, and
-//    `worklog-changelog.*`, `managed.*`, and `module-api.*` families).
+//    preserved verbatim plus exactly the ten adoption rules.
 // ---------------------------------------------------------------------------
 const registry64 = read("contracts/diagnostic-registry.v0.6.4.json");
 const registry65 = read("contracts/diagnostic-registry.v0.6.5.json");
@@ -89,17 +88,9 @@ const registry80 = read("contracts/diagnostic-registry.v0.8.0.json");
 const registrySchema80 = read("contracts/diagnostic-registry.schema.v0.8.0.json");
 const validateRegistry = ajv.compile(registrySchema80);
 if (!validateRegistry(registry80)) fail("registry-invalid", validateRegistry.errors);
+// Derive additive families from data; unrelated live families ride along.
+registryUnion(registry65, registry80);
 const ids65 = new Map(registry65.entries.map((entry) => [entry.id, entry]));
-const landedFamilies = ["format.", "adoption.", "portability.", "worklog-changelog.", "managed.", "module-api.", "tasklink."];
-const additions = registry80.entries.filter((entry) => !ids65.has(entry.id));
-if (registry80.entries.length !== registry65.entries.length + additions.length || additions.length === 0) {
-  fail("registry-count", { v08: registry80.entries.length, v065: registry65.entries.length });
-}
-for (const entry of additions) {
-  if (!landedFamilies.some((family) => entry.id.startsWith(family))) {
-    fail("registry-addition-outside-landed-families", entry.id);
-  }
-}
 for (const entry of registry80.entries) {
   const predecessor = ids65.get(entry.id);
   if (predecessor) {
@@ -121,6 +112,7 @@ const expected = [
   "adoption.verification-failed",
   "adoption.recovery-required",
   "adoption.rollback-conflict",
+  "adoption.writer-locked",
 ];
 if (adoptionCodes.size !== expected.length) fail("adoption-codes", [...adoptionCodes]);
 for (const id of expected) {
