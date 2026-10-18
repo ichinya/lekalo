@@ -554,11 +554,8 @@ mod tests {
         .unwrap();
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
-        std::fs::write(
-            repo.join(".git/config"),
-            format!("[core]\n\tfsmonitor = {}\n", hook.display()),
-        )
-        .unwrap();
+        // Stage before installing the hostile hook: raw `git add` also
+        // invokes fsmonitor, so fixture setup must not create the marker.
         std::fs::write(repo.join("tracked.txt"), "x\n").unwrap();
         assert!(Command::new("git")
             .arg("add")
@@ -567,6 +564,12 @@ mod tests {
             .status()
             .unwrap()
             .success());
+        std::fs::write(
+            repo.join(".git/config"),
+            format!("[core]\n\tfsmonitor = {}\n", hook.display()),
+        )
+        .unwrap();
+        assert!(!marker.exists(), "fixture setup must not run the hook");
         let mut command = Command::new("git");
         command
             .current_dir(&repo)

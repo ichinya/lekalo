@@ -579,19 +579,19 @@ fn carries_token(bytes: &[u8], decoded: bool) -> bool {
                     return true;
                 }
                 // An empty quoted prefix establishes emptiness only for
-                // the COMPLETE assignment (r8 omp F3): in a decoded
-                // string, `password=""R8CANARY` still assigns the
-                // trailing material as the value. A structural closer
-                // (`}`/`]`/`,`) after the quoted value terminates the
-                // assignment — an empty JSON-string member stays empty.
-                // In the raw serialized span the bytes after the closer
-                // are the envelope's own structure; the decoded pass
-                // owns this judgement.
+                // the COMPLETE assignment (r8/r9): punctuation after it
+                // cannot hide later material (`password=""]R9CANARY`).
+                // Only a wholly structural/whitespace trailer stays empty,
+                // preserving complete empty JSON members such as
+                // `{"password":""}` inside a decoded string. The raw
+                // serialized span contains the envelope's own structure;
+                // the decoded pass owns this completeness judgement.
                 if !decoded {
                     return false;
                 }
-                let tail = trim_space(&bytes[cursor + opener.len()..]);
-                return !tail.is_empty() && !matches!(tail[0], b',' | b'}' | b']');
+                return bytes[cursor + opener.len()..]
+                    .iter()
+                    .any(|byte| !byte.is_ascii_whitespace() && !matches!(byte, b',' | b'}' | b']'));
             }
             // Once material precedes another quote, fail closed too:
             // it may be the enclosing JSON string's delimiter after an
@@ -1077,6 +1077,32 @@ mod tests {
                 Ok(()),
                 "{control}"
             );
+        }
+    }
+
+    #[test]
+    fn empty_quoted_credentials_do_not_hide_material_after_structural_tails() {
+        for quote in ["\"", "'", "\\\""] {
+            for tail in ["]R9CANARY", "}R9CANARY", ",R9CANARY", " } ], \tR9CANARY"] {
+                let assignment = format!("password={quote}{quote}{tail}");
+                let envelope = serde_json::json!({"description": assignment}).to_string();
+                assert_eq!(
+                    screen_envelope(&envelope),
+                    Err("assigned-credential"),
+                    "{assignment}"
+                );
+            }
+        }
+        // Real empty JSON values and complete empty assignments remain empty.
+        for control in [
+            r#"password="""#,
+            "password=''",
+            r#"{"password":""}"#,
+            r#"[{"password":""}]"#,
+        ] {
+            assert_eq!(screen_envelope(control), Ok(()), "{control}");
+            let envelope = serde_json::json!({"description": control}).to_string();
+            assert_eq!(screen_envelope(&envelope), Ok(()), "{control}");
         }
     }
 
