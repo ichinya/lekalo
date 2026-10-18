@@ -1341,6 +1341,7 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo expressions render` | `lekalo expressions render [OPTIONS] --target <TARGET> <PATH>` | [reference](expressions.md) |
 | `lekalo expressions validate` | `lekalo expressions validate [OPTIONS] <PATH>` | [reference](expressions.md) |
 | `lekalo find` | `lekalo find [OPTIONS]` | [reference](semantic-search.md) |
+| `lekalo fix` | `lekalo fix [OPTIONS] [SELECTOR]` | [reference](fixes.md) |
 | `lekalo format` | `lekalo format [OPTIONS] [PATH]` | [reference](format.md) |
 | `lekalo generate` | `lekalo generate [OPTIONS] [PROGRAM_ARGS]...` | [reference](orchestration.md) |
 | `lekalo graph` | `lekalo graph [OPTIONS] <COMMAND>` | [reference](graph.md) |

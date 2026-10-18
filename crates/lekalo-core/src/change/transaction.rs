@@ -187,6 +187,25 @@ pub(crate) fn pending_transactions(root: &Path) -> Vec<String> {
 }
 
 impl Transaction {
+    pub(crate) fn root(&self) -> &Path {
+        &self.root
+    }
+
+    pub(crate) fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Roll back through the same provenance-, drift-, and backup-verified
+    /// recovery engine used after a crash. The caller still holds the writer
+    /// lock; failed restoration retains the reader barrier and all backups.
+    pub(crate) fn rollback(&self) -> Result<(), ChangeError> {
+        recover(&self.root, &self.id)
+            .map(|_| ())
+            .map_err(|_| ChangeError::RecoveryRequired {
+                transaction: self.id.clone(),
+            })
+    }
+
     /// Begin one transaction: durably record the pending provenance pin
     /// before publishing a journal (round 5, finding 1), in a FRESH
     /// directory (a pre-existing directory is planted material, never a

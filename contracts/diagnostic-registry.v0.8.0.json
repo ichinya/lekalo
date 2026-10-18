@@ -4367,6 +4367,208 @@
       "lifecycle": "active"
     },
     {
+      "id": "fix.class-denied",
+      "code": "LEK-FIX-010",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "fix.class-denied",
+      "default_message": "The recipe class does not authorize its semantic delta or explicit class acknowledgement is missing.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "fix.confirmation-required",
+      "code": "LEK-FIX-005",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "fix.confirmation-required",
+      "default_message": "Applying a fix requires explicit consent to the exact complete preview plan.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "fix.conflict",
+      "code": "LEK-FIX-004",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "fix.conflict",
+      "default_message": "The recipe or preview conflicts with the selected source revision or fix intent.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "fix.format-required",
+      "code": "LEK-FIX-009",
+      "category": "model",
+      "default_severity": "warning",
+      "allowed_statuses": [
+        "valid"
+      ],
+      "message_id": "fix.format-required",
+      "default_message": "A versioned safe canonical-format recipe is available; preview and explicit confirmation are required.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [
+        "core.canonical-format"
+      ],
+      "lifecycle": "active"
+    },
+    {
+      "id": "fix.manual-only",
+      "code": "LEK-FIX-008",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "fix.manual-only",
+      "default_message": "This recipe explains a manual resolution and can never be applied.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "fix.post-validation-failed",
+      "code": "LEK-FIX-007",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "fix.post-validation-failed",
+      "default_message": "The originating diagnostic remained after the fix or post-validation failed; all transaction writes were rolled back.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "fix.precondition-failed",
+      "code": "LEK-FIX-003",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "fix.precondition-failed",
+      "default_message": "A source fingerprint or diagnostic precondition changed; the stale fix was not applied.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "fix.recipe-invalid",
+      "code": "LEK-FIX-001",
+      "category": "model",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "fix.recipe-invalid",
+      "default_message": "The versioned fix recipe is malformed, unsupported, or exceeds its closed bounds.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "fix.recipe-unavailable",
+      "code": "LEK-FIX-002",
+      "category": "semantic",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported"
+      ],
+      "message_id": "fix.recipe-unavailable",
+      "default_message": "No admitted executable fix recipe is registered for the selected diagnostic or recipe version.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "fix.scope-denied",
+      "code": "LEK-FIX-006",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "fix.scope-denied",
+      "default_message": "An adapter or user recipe attempted to edit outside its declared semantic operation scope.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "format.comments-loss",
       "code": "LEK-FORMAT-002",
       "category": "model",

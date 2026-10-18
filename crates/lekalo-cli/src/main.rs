@@ -31,6 +31,7 @@ mod change;
 mod coupling;
 mod doctor_git;
 mod evaluation;
+mod fix;
 mod format;
 mod git_input;
 mod managed;
@@ -263,6 +264,12 @@ enum Commands {
     Change {
         #[command(subcommand)]
         command: change::ChangeCommands,
+    },
+    /// Preview versioned diagnostic fix recipes; apply only with explicit
+    /// confirmation of the exact complete preview (issue #74).
+    Fix {
+        #[command(flatten)]
+        args: fix::FixArgs,
     },
     /// Print the embedded contract version registry.
     Compatibility,
@@ -2606,6 +2613,7 @@ fn runtime() -> u8 {
             Commands::Format { args } => format::run(args),
             Commands::Migrate { migrate } => run_migrate(migrate),
             Commands::Change { command } => change::run(command),
+            Commands::Fix { args } => fix::run(args),
             Commands::Validate {
                 project,
                 module,

@@ -20,6 +20,7 @@ pub mod plan;
 pub mod policy;
 pub mod receipt;
 pub mod request;
+pub(crate) mod source_fix;
 pub mod transaction;
 pub mod version;
 
@@ -882,6 +883,16 @@ pub fn apply_prepared(
     prepared: &PreparedChange,
     options: &ApplyOptions,
 ) -> Result<Receipt, ChangeError> {
+    apply_with_validation(prepared, options, &|_| Ok(()))
+}
+
+/// The fix service adds its originating-diagnostic oracle inside the same
+/// journal/custody commit window. Only in-crate owners can supply this hook.
+pub(crate) fn apply_with_validation(
+    prepared: &PreparedChange,
+    options: &ApplyOptions,
+    validate: &dyn Fn(&crate::loader::ProjectLoad) -> Result<(), ChangeError>,
+) -> Result<Receipt, ChangeError> {
     if options.idempotency_key.is_empty() || options.idempotency_key.len() > 128 {
         return Err(ChangeError::RequestInvalid {
             detail: "idempotency-key-bounds",
@@ -1250,6 +1261,52 @@ pub fn apply_prepared(
         }
         transaction.cleanup_after_restore();
         return Err(error);
+    }
+    // Read the actual written revision before publishing the commit marker.
+    // The unforgeable live transaction is the only reader-barrier exception;
+    // unrelated journals and every filesystem/version gate remain armed.
+    let post_validation = (|| {
+        let load = crate::loader::load_in_change_transaction(&transaction)
+            .map_err(ChangeError::LoadFailed)?;
+        let mut expected: std::collections::BTreeMap<_, _> = prepared
+            .inputs
+            .iter()
+            .filter(|pin| pin.path != version::HISTORY_LOGICAL_PATH)
+            .map(|pin| (pin.path.clone(), pin.digest.clone()))
+            .collect();
+        for (path, bytes) in &prepared.edits {
+            expected.insert(path.clone(), receipt::bytes_digest(bytes));
+        }
+        let actual: std::collections::BTreeMap<_, _> = load
+            .documents
+            .iter()
+            .map(|document| {
+                (
+                    document.document.path.clone(),
+                    receipt::bytes_digest(&document.bytes),
+                )
+            })
+            .collect();
+        if expected != actual {
+            return Err(ChangeError::PreconditionFailed {
+                subject: "candidate".to_owned(),
+                detail: "post-inventory",
+            });
+        }
+        let compiled = ir::compile(&load.model)
+            .map_err(|failure| ChangeError::LoadFailed(failure.into_result()))?;
+        let profile = ValidationProfile::embedded_default()
+            .map_err(|_| ChangeError::RequestInvalid { detail: "profile" })?;
+        crate::validator::validate(&compiled, profile)
+            .map_err(|set| ChangeError::LoadFailed(DomainResult::invalid(set)))?;
+        validate(&load)
+    })();
+    if post_validation.is_err() {
+        transaction.rollback()?;
+        return Err(ChangeError::CommitFailed {
+            transaction: transaction_id,
+            detail: "post-validation",
+        });
     }
     transaction.finalize(&final_history_bytes)?;
     Ok(receipt)

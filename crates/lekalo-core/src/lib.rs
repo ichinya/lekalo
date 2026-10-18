@@ -27,6 +27,7 @@ pub mod effects;
 pub mod error_contract;
 pub mod expressions;
 pub mod extended_effects;
+pub mod fix;
 pub mod format;
 pub mod framework_lift;
 pub mod graph;

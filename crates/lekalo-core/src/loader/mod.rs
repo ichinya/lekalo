@@ -292,7 +292,31 @@ pub(crate) fn load_validated_root_reusing(
     root: PathBuf,
     ignore_format_journal: bool,
     document_overlay: Option<(&str, &[u8])>,
+    reuse: Option<&mut DocumentReuse<'_>>,
+) -> Result<ProjectLoad, DomainResult> {
+    load_validated_root_inner(root, ignore_format_journal, document_overlay, reuse, None)
+}
+
+/// Journal-neutral validation requires a live service-created transaction,
+/// never a caller-controlled boolean or transaction id.
+pub(crate) fn load_in_change_transaction(
+    transaction: &crate::change::transaction::Transaction,
+) -> Result<ProjectLoad, DomainResult> {
+    load_validated_root_inner(
+        transaction.root().to_path_buf(),
+        false,
+        None,
+        None,
+        Some(transaction.id()),
+    )
+}
+
+fn load_validated_root_inner(
+    root: PathBuf,
+    ignore_format_journal: bool,
+    document_overlay: Option<(&str, &[u8])>,
     mut reuse: Option<&mut DocumentReuse<'_>>,
+    own_change: Option<&str>,
 ) -> Result<ProjectLoad, DomainResult> {
     let failure =
         |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
@@ -333,7 +357,12 @@ pub(crate) fn load_validated_root_reusing(
     if let Some(code) = crate::change::recovery_barrier_code(&fs) {
         // The change rule is admitted for the denied class: the barrier
         // outcome is denied (exit 3) instead of invalid.
-        return failure(Status::Denied, vec![Diagnostic::new(code)]);
+        let own_only = own_change.is_some_and(|id| {
+            crate::change::transaction::pending_transactions(&root) == [id.to_owned()]
+        });
+        if !own_only {
+            return failure(Status::Denied, vec![Diagnostic::new(code)]);
+        }
     }
 
     // Phase 2c (issue #94): the same fail-closed rule for an interrupted

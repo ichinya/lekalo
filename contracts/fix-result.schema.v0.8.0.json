@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/fix-result.schema.v0.8.0.json",
+  "title": "lekalo/fix-result/v0.8.0",
+  "description": "Flat success document; failures with preview/rollback evidence carry this same document in the standard DomainResult payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "schemaVersion", "identity", "state", "planId", "dryRun", "recipes", "plan", "receipt", "postValidation"],
+  "properties": {
+    "status": {"enum": ["valid", "denied"]},
+    "schemaVersion": {"const": "lekalo/fix-result/v0.8.0"},
+    "identity": {"const": "dev.lekalo.fix-result@0.8.0"},
+    "state": {"enum": ["listed", "preview", "committed", "replayed", "no-op", "manual-only", "rejected", "rolled-back", "recovery-required"]},
+    "planId": {"anyOf": [{"type": "null"}, {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}]},
+    "dryRun": {"type": "boolean"},
+    "recipes": {"type": "array", "maxItems": 100, "items": {"$ref": "https://dev.lekalo/fix-recipe.schema.v0.8.0.json"}},
+    "plan": {"anyOf": [{"type": "null"}, {"$ref": "https://dev.lekalo/change-plan.schema.v0.8.0.json"}]},
+    "receipt": {"anyOf": [{"type": "null"}, {"$ref": "https://dev.lekalo/change-receipt.schema.v0.8.0.json"}]},
+    "postValidation": {"enum": ["not-run", "passed", "failed"]},
+    "diagnostics": {"type": "array", "items": {"$ref": "https://dev.lekalo/diagnostic.schema.v0.2.16.json"}},
+    "reasonCodes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^fix\\.[a-z][a-z0-9-]*$"}}
+  }
+}
