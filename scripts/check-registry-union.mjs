@@ -29,11 +29,23 @@ const git = (...args) =>
   execFileSync("git", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 });
 
 const args = process.argv.slice(2);
-const flag = (name) => {
-  const at = args.indexOf(name);
-  if (at === -1) return null;
-  return args[at + 1];
-};
+const options = { base: null, ref: null, selftest: false };
+for (let cursor = 0; cursor < args.length; cursor += 1) {
+  const arg = args[cursor];
+  if (arg === "--selftest" && args.length === 1) {
+    options.selftest = true;
+  } else if (arg === "--base" || arg === "--ref") {
+    const value = args[++cursor];
+    if (!value || value.startsWith("-")) {
+      throw new Error(`registry union guard: ${arg} requires a non-option ref`);
+    }
+    const key = arg.slice(2);
+    if (options[key] !== null) throw new Error(`registry union guard: duplicate ${arg}`);
+    options[key] = value;
+  } else {
+    throw new Error(`registry union guard: unexpected argument ${arg}`);
+  }
+}
 
 /// Parse one registry document into { ids, families }.
 function parseRegistry(text) {
@@ -152,7 +164,7 @@ function selftest() {
   return true;
 }
 
-if (args.includes("--selftest")) {
+if (options.selftest) {
   selftest();
   console.log(JSON.stringify({ ok: true, gate: "registry-union", mode: "selftest" }));
   process.exit(0);
@@ -161,7 +173,7 @@ if (args.includes("--selftest")) {
 const problems = [];
 // The child registry under review: the working tree copy (what a commit
 // would carry), or --ref REF for a historical ref.
-const ref = flag("--ref");
+const ref = options.ref;
 const child = ref
   ? registryAt(ref)
   : parseRegistry(readFileSync(resolve(ROOT, REGISTRY), "utf8"));
@@ -185,7 +197,7 @@ for (const parent of parents) {
 }
 
 // 2. Live-line completeness against the integration base.
-const baseArg = flag("--base");
+const baseArg = options.base;
 const baseRef = baseArg ?? "ichinya/M8";
 const baseExplicit = baseArg !== null;
 let baseRegistry = null;

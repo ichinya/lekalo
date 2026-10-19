@@ -6,6 +6,7 @@
 // provisioned outside this checkout (CI does the same on Node 18 and 24)
 // and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 
+import "./registry-union.mjs";
 import { createRequire } from "node:module";
 import { readdirSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -30,10 +31,6 @@ if (ajvVersion !== "8.17.1") {
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-// The live-line union guard runs in every MCP gate, before any
-// schema/host qualification can mistake a stale registry for success.
-// The base ref is overridable (LEKALO_UNION_BASE) for merge-base pinning.
-execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs"), ...(process.env.LEKALO_UNION_BASE ? ["--base", process.env.LEKALO_UNION_BASE] : [])], { cwd: root });
 execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs"), "--selftest"], { cwd: root });
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 

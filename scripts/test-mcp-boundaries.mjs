@@ -5,15 +5,12 @@
 // the dispatch surface must never widen the loader seams; and no CLI
 // startup path may reference the MCP lifecycle.
 
+import "./registry-union.mjs";
 import { readFileSync, readdirSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-// The live-line base ref is overridable (LEKALO_UNION_BASE) so a fixer
-// task can pin the merge-base its HEAD was cut from.
-execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs"), ...(process.env.LEKALO_UNION_BASE ? ["--base", process.env.LEKALO_UNION_BASE] : [])], { cwd: root });
 const fail = (reason, detail) => {
   process.stderr.write(`mcp-boundary ${reason}: ${JSON.stringify(detail ?? "")}\n`);
   process.exit(1);

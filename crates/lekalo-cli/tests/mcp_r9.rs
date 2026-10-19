@@ -1,4 +1,4 @@
-//! Round-9 credential-tail regressions through both real MCP output surfaces.
+//! Round-9/10 credential-tail regressions through both real MCP output surfaces.
 #[path = "mcp_harness.rs"]
 mod mcp_harness;
 
@@ -54,8 +54,10 @@ fn probe(description: &str, sensitive: bool) {
             "{}",
             session.stdout
         );
-        assert!(!session.stdout.contains("R9CANARY"), "{}", session.stdout);
-        assert!(!session.stderr.contains("R9CANARY"), "{}", session.stderr);
+        for canary in ["R9CANARY", "R10CANARY"] {
+            assert!(!session.stdout.contains(canary), "{}", session.stdout);
+            assert!(!session.stderr.contains(canary), "{}", session.stderr);
+        }
     } else {
         assert_eq!(session.tool(10)["status"], "valid", "{}", session.stdout);
         assert!(
@@ -77,12 +79,34 @@ fn credential_tails_after_structural_punctuation_refuse_on_both_surfaces() {
 }
 
 #[test]
+fn composite_and_structural_credential_prefixes_refuse_on_both_surfaces() {
+    for prefix in ["[]", "{}", "[]{}", "{}[]", "]", "}", ",", " } ], \t"] {
+        for key in [
+            "password",
+            "db_passwords",
+            "client-secret",
+            "awsAccessKeyId",
+        ] {
+            probe(&format!("{key}={prefix}R10CANARY"), true);
+        }
+        probe(&format!("password={prefix} }} ], \tR10CANARY"), true);
+    }
+}
+
+#[test]
 fn complete_empty_credentials_still_ship_on_both_surfaces() {
     for description in [
         r#"password="""#,
         "password=''",
         r#"{"password":""}"#,
         r#"[{"password":""}]"#,
+        "password=[]",
+        "password={}",
+        "password=[] } ], \t",
+        "password={} } ], \t",
+        "password=] }, \t",
+        r#"{"password":[]}"#,
+        r#"[{"password":{}}]"#,
     ] {
         probe(description, false);
     }

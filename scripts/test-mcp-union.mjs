@@ -2,6 +2,7 @@
 // Issue #33 r7: black-box proof that every MCP and landed sibling gate
 // refuses a registry missing any landed M8 family. All mutations live in a disposable Git
 // repository; the checkout's registry/index never changes.
+import "./registry-union.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -10,10 +11,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-// The live-line base ref is overridable: a fixer task runs against the
-// merge-base its HEAD was cut from, while ichinya/M8 may already have
-// absorbed newer families (r9 reconciliation is a separate task).
-execFileSync(process.execPath, [join(root, "scripts/check-registry-union.mjs"), ...(process.env.LEKALO_UNION_BASE ? ["--base", process.env.LEKALO_UNION_BASE] : [])], { cwd: root });
 const registryPath = "contracts/diagnostic-registry.v0.8.0.json";
 const registry = JSON.parse(readFileSync(join(root, registryPath), "utf8"));
 const gates = ["test-mcp-contracts.mjs", "test-mcp-boundaries.mjs", "test-mcp-stdio.mjs", "test-mcp-host.mjs",
@@ -26,7 +23,7 @@ let checks = 0;
 try {
   mkdirSync(join(stage, "scripts"));
   mkdirSync(join(stage, "contracts"));
-  for (const script of [...gates, "check-registry-union.mjs", "registry-union.mjs", "gen-managed-contracts.mjs"]) {
+  for (const script of [...gates, "test-mcp-union.mjs", "check-registry-union.mjs", "registry-union.mjs", "gen-managed-contracts.mjs"]) {
     copyFileSync(join(root, "scripts", script), join(stage, "scripts", script));
   }
   // The gates read their sibling contract pins (predecessor registries,
@@ -52,6 +49,33 @@ try {
   // Positive control: this exact synthetic baseline is a complete union.
   execFileSync(process.execPath, [join(stage, "scripts/check-registry-union.mjs")], { cwd: stage });
   checks += 1;
+  // Option-shaped pins must fail at admission, even with a complete
+  // registry and no dependencies/binary available. In particular an
+  // operand spelled --selftest must never select the guard's test mode.
+  const pinGates = [...gates, "test-mcp-union.mjs", "registry-union.mjs"];
+  for (const pin of ["--selftest", "-bad-ref"]) {
+    for (const gate of pinGates) {
+      const run = spawnSync(process.execPath, [join(stage, "scripts", gate)], {
+        cwd: stage, encoding: "utf8", timeout: 30000,
+        env: { ...process.env, LEKALO_UNION_BASE: pin },
+      });
+      assert.equal(run.error, undefined, `${gate} must reject ${pin} without timing out`);
+      assert.notEqual(run.status, 0, `${gate} accepted option-shaped LEKALO_UNION_BASE=${pin}`);
+      assert.match(run.stderr, /registry union guard: invalid LEKALO_UNION_BASE/, `${gate} must reject the malformed pin before qualification`);
+      assert.ok(!run.stdout.includes('"mode":"selftest"'), `${gate} ran selftest instead of admission`);
+      checks += 1;
+    }
+  }
+  for (const args of [["--base", "--selftest"], ["--base", "-bad-ref"], ["--base"], ["--ref", "--selftest"]]) {
+    const run = spawnSync(process.execPath, [join(stage, "scripts/check-registry-union.mjs"), ...args], {
+      cwd: stage, encoding: "utf8", timeout: 30000,
+    });
+    assert.equal(run.error, undefined, "the guard must reject malformed argv without timing out");
+    assert.notEqual(run.status, 0, `the guard accepted ${args.join(" ")}`);
+    assert.match(run.stderr, /registry union guard:/, "the guard must report invalid argv");
+    assert.ok(!run.stdout.includes('"mode":"selftest"'), "a ref operand selected selftest mode");
+    checks += 1;
+  }
   for (const family of families) {
     assert.ok(registry.entries.some((entry) => entry.id.startsWith(family)), `landed family ${family} absent from control`);
     writeRegistry({ ...registry, entries: registry.entries.filter((entry) => !entry.id.startsWith(family)) });

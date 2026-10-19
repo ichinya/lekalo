@@ -7,4 +7,10 @@ import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs"), ...(process.env.LEKALO_UNION_BASE ? ["--base", process.env.LEKALO_UNION_BASE] : [])], { cwd: root });
+const base = process.env.LEKALO_UNION_BASE;
+// Never let an env operand become a mode flag (notably --selftest).
+// This shared admission runs before any gate's dependency qualification.
+if (base?.startsWith("-")) {
+  throw new Error("registry union guard: invalid LEKALO_UNION_BASE: expected a non-option ref");
+}
+execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs"), ...(base ? ["--base", base] : [])], { cwd: root });

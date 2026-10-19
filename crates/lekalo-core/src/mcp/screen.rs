@@ -457,8 +457,8 @@ pub fn screen_envelope(envelope: &str) -> Result<(), &'static str> {
 }
 
 /// `decoded` marks the per-JSON-string pass: value spans there are the
-/// COMPLETE assigned value, so an empty quoted prefix followed by
-/// material is a nonempty assignment (r8 omp F3). The raw serialized
+/// COMPLETE assigned value, so an empty quoted or composite prefix
+/// followed by material is a nonempty assignment (r8–r10). The raw serialized
 /// envelope keeps the lenient closer rule — its spans run into the
 /// envelope's own quote/brace structure, and the decoded pass owns the
 /// completeness judgement.
@@ -552,12 +552,21 @@ fn quote_equivalent(text: &[u8], index: usize) -> Option<usize> {
     }
 }
 
+/// Closing punctuation is structural only if the COMPLETE decoded
+/// remainder contains no material (r9/r10); inspecting its first byte
+/// would exempt `[]CANARY`, `{}CANARY`, and `]CANARY` alike.
+fn has_nonstructural_material(bytes: &[u8]) -> bool {
+    bytes
+        .iter()
+        .any(|byte| !byte.is_ascii_whitespace() && !matches!(byte, b',' | b'}' | b']'))
+}
+
 /// Whether a value span (already whitespace-trimmed) carries a
 /// non-empty assigned token: a quote-equivalent-wrapped value closes
 /// with the SAME opening quote spelling and escape context (`password="x"`, `password='x'`,
 /// `{"password":"x"}` — the escaped spellings serialize as `\"` and
 /// a lone backslash no longer breaks the scan, r4 F1); an unwrapped
-/// value needs a non-empty, non-structural leading byte, and a composite
+/// decoded value refuses material anywhere after structural prefixes, and a composite
 /// value (`[`, `{`) carries assigned material unless it is exactly
 /// empty (r6 F1: `{"password":["hunter2"]}` and
 /// `{"secrets":{"a":"x"}}` refuse; `[]`/`{}` mirror the empty-string
@@ -589,9 +598,7 @@ fn carries_token(bytes: &[u8], decoded: bool) -> bool {
                 if !decoded {
                     return false;
                 }
-                return bytes[cursor + opener.len()..]
-                    .iter()
-                    .any(|byte| !byte.is_ascii_whitespace() && !matches!(byte, b',' | b'}' | b']'));
+                return has_nonstructural_material(&bytes[cursor + opener.len()..]);
             }
             // Once material precedes another quote, fail closed too:
             // it may be the enclosing JSON string's delimiter after an
@@ -608,10 +615,16 @@ fn carries_token(bytes: &[u8], decoded: bool) -> bool {
         return false;
     }
     match bytes.first() {
-        // r6 F1: structured credential payloads refuse — a matched key
-        // with an array/object value discloses every member.
-        Some(b'[') => bytes.get(1) != Some(&b']'),
-        Some(b'{') => bytes.get(1) != Some(&b'}'),
+        // r6 F1/r10: structured payloads refuse unless they are empty
+        // AND complete. The raw pass still permits envelope structure;
+        // the decoded pass rejects material after an empty prefix.
+        Some(b'[') => {
+            bytes.get(1) != Some(&b']') || (decoded && has_nonstructural_material(&bytes[2..]))
+        }
+        Some(b'{') => {
+            bytes.get(1) != Some(&b'}') || (decoded && has_nonstructural_material(&bytes[2..]))
+        }
+        Some(_) if decoded => has_nonstructural_material(bytes),
         Some(byte) => !byte.is_ascii_whitespace() && !matches!(byte, b',' | b'}' | b']'),
         None => false,
     }
@@ -1099,6 +1112,42 @@ mod tests {
             "password=''",
             r#"{"password":""}"#,
             r#"[{"password":""}]"#,
+        ] {
+            assert_eq!(screen_envelope(control), Ok(()), "{control}");
+            let envelope = serde_json::json!({"description": control}).to_string();
+            assert_eq!(screen_envelope(&envelope), Ok(()), "{control}");
+        }
+    }
+
+    #[test]
+    fn empty_composites_and_structural_prefixes_do_not_hide_credential_material() {
+        for prefix in ["[]", "{}", "[]{}", "{}[]", "]", "}", ",", " } ], \t"] {
+            for key in [
+                "password",
+                "db_passwords",
+                "client-secret",
+                "awsAccessKeyId",
+            ] {
+                for tail in ["R10CANARY", "]R10CANARY", " } ], \tR10CANARY"] {
+                    let assignment = format!("{key}={prefix}{tail}");
+                    let envelope = serde_json::json!({"description": assignment}).to_string();
+                    assert_eq!(
+                        screen_envelope(&envelope),
+                        Err("assigned-credential"),
+                        "{assignment}"
+                    );
+                }
+            }
+        }
+        // Complete empty composites and structural-only trailers carry no material.
+        for control in [
+            "password=[]",
+            "password={}",
+            "password=[] } ], \t",
+            "password={} } ], \t",
+            "password=] }, \t",
+            r#"{"password":[]}"#,
+            r#"[{"password":{}}]"#,
         ] {
             assert_eq!(screen_envelope(control), Ok(()), "{control}");
             let envelope = serde_json::json!({"description": control}).to_string();

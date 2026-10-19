@@ -10,16 +10,14 @@
 // A missing host is reported unavailable; CI treats exit 2 as a failure,
 // so a missing required host can never be relabeled accepted.
 
+import "./registry-union.mjs";
 import { createRequire } from "node:module";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-// The live-line base ref is overridable (LEKALO_UNION_BASE) so a fixer
-// task can pin the merge-base its HEAD was cut from.
-execFileSync(process.execPath, [resolve(root, "scripts/check-registry-union.mjs"), ...(process.env.LEKALO_UNION_BASE ? ["--base", process.env.LEKALO_UNION_BASE] : [])], { cwd: root });
 const fail = (reason, detail) => {
   process.stderr.write(`mcp-host ${reason}: ${JSON.stringify(detail ?? "")}\n`);
   process.exit(1);
