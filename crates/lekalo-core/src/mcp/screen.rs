@@ -633,7 +633,10 @@ fn carries_token(bytes: &[u8], decoded: bool) -> bool {
 /// Only the quoted JSON budget member `"tokens":35` is a count.
 /// Do not exempt numeric passwords, arbitrary compounds, quoted token
 /// strings, or config assignments such as `tokens=12345` (r6 F2).
-fn is_token_count(key: &[u8], quoted: bool, separator: u8, value: &[u8]) -> bool {
+/// A decoded value must be complete: structural punctuation after the
+/// digits cannot hide later credential material (r11). The raw pass
+/// permits later envelope fields; the decoded pass owns completeness.
+fn is_token_count(key: &[u8], quoted: bool, separator: u8, value: &[u8], decoded: bool) -> bool {
     if key != b"tokens" || !quoted || separator != b':' {
         return false;
     }
@@ -641,11 +644,10 @@ fn is_token_count(key: &[u8], quoted: bool, separator: u8, value: &[u8]) -> bool
         .iter()
         .take_while(|byte| byte.is_ascii_digit())
         .count();
+    let remainder = trim_space(&value[digits..]);
     digits > 0
-        && matches!(
-            trim_space(&value[digits..]).first(),
-            None | Some(b',' | b'}' | b']')
-        )
+        && matches!(remainder.first(), None | Some(b',' | b'}' | b']'))
+        && (!decoded || !has_nonstructural_material(remainder))
 }
 
 fn trim_space(mut bytes: &[u8]) -> &[u8] {
@@ -714,7 +716,9 @@ fn contains_assigned_token(translated: &[u8], decoded: bool) -> bool {
         };
         cursor += 1;
         let value = trim_space(&text[cursor..]);
-        if !is_token_count(raw_key, quoted, separator, value) && carries_token(value, decoded) {
+        if !is_token_count(raw_key, quoted, separator, value, decoded)
+            && carries_token(value, decoded)
+        {
             return true;
         }
     }
@@ -1325,6 +1329,58 @@ mod tests {
             Ok(())
         );
         assert_eq!(screen_envelope("{\"tokens\":0}"), Ok(()));
+    }
+
+    #[test]
+    fn numeric_token_count_prefixes_do_not_hide_decoded_credential_tails() {
+        for tail in [
+            "]R11CANARY",
+            "}R11CANARY",
+            ",R11CANARY",
+            " } ], \tR11CANARY",
+        ] {
+            for (prefix, suffix) in [("", ""), ("{", "}"), ("[{", "}]")] {
+                let assignment = format!(r#"{prefix}"tokens":123{tail}{suffix}"#);
+                let envelope = serde_json::json!({"description": assignment}).to_string();
+                assert_eq!(
+                    screen_envelope(&envelope),
+                    Err("assigned-credential"),
+                    "{assignment}"
+                );
+            }
+        }
+        for assignment in [
+            r#"{"tokens":123,"value":"R11CANARY"}"#,
+            "tokens=123]R11CANARY",
+            r#""tokens":123R11CANARY"#,
+            "password=R11CANARY",
+        ] {
+            let envelope = serde_json::json!({"description": assignment}).to_string();
+            assert_eq!(screen_envelope(&envelope), Err("assigned-credential"));
+        }
+    }
+
+    #[test]
+    fn complete_numeric_token_counts_and_real_budget_members_ship() {
+        for control in [
+            r#""tokens":123,"#,
+            r#""tokens":123}"#,
+            r#""tokens":123]"#,
+            r#"{"tokens":123}"#,
+            r#"[{"tokens":123}]"#,
+            "\"tokens\":123 } ], \t",
+        ] {
+            assert_eq!(screen_envelope(control), Ok(()), "{control}");
+            let envelope = serde_json::json!({"description": control}).to_string();
+            assert_eq!(screen_envelope(&envelope), Ok(()), "{control}");
+        }
+        // Real integer members have later envelope fields, not decoded value tails.
+        for envelope in [
+            r#"{"tokens":123,"section":"symbol"}"#,
+            r#"{"counts":[{"tokens":123},{"tokens":0}],"status":"valid"}"#,
+        ] {
+            assert_eq!(screen_envelope(envelope), Ok(()), "{envelope}");
+        }
     }
 
     #[test]

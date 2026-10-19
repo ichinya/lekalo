@@ -1,4 +1,4 @@
-//! Round-9/10 credential-tail regressions through both real MCP output surfaces.
+//! Round-9–11 credential-tail regressions through both real MCP output surfaces.
 #[path = "mcp_harness.rs"]
 mod mcp_harness;
 
@@ -7,7 +7,16 @@ use serde_json::json;
 use std::fs;
 
 fn probe(description: &str, sensitive: bool) {
+    probe_with_catalog(description, sensitive, Some("mcp.local.json"));
+}
+
+fn probe_with_catalog(description: &str, sensitive: bool, config: Option<&str>) {
     let root = ServedRoot::new();
+    let project_id = if config.is_some() {
+        "planner"
+    } else {
+        "project"
+    };
     let model = root
         .root
         .join("planner/lekalo/modules/planner/commands.yaml");
@@ -27,18 +36,18 @@ fn probe(description: &str, sensitive: bool) {
             call(
                 10,
                 "lekalo_inspect",
-                json!({"projectId":"planner", "symbol":"planner.focus_task"}),
+                json!({"projectId":project_id, "symbol":"planner.focus_task"}),
             ),
             frame(
                 11,
                 "resources/read",
-                json!({"uri":"lekalo://planner/symbol/planner.focus_task"}),
+                json!({"uri":format!("lekalo://{project_id}/symbol/planner.focus_task")}),
             ),
         ],
     ]
     .concat();
     let inventory = root.inventory();
-    let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
+    let session = root.serve_with_catalog(config, &frames, &[]);
     assert_eq!(session.code, 0, "{}", session.stderr);
     if sensitive {
         let tool = session.tool(10);
@@ -54,7 +63,7 @@ fn probe(description: &str, sensitive: bool) {
             "{}",
             session.stdout
         );
-        for canary in ["R9CANARY", "R10CANARY"] {
+        for canary in ["R9CANARY", "R10CANARY", "R11CANARY"] {
             assert!(!session.stdout.contains(canary), "{}", session.stdout);
             assert!(!session.stderr.contains(canary), "{}", session.stderr);
         }
@@ -90,6 +99,47 @@ fn composite_and_structural_credential_prefixes_refuse_on_both_surfaces() {
             probe(&format!("{key}={prefix}R10CANARY"), true);
         }
         probe(&format!("password={prefix} }} ], \tR10CANARY"), true);
+    }
+}
+
+#[test]
+fn numeric_token_count_tails_refuse_on_both_surfaces() {
+    for config in [None, Some("mcp.local.json")] {
+        for tail in [
+            "]R11CANARY",
+            "}R11CANARY",
+            ",R11CANARY",
+            " } ], \tR11CANARY",
+        ] {
+            for (prefix, suffix) in [("", ""), ("{", "}"), ("[{", "}]")] {
+                let description = format!(r#"{prefix}"tokens":123{tail}{suffix}"#);
+                probe_with_catalog(&description, true, config);
+            }
+        }
+        for description in [
+            r#"{"tokens":123,"value":"R11CANARY"}"#,
+            "tokens=123]R11CANARY",
+            r#""tokens":123R11CANARY"#,
+            "password=R11CANARY",
+        ] {
+            probe_with_catalog(description, true, config);
+        }
+    }
+}
+
+#[test]
+fn complete_numeric_token_counts_ship_on_both_surfaces() {
+    for config in [None, Some("mcp.local.json")] {
+        for description in [
+            r#""tokens":123,"#,
+            r#""tokens":123}"#,
+            r#""tokens":123]"#,
+            r#"{"tokens":123}"#,
+            r#"[{"tokens":123}]"#,
+            "\"tokens\":123 } ], \t",
+        ] {
+            probe_with_catalog(description, false, config);
+        }
     }
 }
 
