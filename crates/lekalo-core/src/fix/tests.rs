@@ -35,6 +35,7 @@ impl Sandbox {
             project: Some(&self.project()),
             selection: Selection::Safe,
             policy: None,
+            allow_unsafe: false,
             allow_breaking: false,
         })
         .unwrap()
@@ -132,6 +133,149 @@ fn safe_preview_commit_reapply_and_audit_golden() {
 }
 
 #[test]
+fn safe_option_intent_is_sealed_and_same_command_replays_without_writes() {
+    let policy = br#"{"schemaVersion":"lekalo/change-policy/v0.8.0","identity":"dev.lekalo.change-policy@0.8.0","allowBreakingClasses":[]}"#;
+    let changed_policy = [policy.as_slice(), b"\n"].concat();
+    for (policy, allow_breaking) in [
+        (Some(policy.as_slice()), false),
+        (None, true),
+        (Some(policy.as_slice()), true),
+    ] {
+        let sandbox = Sandbox::new();
+        let project = sandbox.project();
+        let options = PrepareOptions {
+            project: Some(&project),
+            selection: Selection::Diagnostic("LEK-FORMAT-001"),
+            policy,
+            allow_unsafe: false,
+            allow_breaking,
+        };
+        let prepared = prepare(&options).unwrap();
+        assert_eq!(prepared.change.policy_digest(), policy.map(digest));
+        assert_eq!(prepared.change.allow_breaking, allow_breaking);
+        let id = prepared.plan_id();
+        let confirmation = Confirmation {
+            expect_plan: Some(&id),
+            allow_unsafe: false,
+            allow_breaking,
+            safe_only: false,
+        };
+        let mismatch = Confirmation {
+            allow_breaking: !allow_breaking,
+            ..confirmation.clone()
+        };
+        assert!(matches!(
+            apply(&prepared, &mismatch),
+            Err(FixError::Rule {
+                id: "fix.conflict",
+                ..
+            })
+        ));
+        let committed = run(&options, Some(&confirmation));
+        assert_eq!(committed.status(), Status::Valid);
+        let committed: Json = serde_json::from_str(&committed.to_json_string()).unwrap();
+        assert_eq!(committed["state"], "committed");
+        assert_eq!(
+            committed["receipt"]["policy"]["policyDigest"],
+            json!(policy.map(digest))
+        );
+        assert_eq!(
+            committed["receipt"]["policy"]["allowBreaking"],
+            allow_breaking
+        );
+        let after = sandbox.sources();
+        let pin = sandbox.pin();
+        let replay = run(&options, Some(&confirmation));
+        assert_eq!(replay.status(), Status::Valid);
+        let replay: Json = serde_json::from_str(&replay.to_json_string()).unwrap();
+        assert_eq!(replay["state"], "replayed");
+        assert_eq!(replay["receipt"]["replayed"], true);
+        assert_eq!(sandbox.sources(), after);
+        assert_eq!(sandbox.pin(), pin);
+        for (policy, allow_breaking) in [
+            (Some(changed_policy.as_slice()), allow_breaking),
+            (policy, !allow_breaking),
+        ] {
+            let changed_options = PrepareOptions {
+                policy,
+                allow_breaking,
+                ..options.clone()
+            };
+            let changed_confirmation = Confirmation {
+                allow_breaking,
+                ..confirmation.clone()
+            };
+            assert_eq!(
+                run(&changed_options, Some(&changed_confirmation)).diagnostics()[0].id(),
+                "fix.conflict"
+            );
+            assert_eq!(sandbox.sources(), after);
+            assert_eq!(sandbox.pin(), pin);
+        }
+    }
+}
+
+#[test]
+fn safe_options_refuse_undeclared_acknowledgements_and_invalid_policies() {
+    let sandbox = Sandbox::new();
+    let project = sandbox.project();
+    let options = PrepareOptions {
+        project: Some(&project),
+        selection: Selection::Diagnostic("LEK-FORMAT-001"),
+        policy: None,
+        allow_unsafe: true,
+        allow_breaking: false,
+    };
+    let before = sandbox.sources();
+    assert!(matches!(
+        prepare(&options),
+        Err(FixError::Rule {
+            id: "fix.class-denied",
+            ..
+        })
+    ));
+    assert_eq!(
+        run(&options, None).diagnostics()[0].id(),
+        "fix.class-denied"
+    );
+    let invalid_policy = br#"{"schemaVersion":"lekalo/change-policy/v0.8.0","identity":"dev.lekalo.change-policy@0.8.0","force":true}"#;
+    let invalid = PrepareOptions {
+        policy: Some(invalid_policy),
+        allow_unsafe: false,
+        ..options
+    };
+    assert!(matches!(
+        prepare(&invalid),
+        Err(FixError::Change(ChangeError::PolicyInvalid {
+            detail: "unknown-member"
+        }))
+    ));
+    assert_eq!(run(&invalid, None).status(), Status::Invalid);
+    assert_eq!(sandbox.sources(), before);
+    assert!(!sandbox.root.join(".lekalo").exists());
+    let prepared = sandbox.prepare();
+    let id = prepared.plan_id();
+    apply(&prepared, &consent(&id)).unwrap();
+    let after = sandbox.sources();
+    let pin = sandbox.pin();
+    assert_eq!(run(&invalid, Some(&consent(&id))).status(), Status::Invalid);
+    let undeclared = Confirmation {
+        allow_unsafe: true,
+        ..consent(&id)
+    };
+    assert_eq!(
+        apply(&prepared, &undeclared)
+            .unwrap_err()
+            .into_result()
+            .diagnostics()[0]
+            .id(),
+        "fix.class-denied"
+    );
+    assert_eq!(sandbox.sources(), after);
+    assert_eq!(sandbox.pin(), pin);
+}
+
+#[test]
 fn stale_fingerprint_blocks_both_imported_and_sealed_fixes_golden() {
     let sandbox = Sandbox::new();
     let prepared = sandbox.prepare();
@@ -145,6 +289,7 @@ fn stale_fingerprint_blocks_both_imported_and_sealed_fixes_golden() {
         project: Some(&sandbox.project()),
         selection: Selection::Recipe(&recipe),
         policy: None,
+        allow_unsafe: false,
         allow_breaking: false,
     })
     .unwrap_err()
@@ -277,6 +422,7 @@ fn adapter_semantic_fix_repairs_its_origin_and_replays_with_version_custody() {
         project: Some(&project),
         selection: Selection::Recipe(&bytes),
         policy: None,
+        allow_unsafe: false,
         allow_breaking: true,
     };
     let prepared = prepare(&options).unwrap();
@@ -362,12 +508,13 @@ fn unsafe_breaking_and_manual_only_never_enter_bulk_safe() {
     let mut prepared = sandbox.prepare();
     for class in [Class::Unsafe, Class::Breaking, Class::ManualOnly] {
         prepared.recipe.class = class;
+        prepared.change.allow_breaking = class == Class::Breaking;
         let id = prepared.plan_id();
         assert!(confirm(&prepared, &consent(&id)).is_err());
         let explicit = Confirmation {
             expect_plan: Some(&id),
-            allow_unsafe: true,
-            allow_breaking: true,
+            allow_unsafe: class == Class::Unsafe,
+            allow_breaking: class == Class::Breaking,
             safe_only: false,
         };
         assert_eq!(
@@ -385,6 +532,7 @@ fn unsafe_breaking_and_manual_only_never_enter_bulk_safe() {
         project: Some("does-not-exist"),
         selection: Selection::Recipe(&bytes),
         policy: None,
+        allow_unsafe: false,
         allow_breaking: true,
     };
     assert_eq!(run(&options, None).status(), Status::Valid);
@@ -425,6 +573,7 @@ fn recipe_decoding_is_closed_versioned_bounded_and_duplicate_refusing() {
             project: None,
             selection: Selection::Diagnostic("LEK-REF-014"),
             policy: None,
+            allow_unsafe: false,
             allow_breaking: false,
         },
         None,

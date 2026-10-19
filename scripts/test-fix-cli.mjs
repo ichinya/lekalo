@@ -72,6 +72,71 @@ try {
   assert.equal(replay.state, "replayed"); assert.equal(replay.receipt.replayed, true); assert.deepEqual(snapshot(join(sandbox, "lekalo")), after); assert.deepEqual(readFileSync(pinPath), pin); checks++;
   const noOp = run(["fix", "--safe", "--project", project]); valid(noOp);
   assert.equal(noOp.plan.fileEdits.length, 0); assert.equal(noOp.plan.semanticDiff.equal, true); assert.deepEqual(snapshot(join(sandbox, "lekalo")), after); checks++;
+  // A safe executor must seal the same policy/acknowledgement that replay
+  // compares, even though those options cannot authorize a semantic delta.
+  const policyPath = join(sandbox, "policy.json");
+  const policyBytes = JSON.stringify({ schemaVersion: "lekalo/change-policy/v0.8.0", identity: "dev.lekalo.change-policy@0.8.0", allowBreakingClasses: [] });
+  writeFileSync(policyPath, policyBytes);
+  const changedPolicyPath = join(sandbox, "changed-policy.json");
+  writeFileSync(changedPolicyPath, `${policyBytes}\n`);
+  const policyDigest = `sha256:${createHash("sha256").update(policyBytes).digest("hex")}`;
+  for (const [name, selection, flags] of [
+    ["policy", "--safe", ["--policy", policyPath]],
+    ["acknowledgement", "LEK-FORMAT-001", ["--allow-breaking"]],
+    ["policy-and-acknowledgement", "LEK-FORMAT-001", ["--policy", policyPath, "--allow-breaking"]],
+  ]) {
+    const optionRoot = join(sandbox, name);
+    cpSync(join(root, "tests/fixtures/fix/project"), optionRoot, { recursive: true });
+    const optionProject = relative(root, optionRoot).replaceAll("\\", "/");
+    const baseArgs = ["fix", selection, ...flags, "--project", optionProject];
+    const optionPreview = run(baseArgs); valid(optionPreview);
+    const applyArgs = [...baseArgs, "--apply", "--expect-plan", optionPreview.planId];
+    const optionApplied = run(applyArgs); valid(optionApplied);
+    assert.equal(optionApplied.state, "committed");
+    const optionAfter = snapshot(optionRoot);
+    const optionReplay = run(applyArgs); valid(optionReplay);
+    assert.equal(optionReplay.state, "replayed"); assert.equal(optionReplay.receipt.replayed, true);
+    assert.deepEqual(snapshot(optionRoot), optionAfter, "same-command replay preserves sources, ledger and custody");
+    assert.equal(optionApplied.plan.policyDigest, flags.includes("--policy") ? policyDigest : null);
+    assert.equal(optionApplied.receipt.policy.policyDigest, optionApplied.plan.policyDigest);
+    assert.equal(optionApplied.receipt.policy.allowBreaking, flags.includes("--allow-breaking"));
+    for (const changedFlags of [
+      [],
+      ["--policy", changedPolicyPath, ...flags.filter(flag => flag === "--allow-breaking")],
+      [...(flags.includes("--policy") ? ["--policy", policyPath] : []), ...(flags.includes("--allow-breaking") ? [] : ["--allow-breaking"])],
+    ]) {
+      const changed = run(["fix", "LEK-FORMAT-001", ...changedFlags, "--project", optionProject, "--apply", "--expect-plan", optionPreview.planId], 3);
+      assert.deepEqual(changed.reasonCodes, ["fix.conflict"]);
+      assert.deepEqual(snapshot(optionRoot), optionAfter, "different option intent cannot replay or mutate");
+    }
+    checks++;
+  }
+  // Unknown policy members and acknowledgements undeclared by this class
+  // refuse before sealing AND before ledger-first replay, without writes.
+  const refusalRoot = join(sandbox, "option-refusals");
+  cpSync(join(root, "tests/fixtures/fix/project"), refusalRoot, { recursive: true });
+  const refusalProject = relative(root, refusalRoot).replaceAll("\\", "/");
+  const refusalPreview = run(["fix", "--safe", "--project", refusalProject]);
+  const invalidPolicyPath = join(sandbox, "invalid-policy.json");
+  writeFileSync(invalidPolicyPath, JSON.stringify({ ...JSON.parse(policyBytes), force: true }));
+  for (const phase of ["before-commit", "after-commit"]) {
+    const refusedBefore = snapshot(refusalRoot);
+    for (const [flags, expected, reason] of [
+      [["--allow-unsafe"], 3, "fix.class-denied"],
+      [["--policy", invalidPolicyPath], 1, "change.request-invalid"],
+    ]) {
+      for (const mode of [[], ["--apply", "--expect-plan", refusalPreview.planId]]) {
+        const refused = run(["fix", "LEK-FORMAT-001", ...flags, ...mode, "--project", refusalProject], expected);
+        assert.deepEqual(refused.reasonCodes, [reason], phase);
+        assert.deepEqual(snapshot(refusalRoot), refusedBefore, phase);
+      }
+      checks++;
+    }
+    if (phase === "before-commit") {
+      assert(!existsSync(join(refusalRoot, ".lekalo")));
+      assert.equal(run(["fix", "--safe", "--apply", "--expect-plan", refusalPreview.planId, "--project", refusalProject]).state, "committed");
+    }
+  }
   const unknown = run(["fix", "LEK-REF-014", "--dry-run", "--project", project], 4);
   assert.deepEqual(unknown.reasonCodes, ["fix.recipe-unavailable"]); checks++;
   const manual = structuredClone(preview.recipes[0]);
@@ -114,5 +179,5 @@ try {
   semantic.version = "2.0.0"; writeFileSync(semanticPath, JSON.stringify(semantic));
   const changedVersion = run(["fix", "--recipe", semanticPath, "--allow-breaking", "--apply", "--expect-plan", repairPreview.planId, "--project", repairProject], 3);
   assert.deepEqual(changedVersion.reasonCodes, ["fix.conflict"]); assert.deepEqual(snapshot(join(repairRoot, "lekalo")), repairedSources); checks++;
-  console.log(JSON.stringify({ ok: true, gate: "test-fix-cli", checks, safe: true, stale: true, conflict: true, replay: true, audit: true, riskGates: true, adapterScope: true, adapterRepair: true, recipeVersion: true }));
+  console.log(JSON.stringify({ ok: true, gate: "test-fix-cli", checks, safe: true, stale: true, conflict: true, replay: true, optionReplay: true, optionConflicts: true, optionAdmission: true, audit: true, riskGates: true, adapterScope: true, adapterRepair: true, recipeVersion: true }));
 } finally { rmSync(sandbox, { recursive: true, force: true }); }

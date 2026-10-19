@@ -22,6 +22,10 @@ pub(crate) fn replay(
             detail: "expect-plan",
         });
     }
+    let policy = policy
+        .map(Policy::decode)
+        .transpose()?
+        .unwrap_or_else(Policy::restrictive);
     let root = resolve_root(project)?;
     let _lock = crate::project_writer::WriterLock::mutation(
         &root,
@@ -39,11 +43,10 @@ pub(crate) fn replay(
     let Some(record) = history.by_key(&key) else {
         return Ok(None);
     };
-    let policy_digest = policy.map(receipt::bytes_digest);
     if record.plan_id != expected
         || recipe_digest.is_some_and(|digest| record.request_digest != digest)
         || record.intent_digest
-            != receipt::intent_digest(policy_digest.as_deref(), Some(expected), allow_breaking)
+            != receipt::intent_digest(policy.digest.as_deref(), Some(expected), allow_breaking)
     {
         return Err(ChangeError::IdempotencyConflict);
     }
@@ -68,7 +71,16 @@ pub(crate) fn prepare_format(
     load: &crate::loader::ProjectLoad,
     recipe_bytes: Vec<u8>,
     audit: ResolvedOperation,
+    policy: Option<&[u8]>,
+    allow_breaking: bool,
 ) -> Result<PreparedChange, ChangeError> {
+    // Policy and acknowledgement remain exact audit intent even for a safe
+    // executor. Admit the same closed policy on preparation and replay; never
+    // silently replace supplied options with restrictive/null defaults.
+    let policy = policy
+        .map(Policy::decode)
+        .transpose()?
+        .unwrap_or_else(Policy::restrictive);
     let edits = crate::format::fix_candidates(load).map_err(ChangeError::LoadFailed)?;
     let compiled = ir::compile(&load.model)
         .map_err(|failure| ChangeError::LoadFailed(failure.into_result()))?;
@@ -144,7 +156,7 @@ pub(crate) fn prepare_format(
     let (generation, generation_pins) = build_generation_plan(&load.root)?;
     Ok(PreparedChange {
         request_bytes: recipe_bytes,
-        policy: Policy::restrictive(),
+        policy,
         operations: vec![audit],
         inputs,
         file_edits,
@@ -176,6 +188,6 @@ pub(crate) fn prepare_format(
         generation_pins,
         root: load.root.clone(),
         diff_complete: true,
-        allow_breaking: false,
+        allow_breaking,
     })
 }

@@ -104,6 +104,7 @@ pub(crate) fn run(args: FixArgs) -> DomainResult {
             project: args.project.as_deref(),
             selection,
             policy: policy.as_deref(),
+            allow_unsafe: args.allow_unsafe,
             allow_breaking: args.allow_breaking,
         },
         confirmation.as_ref(),

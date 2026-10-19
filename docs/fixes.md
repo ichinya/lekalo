@@ -57,6 +57,14 @@ registry. The service never invents a replacement for an unregistered rule.
 - **manual-only**: explanation only. Preview can display the explanation without
   even loading a project. `--apply` is always denied, regardless of flags.
 
+Executable recipes admit the closed `--policy` and `--allow-breaking` change
+intent, including safe formatting selected by diagnostic ID. Supplied policy
+bytes are validated and pinned, and the acknowledgement is sealed in the receipt;
+neither can relax a safe recipe's Model+IR equality proof. Exact option replays
+are idempotent; changing or removing the policy or acknowledgement conflicts.
+`--allow-unsafe` is admitted only by unsafe recipes and is refused for safe or
+breaking recipes, including during preview, rather than silently ignored.
+
 Unsafe and breaking recipes lower a `model-change` operation to the closed
 [change request](change.md), never raw text edits. Their originating diagnostic
 codes must actually be present in the default semantic validator before

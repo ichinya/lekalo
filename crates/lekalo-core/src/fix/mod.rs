@@ -247,6 +247,9 @@ pub struct PrepareOptions<'a> {
     pub project: Option<&'a str>,
     pub selection: Selection<'a>,
     pub policy: Option<&'a [u8]>,
+    /// Only unsafe recipes admit this acknowledgement; it is not a generic
+    /// option to be silently ignored by safe or breaking recipes.
+    pub allow_unsafe: bool,
     pub allow_breaking: bool,
 }
 
@@ -303,11 +306,19 @@ fn select(selection: &Selection<'_>) -> Result<Recipe, FixError> {
     }
 }
 
+fn admit_options(recipe: &Recipe, options: &PrepareOptions<'_>) -> Result<(), FixError> {
+    if options.allow_unsafe && recipe.class != Class::Unsafe {
+        return Err(FixError::rule("fix.class-denied", "unsafe-option"));
+    }
+    Ok(())
+}
+
 pub fn prepare(options: &PrepareOptions<'_>) -> Result<PreparedFix, FixError> {
     let mut recipe = select(&options.selection)?;
     if recipe.class == Class::ManualOnly {
         return Err(FixError::rule("fix.manual-only", "never-apply"));
     }
+    admit_options(&recipe, options)?;
     let selection = LoadSelection {
         project: options.project.map(str::to_owned),
     };
@@ -344,7 +355,13 @@ pub fn prepare(options: &PrepareOptions<'_>) -> Result<PreparedFix, FixError> {
         )),
     };
     let prepared = match &recipe.operation {
-        Operation::ModelFormat => change::source_fix::prepare_format(&load, recipe_bytes, audit)?,
+        Operation::ModelFormat => change::source_fix::prepare_format(
+            &load,
+            recipe_bytes,
+            audit,
+            options.policy,
+            options.allow_breaking,
+        )?,
         Operation::ModelChange { request } => {
             let codes = validation_codes(&load)?;
             if !recipe
@@ -457,10 +474,17 @@ fn confirm(prepared: &PreparedFix, confirmation: &Confirmation<'_>) -> Result<()
     if expected != prepared.plan_id() {
         return Err(FixError::rule("fix.conflict", "preview-identity"));
     }
-    confirm_class(&prepared.recipe, confirmation)
+    confirm_class(&prepared.recipe, confirmation)?;
+    if confirmation.allow_breaking != prepared.change.allow_breaking {
+        return Err(FixError::rule("fix.conflict", "preview-options"));
+    }
+    Ok(())
 }
 
 fn confirm_class(recipe: &Recipe, confirmation: &Confirmation<'_>) -> Result<(), FixError> {
+    if confirmation.allow_unsafe && !matches!(recipe.class, Class::Unsafe | Class::ManualOnly) {
+        return Err(FixError::rule("fix.class-denied", "unsafe-option"));
+    }
     match recipe.class {
         Class::Safe => Ok(()),
         Class::Unsafe if !confirmation.safe_only && confirmation.allow_unsafe => Ok(()),
@@ -614,9 +638,15 @@ pub fn run(options: &PrepareOptions<'_>, confirmation: Option<&Confirmation<'_>>
             }
             return result(value, recipe.explanation);
         }
+        if let Err(error) = admit_options(&recipe, options) {
+            return error.into_result();
+        }
         if let Some(confirmation) = confirmation {
             if let Err(error) = confirm_class(&recipe, confirmation) {
                 return error.into_result();
+            }
+            if confirmation.allow_breaking != options.allow_breaking {
+                return FixError::rule("fix.conflict", "preview-options").into_result();
             }
             if let Some(expected) = confirmation.expect_plan {
                 let recipe_digest = matches!(options.selection, Selection::Recipe(_))
