@@ -1,0 +1,31 @@
+schema_version: "0.2.16"
+definitions:
+  # The text scalar keeps its own documentation comment; a change to the
+  # entity below must not touch this line or its placement.
+  - id: tasks.text
+    kind: scalar
+    version: 1
+    base: string
+  - id: tasks.bool
+    kind: scalar
+    version: 1
+    base: boolean
+  # The closed delivery priority vocabulary.
+  - id: tasks.priority
+    kind: enum
+    version: 1
+    values:
+      - value: low
+      - value: normal
+      - value: high
+  - id: tasks.task
+    kind: entity
+    version: 1
+    fields:
+      - name: title
+        type: "tasks.text"
+        required: true
+      - name: done
+        type: "tasks.bool"
+    identity:
+      - title

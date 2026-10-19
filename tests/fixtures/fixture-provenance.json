@@ -158,6 +158,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "fix",
+      "origin": "synthetic",
+      "note": "Issue #74: authored synthetic noncanonical Model project, deterministic CLI preview, positive-proof safe/stale/conflict/rollback outcome goldens and fixture README; no private source or application-runtime behavior claims."
+    },
+    {
       "family": "format",
       "origin": "synthetic",
       "note": "Issue #94: authored noncanonical seeds, reviewed canonical golden bytes, negative and portability fixtures for the canonical YAML/JSON formatter. No private code or executed application behavior."

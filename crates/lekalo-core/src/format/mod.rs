@@ -613,6 +613,50 @@ fn dispatch(request: &FormatRequest, planned: Planned) -> DomainResult {
     }
 }
 
+/// Pure safe-fix lowering over the caller's exact snapshot. Reuses the
+/// formatter's structured syntax/trivia renderer and full semantic oracle;
+/// lossy comments are never authorized by a safe recipe.
+pub(crate) fn fix_candidates(
+    load: &crate::loader::ProjectLoad,
+) -> Result<Vec<(String, Vec<u8>)>, DomainResult> {
+    let policy = Policy::embedded().map_err(|_| policy_failure())?;
+    if load.documents.len() > policy.limits.max_files {
+        return Err(failure_limit(
+            "max-files",
+            load.documents.len() as u64,
+            policy.limits.max_files as u64,
+        ));
+    }
+    let mut edits = Vec::new();
+    let mut total = 0usize;
+    for document in &load.documents {
+        let rendered = render_one(
+            &policy,
+            &document.document.path,
+            document.document.kind,
+            &document.bytes,
+        )?;
+        total += rendered.text.len();
+        if total > policy.limits.max_candidate_total_bytes {
+            return Err(failure_limit(
+                "max-candidate-total-bytes",
+                total as u64,
+                policy.limits.max_candidate_total_bytes as u64,
+            ));
+        }
+        if !rendered.losses.is_empty() {
+            return Err(failure_selection("safe-fix", "comment-loss"));
+        }
+        let after = rendered.text.into_bytes();
+        if after != document.bytes {
+            edits.push((document.document.path.clone(), after));
+        }
+    }
+    edits.sort_by(|a, b| a.0.cmp(&b.0));
+    semantic::verify(&load.documents, load.model.model_version, &edits)?;
+    Ok(edits)
+}
+
 /// The semantic equality oracle over one in-memory document set: decode
 /// every document through the exact admission path, normalize through
 /// phases 7-8, compile the IR, and reduce to the canonical Model bytes and

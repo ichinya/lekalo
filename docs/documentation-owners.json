@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:bb414ba3301a2706e13980bacf228f338fba7a4b4029c73c2d731200b8b796e2",
+  "cliSourceDigest": "sha256:75422f7e91bad397e08bd10c201eef1f0b19c26f1b234e2e44aa7f65401b7d3b",
   "p0Pages": [
     {
       "page": "README.md",
@@ -979,6 +979,17 @@
       "summary": "Exact filtered lookup over the typed projection (issue #93): never fuzzes a selector; repeated flags OR, different flags AND",
       "leaf": true,
       "owner": "docs/semantic-search.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:fix",
+      "kind": "command",
+      "command": "fix",
+      "usage": "lekalo fix [OPTIONS] [SELECTOR]",
+      "helpDigest": "sha256:c95fa127504ff4ea0563ebee6df513a2453401582380e634fceddd3df2566162",
+      "summary": "Preview versioned diagnostic fix recipes; apply only with explicit confirmation of the exact complete preview (issue #74)",
+      "leaf": true,
+      "owner": "docs/fixes.md",
       "status": "implemented"
     },
     {
@@ -3276,7 +3287,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.8.0.json",
-      "sourceDigest": "sha256:2a2f1e59dc71afae26976e4ca6ade94c489094a6624ed4e9914fa19b40b300f3",
+      "sourceDigest": "sha256:e4e9c0cbadb2ad5b0cae83b0f457d7bf376bfbf6b3b292ad6b1bcbb56f7e4b83",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3386,6 +3397,24 @@
       "source": "contracts/extended-effects.schema.v0.8.0.json",
       "sourceDigest": "sha256:53701216301940cb9f25b53ff1c75ea365e0f7c63bdae214c37d38e922aad456",
       "owner": "docs/extended-effects.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/fix-recipe.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/fix-recipe.schema.v0.8.0.json",
+      "sourceDigest": "sha256:51694cc3239728b4d02ac8c02186d6a8d01eafdb729dacc5e3a49590af9d637e",
+      "owner": "docs/fixes.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/fix-result.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/fix-result.schema.v0.8.0.json",
+      "sourceDigest": "sha256:905b95d20a3d57a779608b73a66abc7ad132feb036386f48c643e7e37538d50a",
+      "owner": "docs/fixes.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

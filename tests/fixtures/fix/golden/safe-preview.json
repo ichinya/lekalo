@@ -1,0 +1,662 @@
+{
+  "diagnostics": [
+    {
+      "category": "model",
+      "causes": [],
+      "code": "LEK-FIX-009",
+      "data": {
+        "detail": "core.canonical-format@1.0.0"
+      },
+      "fixes": [
+        {
+          "applicability": "safe",
+          "fix_id": "core.canonical-format",
+          "message": "Preview core.canonical-format@1.0.0 with lekalo fix --safe; applying requires the exact preview plan ID."
+        }
+      ],
+      "id": "fix.format-required",
+      "message": "A versioned safe canonical-format recipe is available; preview and explicit confirmation are required.",
+      "message_id": "fix.format-required",
+      "metadata": {},
+      "registry_version": "0.8.0",
+      "related_locations": [],
+      "schema_version": "lekalo/diagnostic/v0.2.16",
+      "severity": "warning"
+    }
+  ],
+  "dryRun": true,
+  "identity": "dev.lekalo.fix-result@0.8.0",
+  "plan": {
+    "breakingClasses": [],
+    "catalogDigest": "sha256:285b2650daf231efd2bea9f8ba8acd4ad94faa22f931e0deee7c50fa13c28c84",
+    "complete": true,
+    "completeReason": null,
+    "equal": false,
+    "fileDiff": [
+      {
+        "after": "\"definitions\":\n  - \"base\": \"boolean\"\n    \"id\": \"tasks.bool\"\n    \"kind\": \"scalar\"\n    \"version\": 1\n  # The closed delivery priority vocabulary.\n  - \"id\": \"tasks.priority\"\n    \"kind\": \"enum\"\n    \"values\":\n      - \"value\": \"low\"\n      - \"value\": \"normal\"\n      - \"value\": \"high\"\n    \"version\": 1\n  - \"fields\":\n      - \"name\": \"title\"\n        \"required\": true\n        \"type\": \"tasks.text\"\n      - \"name\": \"done\"\n        \"type\": \"tasks.bool\"\n    \"id\": \"tasks.task\"\n    \"identity\":\n      - \"title\"\n    \"kind\": \"entity\"\n    \"version\": 1\n  # The text scalar keeps its own documentation comment; a change to the\n  # entity below must not touch this line or its placement.\n  - \"base\": \"string\"\n    \"id\": \"tasks.text\"\n    \"kind\": \"scalar\"\n    \"version\": 1\n\"schema_version\": \"0.2.16\"\n",
+        "before": "schema_version: \"0.2.16\"\ndefinitions:\n  # The text scalar keeps its own documentation comment; a change to the\n  # entity below must not touch this line or its placement.\n  - id: tasks.text\n    kind: scalar\n    version: 1\n    base: string\n  - id: tasks.bool\n    kind: scalar\n    version: 1\n    base: boolean\n  # The closed delivery priority vocabulary.\n  - id: tasks.priority\n    kind: enum\n    version: 1\n    values:\n      - value: low\n      - value: normal\n      - value: high\n  - id: tasks.task\n    kind: entity\n    version: 1\n    fields:\n      - name: title\n        type: \"tasks.text\"\n        required: true\n      - name: done\n        type: \"tasks.bool\"\n    identity:\n      - title\n",
+        "patch": [
+          {
+            "afterLine": 1,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "\"definitions\":"
+          },
+          {
+            "afterLine": 2,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "  - \"base\": \"boolean\""
+          },
+          {
+            "afterLine": 3,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "    \"id\": \"tasks.bool\""
+          },
+          {
+            "afterLine": 4,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "    \"kind\": \"scalar\""
+          },
+          {
+            "afterLine": 5,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "    \"version\": 1"
+          },
+          {
+            "afterLine": 6,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "  # The closed delivery priority vocabulary."
+          },
+          {
+            "afterLine": 7,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "  - \"id\": \"tasks.priority\""
+          },
+          {
+            "afterLine": 8,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "    \"kind\": \"enum\""
+          },
+          {
+            "afterLine": 9,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "    \"values\":"
+          },
+          {
+            "afterLine": 10,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "      - \"value\": \"low\""
+          },
+          {
+            "afterLine": 11,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "      - \"value\": \"normal\""
+          },
+          {
+            "afterLine": 12,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "      - \"value\": \"high\""
+          },
+          {
+            "afterLine": 13,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "    \"version\": 1"
+          },
+          {
+            "afterLine": 14,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "  - \"fields\":"
+          },
+          {
+            "afterLine": 15,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "      - \"name\": \"title\""
+          },
+          {
+            "afterLine": 16,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "        \"required\": true"
+          },
+          {
+            "afterLine": 17,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "        \"type\": \"tasks.text\""
+          },
+          {
+            "afterLine": 18,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "      - \"name\": \"done\""
+          },
+          {
+            "afterLine": 19,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "        \"type\": \"tasks.bool\""
+          },
+          {
+            "afterLine": 20,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "    \"id\": \"tasks.task\""
+          },
+          {
+            "afterLine": 21,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "    \"identity\":"
+          },
+          {
+            "afterLine": 22,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "      - \"title\""
+          },
+          {
+            "afterLine": 23,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "    \"kind\": \"entity\""
+          },
+          {
+            "afterLine": 24,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "    \"version\": 1"
+          },
+          {
+            "afterLine": 24,
+            "beforeLine": 1,
+            "kind": "delete",
+            "text": "schema_version: \"0.2.16\""
+          },
+          {
+            "afterLine": 24,
+            "beforeLine": 2,
+            "kind": "delete",
+            "text": "definitions:"
+          },
+          {
+            "afterLine": 25,
+            "beforeLine": 3,
+            "kind": "equal",
+            "text": "  # The text scalar keeps its own documentation comment; a change to the"
+          },
+          {
+            "afterLine": 26,
+            "beforeLine": 4,
+            "kind": "equal",
+            "text": "  # entity below must not touch this line or its placement."
+          },
+          {
+            "afterLine": 27,
+            "beforeLine": 4,
+            "kind": "insert",
+            "text": "  - \"base\": \"string\""
+          },
+          {
+            "afterLine": 28,
+            "beforeLine": 4,
+            "kind": "insert",
+            "text": "    \"id\": \"tasks.text\""
+          },
+          {
+            "afterLine": 29,
+            "beforeLine": 4,
+            "kind": "insert",
+            "text": "    \"kind\": \"scalar\""
+          },
+          {
+            "afterLine": 30,
+            "beforeLine": 4,
+            "kind": "insert",
+            "text": "    \"version\": 1"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 4,
+            "kind": "insert",
+            "text": "\"schema_version\": \"0.2.16\""
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 5,
+            "kind": "delete",
+            "text": "  - id: tasks.text"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 6,
+            "kind": "delete",
+            "text": "    kind: scalar"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 7,
+            "kind": "delete",
+            "text": "    version: 1"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 8,
+            "kind": "delete",
+            "text": "    base: string"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 9,
+            "kind": "delete",
+            "text": "  - id: tasks.bool"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 10,
+            "kind": "delete",
+            "text": "    kind: scalar"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 11,
+            "kind": "delete",
+            "text": "    version: 1"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 12,
+            "kind": "delete",
+            "text": "    base: boolean"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 13,
+            "kind": "delete",
+            "text": "  # The closed delivery priority vocabulary."
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 14,
+            "kind": "delete",
+            "text": "  - id: tasks.priority"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 15,
+            "kind": "delete",
+            "text": "    kind: enum"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 16,
+            "kind": "delete",
+            "text": "    version: 1"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 17,
+            "kind": "delete",
+            "text": "    values:"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 18,
+            "kind": "delete",
+            "text": "      - value: low"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 19,
+            "kind": "delete",
+            "text": "      - value: normal"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 20,
+            "kind": "delete",
+            "text": "      - value: high"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 21,
+            "kind": "delete",
+            "text": "  - id: tasks.task"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 22,
+            "kind": "delete",
+            "text": "    kind: entity"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 23,
+            "kind": "delete",
+            "text": "    version: 1"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 24,
+            "kind": "delete",
+            "text": "    fields:"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 25,
+            "kind": "delete",
+            "text": "      - name: title"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 26,
+            "kind": "delete",
+            "text": "        type: \"tasks.text\""
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 27,
+            "kind": "delete",
+            "text": "        required: true"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 28,
+            "kind": "delete",
+            "text": "      - name: done"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 29,
+            "kind": "delete",
+            "text": "        type: \"tasks.bool\""
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 30,
+            "kind": "delete",
+            "text": "    identity:"
+          },
+          {
+            "afterLine": 31,
+            "beforeLine": 31,
+            "kind": "delete",
+            "text": "      - title"
+          }
+        ],
+        "path": "lekalo/modules/tasks/entities.yaml"
+      },
+      {
+        "after": "\"definitions\":\n  - \"id\": \"tasks\"\n    \"kind\": \"module\"\n    \"version\": 1\n\"schema_version\": \"0.2.16\"\n",
+        "before": "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks\n    kind: module\n    version: 1\n",
+        "patch": [
+          {
+            "afterLine": 1,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "\"definitions\":"
+          },
+          {
+            "afterLine": 2,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "  - \"id\": \"tasks\""
+          },
+          {
+            "afterLine": 3,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "    \"kind\": \"module\""
+          },
+          {
+            "afterLine": 4,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "    \"version\": 1"
+          },
+          {
+            "afterLine": 5,
+            "beforeLine": 0,
+            "kind": "insert",
+            "text": "\"schema_version\": \"0.2.16\""
+          },
+          {
+            "afterLine": 5,
+            "beforeLine": 1,
+            "kind": "delete",
+            "text": "schema_version: \"0.2.16\""
+          },
+          {
+            "afterLine": 5,
+            "beforeLine": 2,
+            "kind": "delete",
+            "text": "definitions:"
+          },
+          {
+            "afterLine": 5,
+            "beforeLine": 3,
+            "kind": "delete",
+            "text": "  - id: tasks"
+          },
+          {
+            "afterLine": 5,
+            "beforeLine": 4,
+            "kind": "delete",
+            "text": "    kind: module"
+          },
+          {
+            "afterLine": 5,
+            "beforeLine": 5,
+            "kind": "delete",
+            "text": "    version: 1"
+          }
+        ],
+        "path": "lekalo/modules/tasks/module.yaml"
+      },
+      {
+        "after": "{\n  \"definitions\": [\n    {\n      \"id\": \"tasks\",\n      \"kind\": \"project\",\n      \"version\": 1\n    }\n  ],\n  \"schema_version\": \"0.2.16\"\n}\n",
+        "before": "{\n  \"schema_version\": \"0.2.16\",\n  \"definitions\": [\n    {\n      \"id\": \"tasks\",\n      \"kind\": \"project\",\n      \"version\": 1\n    }\n  ]\n}\n",
+        "patch": [
+          {
+            "afterLine": 1,
+            "beforeLine": 1,
+            "kind": "equal",
+            "text": "{"
+          },
+          {
+            "afterLine": 1,
+            "beforeLine": 2,
+            "kind": "delete",
+            "text": "  \"schema_version\": \"0.2.16\","
+          },
+          {
+            "afterLine": 2,
+            "beforeLine": 3,
+            "kind": "equal",
+            "text": "  \"definitions\": ["
+          },
+          {
+            "afterLine": 3,
+            "beforeLine": 4,
+            "kind": "equal",
+            "text": "    {"
+          },
+          {
+            "afterLine": 4,
+            "beforeLine": 5,
+            "kind": "equal",
+            "text": "      \"id\": \"tasks\","
+          },
+          {
+            "afterLine": 5,
+            "beforeLine": 6,
+            "kind": "equal",
+            "text": "      \"kind\": \"project\","
+          },
+          {
+            "afterLine": 6,
+            "beforeLine": 7,
+            "kind": "equal",
+            "text": "      \"version\": 1"
+          },
+          {
+            "afterLine": 7,
+            "beforeLine": 8,
+            "kind": "equal",
+            "text": "    }"
+          },
+          {
+            "afterLine": 8,
+            "beforeLine": 8,
+            "kind": "insert",
+            "text": "  ],"
+          },
+          {
+            "afterLine": 9,
+            "beforeLine": 8,
+            "kind": "insert",
+            "text": "  \"schema_version\": \"0.2.16\""
+          },
+          {
+            "afterLine": 9,
+            "beforeLine": 9,
+            "kind": "delete",
+            "text": "  ]"
+          },
+          {
+            "afterLine": 10,
+            "beforeLine": 10,
+            "kind": "equal",
+            "text": "}"
+          }
+        ],
+        "path": "lekalo/project.yaml"
+      }
+    ],
+    "fileEdits": [
+      {
+        "afterDigest": "sha256:c41136dd0d0d338a0a9edd1c320e05ce03b62a23aaa26c29bc97922254632113",
+        "beforeDigest": "sha256:dc401ad9d6a36a57ff957196bf51f8b95a646722acbf350a08233802b6cae40d",
+        "path": "lekalo/modules/tasks/entities.yaml"
+      },
+      {
+        "afterDigest": "sha256:77eb140d8c843816db4ae4c5ff35a03428d515c1d8db75237247b805d60972ce",
+        "beforeDigest": "sha256:cdc3ec3d81ca4758e3349aa2526e9112074b9b35c54135641d781fa8a6e0a44d",
+        "path": "lekalo/modules/tasks/module.yaml"
+      },
+      {
+        "afterDigest": "sha256:79d225250720df3cd1a47a36232f02f255c25acc9916f0181ebb777b091511f7",
+        "beforeDigest": "sha256:9e197783cae1bdde94f3191bfe0e4d1ef6aaf59eedff6dd3198dbc3f38117849",
+        "path": "lekalo/project.yaml"
+      }
+    ],
+    "generation": {
+      "complete": false,
+      "executed": false,
+      "lock": null,
+      "note": "plan-only; generation is separately authorized (`lekalo generate --locked`); planning incomplete: project lock absent or invalid (`lekalo lock`)",
+      "targets": []
+    },
+    "identity": "dev.lekalo.change-plan@0.8.0",
+    "impact": {
+      "affected": [],
+      "complete": true,
+      "seeds": []
+    },
+    "inputs": [
+      {
+        "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "path": "lekalo/change-history.json"
+      },
+      {
+        "digest": "sha256:dc401ad9d6a36a57ff957196bf51f8b95a646722acbf350a08233802b6cae40d",
+        "path": "lekalo/modules/tasks/entities.yaml"
+      },
+      {
+        "digest": "sha256:cdc3ec3d81ca4758e3349aa2526e9112074b9b35c54135641d781fa8a6e0a44d",
+        "path": "lekalo/modules/tasks/module.yaml"
+      },
+      {
+        "digest": "sha256:9e197783cae1bdde94f3191bfe0e4d1ef6aaf59eedff6dd3198dbc3f38117849",
+        "path": "lekalo/project.yaml"
+      }
+    ],
+    "mode": "preview",
+    "operations": [
+      {
+        "detail": "core.canonical-format@1.0.0;sha256:f167df0035fd1832bf886f8f0d5b74abe9e2951a37e5764df3b6886356875269",
+        "operation": "fix:apply",
+        "status": "resolved",
+        "subject": "tasks",
+        "subjectFamily": "project"
+      }
+    ],
+    "planId": "sha256:b65461bf37c8ac43c4536ed6bb7360e23f2b47a5e33c4ed396aeb9ef25afce92",
+    "policyAllowed": true,
+    "policyDigest": null,
+    "requestDigest": "sha256:f167df0035fd1832bf886f8f0d5b74abe9e2951a37e5764df3b6886356875269",
+    "schemaVersion": "lekalo/change-plan/v0.8.0",
+    "semanticDiff": {
+      "changes": [],
+      "classification": [],
+      "complete": true,
+      "completeReason": null,
+      "equal": true
+    },
+    "status": "valid"
+  },
+  "planId": "sha256:b65461bf37c8ac43c4536ed6bb7360e23f2b47a5e33c4ed396aeb9ef25afce92",
+  "postValidation": "not-run",
+  "reasonCodes": [
+    "fix.format-required"
+  ],
+  "receipt": null,
+  "recipes": [
+    {
+      "class": "safe",
+      "diagnosticCodes": [
+        "LEK-FORMAT-001",
+        "LEK-FIX-009"
+      ],
+      "explanation": "Render admitted Model documents with the pinned canonical formatter; preserve comments and prove normalized Model and IR equality. Re-run the formatting diagnostic before committing.",
+      "id": "core.canonical-format",
+      "identity": "dev.lekalo.fix-recipe@0.8.0",
+      "operation": {
+        "kind": "model-format"
+      },
+      "owner": "core",
+      "postValidation": "format-check",
+      "preconditions": {
+        "sourceFingerprint": "sha256:f62d53e36e3e69afe2e2488751117877a5ad1649a416888d2930455cba1d1f2a"
+      },
+      "schemaVersion": "lekalo/fix-recipe/v0.8.0",
+      "scope": {
+        "operations": [
+          "model:format"
+        ],
+        "subjects": [
+          "project"
+        ]
+      },
+      "target": null,
+      "version": "1.0.0"
+    }
+  ],
+  "schemaVersion": "lekalo/fix-result/v0.8.0",
+  "state": "preview",
+  "status": "valid"
+}
