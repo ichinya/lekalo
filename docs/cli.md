@@ -1380,6 +1380,9 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo managed resolve` | `lekalo managed resolve [OPTIONS] --path <PATH>` | [reference](managed-mode.md) |
 | `lekalo managed rollback` | `lekalo managed rollback [OPTIONS] --to <DIGEST>` | [reference](managed-mode.md) |
 | `lekalo managed upgrade-plan` | `lekalo managed upgrade-plan [OPTIONS] --module <MODULE> --target <TARGET> --ownership <FILE> --base <FILE> --candidate <FILE>` | [reference](managed-mode.md) |
+| `lekalo mcp` | `lekalo mcp [OPTIONS] <COMMAND>` | [reference](mcp.md) |
+| `lekalo mcp describe` | `lekalo mcp describe [OPTIONS]` | [reference](mcp.md) |
+| `lekalo mcp serve` | `lekalo mcp serve [OPTIONS]` | [reference](mcp.md) |
 | `lekalo metrics` | `lekalo metrics [OPTIONS] <COMMAND>` | [reference](metrics-export.md) |
 | `lekalo metrics export` | `lekalo metrics export [OPTIONS] --evaluation <FILE> --scope <TOKEN>` | [reference](metrics-export.md) |
 | `lekalo metrics status` | `lekalo metrics status [OPTIONS] --scope <TOKEN> <EXPORT_ID>` | [reference](metrics-export.md) |

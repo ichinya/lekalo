@@ -40,6 +40,8 @@ mod canonical;
 mod json;
 pub mod wire;
 
+pub use json::{parse_checked, ParseFailure};
+
 pub use policy::{
     CrossTenantMode, DestinationKind, KindRule, MaskingStrategy, PolicyAttachment, SinkCeiling,
     SinkName,

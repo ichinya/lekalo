@@ -40,6 +40,7 @@ pub mod ir;
 pub mod loader;
 pub mod lockfile;
 pub mod managed;
+pub mod mcp;
 pub mod metrics_export;
 pub mod module_api;
 pub mod native_gate;

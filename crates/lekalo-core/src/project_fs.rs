@@ -472,12 +472,12 @@ mod imp {
             if !FileType::from_raw_mode(before.st_mode).is_file() {
                 return Err(FsErrorKind::Io);
             }
-            // A multiply-linked file is refused outright: a checked-in
-            // hardlink to bytes outside the root reads foreign content
-            // under an in-root path, defeating byte custody while every
-            // path containment check still passes. Regular checkouts
-            // never carry hardlinks, so this fails closed conservatively.
-            if before.st_nlink > 1 {
+            // A multi-link inode is a hardlink alias (issue #33 r4 F3,
+            // issue #19 r3 F14): a second name for the same bytes —
+            // possibly outside the validated root — is not single-owner
+            // in-root content, so the seam fails closed on a link count
+            // above one, before and after the open.
+            if before.st_nlink != 1 {
                 return Err(FsErrorKind::Io);
             }
             let file = openat(
@@ -489,11 +489,11 @@ mod imp {
             .map_err(error_of)?;
             let after = rustix::fs::fstat(&file).map_err(error_of)?;
             // Close the preflight/read window: same device, inode, type,
-            // and link identity.
+            // and single-owner link count.
             if after.st_dev != before.st_dev
                 || after.st_ino != before.st_ino
-                || after.st_nlink != before.st_nlink
                 || !FileType::from_raw_mode(after.st_mode).is_file()
+                || after.st_nlink != 1
             {
                 return Err(FsErrorKind::Io);
             }
@@ -543,6 +543,42 @@ mod imp {
         } else {
             FsErrorKind::Io
         }
+    }
+
+    /// Whether the opened handle's own metadata reports a single-owner
+    /// link count (`BY_HANDLE_FILE_INFORMATION.nNumberOfLinks`, issue #33
+    /// r4 F3). `false` when the volume cannot answer: the caller fails
+    /// closed rather than answering "single owner" by omission.
+    fn single_owner_windows(file: &fs::File) -> bool {
+        use std::os::windows::io::AsRawHandle;
+        let mut information = windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION {
+            dwFileAttributes: 0,
+            ftCreationTime: windows_sys::Win32::Foundation::FILETIME {
+                dwLowDateTime: 0,
+                dwHighDateTime: 0,
+            },
+            ftLastAccessTime: windows_sys::Win32::Foundation::FILETIME {
+                dwLowDateTime: 0,
+                dwHighDateTime: 0,
+            },
+            ftLastWriteTime: windows_sys::Win32::Foundation::FILETIME {
+                dwLowDateTime: 0,
+                dwHighDateTime: 0,
+            },
+            dwVolumeSerialNumber: 0,
+            nFileSizeHigh: 0,
+            nFileSizeLow: 0,
+            nNumberOfLinks: 0,
+            nFileIndexHigh: 0,
+            nFileIndexLow: 0,
+        };
+        let ok = unsafe {
+            windows_sys::Win32::Storage::FileSystem::GetFileInformationByHandle(
+                file.as_raw_handle(),
+                &mut information,
+            )
+        };
+        ok != 0 && information.nNumberOfLinks == 1
     }
 
     impl FsInner {
@@ -631,30 +667,21 @@ mod imp {
                 return Err(FsErrorKind::Io);
             }
             let file = fs::File::open(&component_path).map_err(|error| error_of(&error))?;
-            // Close the preflight/read window as far as the platform
-            // permits, riding the handle information: same reparse-free
-            // regular-file classification, same length, and a single
-            // link. A checked-in NTFS hardlink to bytes outside the root
-            // reads foreign content under an in-root path, defeating byte
-            // custody while every path containment check still passes;
-            // regular checkouts never carry hardlinks, so this fails
-            // closed conservatively.
+            let after = file.metadata().map_err(|error| error_of(&error))?;
+            // Close the preflight/read window as far as the platform permits:
+            // same reparse-free regular-file classification, same length,
+            // and a single-owner link count — a hardlink alias carries the
+            // shared count on the opened handle's own metadata (issue #33
+            // r4 F3, through the same windows-sys seam the CLI read seam
+            // uses; std's number_of_links is still unstable), so an
+            // in-root second name for out-of-root bytes refuses exactly
+            // like a multi-link Unix inode. A volume that cannot answer
+            // the query fails closed.
+            if classify(&after) != EntryType::File
+                || after.len() != before.len()
+                || !single_owner_windows(&file)
             {
-                use std::os::windows::io::AsRawHandle;
-                use windows_sys::Win32::Storage::FileSystem::{
-                    GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
-                };
-                let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
-                if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0
-                    || info.dwFileAttributes & 0x400 != 0
-                    || info.nNumberOfLinks != 1
-                {
-                    return Err(FsErrorKind::Io);
-                }
-                let after_len = ((info.nFileSizeHigh as u64) << 32) | info.nFileSizeLow as u64;
-                if after_len != before.len() {
-                    return Err(FsErrorKind::Io);
-                }
+                return Err(FsErrorKind::Io);
             }
             let mut buffer = Vec::new();
             file.take((max as u64) + 1)

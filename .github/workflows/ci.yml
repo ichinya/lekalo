@@ -103,6 +103,9 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-search-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-workspace-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-provider-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-boundaries.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-union.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-contracts.mjs
       - name: Run the adapter-SDK schema, digest, and generator gates (issue #106)
         # CI permits only the read-only generator --check; --write stays a
@@ -257,6 +260,20 @@ jobs:
           node scripts/test-watch-faults.mjs
           node scripts/test-watch-successor.mjs
           node scripts/test-watch-consumers.mjs
+      - name: Run the read-only MCP stdio gate (issue #33)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-stdio.mjs
+      - name: Provision the qualified MCP host SDK outside the checkout
+        run: npm install --prefix "$RUNNER_TEMP/lekalo-mcp-sdk" --ignore-scripts --no-audit --no-fund --no-save @modelcontextprotocol/sdk@1.32.1
+      - name: Qualify the real MCP host connection (issue #33)
+        env:
+          NODE_PATH: ${{ runner.temp }}/lekalo-mcp-sdk/node_modules
+        run: |
+          set -euo pipefail
+          node scripts/test-mcp-host.mjs
       - name: Run the live portability contract gate (issue #19)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules

@@ -80,6 +80,12 @@ pub const SEARCH_REGISTRY_BYTES: &[u8] =
 pub const CHANGE_REGISTRY_BYTES: &[u8] =
     include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
 
+/// The issue #33 MCP union successor bytes: the merged M8 union plus
+/// the `mcp.*` family. All family constants name the same merged
+/// registry document.
+pub const MCP_REGISTRY_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/diagnostic-registry.v0.8.0.json");
+
 /// Why the embedded registry could not be trusted.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RegistryError {
@@ -342,11 +348,24 @@ impl DiagnosticRegistry {
         REGISTRY.as_ref().map_err(Clone::clone)
     }
 
+    /// The issue #33 MCP union successor: the merged M8 union plus the
+    /// `mcp.*` family, never a runtime extension of an earlier pin.
+    pub fn mcp_successor() -> Result<&'static Self, RegistryError> {
+        static REGISTRY: LazyLock<Result<DiagnosticRegistry, RegistryError>> =
+            LazyLock::new(|| {
+                DiagnosticRegistry::parse_version(
+                    MCP_REGISTRY_BYTES,
+                    super::version::MCP_REGISTRY_VERSION,
+                )
+            });
+        REGISTRY.as_ref().map_err(Clone::clone)
+    }
+
     pub fn for_version(version: &str) -> Result<&'static Self, RegistryError> {
         match version {
             REGISTRY_VERSION => Self::embedded(),
             super::version::SUCCESSOR_REGISTRY_VERSION => Self::successor(),
-            // All nine family constants name the merged 0.8.0 union
+            // All ten family constants name the merged 0.8.0 union
             // registry; every family accessor parses the same bytes.
             v if v == super::version::FORMAT_REGISTRY_VERSION
                 || v == super::version::ADOPTION_REGISTRY_VERSION
@@ -356,7 +375,8 @@ impl DiagnosticRegistry {
                 || v == super::version::MANAGED_REGISTRY_VERSION
                 || v == super::version::TASKLINK_REGISTRY_VERSION
                 || v == super::version::SEARCH_REGISTRY_VERSION
-                || v == super::version::CHANGE_REGISTRY_VERSION =>
+                || v == super::version::CHANGE_REGISTRY_VERSION
+                || v == super::version::MCP_REGISTRY_VERSION =>
             {
                 Self::module_successor()
             }

@@ -3206,20 +3206,23 @@ fn r4_review_union_registry_and_boundary_rule_set_are_pinned() {
     // accessor parses the same merged bytes and every landed family
     // resolves, so neither side of a merge can drop a pin. Preserve
     // predecessor entries exactly, not a milestone-wide fixed total:
-    // landed search/watch siblings grow the shared union additively.
+    // landed search/watch/mcp siblings grow the shared union additively.
     let module = lekalo_core::diagnostics::DiagnosticRegistry::module_successor().unwrap();
     let format = lekalo_core::diagnostics::DiagnosticRegistry::format_successor().unwrap();
     let adoption = lekalo_core::diagnostics::DiagnosticRegistry::adoption().unwrap();
     let m8 = lekalo_core::diagnostics::DiagnosticRegistry::m8().unwrap();
     let pilot = lekalo_core::diagnostics::DiagnosticRegistry::pilot().unwrap();
     let predecessor = lekalo_core::diagnostics::DiagnosticRegistry::successor().unwrap();
+    let mcp = lekalo_core::diagnostics::DiagnosticRegistry::mcp_successor().unwrap();
     for entry in predecessor.entries() {
         assert_eq!(module.entry(entry.id()), Some(entry));
     }
+    assert!(module.len() > predecessor.len());
     assert_eq!(format, module);
     assert_eq!(adoption, module);
     assert_eq!(m8, module);
     assert_eq!(pilot, module);
+    assert_eq!(mcp, module);
     for family in [
         "module-api.",
         "format.",
@@ -3230,6 +3233,7 @@ fn r4_review_union_registry_and_boundary_rule_set_are_pinned() {
         "tasklink.",
         "search.",
         "watch.",
+        "mcp.",
     ] {
         assert!(
             module.entries().any(|entry| entry.id().starts_with(family)),

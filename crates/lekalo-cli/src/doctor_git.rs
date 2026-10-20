@@ -10,16 +10,8 @@
 
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
 
 use lekalo_core::doctor::{GitFacts, GitState};
-
-/// The bounded wait for one Git invocation; a slower Git counts as
-/// unavailable rather than hanging the diagnostic.
-const GIT_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// The poll interval of the bounded wait.
-const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 /// Collect the read-only Git facts of one project root.
 pub fn git_facts(project_root: &Path) -> GitFacts {
@@ -72,30 +64,18 @@ enum Failure {
 /// valid UTF-8. On timeout the child is killed and Git counts as
 /// unavailable.
 fn bounded_git(project_root: &Path, args: &[&str]) -> Result<String, Failure> {
-    let mut child = Command::new("git")
+    // MCP abandonment is checked at the ACTUAL spawn boundary, not just
+    // before model traversal; a cancelled status worker cannot spawn Git
+    // seconds after its reply was suppressed (issue #33 r4 F10).
+    let mut command = Command::new("git");
+    command
         .current_dir(project_root)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|_| Failure::Unavailable)?;
-    let deadline = Instant::now() + GIT_TIMEOUT;
-    let status = loop {
-        match child.try_wait().expect("child status is inspectable") {
-            Some(status) => break status,
-            None => {
-                if Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(Failure::Unavailable);
-                }
-                std::thread::sleep(POLL_INTERVAL);
-            }
-        }
-    };
-    let output = child.wait_with_output().expect("the child already exited");
-    if !status.success() {
+        .stderr(Stdio::null());
+    let output = crate::mcp::work::git_output(&mut command).map_err(|_| Failure::Unavailable)?;
+    if !output.status.success() {
         return Err(Failure::NotARepository);
     }
     let text = String::from_utf8(output.stdout).map_err(|_| Failure::Unavailable)?;

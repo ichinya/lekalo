@@ -119,6 +119,11 @@ pub const SEARCH_REGISTRY_VERSION: &str = "0.8.0";
 /// pins.
 pub const CHANGE_REGISTRY_VERSION: &str = "0.8.0";
 
+/// The issue #33 MCP union successor: the merged M8 union plus the
+/// eleven `mcp.*` diagnostics (LEK-MCP-001..011) of the read-only MCP
+/// server. Earlier producers keep their exact registry pins end to end.
+pub const MCP_REGISTRY_VERSION: &str = "0.8.0";
+
 /// The closed diagnostic schema version.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DiagnosticSchemaVersion {

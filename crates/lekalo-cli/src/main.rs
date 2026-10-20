@@ -35,6 +35,7 @@ mod fix;
 mod format;
 mod git_input;
 mod managed;
+mod mcp;
 mod metrics_export;
 mod module_api;
 mod pilot_battery;
@@ -273,6 +274,13 @@ enum Commands {
     },
     /// Print the embedded contract version registry.
     Compatibility,
+    /// The issue #33 read-only MCP surface: the embedded capability
+    /// manifest, or one stdio server over an explicitly granted project.
+    /// Write/generate tools do not exist on this surface.
+    Mcp {
+        #[command(subcommand)]
+        command: mcp::McpCommands,
+    },
     /// Emit the issue #34 workflow-provider discovery manifest for
     /// AIFHub `/aif-*` consumers: a closed, deterministic receipt that
     /// works outside any project, reads nothing, launches nothing, and
@@ -2653,6 +2661,14 @@ fn runtime() -> u8 {
                 run_validate_reported(project, module, strict, cli.no_cache, &request)
             }
             Commands::Compatibility => run_compatibility(),
+            Commands::Mcp { command } => match mcp::run(command, json_requested) {
+                mcp::McpRun::Envelope(result) => result,
+                mcp::McpRun::Owned(result) => {
+                    // The served session owned stdout exclusively; no
+                    // trailing envelope may follow the protocol frames.
+                    return result.exit_code();
+                }
+            },
             Commands::AiLint { args } => ai_lint::run(args),
             Commands::Waivers { command } => waivers::run(*command),
             Commands::Provider { command } => run_provider(command),
@@ -5440,7 +5456,21 @@ fn doctor_traces(paths: &[String]) -> Vec<lekalo_core::doctor::TraceManifestEvid
 
 /// The Git facts of one selection: unavailable when the project root
 /// itself cannot be resolved, otherwise the read-only adapter handoff.
-fn doctor_git_facts(selection: &LoadSelection) -> lekalo_core::doctor::GitFacts {
+/// `allow_git` is the explicit process-spawn admission: the MCP target-
+/// status seam passes the catalog's git.changedMode grant, so a spawned
+/// `git` is reachable only through the same catalog gate as changed-mode
+/// impact (F9); the ordinary CLI passes `true`.
+fn doctor_git_facts_with(
+    selection: &LoadSelection,
+    allow_git: bool,
+) -> lekalo_core::doctor::GitFacts {
+    if !allow_git {
+        return lekalo_core::doctor::GitFacts {
+            state: lekalo_core::doctor::GitState::Unavailable,
+            commit: None,
+            dirty: None,
+        };
+    }
     match lekalo_core::doctor::project_root(selection) {
         Err(_) => lekalo_core::doctor::GitFacts {
             state: lekalo_core::doctor::GitState::Unavailable,
@@ -5449,6 +5479,10 @@ fn doctor_git_facts(selection: &LoadSelection) -> lekalo_core::doctor::GitFacts 
         },
         Ok(root) => doctor_git::git_facts(&root),
     }
+}
+
+fn doctor_git_facts(selection: &LoadSelection) -> lekalo_core::doctor::GitFacts {
+    doctor_git_facts_with(selection, true)
 }
 
 /// `lekalo doctor`: the full read-only readiness report. `--fix` only
@@ -5464,6 +5498,23 @@ fn run_doctor(project: Option<String>, fix: bool, traces: Vec<String>) -> Domain
         traces: evidence,
     };
     lekalo_core::doctor::report(&selection, &git, &options)
+}
+
+/// MCP's selected panels consume the exact pre-admitted Git and trust
+/// inputs; they never recollect facts outside the snapshot (r8 F2).
+fn run_doctor_for_mcp(
+    project: Option<String>,
+    git: &lekalo_core::doctor::GitFacts,
+    trust_inputs: &lekalo_core::doctor::TrustInputs,
+) -> DomainResult {
+    let selection = selection_for(&project);
+    let options = lekalo_core::doctor::Options {
+        kind: lekalo_core::doctor::model::ReportKind::Doctor,
+        phase: None,
+        fix: false,
+        traces: Vec::new(),
+    };
+    lekalo_core::doctor::report_with_trust_inputs(&selection, git, &options, Some(trust_inputs))
 }
 
 /// `lekalo status`: the freshness panel plus the exact revisions.
@@ -5538,6 +5589,15 @@ fn run_status(project: Option<String>, adoption: Option<String>) -> DomainResult
 fn run_status_envelope(project: Option<String>) -> DomainResult {
     let selection = selection_for(&project);
     let git = doctor_git_facts(&selection);
+    run_status_with_git(selection, git)
+}
+
+/// Shared status assembly over pre-collected Git facts. MCP passes its
+/// admitted facts (typed unavailable without a grant), never a fresh read.
+fn run_status_with_git(
+    selection: LoadSelection,
+    git: lekalo_core::doctor::GitFacts,
+) -> DomainResult {
     let options = lekalo_core::doctor::Options {
         kind: lekalo_core::doctor::model::ReportKind::Status,
         ..lekalo_core::doctor::Options::default()
@@ -6036,8 +6096,9 @@ fn run_context(
     spans: bool,
     project: &Option<String>,
 ) -> DomainResult {
-    let scope = match (symbol, changed) {
-        (Some(symbol), None) => lekalo_core::context::CapsuleScope::Symbol(symbol),
+    let changed = match (symbol.clone(), changed) {
+        (Some(_), Some(_)) | (None, None) => return DomainResult::usage_error(),
+        (Some(_), None) => None,
         (None, Some(changed)) => {
             let mut roots = Vec::new();
             for name in changed.split(',') {
@@ -6047,8 +6108,26 @@ fn run_context(
                 }
                 roots.push(name.to_owned());
             }
-            lekalo_core::context::CapsuleScope::Changed(roots)
+            Some(roots)
         }
+    };
+    run_context_typed(symbol, changed, budget, spans, project)
+}
+
+/// The typed changed-list seam: the exact `Vec` of changed symbols rides
+/// to the capsule planner with no separator round-trip (the MCP surface
+/// dispatches through this seam so one operand can never re-split into a
+/// set the admission closure never checked).
+fn run_context_typed(
+    symbol: Option<String>,
+    changed: Option<Vec<String>>,
+    budget: u64,
+    spans: bool,
+    project: &Option<String>,
+) -> DomainResult {
+    let scope = match (symbol, changed) {
+        (Some(symbol), None) => lekalo_core::context::CapsuleScope::Symbol(symbol),
+        (None, Some(changed)) => lekalo_core::context::CapsuleScope::Changed(changed),
         (Some(_), Some(_)) | (None, None) => return DomainResult::usage_error(),
     };
     let selection = LoadSelection {

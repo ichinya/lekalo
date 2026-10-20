@@ -5,6 +5,7 @@
 // consumer diff partitions, public-only context bounds, lock denial,
 // mapping conformance, and determinism. Read-only against the checkout;
 // every mutation is a temporary probe under the OS temp dir.
+import './registry-union.mjs';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';

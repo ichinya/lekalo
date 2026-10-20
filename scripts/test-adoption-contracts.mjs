@@ -8,6 +8,7 @@
 // Schema-only checks never replace the end-to-end acceptance in
 // test-adoption-refactor.mjs and test-adoption-hybrid.mjs, which must
 // run after `cargo build --workspace --locked` in the same job.
+import "./registry-union.mjs";
 import { createRequire } from "node:module";
 import { ACCEPTED_M8_REGISTRY_FAMILIES } from "./lib/registry-union.mjs";
 import { execFileSync, spawnSync } from "node:child_process";

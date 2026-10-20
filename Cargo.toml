@@ -32,3 +32,7 @@ notify = "=6.1.1"
 [workspace.dependencies.rustix]
 version = "1"
 features = ["fs"]
+
+[workspace.dependencies.windows-sys]
+version = "=0.61.2"
+features = ["Win32_Foundation", "Win32_Storage_FileSystem"]

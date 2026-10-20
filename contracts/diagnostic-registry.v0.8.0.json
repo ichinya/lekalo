@@ -7815,6 +7815,237 @@
       "lifecycle": "active"
     },
     {
+      "id": "mcp.backend-unavailable",
+      "code": "LEK-MCP-010",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "mcp.backend-unavailable",
+      "default_message": "A required safe read, confinement, or host capability is unavailable; no broad fallback exists.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "capability",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "mcp.cancelled",
+      "code": "LEK-MCP-007",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "mcp.cancelled",
+      "default_message": "The request was cancelled internally before completion.",
+      "location_requirement": "none",
+      "data_fields": [],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "mcp.contract-unsupported",
+      "code": "LEK-MCP-008",
+      "category": "compatibility",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "mcp.contract-unsupported",
+      "default_message": "The requested tool, result, or protocol pin is unknown; no automatic downgrade exists.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "pin",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "mcp.input-invalid",
+      "code": "LEK-MCP-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "mcp.input-invalid",
+      "default_message": "The known-tool request or server configuration violated a semantic invariant.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "field",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "mcp.output-limit",
+      "code": "LEK-MCP-005",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "mcp.output-limit",
+      "default_message": "The complete encoded response exceeded its effective byte cap.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "limit",
+          "type": "count"
+        },
+        {
+          "name": "actual",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "mcp.request-limit",
+      "code": "LEK-MCP-004",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "mcp.request-limit",
+      "default_message": "The request exceeded an admission bound: queue, concurrency, frame, nesting, or root count.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "bound",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "mcp.result-invalid",
+      "code": "LEK-MCP-011",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "mcp.result-invalid",
+      "default_message": "The typed backend output violated the selected schema, status, or pin invariants.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "mcp.scope-denied",
+      "code": "LEK-MCP-002",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "mcp.scope-denied",
+      "default_message": "The request named an unregistered project, group, input, or path, or attempted to widen its scope.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "subject",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "mcp.sensitive-output",
+      "code": "LEK-MCP-003",
+      "category": "security",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "denied"
+      ],
+      "message_id": "mcp.sensitive-output",
+      "default_message": "The result or log could not be disclosed safely while preserving its contract.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "surface",
+          "type": "token"
+        },
+        {
+          "name": "reason",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "mcp.snapshot-stale",
+      "code": "LEK-MCP-009",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "mcp.snapshot-stale",
+      "default_message": "An authorized input changed during evaluation or the cursor revision is stale.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "domain",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "mcp.timeout",
+      "code": "LEK-MCP-006",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "mcp.timeout",
+      "default_message": "The request deadline expired before a complete result existed.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "deadlineMs",
+          "type": "count"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "metrics-export.authorization-refused",
       "code": "LEK-MEXPORT-004",
       "category": "security",

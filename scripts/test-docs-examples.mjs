@@ -177,6 +177,14 @@ function repositoryCopy() {
     assert.equal(git.status,0,"private provenance replay index unavailable");
   }
   const copiedBin=join(repository,"target/debug",basename(bin)); mkdirSync(dirname(copiedBin),{recursive:true}); cpSync(bin,copiedBin);
+  // The M8 provenance gate verifies binary fixtures through Git's actual
+  // clean filter. Give the disposable replay its own index and the exact
+  // copied attributes; never consult or modify the source checkout's Git
+  // metadata, and never skip the binary-custody leg in a source copy.
+  for(const argv of [["init","--quiet"],["-c","core.autocrlf=false","add","--force","--",".gitattributes","tests/fixtures"]]) {
+    const indexed=spawnSync("git",argv,{cwd:repository,env:childEnv,encoding:"utf8"});
+    assert.equal(indexed.status,0,"disposable fixture custody index unavailable");
+  }
   if(lane==="planner") {
     const vendor=safePath("tests/fixtures/php-laravel/planner/vendor");
     assert.ok(existsSync(join(vendor,"autoload.php")),"planner-vendor-missing: explicit composer install from lock required");

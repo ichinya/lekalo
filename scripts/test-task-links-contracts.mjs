@@ -9,6 +9,7 @@
 // the Node contract lane can run before any Rust build; the full mode
 // (default) fails closed when the built binary is missing.
 
+import "./registry-union.mjs";
 import { createRequire } from "node:module";
 import { ACCEPTED_M8_REGISTRY_FAMILIES } from "./lib/registry-union.mjs";
 import { cpSync, mkdtempSync, readFileSync, existsSync, rmSync, statSync, writeFileSync } from "node:fs";

@@ -29,11 +29,23 @@ const git = (...args) =>
   execFileSync("git", args, { cwd: ROOT, encoding: "utf8", maxBuffer: 1 << 26 });
 
 const args = process.argv.slice(2);
-const flag = (name) => {
-  const at = args.indexOf(name);
-  if (at === -1) return null;
-  return args[at + 1];
-};
+const options = { base: null, ref: null, selftest: false };
+for (let cursor = 0; cursor < args.length; cursor += 1) {
+  const arg = args[cursor];
+  if (arg === "--selftest" && args.length === 1) {
+    options.selftest = true;
+  } else if (arg === "--base" || arg === "--ref") {
+    const value = args[++cursor];
+    if (!value || value.startsWith("-")) {
+      throw new Error(`registry union guard: ${arg} requires a non-option ref`);
+    }
+    const key = arg.slice(2);
+    if (options[key] !== null) throw new Error(`registry union guard: duplicate ${arg}`);
+    options[key] = value;
+  } else {
+    throw new Error(`registry union guard: unexpected argument ${arg}`);
+  }
+}
 
 /// Parse one registry document into { ids, families }.
 function parseRegistry(text) {
@@ -76,6 +88,12 @@ function registryAt(ref) {
 function unionGaps(child, parent, label) {
   const gaps = [];
   const have = new Set(child.ids);
+  const byId = new Map(child.doc.entries.map((entry) => [entry.id, entry]));
+  const changed = parent.doc.entries.filter((entry) => have.has(entry.id)
+    && JSON.stringify(byId.get(entry.id)) !== JSON.stringify(entry));
+  if (changed.length) {
+    gaps.push(`${label}: registry mutated ${changed.length} preserved entries (${changed[0].id})`);
+  }
   const missingIds = parent.ids.filter((id) => !have.has(id));
   if (missingIds.length) {
     gaps.push(`${label}: registry dropped ${missingIds.length} entries (${missingIds.slice(0, 5).join(", ")}${missingIds.length > 5 ? ", …" : ""})`);
@@ -127,10 +145,26 @@ function selftest() {
   for (const want of ["registry-not-id-sorted", "registry-codes-not-unique", "registry-message-id-drift"]) {
     if (!problems.includes(want)) throw new Error(`selftest 3: ${want} not caught`);
   }
+  // 4. Same ids are insufficient: predecessor entries are immutable.
+  const mutated = clone(base);
+  mutated.entries[0].code = "LEK-FORMAT-999";
+  if (!unionGaps(parseRegistry(JSON.stringify(mutated)), ok(), "t4").some((gap) => gap.includes("mutated"))) {
+    throw new Error("selftest 4: preserved entry mutation not caught");
+  }
+  // 5. Remove each real landed family in turn. Every MCP gate invokes
+  // this same guard; no predecessor+own count can hide a dropped family.
+  const actual = parseRegistry(readFileSync(resolve(ROOT, REGISTRY), "utf8"));
+  for (const family of actual.families) {
+    const stale = { ...actual.doc, entries: actual.doc.entries.filter((entry) => !entry.id.startsWith(family)) };
+    if (!unionGaps(parseRegistry(JSON.stringify(stale)), actual, "t5")
+      .some((gap) => gap.includes(`dropped landed families (${family})`))) {
+      throw new Error(`selftest 5: missing ${family} not caught`);
+    }
+  }
   return true;
 }
 
-if (args.includes("--selftest")) {
+if (options.selftest) {
   selftest();
   console.log(JSON.stringify({ ok: true, gate: "registry-union", mode: "selftest" }));
   process.exit(0);
@@ -139,7 +173,7 @@ if (args.includes("--selftest")) {
 const problems = [];
 // The child registry under review: the working tree copy (what a commit
 // would carry), or --ref REF for a historical ref.
-const ref = flag("--ref");
+const ref = options.ref;
 const child = ref
   ? registryAt(ref)
   : parseRegistry(readFileSync(resolve(ROOT, REGISTRY), "utf8"));
@@ -163,7 +197,7 @@ for (const parent of parents) {
 }
 
 // 2. Live-line completeness against the integration base.
-const baseArg = flag("--base");
+const baseArg = options.base;
 const baseRef = baseArg ?? "ichinya/M8";
 const baseExplicit = baseArg !== null;
 let baseRegistry = null;

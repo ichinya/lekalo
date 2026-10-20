@@ -78,6 +78,33 @@ fn check<'a>(report: &'a DoctorReport, id: &str) -> &'a Check {
 }
 
 #[test]
+fn admitted_trust_bytes_are_used_without_reopening_adapter_paths() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root
+        .path()
+        .join(crate::adapter_package::trust::REVOCATIONS_FILE);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, b"invalid on-disk bytes that must not be reopened").unwrap();
+    let inputs = super::TrustInputs::default();
+    let clean = super::checks::adapters_trust(Some(root.path()), Some(&inputs));
+    assert_eq!(clean.state, CheckState::Ok);
+    assert_eq!(clean.reason, Some("clean"));
+    let recorded = super::TrustInputs {
+        revocations: Some(br#"{"schemaVersion":"lekalo/adapter-revocations/v0.3.2","records":[{"id":"probe","version":"*","reason":"synthetic"}]}"#.to_vec()),
+        ..inputs
+    };
+    assert_eq!(
+        super::checks::adapters_trust(Some(root.path()), Some(&recorded)).reason,
+        Some("revocations-recorded")
+    );
+    // Ordinary CLI behavior is deliberately independent of this seam.
+    assert_eq!(
+        super::checks::adapters_trust(Some(root.path()), None).reason,
+        Some("revocation-store-invalid")
+    );
+}
+
+#[test]
 fn fresh_fixture_is_ready_with_the_full_panel() {
     let selection = LoadSelection {
         project: Some(fixture_selection()),

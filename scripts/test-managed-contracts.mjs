@@ -2,6 +2,7 @@
 // committed wire fixtures (positive and hostile), producer parity, and the
 // live binary's typed refusals. Acceptance is read-only; a missing binary,
 // schema, or fixture fails the lane instead of skipping.
+import './registry-union.mjs';
 import assert from 'node:assert/strict';
 import { ACCEPTED_M8_REGISTRY_FAMILIES } from './lib/registry-union.mjs';
 import { spawnSync } from 'node:child_process';

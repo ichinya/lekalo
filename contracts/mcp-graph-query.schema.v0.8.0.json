@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.mcp-graph-query@0.8.0",
+  "title": "Lekalo MCP graph query receipts (describing)",
+  "description": "Issue #33 describing schema for the current `graph show`, `graph callers`, and `graph path` query payloads. This schema never injects a discriminator into the frozen core query payloads; it only describes them so host validators can parse receipts. The whole-graph export keeps its own published contract (lekalo/graph/v0.2.16).",
+  "type": "object",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "node": {
+          "type": "object"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "dependents": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "node",
+        "dependencies",
+        "dependents"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "node": {
+          "type": "object"
+        },
+        "callers": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "complete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "node",
+        "callers",
+        "complete"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "confidence": {
+          "type": "string"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "from": {
+          "type": "string"
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "to": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "confidence",
+        "complete",
+        "edges",
+        "from",
+        "length",
+        "nodes",
+        "to"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

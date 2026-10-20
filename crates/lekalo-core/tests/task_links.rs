@@ -1236,6 +1236,13 @@ fn registry_chain_keeps_pins_and_admits_tasklink_rules() {
     // Tasklink's eight rules live in the shared M8 union alongside
     // subsequently landed families. Pin their presence, not the shared
     // total, and preserve predecessor shapes below as the union grows.
+    // All family accessors parse the same merged document (issue #33 r6).
+    assert_eq!(
+        tasklink.len(),
+        lekalo_core::diagnostics::DiagnosticRegistry::mcp_successor()
+            .unwrap()
+            .len()
+    );
     for family in [
         "format.",
         "adoption.",
@@ -1243,8 +1250,10 @@ fn registry_chain_keeps_pins_and_admits_tasklink_rules() {
         "worklog-changelog.",
         "managed.",
         "module-api.",
+        "tasklink.",
         "search.",
         "watch.",
+        "mcp.",
     ] {
         assert!(
             tasklink

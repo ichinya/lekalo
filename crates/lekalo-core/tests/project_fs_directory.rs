@@ -219,6 +219,51 @@ fn the_types_input_home_validates_with_closed_children() {
     }
 }
 
+#[test]
+fn a_hardlink_alias_never_serves_bytes_through_read_file_opt() {
+    // Issue #33 review r4 F3 (the model leg): the loader's read seam must
+    // refuse a multi-link file exactly like the MCP trace seam — an
+    // in-root second name for out-of-root bytes is not single-owner
+    // in-root content, and the link count is the one path-independent
+    // signal. Both the original (outside) spelling and the in-root alias
+    // refuse on both platforms.
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("root");
+    let outside = temp.path().join("outside");
+    fs::create_dir(&root).unwrap();
+    fs::create_dir(&outside).unwrap();
+    fs::write(
+        outside.join("secret.entities.yaml"),
+        b"definitions:\n  - id: outside.canary\n    kind: entity\n",
+    )
+    .unwrap();
+    fs::hard_link(
+        outside.join("secret.entities.yaml"),
+        root.join("entities.yaml"),
+    )
+    .unwrap();
+    let cap = Fs::open(&root).unwrap();
+    assert_eq!(
+        cap.entry_type("", "entities.yaml").unwrap(),
+        EntryType::File
+    );
+    assert!(
+        matches!(
+            cap.read_file_opt("", "entities.yaml", 4096),
+            Err(FsErrorKind::Io)
+        ),
+        "an in-root hardlink alias of out-of-root bytes must refuse"
+    );
+    // An ordinary single-owner file still reads.
+    fs::write(root.join("ordinary.yaml"), b"ordinary").unwrap();
+    assert_eq!(
+        cap.read_file_opt("", "ordinary.yaml", 4096)
+            .unwrap()
+            .unwrap(),
+        b"ordinary".to_vec()
+    );
+}
+
 /// A checked-in hardlink to bytes outside the root must be refused: path
 /// containment holds while the bytes are foreign, which would defeat byte
 /// custody for every digest-pinned read (issue #19, r3 finding 14).
