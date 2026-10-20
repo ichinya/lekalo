@@ -28,7 +28,7 @@
   "identity": "dev.lekalo.fix-result@0.8.0",
   "plan": {
     "breakingClasses": [],
-    "catalogDigest": "sha256:285b2650daf231efd2bea9f8ba8acd4ad94faa22f931e0deee7c50fa13c28c84",
+    "catalogDigest": "sha256:4301f180925e396307053a4d81bcfc4513b737c72316f3c879fbdc3183d73445",
     "complete": true,
     "completeReason": null,
     "equal": false,
@@ -583,6 +583,10 @@
         "path": "lekalo/change-history.json"
       },
       {
+        "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "path": "lekalo/error-registry.json"
+      },
+      {
         "digest": "sha256:dc401ad9d6a36a57ff957196bf51f8b95a646722acbf350a08233802b6cae40d",
         "path": "lekalo/modules/tasks/entities.yaml"
       },
@@ -605,7 +609,7 @@
         "subjectFamily": "project"
       }
     ],
-    "planId": "sha256:b65461bf37c8ac43c4536ed6bb7360e23f2b47a5e33c4ed396aeb9ef25afce92",
+    "planId": "sha256:3447ef476eada17bc9dde77b829fc5d1fc13c26a24bcccce9b7a0dabbf958454",
     "policyAllowed": true,
     "policyDigest": null,
     "requestDigest": "sha256:f167df0035fd1832bf886f8f0d5b74abe9e2951a37e5764df3b6886356875269",
@@ -619,7 +623,7 @@
     },
     "status": "valid"
   },
-  "planId": "sha256:b65461bf37c8ac43c4536ed6bb7360e23f2b47a5e33c4ed396aeb9ef25afce92",
+  "planId": "sha256:3447ef476eada17bc9dde77b829fc5d1fc13c26a24bcccce9b7a0dabbf958454",
   "postValidation": "not-run",
   "reasonCodes": [
     "fix.format-required"

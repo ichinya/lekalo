@@ -149,6 +149,65 @@ fn validate_err(dir: &Path, strict: bool) -> String {
 }
 
 #[test]
+fn the_local_error_owner_is_consumed_and_an_explicit_override_still_wins() {
+    use std::collections::BTreeSet;
+    let temp = scratch_with_attachment();
+    let dir = temp.path();
+    let model = lekalo_core::loader::normalize_captured_root(&alias_free_path(dir)).unwrap();
+    let compiled = lekalo_core::ir::compile(&model).unwrap();
+    let ids: BTreeSet<_> = compiled
+        .project
+        .definitions
+        .iter()
+        .map(|definition| definition.id().as_str())
+        .collect();
+    let mut registry: Value =
+        serde_json::from_slice(lekalo_core::error_contract::REGISTRY_BYTES).unwrap();
+    registry["bindings"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|binding| ids.contains(binding["operation"].as_str().unwrap()));
+    let members: BTreeSet<String> = registry["bindings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|binding| {
+            binding["errors"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|id| id.as_str().unwrap().to_owned())
+        })
+        .collect();
+    registry["errors"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|error| members.contains(error["id"].as_str().unwrap()));
+    let bytes = serde_json::to_vec(&registry).unwrap();
+    let owner = lekalo_core::error_contract::ErrorRegistry::from_bytes(&bytes).unwrap();
+    lekalo_core::error_contract::source::validate(&owner, &compiled.project).unwrap();
+    let source = dir.join(lekalo_core::error_contract::source::PROJECT_PATH);
+    fs::write(&source, &bytes).unwrap();
+    fs::write(dir.join("errors.override.json"), &bytes).unwrap();
+    validate(dir, false);
+    registry["bindings"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|binding| binding["operation"] == "planner.focus_task")
+        .unwrap()["errors"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|id| id != "planner.focus_conflict");
+    fs::write(&source, serde_json::to_vec(&registry).unwrap()).unwrap();
+    assert!(validate_err(dir, false).contains("transport."));
+    let mut args = validate_args(false);
+    args.extend(["--errors", "errors.override.json"]);
+    let explicit = lekalo_in(dir, &args);
+    assert_eq!(exit_code(&explicit), 0, "{}", stderr_text(&explicit));
+}
+
+#[test]
 fn validate_emits_the_transport_envelope_and_is_deterministic() {
     let temp = scratch_with_attachment();
     let dir = temp.path();

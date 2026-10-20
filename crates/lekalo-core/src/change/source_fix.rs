@@ -100,6 +100,8 @@ pub(crate) fn prepare_source_only(
         .map_err(|_| ChangeError::RequestInvalid { detail: "profile" })?;
     crate::validator::validate(&compiled, profile)
         .map_err(|set| ChangeError::LoadFailed(DomainResult::invalid(set)))?;
+    let error_source = super::operation_error::read_source(&load.root)?;
+    super::operation_error::validate_source(error_source.as_deref(), &compiled.project)?;
     let mut inputs: Vec<InputPin> = load
         .documents
         .iter()
@@ -113,6 +115,7 @@ pub(crate) fn prepare_source_only(
         path: version::HISTORY_LOGICAL_PATH.to_owned(),
         digest: receipt::bytes_digest(history.as_deref().unwrap_or_default()),
     });
+    inputs.push(super::operation_error::input_pin(error_source.as_deref()));
     inputs.sort_by(|a, b| a.path.cmp(&b.path));
     if inputs.len() > version::MAX_PLAN_INPUTS || edits.len() > version::MAX_PLAN_FILES {
         return Err(ChangeError::PlanExportLimit {

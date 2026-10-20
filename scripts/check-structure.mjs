@@ -26,7 +26,7 @@ const CANONICAL_ROOT_ENTRIES = new Set([
   // Issue #60: the PHP routes-generation input home (optional).
   "routes",
   // Issue #73: the canonical change audit history sidecar (optional).
-  "change-history.json"
+  "change-history.json", "error-registry.json"
 ]);
 const RUNTIME_ENTRIES = new Set(["import", "cache", "generated", "consumer", "privacy", "adapters"]);
 // The closed runtime top-level files: the issue #73 change provenance
@@ -271,6 +271,7 @@ export async function validateProject(projectRoot) {
     if (entry.name === "project.yaml" && !entry.isFile()) return invalid(["structure.document-missing", "lekalo/project.yaml"]);
     if (entry.name === "authorization.yaml" && !entry.isFile()) return invalid(["structure.directory-required", "lekalo/authorization.yaml"]);
     if (entry.name === "transport.yaml" && !entry.isFile()) return invalid(["structure.directory-required", "lekalo/transport.yaml"]);
+    if (entry.name === "error-registry.json" && !entry.isFile()) return invalid(["structure.document-missing", "lekalo/error-registry.json"]);
     if (["modules", "targets"].includes(entry.name) && !entry.isDirectory()) return invalid(["structure.directory-required", `lekalo/${entry.name}`]);
   }
 

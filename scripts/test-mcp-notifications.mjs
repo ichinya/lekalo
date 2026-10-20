@@ -78,10 +78,23 @@ try {
   await delay(750);
   assert.deepEqual((await request("ping", {})).result, {});
   assert.equal(updates().length, count, "unsubscribe stops updates");
+  const diagnostics = "lekalo://project/diagnostics";
+  const source = join(stage, "planner/lekalo/error-registry.json");
+  assert((await request("resources/read", { uri: diagnostics })).result);
+  assert.deepEqual((await request("resources/subscribe", { uri: diagnostics })).result, {});
+  const invalidOffset = frames.length;
+  writeFileSync(source, "{}\n");
+  await waitFor(frame => frames.indexOf(frame) >= invalidOffset && frame.method === "notifications/resources/updated" && frame.params.uri === diagnostics);
+  assert((await request("resources/read", { uri: diagnostics })).error, "invalid error owner invalidates diagnostics without a Model edit");
+  const validOffset = frames.length;
+  rmSync(source);
+  await waitFor(frame => frames.indexOf(frame) >= validOffset && frame.method === "notifications/resources/updated" && frame.params.uri === diagnostics);
+  assert((await request("resources/read", { uri: diagnostics })).result);
+  assert.deepEqual((await request("resources/unsubscribe", { uri: diagnostics })).result, {});
   assert.equal(existsSync(join(stage, "planner/.lekalo")), false, "watching creates no project state");
   child.stdin.end();
   assert.equal(await completion, 0, stderr);
-  console.log(JSON.stringify({ ok: true, gate: "mcp-notifications", updates: count, scopeDenials: 1, recovered: true, unsubscribe: true }));
+  console.log(JSON.stringify({ ok: true, gate: "mcp-notifications", updates: updates().length, scopeDenials: 1, recovered: true, errorSourceInvalidation: true, unsubscribe: true }));
 } finally {
   if (!closed) child.kill();
   await completion.catch(() => {});

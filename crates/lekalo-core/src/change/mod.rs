@@ -18,6 +18,7 @@ pub mod diagnostic;
 pub mod edit;
 mod history_schema;
 mod module_move;
+mod operation_error;
 pub mod plan;
 pub mod policy;
 pub mod receipt;
@@ -261,6 +262,12 @@ pub(crate) fn verify_record_postcondition(
         })?;
         let current = match if outcome.path == binding::INDEX_PATH {
             binding::read_index(&fs)
+        } else if outcome.path == crate::error_contract::source::PROJECT_PATH {
+            fs.read_file_opt(
+                "lekalo",
+                "error-registry.json",
+                crate::error_contract::version::MAX_EXPORT_BYTES,
+            )
         } else {
             fs.read_logical(&outcome.path, crate::loader::source::MAX_DOCUMENT_BYTES)
         } {
@@ -380,6 +387,19 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     if request
         .operations
         .iter()
+        .any(|operation| matches!(operation, Operation::OperationErrorSet { .. }))
+    {
+        if request.operations.len() != 1 {
+            return Err(ChangeError::UnsupportedMember {
+                operation: "operation-error:set".to_owned(),
+                member: "error-binding-batch",
+            });
+        }
+        return operation_error::prepare(&load, &request, options);
+    }
+    if request
+        .operations
+        .iter()
         .any(|operation| matches!(operation, Operation::BindingConfirm { .. }))
     {
         if request.operations.len() != 1 {
@@ -414,6 +434,8 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         })?;
     let base_compiled = ir::compile(&load.model)
         .map_err(|failure| ChangeError::LoadFailed(failure.into_result()))?;
+    let error_source = operation_error::read_source(&root)?;
+    operation_error::validate_source(error_source.as_deref(), &base_compiled.project)?;
 
     // Sequential batch execution (round 2, finding 16): every operation
     // resolves against the candidate its predecessors produced — one
@@ -649,6 +671,7 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     if let Err(set) = crate::validator::validate(&candidate_compilation, profile) {
         return Err(ChangeError::LoadFailed(DomainResult::invalid(set)));
     }
+    operation_error::validate_source(error_source.as_deref(), &candidate_compiled)?;
 
     // Semantic diff and compatibility against the unchanged base.
     let base_compiled = base_compiled.project;
@@ -732,6 +755,7 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
         path: history_path,
         digest: history_digest,
     });
+    inputs.push(operation_error::input_pin(error_source.as_deref()));
     inputs.sort_by(|left, right| left.path.as_bytes().cmp(right.path.as_bytes()));
     // (r6, finding omp F1): the export obeys its own published schema —
     // a plan whose input inventory exceeds the contract's 1000-entry pin
@@ -1036,6 +1060,8 @@ pub(crate) fn apply_with_validation(
                 None => absent_digest(),
                 Some(bytes) => format!("sha256:{}", crate::digest::sha256_hex(&bytes)),
             }
+        } else if pin.path == crate::error_contract::source::PROJECT_PATH {
+            operation_error::input_pin(operation_error::read_source(&root)?.as_deref()).digest
         } else if prepared
             .binding
             .as_ref()
@@ -1106,6 +1132,7 @@ pub(crate) fn apply_with_validation(
             .iter()
             .filter(|pin| {
                 pin.path != version::HISTORY_LOGICAL_PATH
+                    && pin.path != crate::error_contract::source::PROJECT_PATH
                     && !prepared
                         .binding
                         .as_ref()
@@ -1387,6 +1414,7 @@ pub(crate) fn apply_with_validation(
             .iter()
             .filter(|pin| {
                 pin.path != version::HISTORY_LOGICAL_PATH
+                    && pin.path != crate::error_contract::source::PROJECT_PATH
                     && !prepared
                         .binding
                         .as_ref()
@@ -1395,6 +1423,9 @@ pub(crate) fn apply_with_validation(
             .map(|pin| (pin.path.clone(), pin.digest.clone()))
             .collect();
         for (path, bytes) in &prepared.edits {
+            if path == crate::error_contract::source::PROJECT_PATH {
+                continue;
+            }
             if path == binding::INDEX_PATH && prepared.binding.is_some() {
                 continue;
             }
@@ -1428,6 +1459,7 @@ pub(crate) fn apply_with_validation(
             .map_err(|_| ChangeError::RequestInvalid { detail: "profile" })?;
         crate::validator::validate(&compiled, profile)
             .map_err(|set| ChangeError::LoadFailed(DomainResult::invalid(set)))?;
+        operation_error::validate_after(prepared, &compiled.project)?;
         if let Some(binding) = &prepared.binding {
             binding.validate_after(&root)?;
         }
@@ -1435,7 +1467,13 @@ pub(crate) fn apply_with_validation(
     })();
     if post_validation.is_err() {
         if let Err(error) = transaction.rollback() {
-            if prepared.module_move.is_some() || prepared.binding.is_some() {
+            if prepared.module_move.is_some()
+                || prepared.binding.is_some()
+                || prepared
+                    .edits
+                    .iter()
+                    .any(|(path, _)| path == crate::error_contract::source::PROJECT_PATH)
+            {
                 return Err(ChangeError::RecoveryRequired {
                     transaction: transaction_id,
                 });
@@ -2038,7 +2076,8 @@ fn resolve_operation(
         }
         Operation::Lowered { .. }
         | Operation::ModuleMove { .. }
-        | Operation::BindingConfirm { .. } => {
+        | Operation::BindingConfirm { .. }
+        | Operation::OperationErrorSet { .. } => {
             unreachable!("registered operation lowered before resolution")
         }
         Operation::Unsupported { subject, .. } => (subject.clone().unwrap_or_default(), false),
@@ -2339,7 +2378,8 @@ fn apply_tree_edit(
     let subject = match operation {
         Operation::Lowered { .. }
         | Operation::ModuleMove { .. }
-        | Operation::BindingConfirm { .. } => {
+        | Operation::BindingConfirm { .. }
+        | Operation::OperationErrorSet { .. } => {
             unreachable!("registered operation lowered before editing")
         }
         Operation::Unsupported { .. } => return Ok(()),
@@ -2439,7 +2479,8 @@ fn apply_tree_edit(
         }
         Operation::Lowered { .. }
         | Operation::ModuleMove { .. }
-        | Operation::BindingConfirm { .. } => {
+        | Operation::BindingConfirm { .. }
+        | Operation::OperationErrorSet { .. } => {
             unreachable!("registered operation lowered before editing")
         }
         Operation::Unsupported { .. } | Operation::DefinitionAdd { .. } => Ok(()),
@@ -3183,7 +3224,8 @@ fn plan_source_edits(
         }
         Operation::Lowered { .. }
         | Operation::ModuleMove { .. }
-        | Operation::BindingConfirm { .. } => {
+        | Operation::BindingConfirm { .. }
+        | Operation::OperationErrorSet { .. } => {
             unreachable!("registered operation lowered before editing")
         }
         Operation::Unsupported { .. } => return Ok(Vec::new()),

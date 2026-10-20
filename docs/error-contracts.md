@@ -16,6 +16,22 @@ contract family. The contracts are published as:
 Owner decisions and the rationale live in
 [ADR-0022](adr/0022-error-contracts.md).
 
+## Project declaration
+
+The optional canonical home is `lekalo/error-registry.json`, using the
+existing closed registry format and identity. A present declaration must
+parse and validate against the current compiled Model. Empty, malformed,
+unreadable or semantically stale files refuse; they never fall back to the
+embedded planner seed. With no local declaration, existing consumers retain
+their legacy embedded default. An explicit Transport registry override still
+takes precedence over this default selection.
+
+The [Change API](change.md) operation `operation-error:set` seals the exact
+registry digest and changes one existing command/query union transactionally.
+It preserves query output types and command unit output. Other Change plans
+pin this source, including its absence, and reject candidates that invalidate
+it. This does not migrate or republish the frozen #62 wire format.
+
 ## The typed Result binding
 
 Each command or query may declare its errors as one closed binding:

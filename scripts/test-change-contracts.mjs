@@ -149,6 +149,7 @@ const expectedImplemented = [
   "enum-case:change",
   "migration:apply",
   "module:move",
+  "operation-error:set",
   "operation-input:set",
   "operation-output:set",
   "query-effect:add",

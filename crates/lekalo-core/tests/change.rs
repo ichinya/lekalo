@@ -97,6 +97,229 @@ fn module_bytes(path: &Path) -> std::collections::BTreeMap<std::ffi::OsString, V
         .collect()
 }
 
+fn error_sandbox(tag: &str) -> Sandbox {
+    let sandbox = Sandbox::from_fixture(tag, "tests/fixtures/model-v1/valid-planner");
+    std::fs::write(
+        sandbox
+            .root
+            .join(lekalo_core::error_contract::source::PROJECT_PATH),
+        lekalo_core::error_contract::REGISTRY_BYTES,
+    )
+    .unwrap();
+    sandbox
+}
+
+fn error_request(target: &str, errors: &[&str], registry: &[u8]) -> Vec<u8> {
+    use sha2::{Digest, Sha256};
+    serde_json::to_vec(&serde_json::json!({
+        "schemaVersion":"lekalo/change-request/v0.8.0",
+        "operations":[{"operation":"operation-error:set","operationTarget":target,"definition":{
+            "errors":errors,"registryDigest":format!("sha256:{:x}",Sha256::digest(registry))
+        }}]
+    }))
+    .unwrap()
+}
+
+#[test]
+fn error_union_changes_seal_registry_policy_and_durable_replay() {
+    let sandbox = error_sandbox("error-union");
+    let path = sandbox
+        .root
+        .join(lekalo_core::error_contract::source::PROJECT_PATH);
+    let before = std::fs::read(&path).unwrap();
+    let model = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+    let before_model = lekalo_core::loader::canonical_model_bytes(&model);
+    let errors = [
+        "planner.focus_denied",
+        "planner.input_invalid",
+        "planner.store_unavailable",
+        "planner.task_not_found",
+    ];
+    let request = error_request("planner.focus_task", &errors, &before);
+    assert!(matches!(
+        prepare(&sandbox, &request),
+        Err(ChangeError::CompatibilityDenied { .. })
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    let plan = change::prepare(&PrepareOptions {
+        project: Some(&sandbox.selection_str()),
+        request: &request,
+        policy: None,
+        allow_breaking: true,
+    })
+    .unwrap();
+    let wire: serde_json::Value = serde_json::from_str(&plan.to_json_string().unwrap()).unwrap();
+    assert_eq!(
+        wire["semanticDiff"]["changes"][0]["kind"],
+        "error.union-member-removed"
+    );
+    assert_eq!(
+        wire["semanticDiff"]["classification"],
+        serde_json::json!(["source-breaking"])
+    );
+    assert_eq!(wire["impact"]["seeds"][0]["id"], "planner.focus_task");
+    assert_eq!(
+        wire["impact"]["affected"][0]["subject"],
+        "planner.focus_task"
+    );
+    let mut drift: serde_json::Value = serde_json::from_slice(&before).unwrap();
+    drift["bindings"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|binding| binding["operation"] == "planner.focus_task")
+        .unwrap()["errors"] = serde_json::json!(errors);
+    let drift = lekalo_core::error_contract::ErrorRegistry::from_bytes(
+        &serde_json::to_vec(&drift).unwrap(),
+    )
+    .unwrap()
+    .canonical_bytes()
+    .as_bytes()
+    .to_vec();
+    std::fs::write(&path, &drift).unwrap();
+    assert!(change::apply_prepared(
+        &plan,
+        &ApplyOptions {
+            idempotency_key: "error-union",
+            expect_plan: None,
+            allow_breaking: true
+        }
+    )
+    .is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), drift);
+    assert!(!sandbox.history_path().exists());
+    std::fs::write(&path, &before).unwrap();
+    let receipt = apply_request(&sandbox, &request, "error-union", true).unwrap();
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    assert_eq!(receipt.files.len(), 1);
+    assert_eq!(
+        receipt.files[0].path,
+        lekalo_core::error_contract::source::PROJECT_PATH
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), drift);
+    let model = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+    assert_eq!(
+        lekalo_core::loader::canonical_model_bytes(&model),
+        before_model
+    );
+    assert_eq!(
+        apply_request(&sandbox, &request, "error-union", true)
+            .unwrap()
+            .state(),
+        ReceiptState::Replayed
+    );
+    let no_op = error_request("planner.focus_task", &errors, &drift);
+    assert!(prepare(&sandbox, &no_op).unwrap().is_no_op());
+    assert_eq!(
+        apply_request(&sandbox, &no_op, "error-no-op", false)
+            .unwrap()
+            .state(),
+        ReceiptState::NoOp
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), drift);
+}
+
+#[test]
+fn query_error_binding_preserves_output_and_refuses_a_stale_model_signature() {
+    let sandbox = error_sandbox("query-error");
+    let path = sandbox
+        .root
+        .join(lekalo_core::error_contract::source::PROJECT_PATH);
+    let before = std::fs::read(&path).unwrap();
+    let request = error_request(
+        "planner.list_tasks",
+        &["planner.store_unavailable"],
+        &before,
+    );
+    apply_request(&sandbox, &request, "query-error", true).unwrap();
+    let registry = lekalo_core::error_contract::source::read(&sandbox.root)
+        .unwrap()
+        .unwrap();
+    let old = lekalo_core::error_contract::ErrorRegistry::embedded().unwrap();
+    let id = lekalo_core::error_contract::ErrorId::new("planner.list_tasks").unwrap();
+    assert_eq!(
+        registry.binding(&id).unwrap().output(),
+        old.binding(&id).unwrap().output()
+    );
+    let queries = sandbox.root.join("lekalo/modules/planner/queries.yaml");
+    let mut source: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&queries).unwrap()).unwrap();
+    source["definitions"][0]["returns"] = serde_json::json!({"ref":"planner.task_state"});
+    let source = serde_json::to_vec(&source).unwrap();
+    std::fs::write(&queries, &source).unwrap();
+    let before_registry = std::fs::read(&path).unwrap();
+    let changed_output = error_request(
+        "planner.list_tasks",
+        &["planner.store_unavailable"],
+        &before_registry,
+    );
+    let failure = change::prepare(&PrepareOptions {
+        project: Some(&sandbox.selection_str()),
+        request: &changed_output,
+        policy: None,
+        allow_breaking: true,
+    })
+    .unwrap_err();
+    let ChangeError::LoadFailed(result) = failure else {
+        panic!("expected owner validation, got {failure:?}");
+    };
+    assert!(result
+        .reason_codes()
+        .iter()
+        .any(|code| code.as_str() == "error.binding-invalid"));
+    assert_eq!(std::fs::read(&queries).unwrap(), source);
+    assert_eq!(std::fs::read(&path).unwrap(), before_registry);
+}
+
+#[test]
+fn a_registry_added_after_prepare_refuses_without_model_or_history_writes() {
+    let sandbox = Sandbox::new("added-error-source");
+    let plan = prepare(&sandbox, &add_priority_request()).unwrap();
+    let before = sandbox.entities_bytes();
+    let path = sandbox
+        .root
+        .join(lekalo_core::error_contract::source::PROJECT_PATH);
+    std::fs::write(&path, lekalo_core::error_contract::REGISTRY_BYTES).unwrap();
+    assert!(change::apply_prepared(
+        &plan,
+        &ApplyOptions {
+            idempotency_key: "added-error-source",
+            expect_plan: None,
+            allow_breaking: false
+        }
+    )
+    .is_err());
+    assert_eq!(sandbox.entities_bytes(), before);
+    assert!(!sandbox.history_path().exists());
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        lekalo_core::error_contract::REGISTRY_BYTES
+    );
+}
+
+#[test]
+fn a_physical_move_refuses_a_known_error_source_location_that_would_be_stale() {
+    let sandbox = error_sandbox("error-source-move");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion":"lekalo/change-request/v0.8.0",
+        "operations":[{"operation":"module:move","module":"planner","directory":"new_home"}]
+    }))
+    .unwrap();
+    assert!(matches!(
+        prepare(&sandbox, &request),
+        Err(ChangeError::UnsupportedMember {
+            member: "error-source-relocation",
+            ..
+        })
+    ));
+    assert!(sandbox
+        .root
+        .join("lekalo/modules/planner/module.yaml")
+        .exists());
+    assert!(!sandbox.root.join("lekalo/modules/new_home").exists());
+    assert!(!sandbox.history_path().exists());
+}
+
 #[test]
 fn canonical_binding_add_creates_its_kind_home_and_replays_without_native_writes() {
     let sandbox = Sandbox::new("canonical-binding");
@@ -803,16 +1026,17 @@ fn unsupported_cataloged_operations_refuse_explicitly() {
     let request = serde_json::to_vec(&serde_json::json!({
         "schemaVersion": "lekalo/change-request/v0.8.0",
         "operations": [{
-            "operation": "operation-error:set",
-            "operationTarget": "tasks.task",
-            "definition": { "errors": [] }
+            "operation": "ownership:set",
+            "subject": "tasks.task",
+            "mode": "observed",
+            "evidence": { "proof": "unavailable" }
         }]
     }))
     .expect("serializes");
     let error = prepare(&sandbox, &request).expect_err("unsupported");
     match error {
         ChangeError::OperationUnsupported { operation } => {
-            assert_eq!(operation, "operation-error:set");
+            assert_eq!(operation, "ownership:set");
         }
         other => panic!("expected operation-unsupported, got {other:?}"),
     }

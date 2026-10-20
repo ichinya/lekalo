@@ -36,7 +36,7 @@ pub use diff::compare_public;
 pub use lock::{check_lock, parse_lock, resolve_lock};
 pub use mapping::{check_mapping_conformance, parse_mapping_evidence};
 pub use public::{export_public, parse_bundle};
-pub use resolve::resolve;
+pub use resolve::{resolve, resolve_with_registry};
 pub use validate::{check, FindingClass, Verdict};
 pub use version::{ApiVersion, ConsumerPolicy, RequiredBump, VersionInterval};
 pub use wire::{

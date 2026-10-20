@@ -427,7 +427,10 @@
         "endpoint.invokes-changed",
         "scenario.summary-changed",
         "scenario.covers-changed",
-        "binding.target-changed"
+        "binding.target-changed",
+        "error.binding-added",
+        "error.union-member-added",
+        "error.union-member-removed"
       ]
     },
     "compatibilityClass": {

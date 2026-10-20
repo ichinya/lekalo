@@ -75,14 +75,18 @@ built-in unsafe or breaking repair suggestions for such producers.
 
 ## Source custody, rollback and replay
 
-The source fingerprint hashes the sorted complete admitted `(logical path,
-sha256 bytes)` inventory. Even whitespace drift or added/deleted source files
+The source fingerprint hashes the sorted complete admitted Model `(logical path,
+sha256 bytes)` inventory. Even whitespace drift or added/deleted Model source files
 changes it. An imported executable recipe must include the exact
 `preconditions.sourceFingerprint` obtained from a producer's source snapshot;
 unbound imported recipes are refused. Its exact encoding is SHA-256 of compact
 JSON for the path-sorted array of `[logicalPath, "sha256:<file hash>"]` tuples
-(UTF-8, no trailing newline). A safe preview exposes that same fingerprint. The sealed change plan also pins audit history, target
-configuration and generation evidence. Changed fingerprints, preconditions,
+(UTF-8, no trailing newline). A safe preview exposes that same fingerprint.
+The sealed change plan additionally pins audit history, the optional project
+error registry (including absence), target configuration and generation
+evidence. These metadata pins are not Model documents and do not enter the
+recipe fingerprint; callers must not open every `plan.inputs` path as a Model
+source file. Changed fingerprints, preconditions,
 inventory, policy or preview identity refuse rather than guessing a nearby edit.
 
 Application reuses the [change transaction](change.md), including its shared

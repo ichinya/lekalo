@@ -67,6 +67,9 @@ pub(crate) enum ChangeCommands {
     /// Add a canonical target binding or explicitly confirm an observed proposal.
     #[command(name = "binding:add")]
     BindingAdd(BindingArgs),
+    /// Replace a command/query error union in the pinned project registry.
+    #[command(name = "operation-error:set")]
+    OperationErrorSet(OperationErrorArgs),
     /// Run the complete JSON request surface from a file.
     Request(RequestArgs),
     /// Print the committed receipt of one idempotency key.
@@ -161,6 +164,17 @@ pub(crate) struct BindingArgs {
     #[arg(long, value_name = "ID")]
     symbol: String,
     /// Closed canonical-target-binding or observed-confirmation payload.
+    #[arg(long, value_name = "JSON")]
+    definition_json: String,
+    #[command(flatten)]
+    execution: ExecutionArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct OperationErrorArgs {
+    #[arg(long, value_name = "ID")]
+    operation: String,
+    /// Closed errors and registryDigest payload.
     #[arg(long, value_name = "JSON")]
     definition_json: String,
     #[command(flatten)]
@@ -618,6 +632,10 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
             "operation":"binding:add", "symbol":args.symbol,
             "definition":change::parse_strict_json_literal(&args.definition_json)?,
         }),
+        ChangeCommands::OperationErrorSet(args) => serde_json::json!({
+            "operation":"operation-error:set", "operationTarget":args.operation,
+            "definition":change::parse_strict_json_literal(&args.definition_json)?,
+        }),
         _ => unreachable!("lower() handles sugar commands only"),
     };
     let mut request = serde_json::json!({
@@ -644,6 +662,7 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
         ChangeCommands::MigrationApply(args) => &args.execution,
         ChangeCommands::ModuleMove(args) => &args.execution,
         ChangeCommands::BindingAdd(args) => &args.execution,
+        ChangeCommands::OperationErrorSet(args) => &args.execution,
         _ => unreachable!("lower() handles sugar commands only"),
     };
     if let Some(expect_model) = &execution.expect_model {
@@ -829,6 +848,9 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
                         (&args.execution, args.execution.expect_plan.as_deref())
                     }
                     ChangeCommands::BindingAdd(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::OperationErrorSet(args) => {
                         (&args.execution, args.execution.expect_plan.as_deref())
                     }
                     _ => unreachable!("sugar arm"),

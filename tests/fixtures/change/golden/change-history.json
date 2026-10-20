@@ -12,7 +12,7 @@
       "operations": [
         "entity-field:add"
       ],
-      "planId": "sha256:2a3cc31ab48c0ae487c0bf987d4b97afa48ae9f029322b9b554d1b56464ae1a7",
+      "planId": "sha256:e1375da7ccfb1f59e792d74f2c8c85c7761577544901e375dcfa643fa3e72df4",
       "receipt": {
         "diagnosticIds": [],
         "files": [
@@ -24,7 +24,7 @@
           }
         ],
         "history": {
-          "recordDigest": "sha256:021c2516ce270a9373615a015c298c3509f8b4ad9af7bc7ac5f6b8ece235590f",
+          "recordDigest": "sha256:0b2706226990358dc1569bbc323418263ea1a0c671a2663d66caf4b4d3ce2538",
           "sequence": 1
         },
         "identity": "dev.lekalo.change-receipt@0.8.0",
@@ -37,7 +37,7 @@
             "subjectFamily": "entity"
           }
         ],
-        "planId": "sha256:2a3cc31ab48c0ae487c0bf987d4b97afa48ae9f029322b9b554d1b56464ae1a7",
+        "planId": "sha256:e1375da7ccfb1f59e792d74f2c8c85c7761577544901e375dcfa643fa3e72df4",
         "policy": {
           "allowBreaking": false,
           "evidence": null,
@@ -50,7 +50,7 @@
         "state": "committed",
         "status": "valid",
         "transaction": {
-          "id": "change-2a3cc31a-1",
+          "id": "change-e1375da7-1",
           "state": "committed"
         }
       },
@@ -60,7 +60,7 @@
   ],
   "schemaVersion": "lekalo/change-history/v0.8.0",
   "tip": {
-    "recordDigest": "sha256:021c2516ce270a9373615a015c298c3509f8b4ad9af7bc7ac5f6b8ece235590f",
+    "recordDigest": "sha256:0b2706226990358dc1569bbc323418263ea1a0c671a2663d66caf4b4d3ce2538",
     "sequence": 1
   }
 }

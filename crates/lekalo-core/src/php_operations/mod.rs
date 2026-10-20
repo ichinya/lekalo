@@ -1164,21 +1164,21 @@ pub fn check_join(
             "the input names different types-input bytes than the committed document",
         ));
     }
-    let registry = match ErrorRegistry::embedded() {
+    let registry = match crate::error_contract::source::for_project(root, compilation) {
         Ok(registry) => registry,
         Err(_) => {
             findings.push(Finding::new(
                 "operations.registry-invalid",
                 None,
                 None,
-                "the embedded error registry failed to validate",
+                "the bound error registry failed to validate",
             ));
             return findings;
         }
     };
     let context = IrContext::of(compilation);
     for record in &input.operations {
-        check_record(record, &context, registry, &mut findings);
+        check_record(record, &context, &registry, &mut findings);
         check_enum_cases(record, &context, &mut findings);
     }
     findings

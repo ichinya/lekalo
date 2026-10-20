@@ -709,19 +709,19 @@ pub fn check_join(root: &Path, input: &RoutesInput, compilation: &CompiledProjec
             "the transport attachment binds a different project id",
         ));
     }
-    let registry = match crate::error_contract::ErrorRegistry::embedded() {
+    let registry = match crate::error_contract::source::for_project(root, compilation) {
         Ok(registry) => registry,
         Err(_) => {
             findings.push(Finding::new(
                 "routes.registry-invalid",
                 None,
                 None,
-                "the embedded error registry failed to validate",
+                "the bound error registry failed to validate",
             ));
             return findings;
         }
     };
-    let context = transport_http::ValidationContext::new(compilation).with_errors(registry);
+    let context = transport_http::ValidationContext::new(compilation).with_errors(&registry);
     if let Err(diagnostics) = transport_http::validate(&attachment, &context) {
         let reasons = diagnostics.reason_ids().join(",");
         findings.push(Finding::new(

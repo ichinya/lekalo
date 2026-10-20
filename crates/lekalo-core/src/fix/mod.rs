@@ -385,7 +385,13 @@ pub fn prepare(options: &PrepareOptions<'_>) -> Result<PreparedFix, FixError> {
             let mut pins: Vec<_> = prepared
                 .inputs
                 .iter()
-                .filter(|p| p.path != change::version::HISTORY_LOGICAL_PATH)
+                // The recipe fingerprint is the Model source set. The
+                // optional registry is separately sealed and rechecked by
+                // Change; its presence/absence is not a new Model document.
+                .filter(|p| {
+                    p.path != change::version::HISTORY_LOGICAL_PATH
+                        && p.path != crate::error_contract::source::PROJECT_PATH
+                })
                 .map(|p| (p.path.clone(), p.digest.clone()))
                 .collect();
             pins.sort();

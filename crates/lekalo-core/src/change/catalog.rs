@@ -359,7 +359,7 @@ mod tests {
                 .entry("operation-error:set")
                 .expect("entry")
                 .status(),
-            OperationStatus::Unsupported
+            OperationStatus::Implemented
         );
     }
 
@@ -376,8 +376,6 @@ mod tests {
         // its status).
         let catalog = Catalog::embedded().expect("embedded catalog validates");
         let deferred = [
-            // Research I4: signature and effect verticals.
-            "operation-error:set",
             // Research I5: semantic moves and ownership.
             "ownership:set",
             "symbol:move",

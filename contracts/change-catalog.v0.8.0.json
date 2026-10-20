@@ -92,7 +92,7 @@
     },
     {
       "operation": "operation-error:set",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Set the error attachment surface of one operation",
       "mutationClass": "member-destructive",
       "requiredEvidence": [

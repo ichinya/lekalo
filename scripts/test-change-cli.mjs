@@ -434,9 +434,10 @@ const unsupportedRequest = writeJson("gate-unsupported.json", {
   schemaVersion: "lekalo/change-request/v0.8.0",
   operations: [
     {
-      operation: "operation-error:set",
-      operationTarget: "tasks.task",
-      definition: { errors: [] },
+      operation: "ownership:set",
+      subject: "tasks.task",
+      mode: "observed",
+      evidence: { proof: "unavailable" },
     },
   ],
 });

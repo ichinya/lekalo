@@ -19,6 +19,22 @@ pub(crate) fn prepare_change(
         return Err(ChangeError::WriteBoundaryDenied);
     };
     let movement = ModuleMove::prepare(load, module, directory)?;
+    let error_source = super::operation_error::read_source(&load.root)?;
+    if let Some(bytes) = &error_source {
+        let registry = crate::error_contract::ErrorRegistry::from_bytes(bytes)
+            .map_err(|set| ChangeError::LoadFailed(crate::DomainResult::invalid(set)))?;
+        let prefix = format!("lekalo/modules/{}/", movement.from);
+        if registry
+            .errors()
+            .iter()
+            .any(|error| error.source().path().starts_with(&prefix))
+        {
+            return Err(ChangeError::UnsupportedMember {
+                operation: "module:move".to_owned(),
+                member: "error-source-relocation",
+            });
+        }
+    }
     let audit = super::plan::ResolvedOperation {
         operation: "module:move".to_owned(),
         subject: module.clone(),
@@ -34,6 +50,22 @@ pub(crate) fn prepare_change(
         options.allow_breaking,
         vec![],
     )?;
+    // The source-location guard and the sealed plan must observe the same
+    // registry, including absence. A later read cannot adopt a new binding
+    // whose source path this physical relocation never checked.
+    let error_pin = super::operation_error::input_pin(error_source.as_deref());
+    if prepared
+        .inputs
+        .iter()
+        .find(|pin| pin.path == error_pin.path)
+        .map(|pin| pin.digest.as_str())
+        != Some(error_pin.digest.as_str())
+    {
+        return Err(ChangeError::PreconditionFailed {
+            subject: "error-registry".to_owned(),
+            detail: "registry-digest",
+        });
+    }
     if let Some(expected) = &request.expect_model {
         let current = receipt::bytes_digest(
             prepared
@@ -416,6 +448,73 @@ mod tests {
             after_bytes: bytes,
             creation: true,
         }
+    }
+
+    #[test]
+    fn an_unrelated_error_registry_is_sealed_without_blocking_a_safe_move() {
+        let root = tempfile::tempdir().unwrap();
+        copy(
+            &Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/model-v1/valid-planner"),
+            root.path(),
+        );
+        let home = root.path().join("lekalo/modules/extra");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(home.join("module.yaml"),
+            "schema_version: \"0.2.16\"\ndefinitions:\n  - id: extra\n    kind: module\n    version: 1\n").unwrap();
+        let source = root
+            .path()
+            .join(crate::error_contract::source::PROJECT_PATH);
+        let registry = crate::error_contract::REGISTRY_BYTES;
+        std::fs::write(&source, registry).unwrap();
+        let load = crate::loader::load_validated_root(root.path().to_path_buf()).unwrap();
+        let bytes = br#"{"schemaVersion":"lekalo/change-request/v0.8.0","operations":[{"operation":"module:move","module":"extra","directory":"extra_home"}]}"#;
+        let request = crate::change::ChangeRequest::decode(bytes).unwrap();
+        let prepared = prepare_change(
+            &load,
+            &request,
+            &crate::change::PrepareOptions {
+                project: None,
+                request: bytes,
+                policy: None,
+                allow_breaking: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            prepared
+                .inputs
+                .iter()
+                .find(|pin| pin.path == crate::error_contract::source::PROJECT_PATH)
+                .unwrap()
+                .digest,
+            receipt::bytes_digest(registry)
+        );
+        let mut drift = registry.to_vec();
+        drift.push(b'\n');
+        std::fs::write(&source, &drift).unwrap();
+        let options = crate::change::ApplyOptions {
+            idempotency_key: "move-unrelated-errors",
+            expect_plan: None,
+            allow_breaking: false,
+        };
+        assert!(crate::change::apply_prepared(&prepared, &options).is_err());
+        assert!(home.exists());
+        assert!(!root.path().join("lekalo/modules/extra_home").exists());
+        assert_eq!(std::fs::read(&source).unwrap(), drift);
+        std::fs::write(&source, registry).unwrap();
+        assert_eq!(
+            crate::change::apply_prepared(&prepared, &options)
+                .unwrap()
+                .state(),
+            crate::change::receipt::ReceiptState::Committed
+        );
+        assert!(!home.exists());
+        assert!(root
+            .path()
+            .join("lekalo/modules/extra_home/module.yaml")
+            .exists());
+        assert_eq!(std::fs::read(source).unwrap(), registry);
     }
 
     #[test]

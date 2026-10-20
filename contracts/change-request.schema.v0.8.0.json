@@ -372,10 +372,29 @@
               "const": "operation-error:set"
             },
             "operationTarget": {
-              "$ref": "#/$defs/symbolId"
+              "$ref": "#/$defs/errorId"
             },
             "definition": {
-              "$ref": "#/$defs/closedPayload"
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "errors",
+                "registryDigest"
+              ],
+              "properties": {
+                "errors": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 256,
+                  "uniqueItems": true,
+                  "items": {
+                    "$ref": "#/$defs/errorId"
+                  }
+                },
+                "registryDigest": {
+                  "$ref": "#/$defs/sha256"
+                }
+              }
             }
           }
         },
@@ -791,6 +810,11 @@
       "minLength": 1,
       "maxLength": 128,
       "pattern": "^[A-Z0-9][A-Z0-9._-]{0,127}$"
+    },
+    "errorId": {
+      "type": "string",
+      "maxLength": 190,
+      "pattern": "^[a-z][a-z0-9_]{0,62}\\.[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
     }
   }
 }

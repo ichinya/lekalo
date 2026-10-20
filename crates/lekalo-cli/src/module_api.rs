@@ -13,9 +13,7 @@ use lekalo_core::module_api::diagnostic::invalid;
 use lekalo_core::module_api::diff::compare_public;
 use lekalo_core::module_api::lock::{check_lock, parse_lock, resolve_lock};
 use lekalo_core::module_api::wire;
-use lekalo_core::module_api::{
-    self, check, consumer_snapshot, plan_consumer_context, resolve, FindingClass,
-};
+use lekalo_core::module_api::{self, consumer_snapshot, plan_consumer_context, FindingClass};
 use lekalo_core::{DomainResult, Status};
 use std::io::Read;
 
@@ -200,6 +198,52 @@ fn read_project_input(project: &Option<String>, relative: &str) -> Result<Vec<u8
     }
 }
 
+fn resolve(
+    attachment: &[u8],
+    compilation: &lekalo_core::ir::Compilation,
+    project: &Option<String>,
+) -> Result<module_api::resolve::Resolved, Failure> {
+    let selection = LoadSelection {
+        project: project
+            .clone()
+            .or_else(|| std::env::var("LEKALO_PROJECT").ok()),
+    };
+    let root = lekalo_core::loader::project_root(&selection).map_err(Failure::Finished)?;
+    match lekalo_core::error_contract::source::read(&root)? {
+        Some(registry) => Ok(module_api::resolve_with_registry(
+            attachment,
+            compilation,
+            &registry,
+        )?),
+        None => Ok(module_api::resolve(attachment, compilation)?),
+    }
+}
+
+fn check(
+    attachment: &[u8],
+    compilation: &lekalo_core::ir::Compilation,
+    strict: bool,
+    module: Option<&str>,
+    project: &Option<String>,
+) -> Result<module_api::Verdict, Failure> {
+    if module.is_some_and(|scope| {
+        !compilation
+            .project
+            .modules
+            .iter()
+            .any(|candidate| candidate.id.as_str() == scope)
+    }) {
+        return Err(Failure::Set(invalid("unknown-module")));
+    }
+    let resolved = resolve(attachment, compilation, project)?;
+    Ok(module_api::validate::boundary_verdict(
+        &resolved,
+        compilation,
+        strict,
+        module,
+    )?)
+}
+
 /// The certified-bundle gate: the boundary certification lives in the
 /// core `export_public` seam (r3 review finding 2/codex) — the CLI only
 /// loads, dispatches, and projects the typed refusal.
@@ -307,6 +351,7 @@ pub fn run_validate_seam(seam: ValidateSeam) -> DomainResult {
             &compilation,
             seam.strict,
             seam.module.as_deref(),
+            &seam.project,
         )?;
         let mut evidence = verdict.evidence.clone();
         let mut lock_stale = false;
@@ -314,7 +359,7 @@ pub fn run_validate_seam(seam: ValidateSeam) -> DomainResult {
             // One freshness comparison everywhere (finding 15): the full
             // check_lock comparison, never a digest-only shortcut.
             let supplied = parse_lock(&read_project_input(&seam.project, lock_path)?)?;
-            let resolved = resolve(&attachment, &compilation)?;
+            let resolved = resolve(&attachment, &compilation, &seam.project)?;
             let producer = supplied.producer.module.clone();
             let current = resolve_lock(&resolved, &compilation, &producer, &supplied.consumer)?;
             let findings = check_lock(&current, &supplied);
@@ -436,7 +481,13 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
         } => {
             let compilation = compilation(&project)?;
             let attachment = read_project_input(&project, &api)?;
-            let verdict = check(&attachment, &compilation, strict, module.as_deref())?;
+            let verdict = check(
+                &attachment,
+                &compilation,
+                strict,
+                module.as_deref(),
+                &project,
+            )?;
             let mut evidence = verdict.evidence.clone();
             // The optional lock seam: a stale lock under --check is a
             // policy denial (exit 3), never a silent pass.
@@ -449,7 +500,7 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
                 // full identity/digest/policy/selection/dependency
                 // comparison against the current resolution.
                 let supplied = parse_lock(&read_project_input(&project, lock_path)?)?;
-                let resolved = resolve(&attachment, &compilation)?;
+                let resolved = resolve(&attachment, &compilation, &project)?;
                 let producer = supplied.producer.module.clone();
                 let current = resolve_lock(&resolved, &compilation, &producer, &supplied.consumer)?;
                 let findings = check_lock(&current, &supplied);
@@ -465,7 +516,7 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
         } => {
             let compilation = compilation(&project)?;
             let attachment = read_project_input(&project, &api)?;
-            let resolved = resolve(&attachment, &compilation)?;
+            let resolved = resolve(&attachment, &compilation, &project)?;
             // Certified-bundle rule (core seam, r3 review finding 2/codex):
             // an incomplete, illegal, or uncertifiable public closure
             // refuses even without --strict.
@@ -488,7 +539,7 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
             api,
         } => {
             let compilation = compilation(&project)?;
-            let resolved = resolve(&read_project_input(&project, &api)?, &compilation)?;
+            let resolved = resolve(&read_project_input(&project, &api)?, &compilation, &project)?;
             let snapshot = consumer_snapshot(&resolved, &compilation, &module)?;
             let human = format!(
                 "Module API consumers: {} declared/resolved consumers for {}.",
@@ -511,7 +562,7 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
         } => {
             let compilation = compilation(&project)?;
             let attachment = read_project_input(&project, &api)?;
-            let resolved = resolve(&attachment, &compilation)?;
+            let resolved = resolve(&attachment, &compilation, &project)?;
             let current = resolve_lock(&resolved, &compilation, &module, &consumer)?;
             if check_flag {
                 let Some(lock_path) = &lock else {

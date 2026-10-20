@@ -1308,6 +1308,7 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo change enum-case:change` | `lekalo change enum-case:change [OPTIONS] --enum <ID> --name <NAME>` | [reference](change.md) |
 | `lekalo change migration:apply` | `lekalo change migration:apply [OPTIONS] --step <ID>` | [reference](change.md) |
 | `lekalo change module:move` | `lekalo change module:move [OPTIONS] --module <ID> --directory <LEAF>` | [reference](change.md) |
+| `lekalo change operation-error:set` | `lekalo change operation-error:set [OPTIONS] --operation <ID> --definition-json <JSON>` | [reference](change.md) |
 | `lekalo change operation-input:set` | `lekalo change operation-input:set [OPTIONS] --operation <ID> --input-json <JSON>` | [reference](change.md) |
 | `lekalo change operation-output:set` | `lekalo change operation-output:set [OPTIONS] --operation <ID> --type <TYPE>` | [reference](change.md) |
 | `lekalo change query-effect:add` | `lekalo change query-effect:add [OPTIONS] --query <ID> --effect <ID>` | [reference](change.md) |

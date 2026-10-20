@@ -25,6 +25,8 @@ pub struct Resolved {
     pub modules: ModuleMap,
     /// The exact attachment bytes digest (domain-prefixed).
     pub digest: String,
+    /// The exact typed error owner used by this resolution and every export.
+    pub errors: crate::error_contract::ErrorRegistry,
 }
 
 /// The export kinds the closed grammar admits.
@@ -44,6 +46,52 @@ const EXPORT_KINDS: &[(&str, DefinitionKind)] = &[
 /// Decode and bind the attachment against the compilation. Every violation
 /// is one invalid set; nothing partial is ever returned.
 pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, DiagnosticSet> {
+    resolve_inner(
+        bytes,
+        compilation,
+        crate::error_contract::ErrorRegistry::embedded()?,
+    )
+}
+
+/// Resolve against an explicitly supplied project error owner. The legacy
+/// pure entry point keeps its embedded seed; root-aware callers bind the
+/// current canonical project declaration here.
+pub fn resolve_with_registry(
+    bytes: &[u8],
+    compilation: &Compilation,
+    registry: &crate::error_contract::ErrorRegistry,
+) -> Result<Resolved, DiagnosticSet> {
+    crate::error_contract::source::validate(registry, &compilation.project)?;
+    let resolved = resolve_inner(bytes, compilation, registry)?;
+    for policy in resolved.modules.values() {
+        for declared in &policy.operation_errors {
+            let expected: std::collections::BTreeSet<_> =
+                crate::error_contract::ErrorId::new(&declared.operation)
+                    .and_then(|id| registry.binding(&id))
+                    .map(|binding| {
+                        binding
+                            .errors()
+                            .members()
+                            .iter()
+                            .map(|member| member.id().as_str())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+            let actual: std::collections::BTreeSet<_> =
+                declared.errors.iter().map(String::as_str).collect();
+            if actual != expected {
+                return Err(invalid("operation-errors-owner-mismatch"));
+            }
+        }
+    }
+    Ok(resolved)
+}
+
+fn resolve_inner(
+    bytes: &[u8],
+    compilation: &Compilation,
+    registry: &crate::error_contract::ErrorRegistry,
+) -> Result<Resolved, DiagnosticSet> {
     let raw: serde_json::Value = wire::decode(bytes, invalid)?;
     // The closed schema is the admission grammar (r3 review finding 1):
     // required members must be present even when nullable or defaulted.
@@ -346,12 +394,8 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
                 return Err(invalid("operation-errors-bound"));
             }
             for error_id in &union.errors {
-                let registry_member = crate::error_contract::registry::ErrorRegistry::embedded()
-                    .ok()
-                    .is_some_and(|registry| {
-                        crate::error_contract::ErrorId::new(error_id)
-                            .is_some_and(|id| registry.error(&id).is_some())
-                    });
+                let registry_member = crate::error_contract::ErrorId::new(error_id)
+                    .is_some_and(|id| registry.error(&id).is_some());
                 let exported_error = modules.values().any(|policy| {
                     policy
                         .exports
@@ -431,6 +475,7 @@ pub fn resolve(bytes: &[u8], compilation: &Compilation) -> Result<Resolved, Diag
     let project_id = attachment.project.clone();
     let digest = wire::digest(wire::DIGEST_DOMAIN_API, &wire::canonical(&attachment));
     Ok(Resolved {
+        errors: registry.clone(),
         project: project_id,
         digest,
         modules,

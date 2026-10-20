@@ -164,7 +164,9 @@ try {
   const entityPath = join(repairRoot, "lekalo/modules/tasks/entities.yaml");
   writeFileSync(entityPath, readFileSync(entityPath, "utf8").replace("      - title", "      - extra"));
   const sha = bytes => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-  const pins = preview.plan.inputs.filter(pin => pin.path !== "lekalo/change-history.json").map(pin => [pin.path, sha(readFileSync(join(repairRoot, pin.path)))]).sort((a,b) => a[0] < b[0] ? -1 : 1);
+  // Recipe fingerprints cover Model documents; Change also seals audit and
+  // optional registry metadata, including an absent registry's empty digest.
+  const pins = preview.plan.inputs.filter(pin => !["lekalo/change-history.json", "lekalo/error-registry.json"].includes(pin.path)).map(pin => [pin.path, sha(readFileSync(join(repairRoot, pin.path)))]).sort((a,b) => a[0] < b[0] ? -1 : 1);
   semantic.scope.subjects = ["tasks.task"]; semantic.class = "breaking";
   semantic.preconditions.sourceFingerprint = sha(JSON.stringify(pins));
   semantic.explanation = "Declare the missing entity identity field through its exact scoped semantic operation.";

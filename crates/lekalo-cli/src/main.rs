@@ -3327,11 +3327,25 @@ fn run_validate_profiled(
                 Ok(root) => root,
                 Err(result) => return result,
             };
+            let error_registry = match lekalo_core::error_contract::source::read(&root) {
+                Ok(registry) => registry,
+                Err(findings) => return DomainResult::invalid(findings),
+            };
+            if let Some(registry) = &error_registry {
+                if let Err(findings) =
+                    lekalo_core::error_contract::source::validate(registry, &compilation.project)
+                {
+                    return DomainResult::invalid(findings);
+                }
+            }
             match lekalo_core::transport_http::read_document(&root) {
                 Err(diagnostics) => return DomainResult::invalid(diagnostics),
                 Ok(Some(attachment)) => {
-                    let context =
+                    let mut context =
                         lekalo_core::transport_http::ValidationContext::new(&compilation.project);
+                    if let Some(registry) = &error_registry {
+                        context = context.with_errors(registry);
+                    }
                     if let Err(diagnostics) =
                         lekalo_core::transport_http::validate(&attachment, &context)
                     {
@@ -6283,7 +6297,24 @@ fn run_context_budget(args: ContextBudgetInvocation) -> DomainResult {
         Err(failure) => return failure.into_result(),
         Ok(compilation) => compilation,
     };
-    match lekalo_core::context_budget::plan(&request, &selection, &compilation) {
+    let root = match lekalo_core::loader::project_root(&load_selection) {
+        Ok(root) => root,
+        Err(result) => return result,
+    };
+    let registry = match lekalo_core::error_contract::source::read(&root) {
+        Ok(registry) => registry,
+        Err(set) => return DomainResult::invalid(set),
+    };
+    let report = match registry.as_ref() {
+        Some(registry) => lekalo_core::context_budget::plan_with_registry(
+            &request,
+            &selection,
+            &compilation,
+            registry,
+        ),
+        None => lekalo_core::context_budget::plan(&request, &selection, &compilation),
+    };
+    match report {
         Err(set) => {
             let unsupported = set
                 .as_slice()
@@ -8793,18 +8824,7 @@ fn transport_session(
         Err(diagnostics) => return Err(DomainResult::invalid(diagnostics)),
     };
     let selection = selection_for(project);
-    // The bound #62 registry: explicit path, or the embedded seed.
-    let registry = match read_context_document(errors_path)? {
-        Some(json) => serde_json::to_string(&json)
-            .map_err(|_| lekalo_core::transport_http::io_failure("errors-registry-invalid"))
-            .and_then(|canonical| {
-                lekalo_core::error_contract::ErrorRegistry::from_bytes(canonical.as_bytes())
-            })
-            .map_err(DomainResult::invalid)?,
-        None => lekalo_core::error_contract::ErrorRegistry::embedded()
-            .cloned()
-            .map_err(DomainResult::invalid)?,
-    };
+    let registry_override = read_context_document(errors_path)?;
     let query_model = match read_context_document(query_model_path)? {
         Some(json) => Some(
             lekalo_core::query_model::QueryModelAttachment::from_value(&json)
@@ -8818,6 +8838,21 @@ fn transport_session(
     let compilation = match lekalo_core::ir::compile(&model) {
         Ok(compilation) => compilation,
         Err(failure) => return Err(failure.into_result()),
+    };
+    // Explicit input wins; otherwise bind the current canonical project
+    // source, with the embedded seed retained only when that home is absent.
+    let registry = match registry_override {
+        Some(json) => serde_json::to_string(&json)
+            .map_err(|_| lekalo_core::transport_http::io_failure("errors-registry-invalid"))
+            .and_then(|canonical| {
+                lekalo_core::error_contract::ErrorRegistry::from_bytes(canonical.as_bytes())
+            })
+            .map_err(DomainResult::invalid)?,
+        None => {
+            let root = lekalo_core::loader::project_root(&selection)?;
+            lekalo_core::error_contract::source::for_project(&root, &compilation.project)
+                .map_err(DomainResult::invalid)?
+        }
     };
     let model_json = match lekalo_core::loader::run(&selection, false) {
         DomainResult::Valid {

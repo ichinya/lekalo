@@ -149,6 +149,16 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
         return Err(DomainResult::from(&Failure::AdapterSupplyRequired));
     };
     let compilation = compile(request.selection)?;
+    let local_registry =
+        crate::error_contract::source::read(prepared.root()).map_err(DomainResult::invalid)?;
+    if let Some(registry) = &local_registry {
+        crate::error_contract::source::validate(registry, &compilation.project)
+            .map_err(DomainResult::invalid)?;
+    }
+    let registry = match local_registry.as_ref() {
+        Some(registry) => registry,
+        None => crate::error_contract::ErrorRegistry::embedded().map_err(DomainResult::invalid)?,
+    };
     let project_id = compilation
         .project
         .project
@@ -163,7 +173,7 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
     write_evidence(prepared.root(), &evidence_path, ir_bytes.as_bytes())?;
     // Issue #59: the PHP operations join is the acceptance authority.
     // When the project declares an operations input, it joins against
-    // the compiled IR, the embedded #62 error registry, the staged
+    // the compiled IR, the bound #62 error registry, the staged
     // evidence digests, and the closed recipes HERE — before any
     // adapter exchange — and a refused join is a typed invalid result.
     let operations_input_path = prepared
@@ -207,7 +217,10 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
     match crate::transport_http::read_document(prepared.root()) {
         Err(diagnostics) => return Err(DomainResult::invalid(diagnostics)),
         Ok(Some(attachment)) => {
-            let context = crate::transport_http::ValidationContext::new(&compilation.project);
+            let mut context = crate::transport_http::ValidationContext::new(&compilation.project);
+            if local_registry.is_some() {
+                context = context.with_errors(registry);
+            }
             crate::transport_http::validate(&attachment, &context)
                 .map_err(DomainResult::invalid)?;
             let transport_path = format!("{TRANSPORT_EVIDENCE_DIR}/{project_id}.json");
@@ -218,10 +231,8 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
             // OpenAPI evidence (#46): the canonical projection of the
             // validated transport home lands beside the other evidence
             // homes — the only OpenAPI input an adapter may read. The
-            // embedded #62 registry is bound so the identity variants
+            // project-selected #62 registry is bound so the identity variants
             // render; the declared defaults (3.1, full) apply.
-            let registry =
-                crate::error_contract::ErrorRegistry::embedded().map_err(DomainResult::invalid)?;
             let context = crate::transport_http::ValidationContext::new(&compilation.project)
                 .with_errors(registry);
             let rendered =

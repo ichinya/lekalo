@@ -25,6 +25,88 @@ fn attachment(project: &str) -> Vec<u8> {
 const REFERENCE: &str = "tests/fixtures/module-api/reference/tasks";
 
 #[test]
+fn explicit_error_owner_controls_public_unions_and_refuses_stale_attachment_facts() {
+    use lekalo_core::error_contract::{self as owner, ErrorRegistry};
+    let compilation = compile(REFERENCE);
+    let seed: serde_json::Value = serde_json::from_slice(owner::REGISTRY_BYTES).unwrap();
+    let mut error = seed["errors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|error| error["id"] == "planner.store_unavailable")
+        .unwrap()
+        .clone();
+    error["id"] = serde_json::json!("tasks.store_unavailable");
+    let mut raw: serde_json::Value = seed;
+    raw["errors"] = serde_json::json!([error]);
+    raw["bindings"] = serde_json::json!([{
+        "operation":"tasks.list_tasks", "kind":"query",
+        "output":{"list":{"ref":"tasks.task_view"}}, "errors":["tasks.store_unavailable"]
+    }]);
+    let registry = ErrorRegistry::from_bytes(&serde_json::to_vec(&raw).unwrap()).unwrap();
+    owner::source::validate(&registry, &compilation.project).unwrap();
+    let mut document: serde_json::Value = serde_json::from_slice(&attachment(REFERENCE)).unwrap();
+    assert!(
+        lekalo_core::module_api::resolve_with_registry(
+            &serde_json::to_vec(&document).unwrap(),
+            &compilation,
+            &registry
+        )
+        .is_err(),
+        "the old empty list must not hide the canonical union"
+    );
+    let policy = &mut document["modules"][0];
+    policy["operationErrors"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["operation"] == "tasks.list_tasks")
+        .unwrap()["errors"] = serde_json::json!(["tasks.store_unavailable"]);
+    policy["exports"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "export":"tasks.store_unavailable", "kind":"error", "since":"1.0.0", "aliasOf":null
+        }));
+    let mut contradictory = document.clone();
+    contradictory["modules"][0]["operationErrors"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|entry| entry["operation"] == "tasks.get_task")
+        .unwrap()["errors"] = serde_json::json!(["tasks.store_unavailable"]);
+    assert!(
+        lekalo_core::module_api::resolve_with_registry(
+            &serde_json::to_vec(&contradictory).unwrap(),
+            &compilation,
+            &registry
+        )
+        .is_err(),
+        "an unbound operation cannot invent an error union through the attachment"
+    );
+    let resolved = lekalo_core::module_api::resolve_with_registry(
+        &serde_json::to_vec(&document).unwrap(),
+        &compilation,
+        &registry,
+    )
+    .unwrap();
+    let public = export_public(&resolved, &compilation, "tasks").unwrap();
+    assert_eq!(
+        public
+            .exports
+            .iter()
+            .find(|entry| entry.export == "tasks.list_tasks")
+            .unwrap()
+            .errors,
+        vec!["tasks.store_unavailable"]
+    );
+    assert!(public
+        .exports
+        .iter()
+        .any(|entry| entry.export == "tasks.store_unavailable"));
+}
+
+#[test]
 fn reference_boundary_is_advisory_pass_and_complete() {
     let compilation = compile(REFERENCE);
     let verdict = check(&attachment(REFERENCE), &compilation, false, None).expect("check runs");

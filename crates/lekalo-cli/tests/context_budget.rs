@@ -495,6 +495,48 @@ fn copy_dir(source: &Path, target: &Path) {
     }
 }
 
+#[test]
+fn project_error_owner_changes_applicable_confidence_gaps_and_never_falls_back() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("planner");
+    copy_dir(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/model-v1/valid-planner"),
+        &root,
+    );
+    let args = [
+        "context-budget",
+        "--symbol",
+        "planner.count_focused",
+        "--budget",
+        "100000",
+        "--json",
+    ];
+    let legacy = lekalo_in(&root, &args);
+    assert_eq!(exit_code(&legacy), 0, "{}", stdout_text(&legacy));
+    assert!(!stdout_text(&legacy).contains("error-contracts-unrepresentable"));
+    let mut registry: serde_json::Value =
+        serde_json::from_slice(lekalo_core::error_contract::REGISTRY_BYTES).unwrap();
+    let source = root.join(lekalo_core::error_contract::source::PROJECT_PATH);
+    std::fs::write(&source, serde_json::to_vec(&registry).unwrap()).unwrap();
+    let explicit = lekalo_in(&root, &args);
+    assert_eq!(exit_code(&explicit), 0);
+    assert!(stdout_text(&explicit).contains("error-contracts-unrepresentable"));
+    registry["bindings"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|binding| binding["operation"] != "planner.count_focused");
+    std::fs::write(&source, serde_json::to_vec(&registry).unwrap()).unwrap();
+    let local = lekalo_in(&root, &args);
+    assert_eq!(exit_code(&local), 0, "{}", stdout_text(&local));
+    assert!(!stdout_text(&local).contains("error-contracts-unrepresentable"));
+    std::fs::write(&source, b"{}").unwrap();
+    let invalid = lekalo_in(&root, &args);
+    assert_eq!(exit_code(&invalid), 1);
+    assert!(String::from_utf8(invalid.stderr)
+        .unwrap()
+        .contains("error.registry-invalid"));
+}
+
 fn write_profiles(project: &Path) -> PathBuf {
     write_profiles_with_estimator(project, "dev.lekalo.estimator.chars-4@0.2.16")
 }

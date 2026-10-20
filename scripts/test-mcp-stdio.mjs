@@ -916,6 +916,20 @@ const validateToolOutput = (responses, id, slug) => {
   check(before && after && before !== after, "snapshot-pins-the-lock-inputs", { before, after });
 }
 
+// A non-Model project attachment must also move the admitted snapshot.
+{
+  const source = join(tempRoot, "planner", "lekalo/error-registry.json");
+  const frames = [...lifecycle(), call(170, "lekalo_inspect", { projectId: "planner", symbol: "planner.focus_task" })];
+  const before = toolOutput((await serve(frames, [], "mcp.local.json")).responses, 170).snapshotRef;
+  writeFileSync(source, "{}\n");
+  const present = toolOutput((await serve(frames, [], "mcp.local.json")).responses, 170).snapshotRef;
+  writeFileSync(source, "{}\n\n");
+  const changed = toolOutput((await serve(frames, [], "mcp.local.json")).responses, 170).snapshotRef;
+  rmSync(source);
+  check(before && present && changed && before !== present && present !== changed,
+    "snapshot-pins-exact-project-error-source-and-absence", { before, present, changed });
+}
+
 // r2 F6: a cancelled in-flight id gets no reply, and its id is not
 // poisoned — a retry with the same id is answered normally.
 {

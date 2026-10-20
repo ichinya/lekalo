@@ -268,7 +268,7 @@ pub fn boundary_verdict(
                     .operation_errors
                     .iter()
                     .any(|union| union.operation == entry.export)
-                && !registry_binds_operation(&entry.export)
+                && !registry_binds_operation(&entry.export, &resolved.errors)
             {
                 let mut gap = Evidence::new(
                     "module-api.evidence-incomplete",
@@ -626,10 +626,10 @@ fn owner_of(symbol: &str) -> Option<&str> {
 /// Whether the embedded #62 registry binds an operation error union for
 /// `operation` (the authoritative owner fallback of the owner-evidence
 /// seam).
-fn registry_binds_operation(operation: &str) -> bool {
-    let Ok(registry) = crate::error_contract::registry::ErrorRegistry::embedded() else {
-        return false;
-    };
+fn registry_binds_operation(
+    operation: &str,
+    registry: &crate::error_contract::ErrorRegistry,
+) -> bool {
     crate::error_contract::ErrorId::new(operation).is_some_and(|id| registry.binding(&id).is_some())
 }
 

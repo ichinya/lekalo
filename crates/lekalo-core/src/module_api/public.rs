@@ -226,7 +226,10 @@ impl<'a> ExportSession<'a> {
         let mut foreign: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for entry in &policy.exports {
             if entry.kind == "error" {
-                exports.push(error_export(&entry.export).map_err(ExportFailure::Invalid)?);
+                exports.push(
+                    error_export(&entry.export, &resolved.errors)
+                        .map_err(ExportFailure::Invalid)?,
+                );
                 continue;
             }
             let Some(definition) = by_id.get(entry.export.as_str()) else {
@@ -247,7 +250,7 @@ impl<'a> ExportSession<'a> {
         // registry binding is the fallback owner for operations it covers.
         for export in &mut exports {
             if matches!(export.kind.as_str(), "command" | "query") {
-                export.errors = operation_errors_of(policy, &export.export);
+                export.errors = operation_errors_of(policy, &export.export, &resolved.errors);
             }
             if export.kind == "query" {
                 if let Some(facts) = policy
@@ -405,7 +408,11 @@ impl<'a> ExportSession<'a> {
 /// attachment seam wins; the embedded #62 registry binding is the
 /// fallback owner. Empty means no owner declared a union — the boundary
 /// walk records the required evidence gap (r3 review finding 14/codex).
-fn operation_errors_of(policy: &ModulePolicy, operation: &str) -> Vec<String> {
+fn operation_errors_of(
+    policy: &ModulePolicy,
+    operation: &str,
+    registry: &ErrorRegistry,
+) -> Vec<String> {
     if let Some(declared) = policy
         .operation_errors
         .iter()
@@ -416,16 +423,14 @@ fn operation_errors_of(policy: &ModulePolicy, operation: &str) -> Vec<String> {
         errors.dedup();
         return errors;
     }
-    if let Ok(registry) = ErrorRegistry::embedded() {
-        if let Some(id) = ErrorId::new(operation) {
-            if let Some(binding) = registry.binding(&id) {
-                return binding
-                    .errors()
-                    .members()
-                    .iter()
-                    .map(|member| member.id().as_str().to_owned())
-                    .collect();
-            }
+    if let Some(id) = ErrorId::new(operation) {
+        if let Some(binding) = registry.binding(&id) {
+            return binding
+                .errors()
+                .members()
+                .iter()
+                .map(|member| member.id().as_str().to_owned())
+                .collect();
         }
     }
     Vec::new()
@@ -727,8 +732,7 @@ fn record_public_ref(
 /// Project one typed #62 error export: public stable code, retry policy,
 /// and the public payload fields only; private messages and debug payload
 /// fields never cross the boundary.
-fn error_export(id: &str) -> Result<PublicExport, DiagnosticSet> {
-    let registry = ErrorRegistry::embedded()?;
+fn error_export(id: &str, registry: &ErrorRegistry) -> Result<PublicExport, DiagnosticSet> {
     let Some(error) = registry
         .errors()
         .iter()

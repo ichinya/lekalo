@@ -32,6 +32,12 @@ pub struct ChangeRequest {
 /// One typed operation of the implemented vertical.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operation {
+    /// Replace one command/query error union in the exact project registry.
+    OperationErrorSet {
+        target: String,
+        errors: Vec<String>,
+        registry_digest: String,
+    },
     /// Explicit confirmation of one exact observed binding proposal.
     BindingConfirm {
         symbol: String,
@@ -120,6 +126,7 @@ impl Operation {
     /// The catalog discriminator of this operation.
     pub fn operation(&self) -> &str {
         match self {
+            Self::OperationErrorSet { .. } => "operation-error:set",
             Self::BindingConfirm { .. } => "binding:add",
             Self::ModuleMove { .. } => "module:move",
             Self::Lowered { operation, .. } => operation,
@@ -144,6 +151,7 @@ impl Operation {
     /// The natural subject token of this operation, when one is declared.
     pub fn subject(&self) -> Option<&str> {
         match self {
+            Self::OperationErrorSet { target, .. } => Some(target),
             Self::BindingConfirm { symbol, .. } => Some(symbol),
             Self::ModuleMove { module, .. } => Some(module),
             Self::Lowered { executable, .. } => executable.subject(),
@@ -174,6 +182,17 @@ impl Operation {
             Json::String(self.operation().to_owned()),
         );
         match self {
+            Self::OperationErrorSet {
+                target,
+                errors,
+                registry_digest,
+            } => {
+                map.insert("operationTarget".to_owned(), Json::String(target.clone()));
+                map.insert(
+                    "definition".to_owned(),
+                    serde_json::json!({"errors": errors, "registryDigest": registry_digest}),
+                );
+            }
             Self::BindingConfirm {
                 symbol,
                 proposal,
@@ -726,6 +745,52 @@ fn decode_operation(catalog: &Catalog, value: &Json) -> Result<Operation, &'stat
         });
     }
     match discriminator {
+        "operation-error:set" => {
+            require_members(
+                map,
+                &["operation", "operationTarget", "definition"],
+                &["operation", "operationTarget", "definition"],
+            )?;
+            let target = member_string(map, "operationTarget")?;
+            if crate::error_contract::ErrorId::new(&target).is_none() {
+                return Err("operation-grammar");
+            }
+            let payload = map
+                .get("definition")
+                .and_then(Json::as_object)
+                .ok_or("payload-not-object")?;
+            require_members(
+                payload,
+                &["errors", "registryDigest"],
+                &["errors", "registryDigest"],
+            )?;
+            let registry_digest = member_string(payload, "registryDigest")?;
+            if super::expect_digest(&registry_digest).is_none() {
+                return Err("digest-grammar");
+            }
+            let values = payload
+                .get("errors")
+                .and_then(Json::as_array)
+                .ok_or("errors-not-array")?;
+            if values.is_empty() || values.len() > 256 {
+                return Err("errors-over-bound");
+            }
+            let mut errors = std::collections::BTreeSet::new();
+            for value in values {
+                let id = value.as_str().ok_or("type-invalid")?;
+                if crate::error_contract::ErrorId::new(id).is_none() {
+                    return Err("error-grammar");
+                }
+                if !errors.insert(id.to_owned()) {
+                    return Err("error-duplicate");
+                }
+            }
+            Ok(Operation::OperationErrorSet {
+                target,
+                errors: errors.into_iter().collect(),
+                registry_digest,
+            })
+        }
         "binding:add" => {
             require_members(
                 map,
@@ -1633,12 +1698,12 @@ mod tests {
     #[test]
     fn cataloged_unsupported_operation_decodes_and_carries_subject() {
         let text = request(
-            "{\"operation\":\"operation-error:set\",\"operationTarget\":\"tasks.task\",\"definition\":{\"errors\":[]}}",
+            "{\"operation\":\"ownership:set\",\"subject\":\"tasks.task\",\"mode\":\"observed\",\"evidence\":{\"proof\":\"unavailable\"}}",
         );
         let req = decode_ok(&text);
         match &req.operations[0] {
             Operation::Unsupported { operation, subject } => {
-                assert_eq!(operation, "operation-error:set");
+                assert_eq!(operation, "ownership:set");
                 assert_eq!(subject.as_deref(), Some("tasks.task"));
             }
             other => panic!("unexpected operation: {other:?}"),
@@ -1784,12 +1849,12 @@ mod tests {
         // A schema-valid unsupported payload still decodes and is refused
         // later with the registered unsupported outcome.
         let ok = request(
-            "{\"operation\":\"operation-error:set\",\"operationTarget\":\"tasks.task\",\"definition\":{\"errors\":[]}}",
+            "{\"operation\":\"ownership:set\",\"subject\":\"tasks.task\",\"mode\":\"observed\",\"evidence\":{\"proof\":\"unavailable\"}}",
         );
         let decoded = decode_ok(&ok);
         match &decoded.operations[0] {
             Operation::Unsupported { operation, .. } => {
-                assert_eq!(operation, "operation-error:set");
+                assert_eq!(operation, "ownership:set");
             }
             other => panic!("unexpected operation: {other:?}"),
         }

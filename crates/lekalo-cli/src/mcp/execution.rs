@@ -963,6 +963,17 @@ pub(crate) fn admit_project_inputs(
         Err(_) => return None,
     };
     inputs.insert("lock:project".to_owned(), lock_digest);
+    // A local error declaration affects validation and context reports even
+    // when the Model is unchanged. Pin absence as well as exact confined
+    // bytes; otherwise a concurrent registry edit could reuse the snapshot.
+    let errors = lekalo_core::error_contract::source::read_bytes(&entry.root).ok()?;
+    inputs.insert(
+        "error-registry:project".to_owned(),
+        errors
+            .as_deref()
+            .map(|bytes| domain_digest("error-registry", bytes))
+            .unwrap_or_else(|| "absent".to_owned()),
+    );
     // r4 F9: pin the EXACT finite governed homes that status serves.
     // Cache health observes cache store/sidecars, bindings freshness
     // observes its home, and artifacts drift observes the manifest and

@@ -41,7 +41,7 @@ unsupported 4); the implemented increments are `entity-field:add`,
 `command-effect:remove`, `operation-input:set`, and
 `operation-output:set`, `query-effect:add`, `query-effect:remove`,
 `requirement:link`, `requirement:unlink`, `migration:apply`, `module:move`,
-and `binding:add` — every implemented verb has first-class CLI
+`binding:add`, and `operation-error:set` — every implemented verb has first-class CLI
 sugar that lowers to the same closed request DTO a request file
 carries, so sugar and JSON requests are byte-identical at the core.
 The remaining cataloged operations are explicit staged refusals
@@ -57,14 +57,13 @@ silently dropped from a committed declaration.
 
 ### Deferral matrix (P1 coverage scope)
 
-Seventeen of the twenty cataloged operations are implemented and executable.
-The remaining three are required before issue #73 is complete. They currently
+Eighteen of the twenty cataloged operations are implemented and executable.
+The remaining two are required before issue #73 is complete. They currently
 decode and refuse `change.operation-unsupported` (exit 4); each needs its
 contract, sealed executor, and runtime gates:
 
 | Deferred operation | Follow-up increment |
 |---|---|
-| `operation-error:set` | error-binding signature vertical (research I4) |
 | `ownership:set` | adoption-prerequisite ownership transition vertical (research I5) |
 | `symbol:move` | semantic rename history and reference rewrites (research I5) |
 
@@ -74,6 +73,29 @@ they refuse with `change.operation-unsupported` before any mutation.
 The catalog status pins stay honest either way: an operation is
 `implemented` in `contracts/change-catalog.v0.8.0.json` exactly when a
 sealed executor exists.
+
+`operation-error:set --operation ID --definition-json JSON` changes one
+command/query error union in an existing `lekalo/error-registry.json`:
+`{"errors":["planner.store_unavailable"],"registryDigest":"sha256:<64hex>"}`.
+The registry is the canonical #62 owner format, bound to the current Model;
+absence never installs the embedded seed. The non-empty union is sorted and
+unique, every error resolves, commands retain unit output, and queries retain
+their exact output type. Adding or removing union members is source-breaking
+and needs a reviewed policy or explicit `--allow-breaking`; new bindings use
+the owner's additive classification. This standalone operation writes only
+that fixed registry home through the shared journal, history and custody
+transaction. Replay verifies the later committed endpoint, and recovery
+preserves external edits behind an actionable barrier.
+
+Every Change plan pins the registry bytes, including absence. A registry
+appearing or changing after preview refuses before writes; Model edits must
+preserve every local binding's kind and output. The frozen #62 ID grammar is
+still enforced. A module move refuses when it would invalidate a declared
+error source location. Transport, OpenAPI/SDK generation, PHP joins, Module
+API and Context Budget consume the local owner when present; absent projects
+retain the embedded legacy default. A contradictory Module API error list
+refuses. Context Budget marks applicable error facts unrepresentable, and
+MCP snapshots pin this input even when the Model itself is unchanged.
 
 `binding:add --symbol ID --definition-json JSON` admits two closed payloads:
 
