@@ -170,6 +170,7 @@ pub(crate) fn prepare_source_only(
     }
     let (generation, generation_pins) = build_generation_plan(&load.root)?;
     Ok(PreparedChange {
+        symbol_move: None,
         binding: None,
         module_move: None,
         request_bytes: recipe_bytes,

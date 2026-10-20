@@ -1318,6 +1318,7 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo change request` | `lekalo change request [OPTIONS] --request <FILE>` | [reference](change.md) |
 | `lekalo change requirement:link` | `lekalo change requirement:link [OPTIONS] --symbol <ID> --requirement <ID>` | [reference](change.md) |
 | `lekalo change requirement:unlink` | `lekalo change requirement:unlink [OPTIONS] --symbol <ID> --requirement <ID>` | [reference](change.md) |
+| `lekalo change symbol:move` | `lekalo change symbol:move [OPTIONS] --symbol <ID> --to-module <ID>` | [reference](change.md) |
 | `lekalo classification` | `lekalo classification [OPTIONS] <COMMAND>` | [reference](classification.md) |
 | `lekalo classification inspect` | `lekalo classification inspect [OPTIONS] --attachment <PATH> --policy <PATH>` | [reference](classification.md) |
 | `lekalo classification validate` | `lekalo classification validate [OPTIONS] --attachment <PATH> --policy <PATH>` | [reference](classification.md) |

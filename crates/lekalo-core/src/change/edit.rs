@@ -1310,6 +1310,151 @@ fn definition_content_end(bytes: &[u8], definition: &Node) -> Result<usize, Chan
     }
 }
 
+/// Insert a reviewed member block without reformatting its owner. The
+/// caller supplies only the value suffix after the colon (including the
+/// line break and indentation for a block value).
+pub(crate) fn plan_raw_member_append(
+    bytes: &[u8],
+    parent: &Node,
+    member: &str,
+    suffix: &str,
+) -> Result<ByteEdit, ChangeError> {
+    if parent.get(member).is_some() {
+        return Err(ChangeError::SourcePreservation {
+            subject: member.to_owned(),
+            detail: "member-present",
+        });
+    }
+    let Value::Map(entries) = &parent.value else {
+        return Err(ChangeError::SourcePreservation {
+            subject: member.to_owned(),
+            detail: "item-layout",
+        });
+    };
+    let last = entries.last().ok_or(ChangeError::WriteBoundaryDenied)?;
+    let end = inline_trivia_end(bytes, definition_content_end(bytes, parent)?);
+    if next_content_is_comment(bytes, end) {
+        return Err(ChangeError::SourcePreservation {
+            subject: member.to_owned(),
+            detail: "comment-adjacent",
+        });
+    }
+    Ok(ByteEdit {
+        start: end,
+        end,
+        replacement: format!(
+            "{}{}{member}:{suffix}",
+            newline_near(bytes, end),
+            " ".repeat(last.key_span.start.column - 1)
+        ),
+    })
+}
+
+/// Replace one block member only when its trivia has unambiguous ownership.
+pub(crate) fn plan_raw_member_replace(
+    bytes: &[u8],
+    parent: &Node,
+    member: &str,
+    suffix: &str,
+) -> Result<ByteEdit, ChangeError> {
+    let (start, end, indent) = member_block_range(bytes, parent, member)?;
+    let key = parent
+        .get_entry(member)
+        .ok_or(ChangeError::WriteBoundaryDenied)?;
+    if bytes[start..key.key_span.start.byte]
+        .iter()
+        .any(|byte| *byte != b' ')
+        || bytes[start..end].contains(&b'#')
+        || next_content_is_comment(bytes, end)
+    {
+        return Err(ChangeError::SourcePreservation {
+            subject: member.to_owned(),
+            detail: "comment-adjacent",
+        });
+    }
+    Ok(ByteEdit {
+        start,
+        end,
+        replacement: format!("{}{member}:{suffix}", " ".repeat(indent)),
+    })
+}
+
+/// Cut a whole declaration only at proven block-sequence boundaries.
+/// Internal comments travel with the declaration; adjacent outside comments
+/// refuse because their ownership cannot be established.
+pub(crate) fn plan_definition_cut(
+    bytes: &[u8],
+    node: &Node,
+) -> Result<(ByteEdit, String), ChangeError> {
+    let (dash, end) = item_range(bytes, node).ok_or(ChangeError::SourcePreservation {
+        subject: "symbol".to_owned(),
+        detail: "item-layout",
+    })?;
+    let end = inline_trivia_end(bytes, end);
+    if next_content_is_comment(bytes, end) || previous_content_is_comment(bytes, dash) {
+        return Err(ChangeError::SourcePreservation {
+            subject: "symbol".to_owned(),
+            detail: "comment-adjacent",
+        });
+    }
+    let line_start = line_start_at(bytes, dash);
+    if line_start == 0 || bytes[line_start..dash].iter().any(|byte| *byte != b' ') {
+        return Err(ChangeError::SourcePreservation {
+            subject: "symbol".to_owned(),
+            detail: "item-layout",
+        });
+    }
+    let block = std::str::from_utf8(&bytes[line_start..end])
+        .map_err(|_| ChangeError::WriteBoundaryDenied)?
+        .to_owned();
+    let mut start = line_start - 1;
+    if start > 0 && bytes[start - 1] == b'\r' {
+        start -= 1;
+    }
+    Ok((
+        ByteEdit {
+            start,
+            end,
+            replacement: String::new(),
+        },
+        block,
+    ))
+}
+
+/// A trailing comment belongs to the value on its own physical line.
+/// Insertions go after it; a declaration relocation takes it along.
+fn inline_trivia_end(bytes: &[u8], end: usize) -> usize {
+    let line_end = line_start_after(bytes, end);
+    let mut content = line_end;
+    while content > end && matches!(bytes[content - 1], b'\r' | b'\n') {
+        content -= 1;
+    }
+    let first = bytes[end..content]
+        .iter()
+        .copied()
+        .find(|byte| !matches!(byte, b' ' | b'\t'));
+    if matches!(first, None | Some(b'#')) {
+        content
+    } else {
+        end
+    }
+}
+
+/// Use the physical line's terminator, or the previous one at EOF. Unlike
+/// `newline_before`, this accepts a content-end insertion anchor.
+fn newline_near(bytes: &[u8], offset: usize) -> &'static str {
+    let boundary = bytes[offset..]
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .map(|index| offset + index)
+        .or_else(|| bytes[..offset].iter().rposition(|byte| *byte == b'\n'));
+    if boundary.is_some_and(|index| index > 0 && bytes[index - 1] == b'\r') {
+        "\r\n"
+    } else {
+        "\n"
+    }
+}
+
 /// Plan the insertion of one missing member block (with its first item)
 /// after the last member of one definition. Used when an operation adds
 /// the first item of a sequence the definition does not carry yet.

@@ -376,9 +376,8 @@ mod tests {
         // its status).
         let catalog = Catalog::embedded().expect("embedded catalog validates");
         let deferred = [
-            // Research I5: semantic moves and ownership.
+            // Research I5: ownership.
             "ownership:set",
-            "symbol:move",
         ];
         let mut unsupported = catalog
             .entries()

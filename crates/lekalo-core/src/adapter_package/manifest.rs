@@ -1028,12 +1028,9 @@ mod committed_exemplar_tests {
         let document = super::ManifestDocument::from_bytes(bytes)
             .expect("the committed PHP adapter manifest must parse");
         assert_eq!(document.adapter_id(), "lekalo-target-php-laravel");
-        // Issue #55 bumped the adapter to 0.2.0: the Mago analyzer seam
-        // (receipt decode, strict-profile gates, the embedded toolchain
-        // lock, and the bundled analyzer/strict-profile modules) is a
-        // backward-compatible capability addition to the #54 MVP, so a
-        // minor version increment is the honest identity change.
-        assert_eq!(document.adapter_version().as_str(), "0.2.0");
+        // M8 publishes finite cache-evidence scopes under adapter 0.8.0;
+        // the wire protocol remains independently pinned at 0.6.4.
+        assert_eq!(document.adapter_version().as_str(), "0.8.0");
         // The runtime is the closed php spelling with the 8.3 floor of
         // the issue's requirements, checked against the raw canonical
         // bytes (the wire struct keeps the runtime block opaque).

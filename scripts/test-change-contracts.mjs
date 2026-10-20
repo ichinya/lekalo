@@ -156,6 +156,7 @@ const expectedImplemented = [
   "query-effect:remove",
   "requirement:link",
   "requirement:unlink",
+  "symbol:move",
 ];
 if (JSON.stringify(implemented) !== JSON.stringify(expectedImplemented)) {
   fail("catalog-implemented-set", { implemented, expectedImplemented });

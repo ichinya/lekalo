@@ -64,6 +64,9 @@ pub(crate) enum ChangeCommands {
     /// Relocate a physical module directory, preserving its semantic ID.
     #[command(name = "module:move")]
     ModuleMove(ModuleMoveArgs),
+    /// Move or rename a semantic symbol and rewrite its Model references.
+    #[command(name = "symbol:move")]
+    SymbolMove(SymbolMoveArgs),
     /// Add a canonical target binding or explicitly confirm an observed proposal.
     #[command(name = "binding:add")]
     BindingAdd(BindingArgs),
@@ -154,6 +157,18 @@ pub(crate) struct ModuleMoveArgs {
     module: String,
     #[arg(long, value_name = "LEAF")]
     directory: String,
+    #[command(flatten)]
+    execution: ExecutionArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct SymbolMoveArgs {
+    #[arg(long, value_name = "ID")]
+    symbol: String,
+    #[arg(long, value_name = "ID")]
+    to_module: String,
+    #[arg(long, value_name = "NAME")]
+    to_name: Option<String>,
     #[command(flatten)]
     execution: ExecutionArgs,
 }
@@ -628,6 +643,13 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
         ChangeCommands::ModuleMove(args) => serde_json::json!({
             "operation":"module:move", "module":args.module, "directory":args.directory,
         }),
+        ChangeCommands::SymbolMove(args) => {
+            let mut operation = serde_json::json!({"operation":"symbol:move", "symbol":args.symbol, "toModule":args.to_module});
+            if let Some(name) = &args.to_name {
+                operation["toName"] = Json::String(name.clone());
+            }
+            operation
+        }
         ChangeCommands::BindingAdd(args) => serde_json::json!({
             "operation":"binding:add", "symbol":args.symbol,
             "definition":change::parse_strict_json_literal(&args.definition_json)?,
@@ -661,6 +683,7 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
         }
         ChangeCommands::MigrationApply(args) => &args.execution,
         ChangeCommands::ModuleMove(args) => &args.execution,
+        ChangeCommands::SymbolMove(args) => &args.execution,
         ChangeCommands::BindingAdd(args) => &args.execution,
         ChangeCommands::OperationErrorSet(args) => &args.execution,
         _ => unreachable!("lower() handles sugar commands only"),
@@ -845,6 +868,9 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
                         (&args.execution, args.execution.expect_plan.as_deref())
                     }
                     ChangeCommands::ModuleMove(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::SymbolMove(args) => {
                         (&args.execution, args.execution.expect_plan.as_deref())
                     }
                     ChangeCommands::BindingAdd(args) => {

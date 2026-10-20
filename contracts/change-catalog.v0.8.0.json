@@ -158,7 +158,7 @@
     },
     {
       "operation": "symbol:move",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Move one symbol to another module or name",
       "mutationClass": "destructive",
       "requiredEvidence": [

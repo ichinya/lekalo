@@ -41,7 +41,7 @@ unsupported 4); the implemented increments are `entity-field:add`,
 `command-effect:remove`, `operation-input:set`, and
 `operation-output:set`, `query-effect:add`, `query-effect:remove`,
 `requirement:link`, `requirement:unlink`, `migration:apply`, `module:move`,
-`binding:add`, and `operation-error:set` — every implemented verb has first-class CLI
+`binding:add`, `operation-error:set`, and `symbol:move` — every implemented verb has first-class CLI
 sugar that lowers to the same closed request DTO a request file
 carries, so sugar and JSON requests are byte-identical at the core.
 The remaining cataloged operations are explicit staged refusals
@@ -49,7 +49,7 @@ pending their sealed executors (the deferral matrix below). Runtime
 decoding mirrors the
 published request schema exactly: an
 optional member a schema variant admits (for example `symbol:move`'s
-`toName`) decodes and reaches the registered unsupported outcome —
+`toName`) decodes and reaches its registered executor —
 never an unknown-member rejection. Declared field defaults and enum
 wire values are decoded and refused explicitly at every
 field-consuming operation (`change.operation-unsupported`), never
@@ -57,15 +57,14 @@ silently dropped from a committed declaration.
 
 ### Deferral matrix (P1 coverage scope)
 
-Eighteen of the twenty cataloged operations are implemented and executable.
-The remaining two are required before issue #73 is complete. They currently
-decode and refuse `change.operation-unsupported` (exit 4); each needs its
+Nineteen of the twenty cataloged operations have sealed executors.
+The remaining operation is required before issue #73 is complete. It currently
+decodes and refuses `change.operation-unsupported` (exit 4); it needs its
 contract, sealed executor, and runtime gates:
 
 | Deferred operation | Follow-up increment |
 |---|---|
 | `ownership:set` | adoption-prerequisite ownership transition vertical (research I5) |
-| `symbol:move` | semantic rename history and reference rewrites (research I5) |
 
 Until an increment lands, the deferred verbs are reachable only as
 JSON request documents through `change request --request <file>`, and
@@ -73,6 +72,37 @@ they refuse with `change.operation-unsupported` before any mutation.
 The catalog status pins stay honest either way: an operation is
 `implemented` in `contracts/change-catalog.v0.8.0.json` exactly when a
 sealed executor exists.
+
+`symbol:move --symbol ID --to-module MODULE [--to-name NAME]` preserves a
+symbol's meaning while assigning its new live semantic ID. It rewrites typed
+Model references, increments changed definitions, adds newly required module
+imports, and records the same-identity edge in the project `id_registry`.
+An earlier rename chain stays historical; only the immediately previous ID
+becomes the live definition's `renamed_from`. Historical IDs cannot be reused.
+Descriptions, enum literals, requirement IDs and target-native names are not
+symbol references and remain unchanged. A dry run includes the resulting
+semantic/file diffs and impact/generation plans. Generation is a separate action.
+
+Moves are standalone requests. Cross-module relocation uses the destination
+module's declaring physical directory, preserves the original kind filename,
+qualifies outgoing short references, and either appends to that kind home or
+creates it transactionally. A dependency cycle refuses before writing. Moving
+the last definition out of a kind home, relocating nested relation/uniqueness
+identities, and rewriting separately owned attachments are not implemented yet.
+Those cases explicitly refuse; they are still required follow-up work for #73.
+An existing project error registry also refuses. Other unsupported reference
+attachments must be absent (scenario/type/operation/route homes may be empty);
+these absence/home guards are included in the plan inputs and rechecked under
+the writer lock and before commit. Adding even an empty attachment after
+preview invalidates the plan. Ambiguous source/comment boundaries refuse
+instead of reformatting or discarding trivia. Native implementation is never
+moved or edited automatically.
+
+The fixed file guards cover `lekalo/authorization.yaml`, `transport.yaml`,
+`test-port.json`, `classification.json`, `classification-policy.json` and
+`query-model.yaml` under `lekalo/`, the root `module-api.json`, and
+`.lekalo/import/observed/index.json`. They prevent the Model-only executor
+from silently leaving those owners' semantic references stale.
 
 `operation-error:set --operation ID --definition-json JSON` changes one
 command/query error union in an existing `lekalo/error-registry.json`:

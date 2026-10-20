@@ -47,6 +47,12 @@ pub enum Operation {
     },
     /// Relocate one physical module home while preserving its semantic ID.
     ModuleMove { module: String, directory: String },
+    /// Move or rename one semantic symbol, recording the same-identity edge.
+    SymbolMove {
+        symbol: String,
+        to_module: String,
+        to_name: Option<String>,
+    },
     /// A registered operation lowered to the same sealed semantic executor.
     /// Wire intent stays intact for hashing, audit and idempotency.
     Lowered {
@@ -129,6 +135,7 @@ impl Operation {
             Self::OperationErrorSet { .. } => "operation-error:set",
             Self::BindingConfirm { .. } => "binding:add",
             Self::ModuleMove { .. } => "module:move",
+            Self::SymbolMove { .. } => "symbol:move",
             Self::Lowered { operation, .. } => operation,
             Self::EntityFieldAdd { .. } => "entity-field:add",
             Self::EntityFieldRemove { .. } => "entity-field:remove",
@@ -154,6 +161,7 @@ impl Operation {
             Self::OperationErrorSet { target, .. } => Some(target),
             Self::BindingConfirm { symbol, .. } => Some(symbol),
             Self::ModuleMove { module, .. } => Some(module),
+            Self::SymbolMove { symbol, .. } => Some(symbol),
             Self::Lowered { executable, .. } => executable.subject(),
             Self::EntityFieldAdd { entity, .. }
             | Self::EntityFieldRemove { entity, .. }
@@ -211,6 +219,17 @@ impl Operation {
             Self::ModuleMove { module, directory } => {
                 map.insert("module".to_owned(), Json::String(module.clone()));
                 map.insert("directory".to_owned(), Json::String(directory.clone()));
+            }
+            Self::SymbolMove {
+                symbol,
+                to_module,
+                to_name,
+            } => {
+                map.insert("symbol".to_owned(), Json::String(symbol.clone()));
+                map.insert("toModule".to_owned(), Json::String(to_module.clone()));
+                if let Some(name) = to_name {
+                    map.insert("toName".to_owned(), Json::String(name.clone()));
+                }
             }
             Self::Lowered { wire, .. } => return wire.clone(),
             Self::EntityFieldAdd { entity, field } => {
@@ -745,6 +764,33 @@ fn decode_operation(catalog: &Catalog, value: &Json) -> Result<Operation, &'stat
         });
     }
     match discriminator {
+        "symbol:move" => {
+            require_members(
+                map,
+                &["operation", "symbol", "toModule", "toName"],
+                &["operation", "symbol", "toModule"],
+            )?;
+            let symbol = member_string(map, "symbol")?;
+            let to_module = member_string(map, "toModule")?;
+            let to_name = map
+                .get("toName")
+                .map(|_| member_string(map, "toName"))
+                .transpose()?;
+            if !super::symbol_id_valid(&symbol)
+                || symbol.len() > 192
+                || !super::field_name_valid(&to_module)
+                || to_name
+                    .as_ref()
+                    .is_some_and(|name| !super::field_name_valid(name))
+            {
+                return Err("symbol-move-grammar");
+            }
+            Ok(Operation::SymbolMove {
+                symbol,
+                to_module,
+                to_name,
+            })
+        }
         "operation-error:set" => {
             require_members(
                 map,
@@ -1799,17 +1845,23 @@ mod tests {
     }
 
     #[test]
-    fn schema_valid_optional_members_reach_the_unsupported_outcome() {
+    fn schema_valid_optional_members_reach_the_registered_executor() {
         // Round 3, finding 15: an optional member the published schema
         // admits (`symbol:move`'s `toName`, `migration:apply`'s
-        // `parameters`) decodes and is refused later with the registered
-        // unsupported outcome — never `change.request-invalid`.
+        // `parameters`) decodes before dispatch. Symbol moves now have a
+        // sealed executor; an unknown migration still refuses explicitly.
         let symbol_move = request(
             "{\"operation\":\"symbol:move\",\"symbol\":\"tasks.task\",\"toModule\":\"other\",\"toName\":\"new_task\"}",
         );
         match &decode_ok(&symbol_move).operations[0] {
-            Operation::Unsupported { operation, .. } => {
-                assert_eq!(operation, "symbol:move");
+            Operation::SymbolMove {
+                symbol,
+                to_module,
+                to_name,
+            } => {
+                assert_eq!(symbol, "tasks.task");
+                assert_eq!(to_module, "other");
+                assert_eq!(to_name.as_deref(), Some("new_task"));
             }
             other => panic!("unexpected operation: {other:?}"),
         }

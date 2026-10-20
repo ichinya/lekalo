@@ -86,6 +86,390 @@ fn add_priority_request() -> Vec<u8> {
     add_field_request("priority")
 }
 
+fn symbol_move_request(symbol: &str, module: &str, name: Option<&str>) -> Vec<u8> {
+    let mut operation =
+        serde_json::json!({"operation":"symbol:move","symbol":symbol,"toModule":module});
+    if let Some(name) = name {
+        operation["toName"] = serde_json::json!(name);
+    }
+    serde_json::to_vec(&serde_json::json!({"schemaVersion":"lekalo/change-request/v0.8.0","operations":[operation]})).unwrap()
+}
+
+fn prepare_breaking(
+    sandbox: &Sandbox,
+    request: &[u8],
+) -> Result<change::PreparedChange, ChangeError> {
+    change::prepare(&PrepareOptions {
+        project: Some(&sandbox.selection_str()),
+        request,
+        policy: None,
+        allow_breaking: true,
+    })
+}
+
+fn apply_symbol_plan(
+    plan: &change::PreparedChange,
+    key: &str,
+) -> Result<change::Receipt, ChangeError> {
+    change::apply_prepared(
+        plan,
+        &ApplyOptions {
+            idempotency_key: key,
+            expect_plan: Some(&plan.plan_id()),
+            allow_breaking: true,
+        },
+    )
+}
+
+fn replay_symbol(
+    sandbox: &Sandbox,
+    request: &[u8],
+    key: &str,
+    plan: &str,
+) -> Result<change::Receipt, ChangeError> {
+    change::apply_request(&ApplyRequestOptions {
+        project: Some(&sandbox.selection_str()),
+        request,
+        policy: None,
+        allow_breaking: true,
+        idempotency_key: key,
+        expect_plan: Some(plan),
+    })
+}
+
+#[test]
+fn symbol_move_rewrites_typed_references_and_records_a_replayable_identity_chain() {
+    let sandbox = Sandbox::new("symbol-chain");
+    let before = sandbox.entities_bytes();
+    let request = symbol_move_request("tasks.text", "tasks", Some("label"));
+    let plan = prepare_breaking(&sandbox, &request).unwrap();
+    assert_eq!(sandbox.entities_bytes(), before, "preview is read-only");
+    let wire: serde_json::Value = serde_json::from_str(&plan.to_json_string().unwrap()).unwrap();
+    assert_eq!(wire["operations"][0]["operation"], "symbol:move");
+    assert!(wire["fileEdits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|file| file["path"] == "lekalo/project.yaml"));
+    apply_symbol_plan(&plan, "symbol-first").unwrap();
+    let text = String::from_utf8(sandbox.entities_bytes()).unwrap();
+    assert!(text.contains("type: \"tasks.label\""));
+    assert!(text.contains("# The text scalar keeps its own documentation comment"));
+    assert!(text.contains("type: \"tasks.bool\""));
+    let model = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+    assert!(lekalo_core::ir::compile(&model).is_ok());
+    assert!(model
+        .definitions
+        .iter()
+        .any(|definition| definition.id == "tasks.label"));
+    let second = symbol_move_request("tasks.label", "tasks", Some("title_text"));
+    apply_symbol_plan(
+        &prepare_breaking(&sandbox, &second).unwrap(),
+        "symbol-second",
+    )
+    .unwrap();
+    let project: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(sandbox.root.join("lekalo/project.yaml")).unwrap())
+            .unwrap();
+    assert_eq!(project["definitions"][0]["version"], 3);
+    let history = &project["definitions"][0]["id_registry"]["rename_history"];
+    assert_eq!(history.as_array().unwrap().len(), 2);
+    assert_eq!(history[0]["from"], "tasks.text");
+    assert_eq!(history[0]["to"], "tasks.label");
+    assert_eq!(history[1]["to"], "tasks.title_text");
+    assert_eq!(history[1]["definition_version"], 3);
+    assert!(matches!(
+        prepare_breaking(
+            &sandbox,
+            &symbol_move_request("tasks.title_text", "tasks", Some("text"))
+        ),
+        Err(ChangeError::SubjectConflict {
+            detail: "historical-id",
+            ..
+        })
+    ));
+    assert_eq!(
+        replay_symbol(&sandbox, &request, "symbol-first", &plan.plan_id())
+            .unwrap()
+            .state(),
+        ReceiptState::Replayed
+    );
+}
+
+fn add_symbol_destination(sandbox: &Sandbox, existing_kind_home: bool) {
+    let home = sandbox.root.join("lekalo/modules/physical-other");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(home.join("module.yaml"), "schema_version: \"0.2.16\"\ndefinitions:\n  - id: other\n    kind: module\n    version: 1\n").unwrap();
+    if existing_kind_home {
+        std::fs::write(home.join("entities.yaml"), "schema_version: \"0.2.16\"\ndefinitions:\n  - id: other.text\n    kind: scalar\n    version: 1\n    base: string\n").unwrap();
+    }
+}
+
+#[test]
+fn symbol_move_uses_declared_physical_homes_and_keeps_short_reference_meaning() {
+    for existing in [false, true] {
+        let sandbox = Sandbox::new("symbol-cross");
+        add_symbol_destination(&sandbox, existing);
+        let text = String::from_utf8(sandbox.entities_bytes())
+            .unwrap()
+            .replace("type: \"tasks.text\"", "type: \"text\"");
+        std::fs::write(sandbox.entities_path(), text).unwrap();
+        let request = symbol_move_request("tasks.task", "other", Some("item"));
+        let plan = prepare_breaking(&sandbox, &request).unwrap();
+        apply_symbol_plan(&plan, "symbol-cross").unwrap();
+        let target = std::fs::read_to_string(
+            sandbox
+                .root
+                .join("lekalo/modules/physical-other/entities.yaml"),
+        )
+        .unwrap();
+        assert!(target.contains("  - id: other.item"));
+        assert!(target.contains("type: \"tasks.text\""));
+        assert!(target.contains("type: \"tasks.bool\""));
+        assert!(!String::from_utf8(sandbox.entities_bytes())
+            .unwrap()
+            .contains("id: tasks.task"));
+        let model = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+        let compiled = lekalo_core::ir::compile(&model).unwrap();
+        assert!(compiled.project.to_canonical_json().contains("other.item"));
+        assert_eq!(
+            replay_symbol(&sandbox, &request, "symbol-cross", &plan.plan_id())
+                .unwrap()
+                .state(),
+            ReceiptState::Replayed
+        );
+    }
+}
+
+#[test]
+fn symbol_move_rewrites_wrapped_type_refs_without_changing_literals_or_prose() {
+    let sandbox = Sandbox::new("symbol-wrappers");
+    let text = String::from_utf8(sandbox.entities_bytes())
+        .unwrap()
+        .replace("type: \"tasks.text\"", "type: \"list<text?>\"")
+        .replace(
+            "    base: string",
+            "    base: string\n    description: \"tasks.text\"",
+        );
+    std::fs::write(sandbox.entities_path(), text).unwrap();
+    apply_symbol_plan(
+        &prepare_breaking(
+            &sandbox,
+            &symbol_move_request("tasks.text", "tasks", Some("label")),
+        )
+        .unwrap(),
+        "symbol-wrappers",
+    )
+    .unwrap();
+    let text = String::from_utf8(sandbox.entities_bytes()).unwrap();
+    assert!(text.contains("type: \"list<tasks.label?>\""));
+    assert!(text.contains("description: \"tasks.text\""));
+}
+
+#[test]
+fn symbol_move_seals_unsupported_attachment_homes_and_refuses_stale_plans() {
+    let sandbox = Sandbox::new("symbol-attachments");
+    let request = symbol_move_request("tasks.text", "tasks", Some("label"));
+    let plan = prepare_breaking(&sandbox, &request).unwrap();
+    let before = sandbox.entities_bytes();
+    let path = sandbox.root.join("module-api.json");
+    std::fs::write(&path, b"").unwrap();
+    assert!(matches!(
+        apply_symbol_plan(&plan, "symbol-stale"),
+        Err(ChangeError::PreconditionFailed { .. })
+    ));
+    assert_eq!(sandbox.entities_bytes(), before);
+    assert!(!sandbox.history_path().exists());
+    assert!(matches!(
+        prepare_breaking(&sandbox, &request),
+        Err(ChangeError::UnsupportedMember {
+            member: "reference-attachment",
+            ..
+        })
+    ));
+    std::fs::remove_file(path).unwrap();
+    let home = sandbox.root.join("lekalo/types");
+    std::fs::create_dir(&home).unwrap();
+    std::fs::write(home.join("extra.types.json"), b"{}").unwrap();
+    assert!(matches!(
+        apply_symbol_plan(&plan, "symbol-stale"),
+        Err(ChangeError::PreconditionFailed { .. })
+    ));
+    assert_eq!(sandbox.entities_bytes(), before);
+}
+
+#[test]
+fn symbol_move_preserves_inline_notes_and_refuses_ambiguous_replaced_history_trivia() {
+    let sandbox = Sandbox::new("symbol-inline");
+    let text = String::from_utf8(sandbox.entities_bytes())
+        .unwrap()
+        .replace("    base: string", "    base: string # scalar note");
+    std::fs::write(sandbox.entities_path(), text).unwrap();
+    let request = symbol_move_request("tasks.text", "tasks", Some("label"));
+    apply_symbol_plan(
+        &prepare_breaking(&sandbox, &request).unwrap(),
+        "symbol-inline",
+    )
+    .unwrap();
+    let text = String::from_utf8(sandbox.entities_bytes()).unwrap();
+    assert!(text.contains("    base: string # scalar note\n    renamed_from:"));
+    let text = text.replace("- \"tasks.text\"", "- \"tasks.text\" # history note");
+    std::fs::write(sandbox.entities_path(), &text).unwrap();
+    assert!(matches!(
+        prepare_breaking(
+            &sandbox,
+            &symbol_move_request("tasks.label", "tasks", Some("another_label"))
+        ),
+        Err(ChangeError::SourcePreservation { .. })
+    ));
+    assert_eq!(String::from_utf8(sandbox.entities_bytes()).unwrap(), text);
+}
+
+#[test]
+fn symbol_move_qualifies_each_supported_symbol_kind_and_its_real_consumers() {
+    let fixture = Sandbox::from_fixture(
+        "symbol-kinds-inventory",
+        "tests/fixtures/model-v1/valid-planner",
+    );
+    let model = lekalo_core::loader::normalize_model(&fixture.selection()).unwrap();
+    let mut kinds = std::collections::BTreeMap::new();
+    for definition in &model.definitions {
+        let kind = definition
+            .node
+            .get("kind")
+            .and_then(lekalo_core::loader::frontends::Node::as_str)
+            .unwrap();
+        kinds
+            .entry(kind.to_owned())
+            .or_insert_with(|| definition.id.clone());
+    }
+    assert_eq!(kinds.len(), 12);
+    for (kind, id) in kinds {
+        let sandbox = Sandbox::from_fixture(
+            &format!("symbol-kind-{kind}"),
+            "tests/fixtures/model-v1/valid-planner",
+        );
+        let request = symbol_move_request(&id, "planner", Some("renamed_symbol"));
+        let plan = prepare_breaking(&sandbox, &request)
+            .unwrap_or_else(|error| panic!("{kind}: {error:?}"));
+        apply_symbol_plan(&plan, &format!("symbol-{kind}")).unwrap();
+        let model = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+        assert!(lekalo_core::ir::compile(&model).is_ok(), "{kind}");
+        assert!(!model
+            .definitions
+            .iter()
+            .any(|definition| definition.id == id));
+    }
+}
+
+#[test]
+fn symbol_move_updates_yaml_history_tombstones_and_crlf_without_rewriting_other_bytes() {
+    let sandbox = Sandbox::new("symbol-yaml-history");
+    let project = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks\n    kind: project\n    version: 2\n    id_registry:\n      tombstones:\n        - id: tasks.retired_text\n          reason: replaced\n          replaced_by: tasks.text\n          since: 2\n".replace('\n', "\r\n");
+    std::fs::write(
+        sandbox.root.join("lekalo/project.yaml"),
+        project.trim_end_matches(&['\r', '\n'][..]),
+    )
+    .unwrap();
+    let source = String::from_utf8(sandbox.entities_bytes())
+        .unwrap()
+        .replace('\n', "\r\n");
+    std::fs::write(sandbox.entities_path(), &source).unwrap();
+    for (old, new, key) in [
+        ("tasks.text", "label", "yaml-first"),
+        ("tasks.label", "title_text", "yaml-second"),
+    ] {
+        let request = symbol_move_request(old, "tasks", Some(new));
+        apply_symbol_plan(&prepare_breaking(&sandbox, &request).unwrap(), key).unwrap();
+    }
+    let model = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+    let registry = model
+        .project
+        .as_ref()
+        .unwrap()
+        .node
+        .get("id_registry")
+        .unwrap();
+    assert_eq!(
+        registry
+            .get("rename_history")
+            .unwrap()
+            .as_seq()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        registry.get("tombstones").unwrap().as_seq().unwrap()[0]
+            .get("replaced_by")
+            .unwrap()
+            .as_str(),
+        Some("tasks.title_text")
+    );
+    let after = String::from_utf8(sandbox.entities_bytes()).unwrap();
+    assert!(!after.replace("\r\n", "").contains('\n'));
+    assert!(after.contains("# The closed delivery priority vocabulary.\r\n"));
+    let project = std::fs::read_to_string(sandbox.root.join("lekalo/project.yaml")).unwrap();
+    assert!(!project.ends_with('\n'));
+    assert!(!project.replace("\r\n", "").contains('\n'));
+}
+
+#[test]
+fn symbol_move_uses_the_owners_full_version_range_and_refuses_overflow_before_writing() {
+    let sandbox = Sandbox::new("symbol-version-range");
+    let before = String::from_utf8(sandbox.entities_bytes())
+        .unwrap()
+        .replacen("version: 1", "version: 4294967296", 1);
+    std::fs::write(sandbox.entities_path(), before).unwrap();
+    let request = symbol_move_request("tasks.text", "tasks", Some("label"));
+    apply_symbol_plan(
+        &prepare_breaking(&sandbox, &request).unwrap(),
+        "symbol-version-range",
+    )
+    .unwrap();
+    assert!(String::from_utf8(sandbox.entities_bytes())
+        .unwrap()
+        .contains("version: 4294967297"));
+    let sandbox = Sandbox::new("symbol-version-overflow");
+    let before = String::from_utf8(sandbox.entities_bytes())
+        .unwrap()
+        .replacen("version: 1", "version: 18446744073709551615", 1);
+    std::fs::write(sandbox.entities_path(), &before).unwrap();
+    assert!(matches!(
+        prepare_breaking(&sandbox, &request),
+        Err(ChangeError::SubjectConflict {
+            detail: "version-overflow",
+            ..
+        })
+    ));
+    assert_eq!(sandbox.entities_bytes(), before.as_bytes());
+    assert!(!sandbox.history_path().exists());
+}
+
+#[test]
+fn symbol_move_refuses_new_dependency_cycles_before_creating_or_rewriting_files() {
+    let sandbox = Sandbox::new("symbol-import-cycle");
+    add_symbol_destination(&sandbox, false);
+    let queries = sandbox.root.join("lekalo/modules/tasks/queries.yaml");
+    let query = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.list_tasks\n    kind: query\n    version: 1\n    returns: list<tasks.task>\n";
+    std::fs::write(&queries, query).unwrap();
+    let before = sandbox.entities_bytes();
+    assert!(matches!(
+        prepare_breaking(
+            &sandbox,
+            &symbol_move_request("tasks.task", "other", Some("item"))
+        ),
+        Err(ChangeError::LoadFailed(_))
+    ));
+    assert_eq!(sandbox.entities_bytes(), before);
+    assert_eq!(std::fs::read_to_string(queries).unwrap(), query);
+    assert!(!sandbox
+        .root
+        .join("lekalo/modules/physical-other/entities.yaml")
+        .exists());
+    assert!(!sandbox.history_path().exists());
+}
+
 fn module_bytes(path: &Path) -> std::collections::BTreeMap<std::ffi::OsString, Vec<u8>> {
     std::fs::read_dir(path)
         .unwrap()
