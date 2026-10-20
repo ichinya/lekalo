@@ -847,7 +847,7 @@ impl Fs {
 }
 
 /// The closed set of canonical `lekalo/` root entries.
-pub(crate) const CANONICAL_ROOT_ENTRIES: [&str; 15] = [
+pub(crate) const CANONICAL_ROOT_ENTRIES: [&str; 16] = [
     "project.yaml",
     "modules",
     "targets",
@@ -870,6 +870,8 @@ pub(crate) const CANONICAL_ROOT_ENTRIES: [&str; 15] = [
     "change-history.json",
     // Issue #73: the project-owned #62 registry; not Model input.
     "error-registry.json",
+    // Issue #73: optional policy in the existing #41 owner format.
+    "ownership.json",
     // Issue #58: the PHP type-generation input home (optional).
     "types",
     // Issue #59: the PHP operations-generation input home (optional).
@@ -1162,7 +1164,10 @@ impl Fs {
             }
             if matches!(
                 name.as_str(),
-                "classification.json" | "classification-policy.json" | "error-registry.json"
+                "classification.json"
+                    | "classification-policy.json"
+                    | "error-registry.json"
+                    | "ownership.json"
             ) && entry_type != EntryType::File
             {
                 return Err(

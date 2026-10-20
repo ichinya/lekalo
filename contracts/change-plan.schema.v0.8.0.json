@@ -430,7 +430,8 @@
         "binding.target-changed",
         "error.binding-added",
         "error.union-member-added",
-        "error.union-member-removed"
+        "error.union-member-removed",
+        "ownership.mode-changed"
       ]
     },
     "compatibilityClass": {

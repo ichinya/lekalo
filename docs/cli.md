@@ -1311,6 +1311,7 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo change operation-error:set` | `lekalo change operation-error:set [OPTIONS] --operation <ID> --definition-json <JSON>` | [reference](change.md) |
 | `lekalo change operation-input:set` | `lekalo change operation-input:set [OPTIONS] --operation <ID> --input-json <JSON>` | [reference](change.md) |
 | `lekalo change operation-output:set` | `lekalo change operation-output:set [OPTIONS] --operation <ID> --type <TYPE>` | [reference](change.md) |
+| `lekalo change ownership:set` | `lekalo change ownership:set [OPTIONS] --module <ID> --mode <MODE> --evidence-json <JSON>` | [reference](change.md) |
 | `lekalo change query-effect:add` | `lekalo change query-effect:add [OPTIONS] --query <ID> --effect <ID>` | [reference](change.md) |
 | `lekalo change query-effect:remove` | `lekalo change query-effect:remove [OPTIONS] --query <ID> --effect <ID>` | [reference](change.md) |
 | `lekalo change receipt` | `lekalo change receipt [OPTIONS] --idempotency-key <KEY>` | [reference](change.md) |

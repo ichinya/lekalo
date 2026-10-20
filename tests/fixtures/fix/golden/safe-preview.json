@@ -28,7 +28,7 @@
   "identity": "dev.lekalo.fix-result@0.8.0",
   "plan": {
     "breakingClasses": [],
-    "catalogDigest": "sha256:ad090e8dca5ab3e11ae89d418aa18848060927901713fa00b50b4cfeb5d81388",
+    "catalogDigest": "sha256:6f229cb9f1c04354940b634a8e8c2066563488ca18669eb55de537b40cd4da03",
     "complete": true,
     "completeReason": null,
     "equal": false,
@@ -609,7 +609,7 @@
         "subjectFamily": "project"
       }
     ],
-    "planId": "sha256:dc68c2dabdb1ba7d8b760e42ce7f9e841b7307969efbc48a6d1a92358bf5db44",
+    "planId": "sha256:7d592a1e91898302089ccc2a4979d942178fdf1acafe94f1076a784caf1063b7",
     "policyAllowed": true,
     "policyDigest": null,
     "requestDigest": "sha256:f167df0035fd1832bf886f8f0d5b74abe9e2951a37e5764df3b6886356875269",
@@ -623,7 +623,7 @@
     },
     "status": "valid"
   },
-  "planId": "sha256:dc68c2dabdb1ba7d8b760e42ce7f9e841b7307969efbc48a6d1a92358bf5db44",
+  "planId": "sha256:7d592a1e91898302089ccc2a4979d942178fdf1acafe94f1076a784caf1063b7",
   "postValidation": "not-run",
   "reasonCodes": [
     "fix.format-required"

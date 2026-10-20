@@ -375,10 +375,7 @@ mod tests {
         // documented deferral, or an executor landing without flipping
         // its status).
         let catalog = Catalog::embedded().expect("embedded catalog validates");
-        let deferred = [
-            // Research I5: ownership.
-            "ownership:set",
-        ];
+        let deferred: [&str; 0] = [];
         let mut unsupported = catalog
             .entries()
             .filter(|entry| entry.status() == OperationStatus::Unsupported)

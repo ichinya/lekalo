@@ -21,6 +21,7 @@ the checker.
     authorization.yaml
     transport.yaml
     error-registry.json
+    ownership.json
     change-history.json
     modules/
       <module>/
@@ -78,6 +79,7 @@ All other shown files and directories are optional legal homes. The leaf names b
 | `lekalo/authorization.yaml` | canonical authorization document (#25) | yes | Lekalo |
 | `lekalo/transport.yaml` | canonical HTTP/JSON transport attachment (#70) | yes | Lekalo |
 | `lekalo/error-registry.json` | optional canonical typed error registry (#62); never Model input | yes | Lekalo |
+| `lekalo/ownership.json` | optional project policy in the existing managed ownership format (#41/#73); never Model input | yes | Lekalo |
 | `lekalo/change-history.json` | canonical change audit history sidecar (#73); change-service owned, never model input | yes | Lekalo |
 | `lekalo/modules/<module>/**` | canonical semantic model | yes | Lekalo |
 | `lekalo/targets/<target-id>.yaml` | canonical target configuration | yes | Lekalo |

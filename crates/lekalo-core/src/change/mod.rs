@@ -19,6 +19,7 @@ pub mod edit;
 mod history_schema;
 mod module_move;
 mod operation_error;
+mod ownership;
 pub mod plan;
 mod planning;
 pub mod policy;
@@ -264,6 +265,8 @@ pub(crate) fn verify_record_postcondition(
         })?;
         let current = match if outcome.path == binding::INDEX_PATH {
             binding::read_index(&fs)
+        } else if outcome.path == crate::managed::source::PROJECT_PATH {
+            fs.read_file_opt("lekalo", "ownership.json", crate::managed::wire::MAX_BYTES)
         } else if outcome.path == crate::error_contract::source::PROJECT_PATH {
             fs.read_file_opt(
                 "lekalo",
@@ -386,6 +389,19 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     let root = resolve_root(options.project)?;
     refuse_while_recovery_pending(&root)?;
     let load = crate::loader::load_validated_root(root.clone()).map_err(ChangeError::LoadFailed)?;
+    if request
+        .operations
+        .iter()
+        .any(|operation| matches!(operation, Operation::OwnershipSet { .. }))
+    {
+        if request.operations.len() != 1 {
+            return Err(ChangeError::UnsupportedMember {
+                operation: "ownership:set".to_owned(),
+                member: "ownership-batch",
+            });
+        }
+        return ownership::prepare(&load, &request, options);
+    }
     if request
         .operations
         .iter()
@@ -816,6 +832,16 @@ pub(crate) fn apply_with_validation(
                 None => absent_digest(),
                 Some(bytes) => format!("sha256:{}", crate::digest::sha256_hex(&bytes)),
             }
+        } else if prepared
+            .ownership
+            .as_ref()
+            .is_some_and(|ownership| ownership.is_input(&pin.path))
+        {
+            prepared
+                .ownership
+                .as_ref()
+                .ok_or(ChangeError::WriteBoundaryDenied)?
+                .input_digest(&root, &pin.path)?
         } else if pin.path == crate::error_contract::source::PROJECT_PATH {
             operation_error::input_pin(operation_error::read_source(&root)?.as_deref()).digest
         } else if prepared
@@ -896,6 +922,10 @@ pub(crate) fn apply_with_validation(
                 pin.path != version::HISTORY_LOGICAL_PATH
                     && pin.path != crate::error_contract::source::PROJECT_PATH
                     && !prepared
+                        .ownership
+                        .as_ref()
+                        .is_some_and(|ownership| ownership.is_input(&pin.path))
+                    && !prepared
                         .symbol_move
                         .as_ref()
                         .is_some_and(|guards| guards.is_input(&pin.path))
@@ -912,6 +942,9 @@ pub(crate) fn apply_with_validation(
                 subject: "input-inventory".to_owned(),
                 detail: "inventory-changed",
             });
+        }
+        if let Some(ownership) = &prepared.ownership {
+            ownership.validate_before(&reloaded)?;
         }
     }
 
@@ -1182,6 +1215,10 @@ pub(crate) fn apply_with_validation(
                 pin.path != version::HISTORY_LOGICAL_PATH
                     && pin.path != crate::error_contract::source::PROJECT_PATH
                     && !prepared
+                        .ownership
+                        .as_ref()
+                        .is_some_and(|ownership| ownership.is_input(&pin.path))
+                    && !prepared
                         .symbol_move
                         .as_ref()
                         .is_some_and(|guards| guards.is_input(&pin.path))
@@ -1194,6 +1231,9 @@ pub(crate) fn apply_with_validation(
             .collect();
         for (path, bytes) in &prepared.edits {
             if path == crate::error_contract::source::PROJECT_PATH {
+                continue;
+            }
+            if path == crate::managed::source::PROJECT_PATH && prepared.ownership.is_some() {
                 continue;
             }
             if path == binding::INDEX_PATH && prepared.binding.is_some() {
@@ -1230,6 +1270,9 @@ pub(crate) fn apply_with_validation(
         crate::validator::validate(&compiled, profile)
             .map_err(|set| ChangeError::LoadFailed(DomainResult::invalid(set)))?;
         operation_error::validate_after(prepared, &compiled.project)?;
+        if let Some(ownership) = &prepared.ownership {
+            ownership.validate_after(&load)?;
+        }
         if let Some(guards) = &prepared.symbol_move {
             guards.revalidate(&root)?;
         }
@@ -1241,6 +1284,7 @@ pub(crate) fn apply_with_validation(
     if post_validation.is_err() {
         if let Err(error) = transaction.rollback() {
             if prepared.module_move.is_some()
+                || prepared.ownership.is_some()
                 || prepared.binding.is_some()
                 || prepared
                     .edits
@@ -1849,6 +1893,7 @@ fn resolve_operation(
         }
         Operation::Lowered { .. }
         | Operation::ModuleMove { .. }
+        | Operation::OwnershipSet { .. }
         | Operation::SymbolMove { .. }
         | Operation::BindingConfirm { .. }
         | Operation::OperationErrorSet { .. } => {
@@ -2152,6 +2197,7 @@ fn apply_tree_edit(
     let subject = match operation {
         Operation::Lowered { .. }
         | Operation::ModuleMove { .. }
+        | Operation::OwnershipSet { .. }
         | Operation::SymbolMove { .. }
         | Operation::BindingConfirm { .. }
         | Operation::OperationErrorSet { .. } => {
@@ -2254,6 +2300,7 @@ fn apply_tree_edit(
         }
         Operation::Lowered { .. }
         | Operation::ModuleMove { .. }
+        | Operation::OwnershipSet { .. }
         | Operation::SymbolMove { .. }
         | Operation::BindingConfirm { .. }
         | Operation::OperationErrorSet { .. } => {
@@ -3000,6 +3047,7 @@ fn plan_source_edits(
         }
         Operation::Lowered { .. }
         | Operation::ModuleMove { .. }
+        | Operation::OwnershipSet { .. }
         | Operation::SymbolMove { .. }
         | Operation::BindingConfirm { .. }
         | Operation::OperationErrorSet { .. } => {

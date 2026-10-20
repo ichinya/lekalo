@@ -150,10 +150,6 @@ pub fn live_lock_digest(root: &std::path::Path) -> Option<String> {
 /// Model digest describes one read while its sources and IR describe
 /// another. There is deliberately no second `loader::run` call.
 pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, DomainResult> {
-    let root = match loader::root_for_selection(selection) {
-        Ok(root) => root,
-        Err(error) => return Err(classify(error)),
-    };
     // One read: the snapshot carries the exact source documents, the
     // normalized Model, and (through [`loader::model_envelope_payload`])
     // the exact payload bytes the load envelope renders — the same digest
@@ -163,8 +159,18 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
         Ok(loaded) => loaded,
         Err(error) => return Err(classify(error)),
     };
+    derive_loaded(&loaded, module)
+}
+
+/// Reuse an already admitted snapshot, including a live Change transaction's
+/// reader capability. No second Model load or cwd-based selection occurs.
+pub(crate) fn derive_loaded(
+    loaded: &crate::loader::ProjectLoad,
+    module: &str,
+) -> Result<Authority, DomainResult> {
+    let root = &loaded.root;
     let model_json = loader::model_envelope_payload(&loaded.model);
-    let model = loaded.model;
+    let model = &loaded.model;
     let sources = loaded
         .documents
         .iter()
@@ -175,7 +181,7 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
             )
         })
         .collect::<Vec<_>>();
-    let compilation = match crate::ir::compile(&model) {
+    let compilation = match crate::ir::compile(model) {
         Ok(compilation) => compilation,
         Err(failure) => return Err(classify(failure.into_result())),
     };
@@ -184,11 +190,7 @@ pub fn derive(selection: &LoadSelection, module: &str) -> Result<Authority, Doma
     // accepted contract families the pipeline compiled under, and its own
     // exact bytes ride the authority digest, so any lock mutation moves
     // the generation identity.
-    let _lock_bytes = match std::fs::read(root.join("lekalo.lock")) {
-        Ok(bytes) => bytes,
-        Err(_) => return Err(stale("lekalo.lock", "missing")),
-    };
-    let lock = match LockService::read_state_at(&root) {
+    let lock = match LockService::read_state_at(root) {
         Ok(LockState::Present(lock)) => lock,
         Ok(LockState::Absent) => return Err(stale("lekalo.lock", "missing")),
         Err(_) => return Err(stale("lekalo.lock", "unreadable")),

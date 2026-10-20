@@ -29,9 +29,27 @@ pub struct ChangeRequest {
     pub operations: Vec<Operation>,
 }
 
+/// One exact managed-coverage source used to admit a module transition.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnershipCoverage {
+    /// The exact target assignment in the existing ownership policy.
+    pub target: String,
+    /// A bounded project-relative evidence coordinate (never a write path).
+    pub path: String,
+    /// Digest of the exact coverage source bytes.
+    pub digest: String,
+}
+
 /// One typed operation of the implemented vertical.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operation {
+    /// Change one module's declared mode in the existing managed policy.
+    OwnershipSet {
+        subject: String,
+        mode: crate::managed::Mode,
+        ownership_digest: String,
+        coverage: Vec<OwnershipCoverage>,
+    },
     /// Replace one command/query error union in the exact project registry.
     OperationErrorSet {
         target: String,
@@ -132,6 +150,7 @@ impl Operation {
     /// The catalog discriminator of this operation.
     pub fn operation(&self) -> &str {
         match self {
+            Self::OwnershipSet { .. } => "ownership:set",
             Self::OperationErrorSet { .. } => "operation-error:set",
             Self::BindingConfirm { .. } => "binding:add",
             Self::ModuleMove { .. } => "module:move",
@@ -158,6 +177,7 @@ impl Operation {
     /// The natural subject token of this operation, when one is declared.
     pub fn subject(&self) -> Option<&str> {
         match self {
+            Self::OwnershipSet { subject, .. } => Some(subject),
             Self::OperationErrorSet { target, .. } => Some(target),
             Self::BindingConfirm { symbol, .. } => Some(symbol),
             Self::ModuleMove { module, .. } => Some(module),
@@ -190,6 +210,19 @@ impl Operation {
             Json::String(self.operation().to_owned()),
         );
         match self {
+            Self::OwnershipSet {
+                subject,
+                mode,
+                ownership_digest,
+                coverage,
+            } => {
+                map.insert("subject".to_owned(), Json::String(subject.clone()));
+                map.insert("mode".to_owned(), serde_json::json!(mode));
+                map.insert("evidence".to_owned(), serde_json::json!({
+                    "ownershipDigest": ownership_digest,
+                    "coverage": coverage.iter().map(|pin| serde_json::json!({"target":pin.target,"path":pin.path,"digest":pin.digest})).collect::<Vec<_>>()
+                }));
+            }
             Self::OperationErrorSet {
                 target,
                 errors,
@@ -764,6 +797,91 @@ fn decode_operation(catalog: &Catalog, value: &Json) -> Result<Operation, &'stat
         });
     }
     match discriminator {
+        "ownership:set" => {
+            require_members(
+                map,
+                &["operation", "subject", "mode", "evidence"],
+                &["operation", "subject", "mode", "evidence"],
+            )?;
+            let subject = member_string(map, "subject")?;
+            if !super::field_name_valid(&subject) && !super::symbol_id_valid(&subject) {
+                return Err("subject-grammar");
+            }
+            let mode = serde_json::from_value::<crate::managed::Mode>(
+                map.get("mode").cloned().ok_or("missing-member")?,
+            )
+            .map_err(|_| "mode-grammar")?;
+            let evidence = map
+                .get("evidence")
+                .and_then(Json::as_object)
+                .ok_or("evidence-not-object")?;
+            require_members(
+                evidence,
+                &["ownershipDigest", "coverage"],
+                &["ownershipDigest"],
+            )?;
+            let ownership_digest = member_string(evidence, "ownershipDigest")?;
+            if super::expect_digest(&ownership_digest).is_none() {
+                return Err("digest-grammar");
+            }
+            let mut coverage = Vec::new();
+            if let Some(value) = evidence.get("coverage") {
+                let rows = value.as_array().ok_or("coverage-not-array")?;
+                if rows.len() > 8 {
+                    return Err("coverage-over-bound");
+                }
+                for row in rows {
+                    let row = row.as_object().ok_or("coverage-not-object")?;
+                    require_members(
+                        row,
+                        &["target", "path", "digest"],
+                        &["target", "path", "digest"],
+                    )?;
+                    let target = row
+                        .get("target")
+                        .and_then(Json::as_str)
+                        .filter(|target| {
+                            target.len() <= 256
+                                && crate::managed::token(target)
+                                && crate::managed::credential_free(target)
+                        })
+                        .ok_or("target-grammar")?
+                        .to_owned();
+                    let path = row
+                        .get("path")
+                        .and_then(Json::as_str)
+                        .filter(|path| {
+                            path.len() <= 256
+                                && crate::managed::rel_path(path)
+                                && crate::managed::credential_free(path)
+                        })
+                        .ok_or("path-grammar")?
+                        .to_owned();
+                    let digest = member_string(row, "digest")?;
+                    if super::expect_digest(&digest).is_none() {
+                        return Err("digest-grammar");
+                    }
+                    coverage.push(OwnershipCoverage {
+                        target,
+                        path,
+                        digest,
+                    });
+                }
+            }
+            coverage.sort_by(|left, right| left.target.as_bytes().cmp(right.target.as_bytes()));
+            if coverage
+                .windows(2)
+                .any(|pair| pair[0].target == pair[1].target)
+            {
+                return Err("coverage-duplicate");
+            }
+            Ok(Operation::OwnershipSet {
+                subject,
+                mode,
+                ownership_digest,
+                coverage,
+            })
+        }
         "symbol:move" => {
             require_members(
                 map,
@@ -1742,15 +1860,21 @@ mod tests {
     }
 
     #[test]
-    fn cataloged_unsupported_operation_decodes_and_carries_subject() {
+    fn ownership_operation_decodes_and_carries_its_exact_subject() {
         let text = request(
-            "{\"operation\":\"ownership:set\",\"subject\":\"tasks.task\",\"mode\":\"observed\",\"evidence\":{\"proof\":\"unavailable\"}}",
+            "{\"operation\":\"ownership:set\",\"subject\":\"tasks.task\",\"mode\":\"observed\",\"evidence\":{\"ownershipDigest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\"}}",
         );
         let req = decode_ok(&text);
         match &req.operations[0] {
-            Operation::Unsupported { operation, subject } => {
-                assert_eq!(operation, "ownership:set");
-                assert_eq!(subject.as_deref(), Some("tasks.task"));
+            Operation::OwnershipSet {
+                subject,
+                mode,
+                coverage,
+                ..
+            } => {
+                assert_eq!(subject, "tasks.task");
+                assert_eq!(*mode, crate::managed::Mode::Observed);
+                assert!(coverage.is_empty());
             }
             other => panic!("unexpected operation: {other:?}"),
         }
@@ -1901,12 +2025,12 @@ mod tests {
         // A schema-valid unsupported payload still decodes and is refused
         // later with the registered unsupported outcome.
         let ok = request(
-            "{\"operation\":\"ownership:set\",\"subject\":\"tasks.task\",\"mode\":\"observed\",\"evidence\":{\"proof\":\"unavailable\"}}",
+            "{\"operation\":\"ownership:set\",\"subject\":\"tasks.task\",\"mode\":\"observed\",\"evidence\":{\"ownershipDigest\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\"}}",
         );
         let decoded = decode_ok(&ok);
         match &decoded.operations[0] {
-            Operation::Unsupported { operation, .. } => {
-                assert_eq!(operation, "ownership:set");
+            Operation::OwnershipSet { subject, .. } => {
+                assert_eq!(subject, "tasks.task");
             }
             other => panic!("unexpected operation: {other:?}"),
         }

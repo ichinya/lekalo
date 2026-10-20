@@ -41,7 +41,7 @@ unsupported 4); the implemented increments are `entity-field:add`,
 `command-effect:remove`, `operation-input:set`, and
 `operation-output:set`, `query-effect:add`, `query-effect:remove`,
 `requirement:link`, `requirement:unlink`, `migration:apply`, `module:move`,
-`binding:add`, `operation-error:set`, and `symbol:move` — every implemented verb has first-class CLI
+`binding:add`, `operation-error:set`, `symbol:move`, and `ownership:set` — every implemented verb has first-class CLI
 sugar that lowers to the same closed request DTO a request file
 carries, so sugar and JSON requests are byte-identical at the core.
 The remaining cataloged operations are explicit staged refusals
@@ -57,18 +57,10 @@ silently dropped from a committed declaration.
 
 ### Deferral matrix (P1 coverage scope)
 
-Nineteen of the twenty cataloged operations have sealed executors.
-The remaining operation is required before issue #73 is complete. It currently
-decodes and refuses `change.operation-unsupported` (exit 4); it needs its
-contract, sealed executor, and runtime gates:
-
-| Deferred operation | Follow-up increment |
-|---|---|
-| `ownership:set` | adoption-prerequisite ownership transition vertical (research I5) |
-
-Until an increment lands, the deferred verbs are reachable only as
-JSON request documents through `change request --request <file>`, and
-they refuse with `change.operation-unsupported` before any mutation.
+All twenty cataloged operations have sealed executors. This is family
+coverage, not completion of issue #73: the representation and relocation
+limitations below still need their owner-compatible implementations and
+runtime gates. An unsupported member or source layout refuses before writing.
 The catalog status pins stay honest either way: an operation is
 `implemented` in `contracts/change-catalog.v0.8.0.json` exactly when a
 sealed executor exists.
@@ -98,11 +90,40 @@ preview invalidates the plan. Ambiguous source/comment boundaries refuse
 instead of reformatting or discarding trivia. Native implementation is never
 moved or edited automatically.
 
-The fixed file guards cover `lekalo/authorization.yaml`, `transport.yaml`,
+The fixed file guards cover `lekalo/ownership.json`, `authorization.yaml`, `transport.yaml`,
 `test-port.json`, `classification.json`, `classification-policy.json` and
 `query-model.yaml` under `lekalo/`, the root `module-api.json`, and
 `.lekalo/import/observed/index.json`. They prevent the Model-only executor
 from silently leaving those owners' semantic references stale.
+
+`ownership:set --module MODULE --mode MODE --evidence-json JSON` updates
+one assignment in the existing managed ownership format at the fixed
+`lekalo/ownership.json` home. The source must already exist; absence never
+installs a seed. The existing owner's `project` remains its receipt
+namespace. Change binds the physical/semantic project through its admitted
+Model snapshot and project-bound history. The selected module must exist
+in Model; unselected legacy policy assignments need no whole-project migration.
+The owner's assignment unit is a module. A symbol subject refuses explicitly
+instead of widening the requested change to its entire module.
+
+The closed evidence object has `ownershipDigest` (the raw policy-byte SHA256)
+and optional `coverage` (at most eight `{target,path,digest}` rows). Coverage
+coordinates are bounded, project-relative, read-only evidence paths. A managed
+transition requires exact coverage for every target of the selected assignment:
+the owner's capability/extension admission, live Model/IR/lock authority,
+complete obligation ledger, locked recipe/profile/implementation provenance,
+adapter-entry bytes and callable extension bindings must all qualify. Their
+source bytes become sealed input pins and are rechecked under the writer lock
+and before commit using the same loaded Model snapshot.
+
+Every non-noop policy transition is source-breaking and requires the reviewed
+policy or `--allow-breaking`. The transaction changes exactly the selected
+JSON `mode` scalar, preserving other bytes, and records semantic/file diffs,
+module impact, the generation projection, history and custody. Repeating the
+same key replays; an unchanged mode is a byte-identical no-op. Native code and
+existing artifact custody are unaffected: generating or relinquishing native
+implementations remains a separately reviewed managed operation. The declared
+policy is not an adoption-coverage or executed-native-test receipt.
 
 `operation-error:set --operation ID --definition-json JSON` changes one
 command/query error union in an existing `lekalo/error-registry.json`:

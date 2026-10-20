@@ -957,6 +957,8 @@ fn read_target_bytes(root: &Path, logical: &str) -> std::io::Result<Vec<u8>> {
         fs.read_file_opt(".lekalo", "change-history-pin.json", 1024)
     } else if logical == super::binding::INDEX_PATH {
         super::binding::read_index(&fs)
+    } else if logical == crate::managed::source::PROJECT_PATH {
+        fs.read_file_opt("lekalo", "ownership.json", crate::managed::wire::MAX_BYTES)
     } else if logical == crate::error_contract::source::PROJECT_PATH {
         fs.read_file_opt(
             "lekalo",
@@ -1270,6 +1272,7 @@ fn validate_journal_targets(root: &Path, journal: &Journal) -> Result<(), Change
             || file.path == super::custody::LOGICAL_PATH
             || (file.path == super::binding::INDEX_PATH && !file.creation)
             || (file.path == crate::error_contract::source::PROJECT_PATH && !file.creation)
+            || (file.path == crate::managed::source::PROJECT_PATH && !file.creation)
             || file.path == "lekalo/project.yaml"
             || admitted_module_home(&file.path, &modules)
         {

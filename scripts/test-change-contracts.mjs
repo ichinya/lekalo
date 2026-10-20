@@ -152,6 +152,7 @@ const expectedImplemented = [
   "operation-error:set",
   "operation-input:set",
   "operation-output:set",
+  "ownership:set",
   "query-effect:add",
   "query-effect:remove",
   "requirement:link",

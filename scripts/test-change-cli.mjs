@@ -437,7 +437,7 @@ const unsupportedRequest = writeJson("gate-unsupported.json", {
       operation: "ownership:set",
       subject: "tasks.task",
       mode: "observed",
-      evidence: { proof: "unavailable" },
+      evidence: { ownershipDigest: `sha256:${"0".repeat(64)}` },
     },
   ],
 });

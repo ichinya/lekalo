@@ -14,10 +14,10 @@ increment; its limitations remain part of #73 until implemented and tested.
 |---|---|---|
 | [#19](https://github.com/ichinya/lekalo/issues/19) portability | `scripts/test-portability-contracts.mjs`, core/CLI portability tests | Requalify exact final revision and check every blocker/partial/unknown criterion against the planner fixtures. |
 | [#33](https://github.com/ichinya/lekalo/issues/33) MCP | stdio, scopes, subscriptions and host SDK gates; `docs/mcp.md` | Requalify final revision. An official SDK host smoke is distinct from installing or running a user's actual AI Factory extension. |
-| [#41](https://github.com/ichinya/lekalo/issues/41) managed | `scripts/test-managed-contracts.mjs`, `test-managed-cli.mjs`, `test-managed-planner-e2e.mjs` | Final deterministic regeneration, manifest, drift, custom binding and capability-gap acceptance. |
+| [#41](https://github.com/ichinya/lekalo/issues/41) managed | `scripts/test-managed-contracts.mjs`, `test-managed-cli.mjs`, `test-managed-planner-e2e.mjs` | The legacy renderer fixture's query reads a command and fails shared Model validation. Correct the fixture, qualify the managed authority against that validation, and recheck the deterministic/native evidence oracles before acceptance. |
 | [#51](https://github.com/ichinya/lekalo/issues/51) Worklog / Changelog | contract, admission, pilot and consumer gates | Final native/evidence qualification, keeping unsupported publication semantics distinct from executed success. |
 | [#52](https://github.com/ichinya/lekalo/issues/52) TaskExternalLink | relation/uniqueness Model successor, task-link contracts and impact/portability gates | Final public/synthetic provider evidence and exact consumer impact qualification. |
-| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions and symbol relocation gates | Ownership transition; completion of relocation/attachment cases; field defaults, enum wire values, query inputs, command results and pure emissions with owner-compatible Model/IR successors. Catalog coverage alone cannot close this issue. |
+| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions, symbol relocation and module-ownership gates | Completion of relocation/attachment cases; field defaults, enum wire values, query inputs, command results and pure emissions with owner-compatible Model/IR successors. Module policy transitions use the existing managed owner's granularity; per-symbol changes do not silently widen to a module. Catalog coverage alone cannot close this issue. |
 | [#74](https://github.com/ichinya/lekalo/issues/74) safe fixes | Fix contracts/CLI and rollback tests | Requalify final Change catalog identity, stale/conflicting plans, replay and rollback. |
 | [#93](https://github.com/ichinya/lekalo/issues/93) semantic search | search contracts/CLI and `scripts/bench-search.mjs` | Final result/ambiguity/offline gates and representative benchmark evidence; separate retrieval metrics from agent answer quality. |
 | [#94](https://github.com/ichinya/lekalo/issues/94) formatter | format contracts, CLI, atomicity and portability gates | Final semantic invariance/trivia checks and Linux/Windows/macOS evidence. |
@@ -29,6 +29,15 @@ increment; its limitations remain part of #73 until implemented and tested.
 
 ## Verified local corrections
 
+- Module ownership: the scoped workspace run passed **1,611 tests**
+  (CLI library 9, core library 1,506, Change integration 96), with zero
+  failures and two ignored tests. It includes rollback and retained-foreign-edit
+  custody cases. The live CLI/schema gate passed **18 calls**, two policy
+  commits and a no-op, preserving native bytes and unselected legacy rows.
+  Managed evidence uses a valid local Model fixture with recomputed owner
+  pins; the shared legacy renderer fixture issue in #41 remains explicit.
+  Workspace/all-target Clippy, formatter checks, the 101-step transaction
+  gate, Change/Fix regressions and the live 554-surface docs inventory passed.
 - The symbol-relocation increment has **92 passing Change integration
   tests**, including all twelve symbol kinds, YAML/JSON rename history,
   CRLF without an EOF newline, dependency-cycle refusals, attachment

@@ -565,7 +565,14 @@
               "const": "ownership:set"
             },
             "subject": {
-              "$ref": "#/$defs/symbolId"
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/moduleId"
+                },
+                {
+                  "$ref": "#/$defs/symbolId"
+                }
+              ]
             },
             "mode": {
               "enum": [
@@ -575,7 +582,7 @@
               ]
             },
             "evidence": {
-              "$ref": "#/$defs/closedPayload"
+              "$ref": "#/$defs/ownershipEvidence"
             }
           }
         },
@@ -815,6 +822,64 @@
       "type": "string",
       "maxLength": 190,
       "pattern": "^[a-z][a-z0-9_]{0,62}\\.[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+    },
+    "ownershipEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ownershipDigest"
+      ],
+      "properties": {
+        "ownershipDigest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "coverage": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "target",
+              "path",
+              "digest"
+            ],
+            "properties": {
+              "target": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9_.:/@-]+$",
+                "not": {
+                  "pattern": "[gG][hH][pPoOuUsSrR]_[A-Za-z0-9_]{20,}"
+                }
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
+                "allOf": [
+                  {
+                    "not": {
+                      "pattern": "\\.\\."
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "[gG][hH][pPoOuUsSrR]_[A-Za-z0-9_]{20,}"
+                    }
+                  }
+                ]
+              },
+              "digest": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

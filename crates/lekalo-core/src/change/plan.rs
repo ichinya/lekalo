@@ -168,6 +168,7 @@ pub struct GenerationProjection {
 /// The sealed prepared change: every field is pinned and deterministic.
 #[derive(Clone, Debug)]
 pub struct PreparedChange {
+    pub(crate) ownership: Option<super::ownership::SealedOwnership>,
     pub(crate) symbol_move: Option<super::symbol_move::Guards>,
     pub(crate) binding: Option<super::binding::SealedConfirmation>,
     pub(crate) module_move: Option<super::module_move::ModuleMove>,

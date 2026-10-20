@@ -86,6 +86,220 @@ fn add_priority_request() -> Vec<u8> {
     add_field_request("priority")
 }
 
+fn ownership_source(sandbox: &Sandbox, module: &str, mode: &str) -> Vec<u8> {
+    let mut policy: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/managed/planner/ownership.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    policy["modules"][0]["module"] = serde_json::json!(module);
+    policy["modules"][0]["mode"] = serde_json::json!(mode);
+    let bytes = serde_json::to_vec_pretty(&policy).unwrap();
+    std::fs::write(
+        sandbox
+            .root
+            .join(lekalo_core::managed::source::PROJECT_PATH),
+        &bytes,
+    )
+    .unwrap();
+    bytes
+}
+
+fn ownership_request(
+    module: &str,
+    mode: &str,
+    source: &[u8],
+    coverage: Option<(&str, &[u8])>,
+) -> Vec<u8> {
+    let mut evidence = serde_json::json!({"ownershipDigest":lekalo_core::managed::digest(source)});
+    if let Some((path, bytes)) = coverage {
+        evidence["coverage"] = serde_json::json!([{"target":"node-typescript","path":path,"digest":lekalo_core::managed::digest(bytes)}]);
+    }
+    serde_json::to_vec(&serde_json::json!({"schemaVersion":"lekalo/change-request/v0.8.0","operations":[{"operation":"ownership:set","subject":module,"mode":mode,"evidence":evidence}]})).unwrap()
+}
+
+fn ownership_managed_sandbox(tag: &str) -> Sandbox {
+    let sandbox = Sandbox::from_fixture(tag, "tests/fixtures/managed/planner");
+    // The legacy managed-renderer fixture uses a command as a query read.
+    // Change validates the whole Model: use the actual entity and recompute
+    // the owner's authority, without bypassing shared semantic validation.
+    let path = sandbox.root.join("lekalo/modules/planner/queries.yaml");
+    let source = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("      - planner.complete_task", "      - planner.task");
+    std::fs::write(path, source).unwrap();
+    let authority =
+        lekalo_core::managed::authority::derive(&sandbox.selection(), "planner").unwrap();
+    let path = sandbox.root.join("coverage.json");
+    let mut coverage: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    coverage["authority"] = serde_json::json!({"state":"known","value":{"model":authority.model_digest,"ir":authority.ir_digest,"lock":authority.lock_digest}});
+    std::fs::write(path, serde_json::to_vec_pretty(&coverage).unwrap()).unwrap();
+    sandbox
+}
+
+#[test]
+fn ownership_changes_one_policy_scalar_and_preserves_unselected_legacy_assignments() {
+    let sandbox = Sandbox::new("ownership-selective");
+    let source = ownership_source(&sandbox, "tasks", "observed");
+    let mut policy: serde_json::Value = serde_json::from_slice(&source).unwrap();
+    let mut legacy = policy["modules"][0].clone();
+    legacy["module"] = serde_json::json!("legacy");
+    legacy["targets"][0]["generatedRoot"] = serde_json::json!("apps/legacy/gen");
+    policy["modules"].as_array_mut().unwrap().insert(0, legacy);
+    let before = serde_json::to_string_pretty(&policy).unwrap();
+    let path = sandbox
+        .root
+        .join(lekalo_core::managed::source::PROJECT_PATH);
+    std::fs::write(&path, &before).unwrap();
+    let request = ownership_request("tasks", "contracted", before.as_bytes(), None);
+    assert!(matches!(
+        prepare(&sandbox, &request),
+        Err(ChangeError::CompatibilityDenied { .. })
+    ));
+    let plan = prepare_breaking(&sandbox, &request).unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), before.as_bytes());
+    assert!(!sandbox.root.join(".lekalo").exists());
+    let wire: serde_json::Value = serde_json::from_str(&plan.to_json_string().unwrap()).unwrap();
+    assert_eq!(
+        wire["semanticDiff"]["changes"][0]["kind"],
+        "ownership.mode-changed"
+    );
+    assert_eq!(wire["impact"]["seeds"][0]["id"], "tasks");
+    assert_eq!(wire["fileEdits"].as_array().unwrap().len(), 1);
+    let entities = sandbox.entities_bytes();
+    apply_symbol_plan(&plan, "ownership-selective").unwrap();
+    let mut expected = before.clone();
+    let position = expected.rfind("\"observed\"").unwrap();
+    expected.replace_range(position..position + "\"observed\"".len(), "\"contracted\"");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), expected);
+    assert_eq!(sandbox.entities_bytes(), entities);
+    assert_eq!(
+        replay_symbol(&sandbox, &request, "ownership-selective", &plan.plan_id())
+            .unwrap()
+            .state(),
+        ReceiptState::Replayed
+    );
+    let no_op = ownership_request("tasks", "contracted", expected.as_bytes(), None);
+    let no_op = prepare(&sandbox, &no_op).unwrap();
+    assert!(no_op.is_no_op());
+    assert_eq!(
+        apply_symbol_plan(&no_op, "ownership-noop").unwrap().state(),
+        ReceiptState::NoOp
+    );
+}
+
+#[test]
+fn ownership_managed_transition_reuses_live_model_lock_capability_and_extension_admission() {
+    let sandbox = ownership_managed_sandbox("ownership-managed");
+    let source = ownership_source(&sandbox, "planner", "observed");
+    let coverage = std::fs::read(sandbox.root.join("coverage.json")).unwrap();
+    let request = ownership_request(
+        "planner",
+        "managed",
+        &source,
+        Some(("coverage.json", &coverage)),
+    );
+    let plan = prepare_breaking(&sandbox, &request).unwrap();
+    let adapter = std::fs::read(sandbox.root.join("adapters/managed.mjs")).unwrap();
+    apply_symbol_plan(&plan, "ownership-managed").unwrap();
+    assert_eq!(
+        std::fs::read(sandbox.root.join("adapters/managed.mjs")).unwrap(),
+        adapter
+    );
+    assert!(
+        !sandbox.root.join("apps").exists(),
+        "a policy transition never generates native implementations"
+    );
+    let source = std::fs::read(
+        sandbox
+            .root
+            .join(lekalo_core::managed::source::PROJECT_PATH),
+    )
+    .unwrap();
+    assert_eq!(
+        lekalo_core::managed::parse_ownership(&source)
+            .unwrap()
+            .modules[0]
+            .mode,
+        lekalo_core::managed::Mode::Managed
+    );
+    assert_eq!(
+        replay_symbol(&sandbox, &request, "ownership-managed", &plan.plan_id())
+            .unwrap()
+            .state(),
+        ReceiptState::Replayed
+    );
+}
+
+#[test]
+fn ownership_stale_source_and_coverage_refuse_before_a_mode_write() {
+    let sandbox = ownership_managed_sandbox("ownership-stale");
+    let source = ownership_source(&sandbox, "planner", "observed");
+    let coverage = std::fs::read(sandbox.root.join("coverage.json")).unwrap();
+    let request = ownership_request(
+        "planner",
+        "managed",
+        &source,
+        Some(("coverage.json", &coverage)),
+    );
+    let plan = prepare_breaking(&sandbox, &request).unwrap();
+    let mut drift = coverage;
+    drift.push(b'\n');
+    std::fs::write(sandbox.root.join("coverage.json"), drift).unwrap();
+    assert!(matches!(
+        apply_symbol_plan(&plan, "ownership-stale"),
+        Err(ChangeError::PreconditionFailed { .. })
+    ));
+    assert_eq!(
+        std::fs::read(
+            sandbox
+                .root
+                .join(lekalo_core::managed::source::PROJECT_PATH)
+        )
+        .unwrap(),
+        source
+    );
+    assert!(!sandbox.history_path().exists());
+}
+
+#[test]
+fn ownership_managed_gaps_and_missing_sources_never_install_or_promote_a_policy() {
+    let sandbox = ownership_managed_sandbox("ownership-gap");
+    let source = ownership_source(&sandbox, "planner", "observed");
+    let no_coverage = ownership_request("planner", "managed", &source, None);
+    assert!(prepare_breaking(&sandbox, &no_coverage).is_err());
+    let mut coverage: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(sandbox.root.join("coverage.json")).unwrap())
+            .unwrap();
+    coverage["complete"] = serde_json::json!(false);
+    let coverage = serde_json::to_vec(&coverage).unwrap();
+    std::fs::write(sandbox.root.join("coverage.json"), &coverage).unwrap();
+    let request = ownership_request(
+        "planner",
+        "managed",
+        &source,
+        Some(("coverage.json", &coverage)),
+    );
+    assert!(prepare_breaking(&sandbox, &request).is_err());
+    let path = sandbox
+        .root
+        .join(lekalo_core::managed::source::PROJECT_PATH);
+    assert_eq!(std::fs::read(&path).unwrap(), source);
+    std::fs::remove_file(&path).unwrap();
+    assert!(matches!(
+        prepare_breaking(&sandbox, &request),
+        Err(ChangeError::PreconditionFailed {
+            detail: "project-policy-missing",
+            ..
+        })
+    ));
+    assert!(!path.exists());
+}
+
 fn symbol_move_request(symbol: &str, module: &str, name: Option<&str>) -> Vec<u8> {
     let mut operation =
         serde_json::json!({"operation":"symbol:move","symbol":symbol,"toModule":module});
@@ -1405,7 +1619,7 @@ fn wrong_expect_model_digest_refuses() {
 }
 
 #[test]
-fn unsupported_cataloged_operations_refuse_explicitly() {
+fn ownership_refuses_symbol_granularity_instead_of_changing_its_whole_module() {
     let sandbox = Sandbox::new("unsupported");
     let request = serde_json::to_vec(&serde_json::json!({
         "schemaVersion": "lekalo/change-request/v0.8.0",
@@ -1413,13 +1627,16 @@ fn unsupported_cataloged_operations_refuse_explicitly() {
             "operation": "ownership:set",
             "subject": "tasks.task",
             "mode": "observed",
-            "evidence": { "proof": "unavailable" }
+            "evidence": { "ownershipDigest": format!("sha256:{}", "0".repeat(64)) }
         }]
     }))
     .expect("serializes");
     let error = prepare(&sandbox, &request).expect_err("unsupported");
     match error {
-        ChangeError::OperationUnsupported { operation } => {
+        ChangeError::UnsupportedMember {
+            operation,
+            member: "symbol-ownership",
+        } => {
             assert_eq!(operation, "ownership:set");
         }
         other => panic!("expected operation-unsupported, got {other:?}"),

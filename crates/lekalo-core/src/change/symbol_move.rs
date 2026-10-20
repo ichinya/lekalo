@@ -9,6 +9,7 @@ use crate::loader::project_docs::DocKind;
 use crate::project_fs::{Fs, FsErrorKind};
 
 const FILE_GUARDS: &[&str] = &[
+    crate::managed::source::PROJECT_PATH,
     "lekalo/authorization.yaml",
     "lekalo/transport.yaml",
     "lekalo/test-port.json",

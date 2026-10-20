@@ -67,6 +67,9 @@ pub(crate) enum ChangeCommands {
     /// Move or rename a semantic symbol and rewrite its Model references.
     #[command(name = "symbol:move")]
     SymbolMove(SymbolMoveArgs),
+    /// Change one module's mode in the pinned managed ownership policy.
+    #[command(name = "ownership:set")]
+    OwnershipSet(OwnershipArgs),
     /// Add a canonical target binding or explicitly confirm an observed proposal.
     #[command(name = "binding:add")]
     BindingAdd(BindingArgs),
@@ -169,6 +172,20 @@ pub(crate) struct SymbolMoveArgs {
     to_module: String,
     #[arg(long, value_name = "NAME")]
     to_name: Option<String>,
+    #[command(flatten)]
+    execution: ExecutionArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct OwnershipArgs {
+    /// Canonical module ID; per-symbol ownership is not a module transition.
+    #[arg(long, value_name = "ID")]
+    module: String,
+    #[arg(long, value_parser = ["observed", "contracted", "managed"])]
+    mode: String,
+    /// ownershipDigest plus exact coverage sources for a managed transition.
+    #[arg(long, value_name = "JSON")]
+    evidence_json: String,
     #[command(flatten)]
     execution: ExecutionArgs,
 }
@@ -643,6 +660,10 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
         ChangeCommands::ModuleMove(args) => serde_json::json!({
             "operation":"module:move", "module":args.module, "directory":args.directory,
         }),
+        ChangeCommands::OwnershipSet(args) => serde_json::json!({
+            "operation":"ownership:set", "subject":args.module, "mode":args.mode,
+            "evidence":change::parse_strict_json_literal(&args.evidence_json)?,
+        }),
         ChangeCommands::SymbolMove(args) => {
             let mut operation = serde_json::json!({"operation":"symbol:move", "symbol":args.symbol, "toModule":args.to_module});
             if let Some(name) = &args.to_name {
@@ -683,6 +704,7 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
         }
         ChangeCommands::MigrationApply(args) => &args.execution,
         ChangeCommands::ModuleMove(args) => &args.execution,
+        ChangeCommands::OwnershipSet(args) => &args.execution,
         ChangeCommands::SymbolMove(args) => &args.execution,
         ChangeCommands::BindingAdd(args) => &args.execution,
         ChangeCommands::OperationErrorSet(args) => &args.execution,
@@ -868,6 +890,9 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
                         (&args.execution, args.execution.expect_plan.as_deref())
                     }
                     ChangeCommands::ModuleMove(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::OwnershipSet(args) => {
                         (&args.execution, args.execution.expect_plan.as_deref())
                     }
                     ChangeCommands::SymbolMove(args) => {

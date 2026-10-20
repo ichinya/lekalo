@@ -21,6 +21,7 @@ pub mod plan;
 pub mod receipts;
 pub mod recovery;
 pub mod rollback;
+pub mod source;
 #[cfg(test)]
 mod tests;
 pub mod wire;

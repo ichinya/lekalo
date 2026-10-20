@@ -119,7 +119,7 @@
     },
     {
       "operation": "ownership:set",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Change the adoption ownership mode of one subject",
       "mutationClass": "administrative",
       "requiredEvidence": [

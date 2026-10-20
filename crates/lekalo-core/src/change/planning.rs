@@ -300,6 +300,7 @@ pub(super) fn finish(
     }
 
     let prepared = PreparedChange {
+        ownership: None,
         symbol_move: None,
         binding: None,
         module_move: None,
