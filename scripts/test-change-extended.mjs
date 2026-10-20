@@ -59,10 +59,15 @@ try {
   const after = readFileSync(entities);
   run(["change", "migration:apply", "--step", "unknown.recipe", "--dry-run"], 4);
   assert(readFileSync(entities).equals(after));
+  // A preserved long source line exceeds only the patch-row bound; a
+  // physical move must retain it exactly and export an honest partial diff.
+  writeFileSync(entities, readFileSync(entities, "utf8") + "\n# " + "x".repeat(513) + "\n");
   const moduleBefore = readdirSync(join(stage, "lekalo/modules/tasks")).map(name => [name, readFileSync(join(stage, "lekalo/modules/tasks", name)).toString("hex")]);
   const move = ["change", "module:move", "--module", "tasks", "--directory", "task_sources"];
   const movePlan = run([...move, "--dry-run"]);
   assert.equal(movePlan.fileEdits.length, moduleBefore.length * 2);
+  assert.equal(movePlan.completeReason, "change.file-diff-limit");
+  assert(movePlan.fileDiff.filter(file => file.path.endsWith("/entities.yaml")).every(file => file.patch.length === 0));
   run([...move, "--apply", "--idempotency-key", "physical-move"]);
   assert.equal(existsSync(join(stage, "lekalo/modules/tasks")), false);
   assert.deepEqual(readdirSync(join(stage, "lekalo/modules/task_sources")).map(name => [name, readFileSync(join(stage, "lekalo/modules/task_sources", name)).toString("hex")]), moduleBefore);

@@ -34,6 +34,10 @@ struct Sandbox {
 
 impl Sandbox {
     fn new(tag: &str) -> Self {
+        Self::from_fixture(tag, FIXTURE)
+    }
+
+    fn from_fixture(tag: &str, fixture: &str) -> Self {
         let unique = NEXT.fetch_add(1, Ordering::SeqCst);
         let root = std::env::current_dir()
             .expect("cwd")
@@ -43,7 +47,7 @@ impl Sandbox {
         copy_dir(
             &Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../")
-                .join(FIXTURE),
+                .join(fixture),
             &root,
         );
         Self { root }
@@ -91,6 +95,135 @@ fn module_bytes(path: &Path) -> std::collections::BTreeMap<std::ffi::OsString, V
             (entry.file_name(), std::fs::read(entry.path()).unwrap())
         })
         .collect()
+}
+
+#[test]
+fn canonical_binding_add_creates_its_kind_home_and_replays_without_native_writes() {
+    let sandbox = Sandbox::new("canonical-binding");
+    std::fs::create_dir_all(sandbox.root.join("lekalo/targets")).unwrap();
+    std::fs::write(
+        sandbox.root.join("lekalo/targets/node-typescript.yaml"),
+        "target: node-typescript\n",
+    )
+    .unwrap();
+    let before = sandbox.entities_bytes();
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion":"lekalo/change-request/v0.8.0",
+        "operations":[{"operation":"binding:add","symbol":"tasks.binding_node","definition":{
+            "kind":"canonical-target-binding","target":"node-typescript","description":"Explicit target binding"
+        }}]
+    })).unwrap();
+    let plan = prepare(&sandbox, &request).unwrap();
+    assert_eq!(plan.file_edits().len(), 1);
+    assert!(!sandbox
+        .root
+        .join("lekalo/modules/tasks/bindings.yaml")
+        .exists());
+    let receipt = apply_request(&sandbox, &request, "canonical-binding", false).unwrap();
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    assert_eq!(receipt.operations[0].operation, "binding:add");
+    assert_eq!(receipt.operations[0].subject, "tasks.binding_node");
+    assert_eq!(sandbox.entities_bytes(), before);
+    let model = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+    assert!(lekalo_core::ir::compile(&model)
+        .unwrap()
+        .project
+        .to_canonical_json()
+        .contains("tasks.binding_node"));
+    assert_eq!(
+        apply_request(&sandbox, &request, "canonical-binding", false)
+            .unwrap()
+            .state(),
+        ReceiptState::Replayed
+    );
+}
+
+#[test]
+fn observed_binding_confirmation_seals_evidence_and_preserves_provenance() {
+    use lekalo_core::observed;
+    use sha2::{Digest, Sha256};
+    let sandbox = Sandbox::from_fixture("observed-binding", "tests/fixtures/bindings/app");
+    let ctx = observed::context(&sandbox.selection()).unwrap();
+    let mut scan: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/bindings/scans/app-ambiguous.scan.v1_1_0.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    for symbol in scan["symbols"].as_array_mut().unwrap() {
+        if let Some(path) = symbol["location"]["path"].as_str() {
+            if let Ok(bytes) = std::fs::read(sandbox.root.join(path)) {
+                symbol["fingerprint"] =
+                    serde_json::json!(format!("sha256:{:x}", Sha256::digest(&bytes)));
+            }
+        }
+        if let Some(candidates) = symbol["candidates"].as_array_mut() {
+            for candidate in candidates {
+                if let Some(path) = candidate["path"].as_str() {
+                    if let Ok(bytes) = std::fs::read(sandbox.root.join(path)) {
+                        candidate["fingerprint"] =
+                            serde_json::json!(format!("sha256:{:x}", Sha256::digest(&bytes)));
+                    }
+                }
+            }
+        }
+    }
+    observed::update_index(&ctx, &serde_json::to_vec(&scan).unwrap()).unwrap();
+    let original = observed::load_index(&ctx).unwrap().unwrap();
+    let original_record = original.symbol("taskboard.focus_task").unwrap();
+    let proposal = observed::bindings::propose(&ctx)
+        .unwrap()
+        .proposals
+        .into_iter()
+        .find(|p| p.symbol == "taskboard.focus_task")
+        .unwrap();
+    assert!(proposal.ambiguous);
+    let index_path = sandbox.root.join(".lekalo/import/observed/index.json");
+    let before = std::fs::read(&index_path).unwrap();
+    let native_path = sandbox.root.join("src/tasks.ts");
+    let native = std::fs::read(&native_path).unwrap();
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion":"lekalo/change-request/v0.8.0",
+        "operations":[{"operation":"binding:add","symbol":"taskboard.focus_task","definition":{
+            "kind":"observed-confirmation","proposal":proposal.proposal,
+            "candidate":"src/tasks.ts#focusTask","indexDigest":observed::index::index_digest(&original).unwrap()
+        }}]
+    })).unwrap();
+    let plan = prepare(&sandbox, &request).unwrap();
+    assert_eq!(std::fs::read(&index_path).unwrap(), before);
+    std::fs::write(&native_path, [native.as_slice(), b"// drift\n"].concat()).unwrap();
+    assert!(change::apply_prepared(
+        &plan,
+        &ApplyOptions {
+            idempotency_key: "observed-binding",
+            expect_plan: None,
+            allow_breaking: false
+        }
+    )
+    .is_err());
+    assert_eq!(std::fs::read(&index_path).unwrap(), before);
+    assert!(!sandbox.history_path().exists());
+    std::fs::write(&native_path, &native).unwrap();
+    assert_eq!(
+        apply_request(&sandbox, &request, "observed-binding", false)
+            .unwrap()
+            .state(),
+        ReceiptState::Committed
+    );
+    let confirmed = observed::load_index(&ctx).unwrap().unwrap();
+    let record = confirmed.symbol("taskboard.focus_task").unwrap();
+    assert_eq!(record.status, observed::types::BindingStatus::Confirmed);
+    assert_eq!(record.provenance, original_record.provenance);
+    assert_eq!(record.stable_key.as_deref(), Some("src/tasks.ts#focusTask"));
+    assert_eq!(std::fs::read(&native_path).unwrap(), native);
+    assert_eq!(
+        apply_request(&sandbox, &request, "observed-binding", false)
+            .unwrap()
+            .state(),
+        ReceiptState::Replayed
+    );
 }
 
 #[test]
@@ -257,8 +390,7 @@ fn requirement_links_use_the_model_id_grammar_and_survive_empty_list_roundtrips(
     assert!(
         after.starts_with(&original[..original.iter().rposition(|byte| *byte == b'\n').unwrap()])
     );
-    let bad = request.as_slice().iter().copied().collect::<Vec<_>>();
-    let mut bad: serde_json::Value = serde_json::from_slice(&bad).unwrap();
+    let mut bad: serde_json::Value = serde_json::from_slice(&request).unwrap();
     bad["operations"][0]["requirement"] = serde_json::json!("lowercase-invalid");
     assert!(change::ChangeRequest::decode(&serde_json::to_vec(&bad).unwrap()).is_err());
 }
@@ -671,16 +803,16 @@ fn unsupported_cataloged_operations_refuse_explicitly() {
     let request = serde_json::to_vec(&serde_json::json!({
         "schemaVersion": "lekalo/change-request/v0.8.0",
         "operations": [{
-            "operation": "binding:add",
-            "symbol": "tasks.task",
-            "definition": { "target": "node-typescript" }
+            "operation": "operation-error:set",
+            "operationTarget": "tasks.task",
+            "definition": { "errors": [] }
         }]
     }))
     .expect("serializes");
     let error = prepare(&sandbox, &request).expect_err("unsupported");
     match error {
         ChangeError::OperationUnsupported { operation } => {
-            assert_eq!(operation, "binding:add");
+            assert_eq!(operation, "operation-error:set");
         }
         other => panic!("expected operation-unsupported, got {other:?}"),
     }

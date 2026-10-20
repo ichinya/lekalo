@@ -5,7 +5,7 @@
   "operations": [
     {
       "operation": "binding:add",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Add a canonical or confirmed-observed target binding",
       "mutationClass": "administrative",
       "requiredEvidence": [

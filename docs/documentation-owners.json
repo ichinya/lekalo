@@ -480,9 +480,20 @@
       "kind": "command",
       "command": "change",
       "usage": "lekalo change [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:178556262de0385a9e82c505fa54e1a0fcdb08779998b95cb5c136a332b88072",
+      "helpDigest": "sha256:979e61e5d1d3a3e4f4bb7e8a0f16891cf3fa6bfeb576b5bdd08cad924414931b",
       "summary": "Semantic operations instead of direct YAML/code edits (issue #73): typed requests, validated candidates, bounded plans, and one durable, idempotent transaction writer",
       "leaf": false,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change binding:add",
+      "kind": "command",
+      "command": "change binding:add",
+      "usage": "lekalo change binding:add [OPTIONS] --symbol <ID> --definition-json <JSON>",
+      "helpDigest": "sha256:2551d01297bc1ba71a5957a575735e5ce2069bb82af6f3f01680ba27d86cca48",
+      "summary": "Add a canonical target binding or explicitly confirm an observed proposal",
+      "leaf": true,
       "owner": "docs/change.md",
       "status": "implemented"
     },
@@ -3109,7 +3120,7 @@
       "id": "contract:contracts/change-catalog.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-catalog.v0.8.0.json",
-      "sourceDigest": "sha256:953ad89501b0d04a2b6c37fa630efde6758e0faeb130e52404ee1bb889a91707",
+      "sourceDigest": "sha256:f85e3f69bc4c8ec99d9f6a92df59451e461cdd2fe4602fac90232d56695331fb",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3154,7 +3165,7 @@
       "id": "contract:contracts/change-request.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-request.schema.v0.8.0.json",
-      "sourceDigest": "sha256:dfa8e4091b68a0f1cbc5a92b2254613c7d4194b6dd232e51d6bbe3ef76f84884",
+      "sourceDigest": "sha256:33eed38240076a93985d483763c6123b773663026bbca1fb8fe68051d3595c78",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

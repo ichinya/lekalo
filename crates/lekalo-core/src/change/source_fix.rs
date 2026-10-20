@@ -1,6 +1,7 @@
 //! Safe source-only fixes lowered into the existing sealed change plan.
-//! No caller-controlled byte patches are admitted: only the formatter owner
-//! creates candidates, and its Model+IR equality oracle runs before sealing.
+//! No caller-controlled byte patches are admitted. The formatter owns its
+//! equality-checked edits; physical moves and binding confirmations reuse the
+//! validated base plan before adding their separately sealed owner metadata.
 
 use super::*;
 
@@ -166,6 +167,7 @@ pub(crate) fn prepare_source_only(
     }
     let (generation, generation_pins) = build_generation_plan(&load.root)?;
     Ok(PreparedChange {
+        binding: None,
         module_move: None,
         request_bytes: recipe_bytes,
         policy,

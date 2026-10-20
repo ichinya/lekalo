@@ -32,6 +32,13 @@ pub struct ChangeRequest {
 /// One typed operation of the implemented vertical.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operation {
+    /// Explicit confirmation of one exact observed binding proposal.
+    BindingConfirm {
+        symbol: String,
+        proposal: String,
+        candidate: String,
+        index_digest: String,
+    },
     /// Relocate one physical module home while preserving its semantic ID.
     ModuleMove { module: String, directory: String },
     /// A registered operation lowered to the same sealed semantic executor.
@@ -113,6 +120,7 @@ impl Operation {
     /// The catalog discriminator of this operation.
     pub fn operation(&self) -> &str {
         match self {
+            Self::BindingConfirm { .. } => "binding:add",
             Self::ModuleMove { .. } => "module:move",
             Self::Lowered { operation, .. } => operation,
             Self::EntityFieldAdd { .. } => "entity-field:add",
@@ -136,6 +144,7 @@ impl Operation {
     /// The natural subject token of this operation, when one is declared.
     pub fn subject(&self) -> Option<&str> {
         match self {
+            Self::BindingConfirm { symbol, .. } => Some(symbol),
             Self::ModuleMove { module, .. } => Some(module),
             Self::Lowered { executable, .. } => executable.subject(),
             Self::EntityFieldAdd { entity, .. }
@@ -165,6 +174,21 @@ impl Operation {
             Json::String(self.operation().to_owned()),
         );
         match self {
+            Self::BindingConfirm {
+                symbol,
+                proposal,
+                candidate,
+                index_digest,
+            } => {
+                map.insert("symbol".to_owned(), Json::String(symbol.clone()));
+                map.insert(
+                    "definition".to_owned(),
+                    serde_json::json!({
+                        "kind": "observed-confirmation", "proposal": proposal,
+                        "candidate": candidate, "indexDigest": index_digest,
+                    }),
+                );
+            }
             Self::ModuleMove { module, directory } => {
                 map.insert("module".to_owned(), Json::String(module.clone()));
                 map.insert("directory".to_owned(), Json::String(directory.clone()));
@@ -404,6 +428,8 @@ pub struct DefinitionDecl {
     pub summary: Option<String>,
     /// `scenario`: the covered operation ids.
     pub covers: Vec<String>,
+    /// Internal canonical target-binding lowering; not a definition:add member.
+    pub target: Option<String>,
 }
 
 impl DefinitionDecl {
@@ -414,6 +440,9 @@ impl DefinitionDecl {
         map.insert("name".to_owned(), Json::String(self.name.clone()));
         if let Some(description) = &self.description {
             map.insert("description".to_owned(), Json::String(description.clone()));
+        }
+        if let Some(target) = &self.target {
+            map.insert("target".to_owned(), Json::String(target.clone()));
         }
         if !self.input.is_empty() {
             map.insert(
@@ -697,6 +726,95 @@ fn decode_operation(catalog: &Catalog, value: &Json) -> Result<Operation, &'stat
         });
     }
     match discriminator {
+        "binding:add" => {
+            require_members(
+                map,
+                &["operation", "symbol", "definition"],
+                &["operation", "symbol", "definition"],
+            )?;
+            let symbol = member_string(map, "symbol")?;
+            if !super::symbol_id_valid(&symbol) {
+                return Err("symbol-grammar");
+            }
+            let payload = map
+                .get("definition")
+                .and_then(Json::as_object)
+                .ok_or("payload-not-object")?;
+            match payload.get("kind").and_then(Json::as_str) {
+                Some("canonical-target-binding") => {
+                    require_members(
+                        payload,
+                        &["kind", "target", "description"],
+                        &["kind", "target"],
+                    )?;
+                    let (module, name) = symbol.split_once('.').ok_or("symbol-grammar")?;
+                    let target = member_string(payload, "target")?;
+                    if !super::target_name_valid(&target) {
+                        return Err("target-grammar");
+                    }
+                    let mut definition = definition_decl(&serde_json::json!({"name": "binding"}))?;
+                    definition.name = name.to_owned();
+                    definition.description = payload
+                        .get("description")
+                        .map(|value| {
+                            let text = value.as_str().ok_or("type-invalid")?;
+                            if text.is_empty() || text.chars().count() > 2000 {
+                                return Err("string-over-bound");
+                            }
+                            Ok(text.to_owned())
+                        })
+                        .transpose()?;
+                    definition.target = Some(target);
+                    Ok(Operation::Lowered {
+                        operation: "binding:add",
+                        wire: value.clone(),
+                        executable: Box::new(Operation::DefinitionAdd {
+                            kind: "target-binding".to_owned(),
+                            module: module.to_owned(),
+                            definition,
+                        }),
+                    })
+                }
+                Some("observed-confirmation") => {
+                    require_members(
+                        payload,
+                        &["kind", "proposal", "candidate", "indexDigest"],
+                        &["kind", "proposal", "candidate", "indexDigest"],
+                    )?;
+                    let proposal = member_string(payload, "proposal")?;
+                    let digest = proposal.strip_prefix("prop-").ok_or("proposal-grammar")?;
+                    if digest.len() != 64
+                        || !digest
+                            .bytes()
+                            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                    {
+                        return Err("proposal-grammar");
+                    }
+                    let candidate = payload
+                        .get("candidate")
+                        .and_then(Json::as_str)
+                        .ok_or("type-invalid")?
+                        .to_owned();
+                    if candidate.is_empty()
+                        || candidate.chars().count() > 512
+                        || candidate.chars().any(char::is_control)
+                    {
+                        return Err("candidate-grammar");
+                    }
+                    let index_digest = member_string(payload, "indexDigest")?;
+                    if super::expect_digest(&index_digest).is_none() {
+                        return Err("digest-grammar");
+                    }
+                    Ok(Operation::BindingConfirm {
+                        symbol,
+                        proposal,
+                        candidate,
+                        index_digest,
+                    })
+                }
+                _ => Err("binding-kind"),
+            }
+        }
         "module:move" => {
             require_members(
                 map,
@@ -1293,6 +1411,7 @@ fn definition_decl(value: &Json) -> Result<DefinitionDecl, &'static str> {
         }
     };
     Ok(DefinitionDecl {
+        target: None,
         name,
         description: member_text(map, "description")?,
         input: field_list("input")?,
@@ -1514,12 +1633,12 @@ mod tests {
     #[test]
     fn cataloged_unsupported_operation_decodes_and_carries_subject() {
         let text = request(
-            "{\"operation\":\"binding:add\",\"symbol\":\"tasks.task\",             \"definition\":{\"target\":\"node-typescript\"}}",
+            "{\"operation\":\"operation-error:set\",\"operationTarget\":\"tasks.task\",\"definition\":{\"errors\":[]}}",
         );
         let req = decode_ok(&text);
         match &req.operations[0] {
             Operation::Unsupported { operation, subject } => {
-                assert_eq!(operation, "binding:add");
+                assert_eq!(operation, "operation-error:set");
                 assert_eq!(subject.as_deref(), Some("tasks.task"));
             }
             other => panic!("unexpected operation: {other:?}"),
@@ -1665,12 +1784,12 @@ mod tests {
         // A schema-valid unsupported payload still decodes and is refused
         // later with the registered unsupported outcome.
         let ok = request(
-            "{\"operation\":\"binding:add\",\"symbol\":\"tasks.task\",\"definition\":{\"target\":\"node-typescript\"}}",
+            "{\"operation\":\"operation-error:set\",\"operationTarget\":\"tasks.task\",\"definition\":{\"errors\":[]}}",
         );
         let decoded = decode_ok(&ok);
         match &decoded.operations[0] {
             Operation::Unsupported { operation, .. } => {
-                assert_eq!(operation, "binding:add");
+                assert_eq!(operation, "operation-error:set");
             }
             other => panic!("unexpected operation: {other:?}"),
         }

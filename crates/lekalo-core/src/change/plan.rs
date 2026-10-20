@@ -168,6 +168,7 @@ pub struct GenerationProjection {
 /// The sealed prepared change: every field is pinned and deterministic.
 #[derive(Clone, Debug)]
 pub struct PreparedChange {
+    pub(crate) binding: Option<super::binding::SealedConfirmation>,
     pub(crate) module_move: Option<super::module_move::ModuleMove>,
     /// The canonical request the plan was prepared from: the decoded
     /// request re-serialized with sorted object keys and compact
@@ -383,6 +384,16 @@ struct PlanWire {
 pub(crate) fn compute_patch(before: &str, after: &str) -> (Vec<PatchLine>, bool) {
     let before_lines: Vec<&str> = before.lines().collect();
     let after_lines: Vec<&str> = after.lines().collect();
+    // Compact JSON can fit the file-byte budget while its single line
+    // exceeds the patch-row schema. Keep the exact before/after evidence
+    // and digests in the outer plan; never emit an invalid or cut row.
+    if before_lines
+        .iter()
+        .chain(&after_lines)
+        .any(|line| line.chars().count() > super::version::MAX_PATCH_LINE_CHARS)
+    {
+        return (vec![], false);
+    }
     // Longest common subsequence over lines; documents are bounded by the
     // loader limits, so the quadratic table stays bounded in practice.
     let n = before_lines.len();
@@ -456,6 +467,21 @@ mod tests {
         assert!(patch.len() < super::super::version::MAX_PATCH_LINES);
         assert!(patch.iter().any(|line| line.kind == "insert"));
         assert!(patch.iter().any(|line| line.kind == "delete"));
+    }
+
+    #[test]
+    fn compact_and_unicode_patch_lines_obey_the_character_bound_without_truncation() {
+        for character in ['a', 'я'] {
+            let allowed = character
+                .to_string()
+                .repeat(super::super::version::MAX_PATCH_LINE_CHARS);
+            let (patch, complete) = compute_patch("", &allowed);
+            assert!(complete);
+            assert_eq!(patch[0].text, allowed);
+            let (patch, complete) = compute_patch("", &(allowed + &character.to_string()));
+            assert!(!complete);
+            assert!(patch.is_empty());
+        }
     }
 
     #[test]

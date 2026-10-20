@@ -138,6 +138,7 @@ const implemented = catalog.operations
   .map((entry) => entry.operation)
   .sort();
 const expectedImplemented = [
+  "binding:add",
   "command-effect:add",
   "command-effect:remove",
   "definition:add",

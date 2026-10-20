@@ -40,7 +40,8 @@ unsupported 4); the implemented increments are `entity-field:add`,
 `enum-case:change`, `definition:add`, `command-effect:add`,
 `command-effect:remove`, `operation-input:set`, and
 `operation-output:set`, `query-effect:add`, `query-effect:remove`,
-`requirement:link`, `requirement:unlink`, `migration:apply`, and `module:move` — every implemented verb has first-class CLI
+`requirement:link`, `requirement:unlink`, `migration:apply`, `module:move`,
+and `binding:add` — every implemented verb has first-class CLI
 sugar that lowers to the same closed request DTO a request file
 carries, so sugar and JSON requests are byte-identical at the core.
 The remaining cataloged operations are explicit staged refusals
@@ -56,18 +57,14 @@ silently dropped from a committed declaration.
 
 ### Deferral matrix (P1 coverage scope)
 
-Sixteen of the twenty cataloged operations are implemented and executable;
-the other four are cataloged, decodable, and refuse
-`change.operation-unsupported` (exit 4). This is the explicit, tracked
-deferral of issue #73's P1 family list: each refusal is a designed
-fail-closed increment boundary, not an accidental gap, and each
-vertical lands as its own sealed increment with contract, executor,
-and gates:
+Seventeen of the twenty cataloged operations are implemented and executable.
+The remaining three are required before issue #73 is complete. They currently
+decode and refuse `change.operation-unsupported` (exit 4); each needs its
+contract, sealed executor, and runtime gates:
 
 | Deferred operation | Follow-up increment |
 |---|---|
 | `operation-error:set` | error-binding signature vertical (research I4) |
-| `binding:add` | canonical/observed binding DTO vertical (research I5) |
 | `ownership:set` | adoption-prerequisite ownership transition vertical (research I5) |
 | `symbol:move` | semantic rename history and reference rewrites (research I5) |
 
@@ -77,6 +74,31 @@ they refuse with `change.operation-unsupported` before any mutation.
 The catalog status pins stay honest either way: an operation is
 `implemented` in `contracts/change-catalog.v0.8.0.json` exactly when a
 sealed executor exists.
+
+`binding:add --symbol ID --definition-json JSON` admits two closed payloads:
+
+- `{"kind":"canonical-target-binding","target":"node-typescript"}` adds
+  a **new** target-binding definition at the declared semantic ID. An optional
+  `description` is accepted. The target must have exactly one decodable local
+  declaration. The definition joins its module's physical `bindings.yaml`,
+  creating that kind home when necessary. Duplicate IDs and semantic validation
+  failures refuse; this declaration makes no claim about native implementation.
+- `{"kind":"observed-confirmation","proposal":"prop-<64hex>","candidate":"native-identity","indexDigest":"sha256:<64hex>"}`
+  confirms one existing inferred binding through the observed owner. The exact
+  proposal, symbol, selected candidate and index digest must agree, and the
+  candidate's recorded fingerprint must match its current confined source file.
+  Ambiguous proposals require an explicit candidate; missing or stale evidence
+  refuses. The operation preserves scan provenance and appends the owner's
+  confirmation history without promoting a canonical Model definition.
+
+An observed confirmation is a standalone request. Its index and native evidence
+join the plan's input pins; apply rechecks them under the writer lock. Only
+`.lekalo/import/observed/index.json` is writable, in the same journal, rollback,
+history and custody transaction as the Change receipt. Native files remain
+evidence. Post-validation rechecks their fingerprints, and recovery preserves
+later edits until the conflict is repaired. Model IR is unchanged; native impact
+remains explicitly incomplete. Replay follows subsequent committed index changes
+through the history chain, with the same local custody requirement.
 
 Query effect operations edit the query's declared `reads` dependencies. They
 resolve the query and referenced symbol through the typed Model; removing its

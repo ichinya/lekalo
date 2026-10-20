@@ -1296,6 +1296,7 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo cache clear` | `lekalo cache clear [OPTIONS]` | [reference](cache.md) |
 | `lekalo cache status` | `lekalo cache status [OPTIONS]` | [reference](cache.md) |
 | `lekalo change` | `lekalo change [OPTIONS] <COMMAND>` | [reference](change.md) |
+| `lekalo change binding:add` | `lekalo change binding:add [OPTIONS] --symbol <ID> --definition-json <JSON>` | [reference](change.md) |
 | `lekalo change command-effect:add` | `lekalo change command-effect:add [OPTIONS] --command <ID>` | [reference](change.md) |
 | `lekalo change command-effect:remove` | `lekalo change command-effect:remove [OPTIONS] --command <ID>` | [reference](change.md) |
 | `lekalo change custody-init` | `lekalo change custody-init [OPTIONS] --expect-history <DIGEST>` | [reference](change.md) |

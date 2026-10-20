@@ -352,7 +352,7 @@ mod tests {
         }
         assert_eq!(
             catalog.entry("binding:add").expect("entry").status(),
-            OperationStatus::Unsupported
+            OperationStatus::Implemented
         );
         assert_eq!(
             catalog
@@ -378,8 +378,7 @@ mod tests {
         let deferred = [
             // Research I4: signature and effect verticals.
             "operation-error:set",
-            // Research I5: bindings, moves, and ownership.
-            "binding:add",
+            // Research I5: semantic moves and ownership.
             "ownership:set",
             "symbol:move",
         ];

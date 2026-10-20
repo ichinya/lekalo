@@ -64,6 +64,9 @@ pub(crate) enum ChangeCommands {
     /// Relocate a physical module directory, preserving its semantic ID.
     #[command(name = "module:move")]
     ModuleMove(ModuleMoveArgs),
+    /// Add a canonical target binding or explicitly confirm an observed proposal.
+    #[command(name = "binding:add")]
+    BindingAdd(BindingArgs),
     /// Run the complete JSON request surface from a file.
     Request(RequestArgs),
     /// Print the committed receipt of one idempotency key.
@@ -148,6 +151,18 @@ pub(crate) struct ModuleMoveArgs {
     module: String,
     #[arg(long, value_name = "LEAF")]
     directory: String,
+    #[command(flatten)]
+    execution: ExecutionArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct BindingArgs {
+    /// New canonical binding ID, or existing observed symbol ID.
+    #[arg(long, value_name = "ID")]
+    symbol: String,
+    /// Closed canonical-target-binding or observed-confirmation payload.
+    #[arg(long, value_name = "JSON")]
+    definition_json: String,
     #[command(flatten)]
     execution: ExecutionArgs,
 }
@@ -599,6 +614,10 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
         ChangeCommands::ModuleMove(args) => serde_json::json!({
             "operation":"module:move", "module":args.module, "directory":args.directory,
         }),
+        ChangeCommands::BindingAdd(args) => serde_json::json!({
+            "operation":"binding:add", "symbol":args.symbol,
+            "definition":change::parse_strict_json_literal(&args.definition_json)?,
+        }),
         _ => unreachable!("lower() handles sugar commands only"),
     };
     let mut request = serde_json::json!({
@@ -624,6 +643,7 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
         }
         ChangeCommands::MigrationApply(args) => &args.execution,
         ChangeCommands::ModuleMove(args) => &args.execution,
+        ChangeCommands::BindingAdd(args) => &args.execution,
         _ => unreachable!("lower() handles sugar commands only"),
     };
     if let Some(expect_model) = &execution.expect_model {
@@ -806,6 +826,9 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
                         (&args.execution, args.execution.expect_plan.as_deref())
                     }
                     ChangeCommands::ModuleMove(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::BindingAdd(args) => {
                         (&args.execution, args.execution.expect_plan.as_deref())
                     }
                     _ => unreachable!("sugar arm"),

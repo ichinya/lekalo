@@ -3,7 +3,7 @@
   "schemaVersion": "lekalo/change-receipt/v0.8.0",
   "identity": "dev.lekalo.change-receipt@0.8.0",
   "state": "committed",
-  "planId": "sha256:72aea2d3faca2e008bac5e8c269329a878b58972526531ff56b843bff6afd055",
+  "planId": "sha256:2a3cc31ab48c0ae487c0bf987d4b97afa48ae9f029322b9b554d1b56464ae1a7",
   "requestDigest": "sha256:d4512aa94f9458bb36a78869e4db527ec8bde05527ed56550dc5e81134e20f6a",
   "keyDigest": "sha256:426fcff9463b3f01eb47cc6e5f40b36d473534083837305a5500634e1a624ca7",
   "operations": [
@@ -30,10 +30,10 @@
   },
   "history": {
     "sequence": 1,
-    "recordDigest": "sha256:c33734fbc010b998acccc8967700e482e78b0161a0309793581ebd90d9aa2c81"
+    "recordDigest": "sha256:021c2516ce270a9373615a015c298c3509f8b4ad9af7bc7ac5f6b8ece235590f"
   },
   "transaction": {
-    "id": "change-72aea2d3-1",
+    "id": "change-2a3cc31a-1",
     "state": "committed"
   },
   "diagnosticIds": [],

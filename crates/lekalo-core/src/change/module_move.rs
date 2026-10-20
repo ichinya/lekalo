@@ -76,7 +76,7 @@ pub(crate) fn prepare_change(
             }
             let (patch, complete) = super::plan::compute_patch(before, after);
             if !complete {
-                return Err(ChangeError::WriteBoundaryDenied);
+                prepared.diff_complete = false;
             }
             prepared.file_diffs.push(super::plan::FileDiff {
                 path,

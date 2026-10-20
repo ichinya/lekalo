@@ -63,6 +63,9 @@ pub const MAX_FILE_DIFF_BYTES: usize = 16 * 1024;
 /// Maximum patch lines of one file diff entry in a plan.
 pub const MAX_PATCH_LINES: usize = 512;
 
+/// Unicode scalar characters in one exported patch row (schema maxLength).
+pub const MAX_PATCH_LINE_CHARS: usize = 512;
+
 /// Maximum pinned inputs in one plan export (the published
 /// `change-plan.schema` `inputs.maxItems`); a larger valid project
 /// degrades the plan to `complete: false` instead of emitting a document

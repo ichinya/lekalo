@@ -11,6 +11,7 @@
 //! during recovery. Preview never writes; CLI sugar and a future MCP tool
 //! consume the same request, plan, and receipt types.
 
+mod binding;
 pub mod catalog;
 mod custody;
 pub mod diagnostic;
@@ -243,7 +244,10 @@ pub(crate) fn verify_record_postcondition(
         // closed set every journal target obeys. A serde-decoded path is
         // untrusted ledger input: `..`, absolute, drive/UNC, separator,
         // and case-alias forms are refused before anything is read.
-        if crate::project_fs::path_violation(&outcome.path).is_some() {
+        if crate::project_fs::path_violation(&outcome.path).is_some()
+            && !(outcome.path == binding::INDEX_PATH
+                && record.operations.iter().any(|op| op == "binding:add"))
+        {
             return Err(ChangeError::HistoryInvalid {
                 detail: "postcondition-path",
             });
@@ -255,16 +259,19 @@ pub(crate) fn verify_record_postcondition(
         let fs = crate::project_fs::Fs::open(root).map_err(|_| ChangeError::HistoryInvalid {
             detail: "postcondition",
         })?;
-        let current =
-            match fs.read_logical(&outcome.path, crate::loader::source::MAX_DOCUMENT_BYTES) {
-                Ok(bytes) => bytes,
-                Err(crate::project_fs::FsErrorKind::NotFound) if may_be_absent => None,
-                Err(_) => {
-                    return Err(ChangeError::HistoryInvalid {
-                        detail: "postcondition",
-                    })
-                }
-            };
+        let current = match if outcome.path == binding::INDEX_PATH {
+            binding::read_index(&fs)
+        } else {
+            fs.read_logical(&outcome.path, crate::loader::source::MAX_DOCUMENT_BYTES)
+        } {
+            Ok(bytes) => bytes,
+            Err(crate::project_fs::FsErrorKind::NotFound) if may_be_absent => None,
+            Err(_) => {
+                return Err(ChangeError::HistoryInvalid {
+                    detail: "postcondition",
+                })
+            }
+        };
         let carries = (current.is_none() && may_be_absent)
             || current
                 .map(|bytes| format!("sha256:{}", crate::digest::sha256_hex(&bytes)))
@@ -373,6 +380,19 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     if request
         .operations
         .iter()
+        .any(|operation| matches!(operation, Operation::BindingConfirm { .. }))
+    {
+        if request.operations.len() != 1 {
+            return Err(ChangeError::UnsupportedMember {
+                operation: "binding:add".to_owned(),
+                member: "confirmation-batch",
+            });
+        }
+        return binding::prepare_confirmation(&load, &request, options);
+    }
+    if request
+        .operations
+        .iter()
         .any(|operation| matches!(operation, Operation::ModuleMove { .. }))
     {
         if request.operations.len() != 1 {
@@ -409,10 +429,31 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     let mut resolved_rows = Vec::with_capacity(request.operations.len());
     for requested in &request.operations {
         let operation = requested.executable();
+        if let Operation::DefinitionAdd {
+            definition, kind, ..
+        } = operation
+        {
+            if kind == "target-binding" {
+                let target = definition
+                    .target
+                    .as_deref()
+                    .ok_or(ChangeError::WriteBoundaryDenied)?;
+                binding::require_target(&root, target)?;
+            }
+        }
         let mut row = resolve_operation(&documents, operation)?;
         row.operation = requested.operation().to_owned();
         if let Operation::Lowered { wire, .. } = requested {
             row.detail = wire.get("step").and_then(Json::as_str).map(str::to_owned);
+            if requested.operation() == "binding:add" {
+                row.subject = wire
+                    .get("symbol")
+                    .and_then(Json::as_str)
+                    .ok_or(ChangeError::WriteBoundaryDenied)?
+                    .to_owned();
+                row.subject_family = "target-binding".to_owned();
+                row.detail = Some("canonical-target-binding".to_owned());
+            }
         }
         if row.status != "resolved" {
             return Err(ChangeError::OperationUnsupported {
@@ -797,6 +838,7 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     }
 
     let prepared = PreparedChange {
+        binding: None,
         module_move: None,
         // The canonical re-serialization pins the request intent, not its
         // presentation: pretty file JSON and compact sugar bytes of one
@@ -994,6 +1036,21 @@ pub(crate) fn apply_with_validation(
                 None => absent_digest(),
                 Some(bytes) => format!("sha256:{}", crate::digest::sha256_hex(&bytes)),
             }
+        } else if prepared
+            .binding
+            .as_ref()
+            .is_some_and(|binding| binding.is_input(&pin.path))
+        {
+            let fs =
+                crate::project_fs::Fs::open(&root).map_err(|_| ChangeError::WriteBoundaryDenied)?;
+            let bytes = if pin.path == binding::INDEX_PATH {
+                binding::read_index(&fs)
+                    .map_err(|_| ChangeError::WriteBoundaryDenied)?
+                    .ok_or(ChangeError::WriteBoundaryDenied)?
+            } else {
+                binding::read_native(&fs, &pin.path)?
+            };
+            receipt::bytes_digest(&bytes)
         } else {
             // No-follow through the shared Fs (r8, omp F6 residual): the
             // pin re-read is the apply CAS point, and a link swapped
@@ -1047,7 +1104,13 @@ pub(crate) fn apply_with_validation(
         let mut pinned: Vec<(String, String)> = prepared
             .inputs
             .iter()
-            .filter(|pin| pin.path != version::HISTORY_LOGICAL_PATH)
+            .filter(|pin| {
+                pin.path != version::HISTORY_LOGICAL_PATH
+                    && !prepared
+                        .binding
+                        .as_ref()
+                        .is_some_and(|binding| binding.is_input(&pin.path))
+            })
             .map(|pin| (pin.path.clone(), pin.digest.clone()))
             .collect();
         pinned.sort();
@@ -1085,30 +1148,23 @@ pub(crate) fn apply_with_validation(
         .iter()
         .map(|(path, after_bytes)| {
             let creation = prepared.creations.contains(path);
-            let before = if creation {
-                Vec::new()
-            } else {
-                // No-follow through the shared Fs (r8, omp F6 residual):
-                // the before-bytes read feeds the transaction's digest
-                // pins, and a link must refuse — never be followed.
-                crate::project_fs::Fs::open(&root)
-                    .and_then(|fs| {
-                        fs.read_logical(path, crate::loader::source::MAX_DOCUMENT_BYTES)
-                            .map_err(|_| crate::project_fs::FsErrorKind::Io)
-                    })
-                    .ok()
-                    .flatten()
-                    .unwrap_or_default()
-            };
-            ReplacementPlan {
+            // Stage must compare its own confined read with the SEALED
+            // preimage. Re-reading now and adopting a new digest would
+            // authorize an intervening edit after the input-set CAS.
+            let edit = prepared
+                .file_edits
+                .iter()
+                .find(|edit| edit.path == *path)
+                .ok_or(ChangeError::WriteBoundaryDenied)?;
+            Ok(ReplacementPlan {
                 logical: path.clone(),
-                before_digest: format!("sha256:{}", crate::digest::sha256_hex(&before)),
+                before_digest: edit.before_digest.clone(),
                 after_digest: format!("sha256:{}", crate::digest::sha256_hex(after_bytes)),
                 after_bytes: after_bytes.clone(),
                 creation,
-            }
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, ChangeError>>()?;
     let files: Vec<FileOutcome> = if let Some(movement) = &prepared.module_move {
         prepared
             .file_edits
@@ -1329,10 +1385,19 @@ pub(crate) fn apply_with_validation(
         let mut expected: std::collections::BTreeMap<_, _> = prepared
             .inputs
             .iter()
-            .filter(|pin| pin.path != version::HISTORY_LOGICAL_PATH)
+            .filter(|pin| {
+                pin.path != version::HISTORY_LOGICAL_PATH
+                    && !prepared
+                        .binding
+                        .as_ref()
+                        .is_some_and(|binding| binding.is_input(&pin.path))
+            })
             .map(|pin| (pin.path.clone(), pin.digest.clone()))
             .collect();
         for (path, bytes) in &prepared.edits {
+            if path == binding::INDEX_PATH && prepared.binding.is_some() {
+                continue;
+            }
             expected.insert(path.clone(), receipt::bytes_digest(bytes));
         }
         if let Some(movement) = &prepared.module_move {
@@ -1363,11 +1428,14 @@ pub(crate) fn apply_with_validation(
             .map_err(|_| ChangeError::RequestInvalid { detail: "profile" })?;
         crate::validator::validate(&compiled, profile)
             .map_err(|set| ChangeError::LoadFailed(DomainResult::invalid(set)))?;
+        if let Some(binding) = &prepared.binding {
+            binding.validate_after(&root)?;
+        }
         validate(&load)
     })();
     if post_validation.is_err() {
         if let Err(error) = transaction.rollback() {
-            if prepared.module_move.is_some() {
+            if prepared.module_move.is_some() || prepared.binding.is_some() {
                 return Err(ChangeError::RecoveryRequired {
                     transaction: transaction_id,
                 });
@@ -1968,7 +2036,9 @@ fn resolve_operation(
             }
             (symbol.clone(), true)
         }
-        Operation::Lowered { .. } | Operation::ModuleMove { .. } => {
+        Operation::Lowered { .. }
+        | Operation::ModuleMove { .. }
+        | Operation::BindingConfirm { .. } => {
             unreachable!("registered operation lowered before resolution")
         }
         Operation::Unsupported { subject, .. } => (subject.clone().unwrap_or_default(), false),
@@ -2004,7 +2074,25 @@ fn definition_decl_members_fit_kind(
     };
     let has = |slice: &[request::FieldDecl]| !slice.is_empty();
     let has_ids = |slice: &[String]| !slice.is_empty();
+    unused(
+        definition.target.is_some() && kind != "target-binding",
+        "target",
+    )?;
     match kind {
+        "target-binding" => {
+            unused(has(&definition.input), "input")?;
+            unused(has_ids(&definition.effects), "effects")?;
+            unused(has_ids(&definition.reads), "reads")?;
+            unused(definition.returns.is_some(), "returns")?;
+            unused(has(&definition.payload), "payload")?;
+            unused(has_ids(&definition.applies_to), "appliesTo")?;
+            unused(definition.decision.is_some(), "decision")?;
+            unused(definition.summary.is_some(), "summary")?;
+            unused(has_ids(&definition.covers), "covers")?;
+            if definition.target.is_none() {
+                return Err(ChangeError::WriteBoundaryDenied);
+            }
+        }
         "command" => {
             unused(has_ids(&definition.reads), "reads")?;
             unused(definition.returns.is_some(), "returns")?;
@@ -2101,6 +2189,7 @@ fn definition_home_path(
         "event" => "events.yaml",
         "policy" => "policies.yaml",
         "scenario" => "scenarios.yaml",
+        "target-binding" => "bindings.yaml",
         _ => "entities.yaml",
     };
     Ok(format!("lekalo/modules/{directory}/{file}"))
@@ -2248,7 +2337,9 @@ fn apply_tree_edit(
         return Ok(());
     }
     let subject = match operation {
-        Operation::Lowered { .. } | Operation::ModuleMove { .. } => {
+        Operation::Lowered { .. }
+        | Operation::ModuleMove { .. }
+        | Operation::BindingConfirm { .. } => {
             unreachable!("registered operation lowered before editing")
         }
         Operation::Unsupported { .. } => return Ok(()),
@@ -2346,7 +2437,9 @@ fn apply_tree_edit(
                 remove_scalar_item(&mut definition.node, "derived_from", requirement)
             }
         }
-        Operation::Lowered { .. } | Operation::ModuleMove { .. } => {
+        Operation::Lowered { .. }
+        | Operation::ModuleMove { .. }
+        | Operation::BindingConfirm { .. } => {
             unreachable!("registered operation lowered before editing")
         }
         Operation::Unsupported { .. } | Operation::DefinitionAdd { .. } => Ok(()),
@@ -2632,6 +2725,20 @@ fn synthesized_definition_node(
         })
     };
     match kind {
+        "target-binding" => {
+            entries.push(entry(
+                "target",
+                Node::scalar(
+                    Scalar::Str(
+                        declaration
+                            .target
+                            .clone()
+                            .ok_or(ChangeError::WriteBoundaryDenied)?,
+                    ),
+                    span,
+                ),
+            ));
+        }
         "command" => {
             if let Some(input) = seq_entry("input", field_items(&declaration.input)) {
                 entries.push(input);
@@ -3074,7 +3181,9 @@ fn plan_source_edits(
                 *link,
             )?]
         }
-        Operation::Lowered { .. } | Operation::ModuleMove { .. } => {
+        Operation::Lowered { .. }
+        | Operation::ModuleMove { .. }
+        | Operation::BindingConfirm { .. } => {
             unreachable!("registered operation lowered before editing")
         }
         Operation::Unsupported { .. } => return Ok(Vec::new()),
@@ -3139,6 +3248,21 @@ fn definition_members_block(
         list.iter().map(|id| id.as_str()).collect()
     }
     Ok(match kind {
+        "target-binding" => {
+            let newline = if bytes.ends_with(b"\r\n") {
+                "\r\n"
+            } else {
+                "\n"
+            };
+            format!(
+                "{newline}{}target: {}",
+                " ".repeat(anchor_column + 2),
+                declaration
+                    .target
+                    .as_deref()
+                    .ok_or(ChangeError::WriteBoundaryDenied)?
+            )
+        }
         "command" => {
             let mut block = String::new();
             if !declaration.input.is_empty() {

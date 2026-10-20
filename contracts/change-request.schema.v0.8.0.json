@@ -479,7 +479,56 @@
               "$ref": "#/$defs/symbolId"
             },
             "definition": {
-              "$ref": "#/$defs/closedPayload"
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind",
+                    "target"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "canonical-target-binding"
+                    },
+                    "target": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+                    },
+                    "description": {
+                      "$ref": "#/$defs/text"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind",
+                    "proposal",
+                    "candidate",
+                    "indexDigest"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "observed-confirmation"
+                    },
+                    "proposal": {
+                      "type": "string",
+                      "pattern": "^prop-[0-9a-f]{64}$"
+                    },
+                    "candidate": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+                    },
+                    "indexDigest": {
+                      "$ref": "#/$defs/sha256"
+                    }
+                  }
+                }
+              ]
             }
           }
         },
@@ -592,8 +641,8 @@
             "directory": {
               "type": "string",
               "minLength": 1,
-                "maxLength": 63,
-                "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+              "maxLength": 63,
+              "pattern": "^[a-z][a-z0-9_-]{0,62}$"
             }
           }
         },

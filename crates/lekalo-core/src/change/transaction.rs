@@ -542,7 +542,7 @@ impl Transaction {
         }
         self.module_move
             .as_ref()
-            .is_none_or(|movement| movement.restore(&self.root).is_ok())
+            .map_or(true, |movement| movement.restore(&self.root).is_ok())
     }
 
     /// Finalize the canonical history inside the same transaction, publish
@@ -955,6 +955,8 @@ fn read_target_bytes(root: &Path, logical: &str) -> std::io::Result<Vec<u8>> {
     let fs = crate::project_fs::Fs::open(root).map_err(|_| std::io::Error::other("fs"))?;
     let bytes = if logical == super::custody::LOGICAL_PATH {
         fs.read_file_opt(".lekalo", "change-history-pin.json", 1024)
+    } else if logical == super::binding::INDEX_PATH {
+        super::binding::read_index(&fs)
     } else {
         fs.read_logical(logical, crate::loader::source::MAX_DOCUMENT_BYTES)
     };
@@ -978,6 +980,7 @@ fn validated_target(root: &Path, logical: &str) -> Result<PathBuf, ChangeError> 
     // Exactly one service-owned runtime target joins the source/history
     // transaction. Never broaden the grammar for caller/journal paths.
     if logical != super::custody::LOGICAL_PATH
+        && logical != super::binding::INDEX_PATH
         && crate::project_fs::path_violation(logical).is_some()
     {
         return Err(ChangeError::WriteBoundaryDenied);
@@ -1259,6 +1262,7 @@ fn validate_journal_targets(root: &Path, journal: &Journal) -> Result<(), Change
         }
         let admitted = if file.path == super::version::HISTORY_LOGICAL_PATH
             || file.path == super::custody::LOGICAL_PATH
+            || (file.path == super::binding::INDEX_PATH && !file.creation)
             || file.path == "lekalo/project.yaml"
             || admitted_module_home(&file.path, &modules)
         {
