@@ -4,7 +4,7 @@
   "adapter": {
     "id": "lekalo-target-php-laravel",
     "name": "PHP/Laravel target adapter",
-    "version": "0.2.0"
+    "version": "0.8.0"
   },
   "publisher": {
     "id": "lekalo",
@@ -71,7 +71,10 @@
       "maxEntries": 1024
     },
     "readScopes": [
-      ".lekalo/cache/**",
+      ".lekalo/cache/client-sdk/**",
+      ".lekalo/cache/ir/**",
+      ".lekalo/cache/openapi/**",
+      ".lekalo/cache/transport/**",
       ".lekalo/generated/php-laravel/operations/**",
       ".lekalo/generated/php-laravel/routes/**",
       ".lekalo/generated/php-laravel/types/**",
@@ -117,12 +120,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:735066fab0e57d03f386769f61049050eb924500a26edd1647d83c062469d7f2",
+    "packageDigest": "sha256:9d03a2edde512a6ca8844263345c661bc8879753f0490651427f586f570a7fd3",
     "files": [
       {
         "path": "adapter.php",
-        "digest": "sha256:56be3a5f1643051bb12b3bf8f91218b3736a7ec65ce1a097b8c7ec18fc0c9917",
-        "bytes": 661039
+        "digest": "sha256:52358904f8e57158cffdf2dedec5050f87689cfb2e91160ed0ee6e9162c66d0a",
+        "bytes": 661185
       }
     ],
     "signaturePolicy": "unsigned",
@@ -131,21 +134,30 @@
   "permissions": {
     "filesystem": {
       "readScopes": [
-        ".lekalo/cache/**",
+        ".lekalo/cache/client-sdk/**",
+        ".lekalo/cache/ir/**",
+        ".lekalo/cache/openapi/**",
+        ".lekalo/cache/transport/**",
+        ".lekalo/generated/php-laravel/operations/**",
+        ".lekalo/generated/php-laravel/routes/**",
         ".lekalo/generated/php-laravel/types/**",
         ".lekalo/import/**",
         ".lekalo/ir/**",
         "app/**",
+        "app/lekalo-operations/**",
         "app/lekalo-types/**",
         "composer.json",
         "composer.lock",
+        "lekalo/operations/**",
         "lekalo/php-test-port.json",
+        "lekalo/routes/**",
         "lekalo/scenarios/**",
         "lekalo/types/**",
         "src/**"
       ],
       "writeScopes": [
         ".lekalo/generated/php-laravel/**",
+        "app/lekalo-operations/**",
         "app/lekalo-types/**",
         "src/generated/php-laravel/scenario-tests/**",
         "tests/lekalo/scenario-tests/**"

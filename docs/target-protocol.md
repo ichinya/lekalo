@@ -145,6 +145,13 @@ enter the private view. Existing write-scope files expose their shape as
 empty placeholders unless also covered by a read scope; write authority
 alone never exports existing user content.
 
+The PHP/Laravel adapter `0.8.0` declares cache reads through the finite
+`ir`, `transport`, `openapi` and `client-sdk` evidence homes. This lets
+snapshots run while Windows holds the controller's exclusive
+`.lekalo/cache/writer.lock`. The published package binds those same
+capability scopes and grants; generation retains its normal ownership
+and confirmation checks.
+
 Describe, read operations and planning use a read-only private view enforced
 by the OS. An adapter crashing on a denied write is classified as a crash;
 core does not claim that a mutation occurred or silently turn it into a

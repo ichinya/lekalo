@@ -140,6 +140,11 @@ if (existsSync(manifestPath)) {
   const digest = "sha256:" + createHash("sha256").update(artifactBytes).digest("hex");
   if (entry.digest !== digest) fail("manifest-digest", `manifest=${entry.digest} actual=${digest}`);
   if (entry.bytes !== artifactBytes.length) fail("manifest-length", `${entry.bytes} vs ${artifactBytes.length}`);
+  for (const scope of ["readScopes", "writeScopes"]) {
+    const capabilities = [...manifest.capabilities[scope]].sort();
+    const permissions = [...manifest.permissions.filesystem[scope]].sort();
+    if (JSON.stringify(capabilities) !== JSON.stringify(permissions)) fail("manifest-scope-grants", scope);
+  }
   process.stdout.write(`${JSON.stringify({ ok: true, gate: "manifest-golden", adapter: manifest.adapter.id })}\n`);
 } else {
   process.stdout.write(`${JSON.stringify({ ok: true, gate: "manifest-golden", skipped: "manifest-not-yet-committed" })}\n`);

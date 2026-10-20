@@ -28,7 +28,7 @@
 declare(strict_types=1);
 
 const ADAPTER_ID = 'lekalo-target-php-laravel';
-const ADAPTER_VERSION = '0.2.0';
+const ADAPTER_VERSION = '0.8.0';
 
 /** The bundled module order: dependencies first, kernel last. */
 const BUNDLED_MODULES = [
