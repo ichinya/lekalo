@@ -150,6 +150,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "explain",
+      "origin": "synthetic",
+      "note": "Issue #96: golden explain-result documents (known code, safe-recipe link, distinct unknown-code refusal) over the embedded explanation catalog plus one synthetic diagnostic-report input; no private code or executed application behavior."
+    },
+    {
       "family": "expressions",
       "origin": "synthetic"
     },

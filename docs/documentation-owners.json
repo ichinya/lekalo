@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:9406e37338dda888e030c2fded20734eda353aa014d543966edafe1733f7dd28",
+  "cliSourceDigest": "sha256:3c15fb4aa398f08a7357478004239315d31ba87e00a9b03169769fd69d8db512",
   "p0Pages": [
     {
       "page": "README.md",
@@ -913,6 +913,17 @@
       "summary": "Validate one closed local evaluation document; does not attest execution",
       "leaf": true,
       "owner": "docs/framework-lift.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:explain",
+      "kind": "command",
+      "command": "explain",
+      "usage": "lekalo explain [OPTIONS] [SELECTORS]...",
+      "helpDigest": "sha256:e5169d9bedcfcfb41bb78566b1f21fa76b1164c70301eb8c65e21da2925b9bec",
+      "summary": "Explain a stable diagnostic code from the versioned explanation catalog: causes, consequences, safe/unsafe/breaking/manual fix options, examples, related rules and waiver policy (issue #96)",
+      "leaf": true,
+      "owner": "docs/explain.md",
       "status": "implemented"
     },
     {
@@ -3320,7 +3331,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.8.0.json",
-      "sourceDigest": "sha256:22621f21d4c1e90f1147e09321a3e932e50c1c2e3c9ac9e808015710816101b2",
+      "sourceDigest": "sha256:9bd318dde0da1e23b9ea26de0eddd12eaabd14d0a0f6a7a77615e65d33d35d7b",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3385,6 +3396,33 @@
       "source": "contracts/evaluation-export-input.schema.v0.6.4.json",
       "sourceDigest": "sha256:6ab131ac0c6d61edb789a4fe90127da331c4c88c7f174c302d7de8b5897a363b",
       "owner": "docs/metrics-export.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/explain-catalog.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/explain-catalog.schema.v0.8.0.json",
+      "sourceDigest": "sha256:2b29965d9c6807e9bbc50afd8842476cad5773b81a7e3a133893daf6ae4cf6ac",
+      "owner": "docs/explain.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/explain-catalog.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/explain-catalog.v0.8.0.json",
+      "sourceDigest": "sha256:040cf5f39a0e1f25871e90fc1dd645e4c2848a3ba1640739a7d34d74cc58d90a",
+      "owner": "docs/explain.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/explain-result.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/explain-result.schema.v0.8.0.json",
+      "sourceDigest": "sha256:5fb12ce562e28f48fa9969dc1db6029727be0929e87ea73be73e0c3e2f4cf7c0",
+      "owner": "docs/explain.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

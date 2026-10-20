@@ -46,7 +46,7 @@ import assert from 'node:assert/strict';
 // presence/shape checks or turn this into an arbitrary namespace allowlist.
 export const ACCEPTED_M8_REGISTRY_FAMILIES = Object.freeze([
  'format.','adoption.','portability.','worklog-changelog.','managed.',
- 'module-api.','tasklink.','search.','change.','watch.','fix.','mcp.',
+ 'module-api.','tasklink.','search.','change.','watch.','fix.','mcp.','explain.',
 ]);
 export function assertRegistryUnion(predecessor,successor,{families,ownPrefix,ownCount}) {
  const before=new Map(predecessor.entries.map(entry=>[entry.id,entry]));

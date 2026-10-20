@@ -1,0 +1,34 @@
+{
+  "status": "unsupported",
+  "payload": {
+    "catalogVersion": "0.8.0",
+    "explanations": [],
+    "identity": "dev.lekalo.explain-result@0.8.0",
+    "registryIdentity": "dev.lekalo.diagnostic-registry@0.8.0",
+    "schemaVersion": "lekalo/explain-result/v0.8.0",
+    "state": "unexplained",
+    "status": "unsupported"
+  },
+  "diagnostics": [
+    {
+      "schema_version": "lekalo/diagnostic/v0.2.16",
+      "registry_version": "0.8.0",
+      "id": "explain.code-unexplained",
+      "code": "LEK-EXPLAIN-001",
+      "severity": "error",
+      "category": "infrastructure",
+      "message_id": "explain.code-unexplained",
+      "message": "No stable explanation exists for the requested diagnostic code or rule id in this catalog.",
+      "data": {
+        "selector": "LEK-TYPE-014"
+      },
+      "related_locations": [],
+      "causes": [],
+      "fixes": [],
+      "metadata": {}
+    }
+  ],
+  "reasonCodes": [
+    "explain.code-unexplained"
+  ]
+}

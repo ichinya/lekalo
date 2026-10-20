@@ -25,6 +25,7 @@ pub mod digest;
 pub mod doctor;
 pub mod effects;
 pub mod error_contract;
+pub mod explain;
 pub mod expressions;
 pub mod extended_effects;
 pub mod fix;
@@ -79,6 +80,8 @@ pub mod waivers;
 pub mod watch;
 pub mod worklog_changelog;
 
+pub use diagnostics::DataObject;
+pub use explain::refusal as explain_refusal;
 pub use result::{Capability, DomainResult, ReasonCode, Status, CAPABILITY_UNAVAILABLE, CLI_USAGE};
 
 /// A syntactically valid request accepted by the foundation CLI.
