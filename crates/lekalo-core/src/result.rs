@@ -305,6 +305,23 @@ impl DomainResult {
         }
     }
 
+    /// Build a failure result from raw diagnostics under one status.
+    /// A set that violates its envelope invariants falls back to the
+    /// registry-invariant singleton rather than panicking.
+    pub(crate) fn from_statuses(
+        status: Status,
+        diagnostics: Vec<crate::diagnostics::Diagnostic>,
+    ) -> Self {
+        let set = Self::from_wire_set(status, diagnostics);
+        match status {
+            Status::Invalid => Self::Invalid { diagnostics: set },
+            Status::Unsupported | Status::Unavailable => {
+                Self::UnsupportedOperation { diagnostics: set }
+            }
+            _ => Self::Denied { diagnostics: set },
+        }
+    }
+
     pub fn invalid(diagnostics: DiagnosticSet) -> Self {
         Self::Invalid { diagnostics }
     }

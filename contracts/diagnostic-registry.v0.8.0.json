@@ -4119,6 +4119,66 @@
       "lifecycle": "active"
     },
     {
+      "id": "explain.catalog-invalid",
+      "code": "LEK-EXPLAIN-002",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unavailable"
+      ],
+      "message_id": "explain.catalog-invalid",
+      "default_message": "The embedded diagnostic-explanation catalog violates its invariants or does not match the pinned registry union.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "explain.code-unexplained",
+      "code": "LEK-EXPLAIN-001",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported"
+      ],
+      "message_id": "explain.code-unexplained",
+      "default_message": "No stable explanation exists for the requested diagnostic code or rule id in this catalog.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "selector",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "explain.report-invalid",
+      "code": "LEK-EXPLAIN-003",
+      "category": "infrastructure",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "explain.report-invalid",
+      "default_message": "The diagnostic report supplied to explain is malformed, over-limit, or carries no readable diagnostics.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "expression.binding-invalid",
       "code": "LEK-EXPR-007",
       "category": "semantic",

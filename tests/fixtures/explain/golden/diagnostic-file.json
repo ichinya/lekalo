@@ -1,0 +1,68 @@
+{
+  "catalogVersion": "0.8.0",
+  "explanations": [
+    {
+      "category": "infrastructure",
+      "checks": "The rule rejects malformed command-line syntax before any domain work starts.",
+      "code": "LEK-CLI-001",
+      "docsLinks": [
+        {
+          "url": "https://dev.lekalo/docs/0.8.0/cli.md",
+          "version": "0.8.0"
+        }
+      ],
+      "examples": [
+        {
+          "after": "lekalo fix --recipe r.json --allow-unsafe",
+          "before": "lekalo fix --safe --recipe r.json   # conflicting flags"
+        }
+      ],
+      "executableRecipeId": null,
+      "fixOptions": [
+        {
+          "class": "manual-only",
+          "description": "Fix the invocation per lekalo <command> --help; usage errors exit 2 and are owned by the CLI parser, not by DomainResult statuses."
+        }
+      ],
+      "rationale": "It matters because usage refusals stay typed: scripts and agents get the stable cli.usage diagnostic instead of parser noise on stdout.",
+      "relatedCodes": [],
+      "rootCauses": [
+        "a required argument is missing or two flags conflict",
+        "an argument value is outside its bounded range or closed vocabulary"
+      ],
+      "ruleId": "cli.usage",
+      "severityProfile": {
+        "allowedStatuses": [
+          "invalid"
+        ],
+        "blocking": true,
+        "defaultSeverity": "error",
+        "severities": [
+          "error"
+        ],
+        "waiverPolicy": "Not applicable: there is nothing to waive; correct the command line."
+      },
+      "source": {
+        "provider": "core",
+        "report": {
+          "index": 0,
+          "location": null,
+          "message": "Malformed command-line syntax.",
+          "severity": "error"
+        }
+      },
+      "targetNotes": [
+        {
+          "note": "Target-neutral.",
+          "scope": "general"
+        }
+      ],
+      "title": "CLI usage error"
+    }
+  ],
+  "identity": "dev.lekalo.explain-result@0.8.0",
+  "registryIdentity": "dev.lekalo.diagnostic-registry@0.8.0",
+  "schemaVersion": "lekalo/explain-result/v0.8.0",
+  "state": "explained",
+  "status": "valid"
+}

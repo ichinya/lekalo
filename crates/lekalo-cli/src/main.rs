@@ -31,6 +31,7 @@ mod change;
 mod coupling;
 mod doctor_git;
 mod evaluation;
+mod explain;
 mod fix;
 mod format;
 mod git_input;
@@ -270,6 +271,13 @@ enum Commands {
     Fix {
         #[command(flatten)]
         args: fix::FixArgs,
+    },
+    /// Explain a stable diagnostic code from the versioned explanation
+    /// catalog: causes, consequences, safe/unsafe/breaking/manual fix
+    /// options, examples, related rules and waiver policy (issue #96).
+    Explain {
+        #[command(flatten)]
+        args: explain::ExplainArgs,
     },
     /// Print the embedded contract version registry.
     Compatibility,
@@ -2614,6 +2622,7 @@ fn runtime() -> u8 {
             Commands::Migrate { migrate } => run_migrate(migrate),
             Commands::Change { command } => change::run(command),
             Commands::Fix { args } => fix::run(args),
+            Commands::Explain { args } => explain::run(args),
             Commands::Validate {
                 project,
                 module,

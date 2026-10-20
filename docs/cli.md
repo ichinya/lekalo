@@ -1335,6 +1335,7 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo evaluation preflight` | `lekalo evaluation preflight [OPTIONS] --baseline <BASELINE> --task <TASK> --campaign <CAMPAIGN> --workspace <WORKSPACE>` | [reference](framework-lift.md) |
 | `lekalo evaluation record-arm` | `lekalo evaluation record-arm [OPTIONS] --baseline <BASELINE> --task <TASK> --campaign <CAMPAIGN> --input <INPUT>` | [reference](framework-lift.md) |
 | `lekalo evaluation validate` | `lekalo evaluation validate [OPTIONS] --family <FAMILY> --input <INPUT>` | [reference](framework-lift.md) |
+| `lekalo explain` | `lekalo explain [OPTIONS] [SELECTORS]...` | [reference](explain.md) |
 | `lekalo expressions` | `lekalo expressions [OPTIONS] <COMMAND>` | [reference](expressions.md) |
 | `lekalo expressions diff` | `lekalo expressions diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](expressions.md) |
 | `lekalo expressions eval` | `lekalo expressions eval [OPTIONS] --vectors <FILE> <PATH>` | [reference](expressions.md) |
