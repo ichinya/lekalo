@@ -527,7 +527,7 @@
               "$ref": "#/$defs/symbolId"
             },
             "requirement": {
-              "$ref": "#/$defs/fieldName"
+              "$ref": "#/$defs/requirementId"
             }
           }
         },
@@ -547,7 +547,7 @@
               "$ref": "#/$defs/symbolId"
             },
             "requirement": {
-              "$ref": "#/$defs/fieldName"
+              "$ref": "#/$defs/requirementId"
             }
           }
         },
@@ -736,6 +736,12 @@
           }
         }
       }
+    },
+    "requirementId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z0-9][A-Z0-9._-]{0,127}$"
     }
   }
 }

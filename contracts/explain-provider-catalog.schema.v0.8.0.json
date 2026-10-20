@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/explain-provider-catalog.schema.v0.8.0.json",
+  "title": "lekalo/explain-provider-catalog/v0.8.0",
+  "description": "Offline provider-owned explanation pointers. No adapter code or remote resource is executed or fetched.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "identity", "entries"],
+  "properties": {
+    "schemaVersion": {"const": "lekalo/explain-provider-catalog/v0.8.0"},
+    "identity": {"const": "dev.lekalo.explain-provider-catalog@0.8.0"},
+    "entries": {
+      "type": "array",
+      "maxItems": 512,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["namespace", "originalCode", "explanationRef"],
+        "properties": {
+          "namespace": {"type": "string", "maxLength": 128, "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+:[0-9]+\\.[0-9]+\\.[0-9]+$"},
+          "originalCode": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[\\x21-\\x7E]+$"},
+          "explanationRef": {"type": "string", "minLength": 1, "maxLength": 512, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"}
+        }
+      }
+    }
+  }
+}

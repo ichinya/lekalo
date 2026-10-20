@@ -114,8 +114,18 @@ trace export) refuse under a group instead of fabricating a narrowed
 result. The post-run closure checks the complete failure diagnostics
 and reason codes as well as successful payloads: a domain-invalid
 response cannot disclose an excluded module's identity by failing.
-`resources/subscribe` and `resources/unsubscribe` refuse
-(`-32601 subscriptions-not-implemented`): no watcher ships, so an inert
+`resources/subscribe` and `resources/unsubscribe` use the same URI, project,
+group and symbol admission as `resources/read`. A successful subscription
+captures a validated baseline before acknowledging. The bounded polling loop
+re-evaluates one subscribed identity every 250 ms in round-robin order through
+the same supervised read; the recorded 256-identity ceiling and concurrency,
+timeout and response-byte limits still apply. Changed content, invalidation
+and recovery send `notifications/resources/updated` with only the admitted URI.
+Unsubscribe is idempotent and stops further updates. There is no recursive
+filesystem watcher or project-state write. The concrete resource list is fixed
+by the startup catalog, so `listChanged` remains false.
+
+The previous unimplemented-subscription refusal is superseded; an inert
 registration — one the server could never honor — is never acknowledged,
 whatever the identity (review r2 F3/codex 13).
 
@@ -244,17 +254,11 @@ garbage or missing params refuse with `-32602`. It is single-shot: a
 second valid `initialize` after the handshake was answered is refused
 (`-32600 mcp.lifecycle-already-initialized`).
 Only implemented capabilities are advertised: the initialize answer
-reports `resources: {subscribe: false, listChanged: false}`.
+reports `resources: {subscribe: true, listChanged: false}`. Resource identities
+are fixed by the startup catalog; subscriptions observe their content revisions.
 
-### Deferred against the issue #33 requirement
+### Cancellation boundary
 
-- **Change notifications** ("change notifications after model update"):
-  the bounded admitted-input watcher, invalidation, and coalesced
-  `notifications/resources/updated` / `list_changed` emissions are
-  deferred. The capability metadata is truthful (`subscribe: false`,
-  `listChanged: false`), `resources/subscribe` refuses instead of
-  acknowledging inert registrations, and the resource `revision` already
-  binds to the admitted-input identity so a later watcher can diff it.
 - **Cooperative mid-run cancellation**: a cancellation is observed live
   and its reply suppressed, but a pure core traversal is not interrupted
   mid-computation; the deadline and the concurrency bound cap the
@@ -279,6 +283,7 @@ diagnostics and never rename them.
 ```text
 node scripts/test-mcp-contracts.mjs
 node scripts/test-mcp-stdio.mjs
+node scripts/test-mcp-notifications.mjs
 node scripts/test-mcp-boundaries.mjs
 node scripts/test-mcp-host.mjs
 node scripts/test-mcp-union.mjs

@@ -7,6 +7,7 @@
 // and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 
 import "./registry-union.mjs";
+import { assertRegistryUnion, ACCEPTED_M8_REGISTRY_FAMILIES } from "./lib/registry-union.mjs";
 import { createRequire } from "node:module";
 import { readdirSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -175,30 +176,11 @@ if (!validateRegistry(registry080)) {
 if (registry080.schema_version !== "lekalo/diagnostic-registry/v0.8.0") {
   fail("registry-discriminator", registry080.schema_version);
 }
-// Union completeness, part 1 — the closed landed-family set: every M8
-// family that has landed on the integration line must resolve here
-// with its exact landed size, and this issue's own family must be
-// present exactly once per allocation.
-const LANDED_FAMILY_SIZES = {
-  "format.": 11,
-  "adoption.": 9,
-  "portability.": 9,
-  "worklog-changelog.": 7,
-  "managed.": 12,
-  "module-api.": 14,
-  "tasklink.": 8,
-  "mcp.": 11,
-};
-const familySizes = {};
-for (const entry of registry080.entries) {
-  const family = `${entry.id.split(".")[0]}.`;
-  familySizes[family] = (familySizes[family] ?? 0) + 1;
-}
-for (const [family, size] of Object.entries(LANDED_FAMILY_SIZES)) {
-  if (familySizes[family] !== size) {
-    fail("registry-family", { family, expected: size, actual: familySizes[family] ?? 0 });
-  }
-}
+// Sibling families evolve under their own gates. Preserve the complete
+// live union through the shared guard and pin only this gate's MCP family.
+assertRegistryUnion(registry065, registry080, {
+  families: ACCEPTED_M8_REGISTRY_FAMILIES, ownPrefix: "mcp.", ownCount: 11,
+});
 // Live-line monotonicity and byte-identical predecessor entries are
 // checked by the shared union guard above, not duplicated here.
 const byId065 = new Map(registry065.entries.map((entry) => [entry.id, entry]));
@@ -219,11 +201,6 @@ for (const entry of registry080.entries) {
       }
     }
   }
-}
-const formatEntries = registry080.entries.filter((entry) => entry.id.startsWith("format."));
-const adoptionEntries = registry080.entries.filter((entry) => entry.id.startsWith("adoption."));
-if (formatEntries.length !== 11 || adoptionEntries.length !== 9) {
-  fail("m8-union-families", { format: formatEntries.length, adoption: adoptionEntries.length });
 }
 const mcpCodes = registry080.entries
   .filter((entry) => entry.id.startsWith("mcp."))

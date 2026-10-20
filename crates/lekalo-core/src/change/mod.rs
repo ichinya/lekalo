@@ -386,8 +386,13 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     // home (round 3, finding 11).
     let mut creations: Vec<String> = Vec::new();
     let mut resolved_rows = Vec::with_capacity(request.operations.len());
-    for operation in &request.operations {
-        let row = resolve_operation(&documents, operation)?;
+    for requested in &request.operations {
+        let operation = requested.executable();
+        let mut row = resolve_operation(&documents, operation)?;
+        row.operation = requested.operation().to_owned();
+        if let Operation::Lowered { wire, .. } = requested {
+            row.detail = wire.get("step").and_then(Json::as_str).map(str::to_owned);
+        }
         if row.status != "resolved" {
             return Err(ChangeError::OperationUnsupported {
                 operation: operation.operation().to_owned(),
@@ -1854,6 +1859,50 @@ fn resolve_operation(
             }
             (target.clone(), true)
         }
+        Operation::QueryEffect { query, effect, add } => {
+            let definition = find_definition(documents, query)?;
+            if definition_kind_of(definition) != "query" {
+                return Err(ChangeError::SubjectConflict {
+                    subject: query.clone(),
+                    detail: "wrong-kind",
+                });
+            }
+            if *add {
+                find_definition(documents, effect)?;
+            }
+            let exists = definition_scalar_exists(&definition.node, "reads", effect);
+            if exists == *add {
+                return Err(ChangeError::SubjectConflict {
+                    subject: effect.clone(),
+                    detail: if *add {
+                        "effect-duplicate"
+                    } else {
+                        "member-missing"
+                    },
+                });
+            }
+            (query.clone(), true)
+        }
+        Operation::Requirement {
+            symbol,
+            requirement,
+            link,
+        } => {
+            let definition = find_definition(documents, symbol)?;
+            let exists = definition_scalar_exists(&definition.node, "derived_from", requirement);
+            if exists == *link {
+                return Err(ChangeError::SubjectConflict {
+                    subject: requirement.clone(),
+                    detail: if *link {
+                        "requirement-duplicate"
+                    } else {
+                        "member-missing"
+                    },
+                });
+            }
+            (symbol.clone(), true)
+        }
+        Operation::Lowered { .. } => unreachable!("registered operation lowered before resolution"),
         Operation::Unsupported { subject, .. } => (subject.clone().unwrap_or_default(), false),
     };
     Ok(ResolvedOperation {
@@ -2131,6 +2180,7 @@ fn apply_tree_edit(
         return Ok(());
     }
     let subject = match operation {
+        Operation::Lowered { .. } => unreachable!("registered operation lowered before editing"),
         Operation::Unsupported { .. } => return Ok(()),
         Operation::EntityFieldAdd { entity, .. }
         | Operation::EntityFieldRemove { entity, .. }
@@ -2148,7 +2198,9 @@ fn apply_tree_edit(
             command: entity, ..
         }
         | Operation::OperationInputSet { target: entity, .. }
-        | Operation::OperationOutputSet { target: entity, .. } => entity.clone(),
+        | Operation::OperationOutputSet { target: entity, .. }
+        | Operation::QueryEffect { query: entity, .. }
+        | Operation::Requirement { symbol: entity, .. } => entity.clone(),
         Operation::DefinitionAdd { .. } => unreachable!(),
     };
     // The declaring document is located through the typed definition table.
@@ -2208,6 +2260,23 @@ fn apply_tree_edit(
         Operation::OperationOutputSet { r#type, .. } => {
             replace_returns(&mut definition.node, r#type)
         }
+        Operation::QueryEffect { effect, add, .. } => {
+            if *add {
+                push_scalar_item(&mut definition.node, "reads", effect)
+            } else {
+                remove_scalar_item(&mut definition.node, "reads", effect)
+            }
+        }
+        Operation::Requirement {
+            requirement, link, ..
+        } => {
+            if *link {
+                push_scalar_item(&mut definition.node, "derived_from", requirement)
+            } else {
+                remove_scalar_item(&mut definition.node, "derived_from", requirement)
+            }
+        }
+        Operation::Lowered { .. } => unreachable!("registered operation lowered before editing"),
         Operation::Unsupported { .. } | Operation::DefinitionAdd { .. } => Ok(()),
     }
 }
@@ -2917,6 +2986,23 @@ fn plan_source_edits(
                 &r#type.to_spelling(),
             )?]
         }
+        Operation::QueryEffect { effect, add, .. } => {
+            vec![edit::plan_scalar_list_change(
+                bytes, node, "reads", effect, *add,
+            )?]
+        }
+        Operation::Requirement {
+            requirement, link, ..
+        } => {
+            vec![edit::plan_scalar_list_change(
+                bytes,
+                node,
+                "derived_from",
+                requirement,
+                *link,
+            )?]
+        }
+        Operation::Lowered { .. } => unreachable!("registered operation lowered before editing"),
         Operation::Unsupported { .. } => return Ok(Vec::new()),
     };
     Ok(edits)

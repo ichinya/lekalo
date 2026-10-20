@@ -480,7 +480,7 @@ const validateToolOutput = (responses, id, slug) => {
 {
   const { responses } = await serve(lifecycle(), []);
   const capabilities = findResponse(responses, 1).result.capabilities;
-  check(capabilities.resources.subscribe === false, "advertise-subscribe-false", capabilities);
+  check(capabilities.resources.subscribe === true, "advertise-subscribe-true", capabilities);
   check(capabilities.resources.listChanged === false, "advertise-listchanged-false", capabilities);
 }
 
@@ -588,9 +588,7 @@ const validateToolOutput = (responses, id, slug) => {
   check(!findResponse(responses, 70).result && !findResponse(responses, 71).result, "no-foreign-tool-owner-on-resource-refusal");
 }
 
-// F13: subscribe is refused while the capability is unadvertised — an
-// inert registration is never acknowledged, whatever the identity (r2
-// F3/codex 13).
+// Resource subscriptions share resource-read admission; foreign scope refuses.
 {
   const { responses } = await serve(
     [
@@ -602,9 +600,9 @@ const validateToolOutput = (responses, id, slug) => {
     [],
     "mcp.local.json",
   );
-  check(findResponse(responses, 80)?.error?.code === -32601, "subscribe-unadvertised-refused", findResponse(responses, 80));
-  check(findResponse(responses, 81)?.error?.code === -32601, "subscribe-refused-even-readable", findResponse(responses, 81));
-  check(findResponse(responses, 82)?.error?.code === -32601, "unsubscribe-refused", findResponse(responses, 82));
+  check(findResponse(responses, 80)?.error?.code === -32602, "subscribe-outside-scope-refused", findResponse(responses, 80));
+  check(findResponse(responses, 81)?.result && !findResponse(responses, 81)?.error, "subscribe-readable", findResponse(responses, 81));
+  check(findResponse(responses, 82)?.result && !findResponse(responses, 82)?.error, "unsubscribe-readable", findResponse(responses, 82));
 }
 
 // F17: secret-shaped output refuses with mcp.sensitive-output.

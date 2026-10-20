@@ -76,7 +76,7 @@
     },
     {
       "operation": "migration:apply",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Apply one registered application-model migration step",
       "mutationClass": "destructive",
       "requiredEvidence": [
@@ -128,7 +128,7 @@
     },
     {
       "operation": "query-effect:add",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Add one read-semantics effect to a query",
       "mutationClass": "member-additive",
       "requiredEvidence": [
@@ -137,21 +137,21 @@
     },
     {
       "operation": "query-effect:remove",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Remove one effect from a query",
       "mutationClass": "member-destructive",
       "requiredEvidence": []
     },
     {
       "operation": "requirement:link",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Link one requirement to a symbol",
       "mutationClass": "member-additive",
       "requiredEvidence": []
     },
     {
       "operation": "requirement:unlink",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Unlink one requirement from a symbol",
       "mutationClass": "member-destructive",
       "requiredEvidence": []

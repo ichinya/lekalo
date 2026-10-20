@@ -111,7 +111,7 @@ fn lifecycle_initializes_pings_and_stays_json_only_on_stdout() {
     // listChanged are false until a bounded watcher ships.
     assert_eq!(
         initialize_response["result"]["capabilities"]["resources"],
-        serde_json::json!({"subscribe": false, "listChanged": false})
+        serde_json::json!({"subscribe": true, "listChanged": false})
     );
     assert_eq!(responses[1]["result"], serde_json::json!({}));
     // Malformed JSON is -32700; unknown methods -32601.
@@ -514,10 +514,8 @@ fn a_full_session_writes_nothing_and_touches_no_cache() {
     // No .lekalo cache/runtime directory appeared anywhere.
     assert!(!root.root.join("planner/.lekalo").exists());
     assert!(!root.root.join(".lekalo").exists());
-    // Subscribe/unsubscribe are refused: the capability is advertised
-    // false, and an inert registration is never acknowledged (r2 F3).
-    assert_eq!(session.error_code(20), Some(-32601));
-    assert_eq!(session.error_code(21), Some(-32601));
+    assert_eq!(session.response(20)["result"], serde_json::json!({}));
+    assert_eq!(session.response(21)["result"], serde_json::json!({}));
 }
 
 // ---- CLI independence: no MCP anything on ordinary commands. ----------------
@@ -663,7 +661,7 @@ fn resources_read_respects_the_launch_group_ceiling() {
 }
 
 #[test]
-fn resources_subscribe_is_refused_while_unadvertised() {
+fn resources_subscribe_checks_scope_before_registering() {
     let root = ServedRoot::new();
     let mut frames = lifecycle();
     frames.push(frame(
@@ -682,12 +680,9 @@ fn resources_subscribe_is_refused_while_unadvertised() {
         serde_json::json!({"uri": "lekalo://planner/summary"}),
     ));
     let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
-    // No watcher ships, and the capability is advertised false (F8): the
-    // honest answer is the protocol refusal for every identity — an
-    // inert registration is never acknowledged (r2 F3/codex 13).
-    assert_eq!(session.error_code(10), Some(-32601));
-    assert_eq!(session.error_code(11), Some(-32601));
-    assert_eq!(session.error_code(12), Some(-32601));
+    assert_eq!(session.error_code(10), Some(-32602));
+    assert_eq!(session.response(11)["result"], serde_json::json!({}));
+    assert_eq!(session.response(12)["result"], serde_json::json!({}));
 }
 
 #[test]
@@ -698,7 +693,7 @@ fn only_implemented_capabilities_are_advertised() {
     let session = root.serve(&frames, &[]);
     let capabilities = &session.response(1)["result"]["capabilities"];
     assert_eq!(capabilities["tools"]["listChanged"], false);
-    assert_eq!(capabilities["resources"]["subscribe"], false);
+    assert_eq!(capabilities["resources"]["subscribe"], true);
     assert_eq!(capabilities["resources"]["listChanged"], false);
 }
 

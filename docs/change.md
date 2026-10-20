@@ -39,7 +39,8 @@ unsupported 4); the implemented increments are `entity-field:add`,
 `entity-field:remove`, `entity-field:rename`, `enum-case:add`,
 `enum-case:change`, `definition:add`, `command-effect:add`,
 `command-effect:remove`, `operation-input:set`, and
-`operation-output:set` — every implemented verb has first-class CLI
+`operation-output:set`, `query-effect:add`, `query-effect:remove`,
+`requirement:link`, `requirement:unlink`, and `migration:apply` — every implemented verb has first-class CLI
 sugar that lowers to the same closed request DTO a request file
 carries, so sugar and JSON requests are byte-identical at the core.
 The remaining cataloged operations are explicit staged refusals
@@ -55,8 +56,8 @@ silently dropped from a committed declaration.
 
 ### Deferral matrix (P1 coverage scope)
 
-Ten of the twenty cataloged operations are implemented and executable;
-the other ten are cataloged, decodable, and refuse
+Fifteen of the twenty cataloged operations are implemented and executable;
+the other five are cataloged, decodable, and refuse
 `change.operation-unsupported` (exit 4). This is the explicit, tracked
 deferral of issue #73's P1 family list: each refusal is a designed
 fail-closed increment boundary, not an accidental gap, and each
@@ -66,12 +67,9 @@ and gates:
 | Deferred operation | Follow-up increment |
 |---|---|
 | `operation-error:set` | error-binding signature vertical (research I4) |
-| `query-effect:add` / `query-effect:remove` | query effect-surface vertical (research I4) |
 | `binding:add` | canonical/observed binding DTO vertical (research I5) |
 | `ownership:set` | adoption-prerequisite ownership transition vertical (research I5) |
-| `requirement:link` / `requirement:unlink` | traceability `derived_from` mutation vertical (research I5) |
 | `symbol:move` / `module:move` | move semantics with rename history and reference rewrites (research I5) |
-| `migration:apply` | registered application-model recipe execution (research I5) |
 
 Until an increment lands, the deferred verbs are reachable only as
 JSON request documents through `change request --request <file>`, and
@@ -79,6 +77,22 @@ they refuse with `change.operation-unsupported` before any mutation.
 The catalog status pins stay honest either way: an operation is
 `implemented` in `contracts/change-catalog.v0.8.0.json` exactly when a
 sealed executor exists.
+
+Query effect operations edit the query's declared `reads` dependencies. They
+resolve the query and referenced symbol through the typed Model; removing its
+required final read refuses validation. Requirement operations edit the
+symbol's `derived_from` list using the frozen uppercase requirement ID grammar.
+They do not write external requirement stores. Removing the final link removes
+the optional YAML member, preserving the accepted block-only YAML surface.
+
+The registered application-model migration recipe
+`model.entity-field-rename.v0.8.0` takes exactly `entity`, `name`, and `to`
+parameters. It invokes the same sealed field-rename executor, including identity
+reference updates, policy/evidence checks, file diff, rollback, and idempotent
+history. The original migration request is hashed, and its versioned step ID is
+retained in the plan and committed receipt's operation `detail`. Unknown recipes
+refuse before mutation; user scripts are never executed. This is separate from
+the Model schema-version migration command.
 
 ```sh
 lekalo change entity-field:add --project sample --entity tasks.task \
@@ -96,6 +110,14 @@ lekalo change operation-input:set --project sample --operation tasks.complete \
   --dry-run --json
 lekalo change operation-output:set --project sample --operation tasks.find_done \
   --type 'list<tasks.task>' --dry-run --json
+lekalo change query-effect:add --project sample --query tasks.find_done \
+  --effect tasks.task --dry-run --json
+lekalo change requirement:link --project sample --symbol tasks.task \
+  --requirement TASK-REQ-001 --dry-run --json
+lekalo change migration:apply --project sample \
+  --step model.entity-field-rename.v0.8.0 \
+  --parameters-json '{"entity":"tasks.task","name":"title","to":"label"}' \
+  --dry-run --json
 lekalo change request --project sample --request change-request.json \
   --apply --idempotency-key task-priority-v1 --json
 lekalo change receipt --project sample --idempotency-key task-priority-v1 --json

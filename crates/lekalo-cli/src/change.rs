@@ -46,6 +46,21 @@ pub(crate) enum ChangeCommands {
     /// Replace a query's return type.
     #[command(name = "operation-output:set")]
     OperationOutputSet(OperationOutputArgs),
+    /// Add one read dependency to a query.
+    #[command(name = "query-effect:add")]
+    QueryEffectAdd(QueryEffectArgs),
+    /// Remove one read dependency from a query.
+    #[command(name = "query-effect:remove")]
+    QueryEffectRemove(QueryEffectArgs),
+    /// Link one declared requirement identity to a symbol.
+    #[command(name = "requirement:link")]
+    RequirementLink(RequirementArgs),
+    /// Unlink one requirement identity from a symbol.
+    #[command(name = "requirement:unlink")]
+    RequirementUnlink(RequirementArgs),
+    /// Apply the registered model.entity-field-rename.v0.8.0 recipe.
+    #[command(name = "migration:apply")]
+    MigrationApply(MigrationArgs),
     /// Run the complete JSON request surface from a file.
     Request(RequestArgs),
     /// Print the committed receipt of one idempotency key.
@@ -110,6 +125,18 @@ pub(crate) struct ExecutionArgs {
     /// Project root selector, relative to the invocation directory.
     #[arg(long, value_name = "DIR")]
     project: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MigrationArgs {
+    /// Registered, versioned application-model recipe identity.
+    #[arg(long, value_name = "ID")]
+    step: String,
+    /// Closed recipe parameters; field rename takes entity, name, and to.
+    #[arg(long, value_name = "JSON", default_value = "{}")]
+    parameters_json: String,
+    #[command(flatten)]
+    execution: ExecutionArgs,
 }
 
 /// `entity-field:add` sugar: typed flags, no guessed names.
@@ -296,6 +323,27 @@ pub(crate) struct OperationOutputArgs {
     /// The new return type sugar (`ref`, `list<ref>`, `ref?`).
     #[arg(long, value_name = "TYPE")]
     r#type: String,
+    #[command(flatten)]
+    execution: ExecutionArgs,
+}
+
+/// The complete JSON request surface.
+#[derive(Debug, Args)]
+pub(crate) struct QueryEffectArgs {
+    #[arg(long, value_name = "ID")]
+    query: String,
+    #[arg(long, value_name = "ID")]
+    effect: String,
+    #[command(flatten)]
+    execution: ExecutionArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct RequirementArgs {
+    #[arg(long, value_name = "ID")]
+    symbol: String,
+    #[arg(long, value_name = "ID")]
+    requirement: String,
     #[command(flatten)]
     execution: ExecutionArgs,
 }
@@ -515,6 +563,26 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
             "operationTarget": args.operation_target,
             "type": parse_type_spelling(&args.r#type)?,
         }),
+        ChangeCommands::QueryEffectAdd(args) | ChangeCommands::QueryEffectRemove(args) => {
+            let operation = if matches!(command, ChangeCommands::QueryEffectAdd(_)) {
+                "query-effect:add"
+            } else {
+                "query-effect:remove"
+            };
+            serde_json::json!({"operation":operation,"query":args.query,"effect":args.effect})
+        }
+        ChangeCommands::RequirementLink(args) | ChangeCommands::RequirementUnlink(args) => {
+            let operation = if matches!(command, ChangeCommands::RequirementLink(_)) {
+                "requirement:link"
+            } else {
+                "requirement:unlink"
+            };
+            serde_json::json!({"operation":operation,"symbol":args.symbol,"requirement":args.requirement})
+        }
+        ChangeCommands::MigrationApply(args) => serde_json::json!({
+            "operation":"migration:apply", "step":args.step,
+            "parameters":change::parse_strict_json_literal(&args.parameters_json)?,
+        }),
         _ => unreachable!("lower() handles sugar commands only"),
     };
     let mut request = serde_json::json!({
@@ -532,6 +600,13 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
         ChangeCommands::CommandEffectRemove(args) => &args.execution,
         ChangeCommands::OperationInputSet(args) => &args.execution,
         ChangeCommands::OperationOutputSet(args) => &args.execution,
+        ChangeCommands::QueryEffectAdd(args) | ChangeCommands::QueryEffectRemove(args) => {
+            &args.execution
+        }
+        ChangeCommands::RequirementLink(args) | ChangeCommands::RequirementUnlink(args) => {
+            &args.execution
+        }
+        ChangeCommands::MigrationApply(args) => &args.execution,
         _ => unreachable!("lower() handles sugar commands only"),
     };
     if let Some(expect_model) = &execution.expect_model {
@@ -700,6 +775,17 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
                         (&args.execution, args.execution.expect_plan.as_deref())
                     }
                     ChangeCommands::OperationOutputSet(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::QueryEffectAdd(args)
+                    | ChangeCommands::QueryEffectRemove(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::RequirementLink(args)
+                    | ChangeCommands::RequirementUnlink(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::MigrationApply(args) => {
                         (&args.execution, args.execution.expect_plan.as_deref())
                     }
                     _ => unreachable!("sugar arm"),

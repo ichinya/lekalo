@@ -3,10 +3,9 @@
 //!
 //! After `initialize`/`notifications/initialized`, the served methods are
 //! ping, tools/list, tools/call, resources/list, resources/templates/list,
-//! and resources/read. Only implemented capabilities are advertised:
-//! tools only, with resource subscribe/listChanged false (F8) — and a
-//! subscribe attempt is refused (`-32601`) instead of acknowledged as an
-//! inert registration the server can never honor (r2 F3/codex 13). The
+//! resources/read and bounded resource subscriptions. Resource changes are
+//! polled through the same admitted, supervised read as resources/read.
+//! The concrete catalog is fixed at startup, so listChanged stays false. The
 //! launcher `--group` is the disclosure ceiling of every tool call and
 //! resource read (F3/F4); inbound frames refuse duplicate keys (F10);
 //! the lifecycle is a real state machine (r2 F14/codex 12: the envelope
@@ -55,6 +54,23 @@ const INVALID_PARAMS: i64 = -32602;
 /// worker runs: the granularity at which a cancellation notification is
 /// observed during live work.
 const WAIT_POLL: Duration = Duration::from_millis(25);
+const RESOURCE_POLL: Duration = Duration::from_millis(250);
+
+#[derive(Clone)]
+struct Subscription {
+    uri: String,
+    scope: UriScope,
+    family: Family,
+    qualifier: Option<String>,
+    revision: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ResourceAction {
+    Read,
+    Subscribe,
+    Unsubscribe,
+}
 
 /// One live server session: the immutable catalog plus the mutable
 /// lifecycle state (admission counters, the handshake, and the
@@ -81,6 +97,7 @@ pub struct Session {
     /// they stay counted against the concurrency bound until they
     /// finish (their slot is never freed early).
     detached: AtomicUsize,
+    subscriptions: Mutex<VecDeque<Subscription>>,
 }
 
 impl Session {
@@ -102,6 +119,7 @@ impl Session {
             cancelled: Mutex::new(BTreeSet::new()),
             live: AtomicUsize::new(0),
             detached: AtomicUsize::new(0),
+            subscriptions: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -252,12 +270,18 @@ pub fn serve(session: Arc<Session>) {
         });
     drop(reader);
     let mut pending: VecDeque<Result<String, super::stdio::FrameError>> = VecDeque::new();
+    let mut last_resource_poll = Instant::now();
     loop {
+        if last_resource_poll.elapsed() >= RESOURCE_POLL {
+            poll_subscription(&session, &frame_rx, &mut pending);
+            last_resource_poll = Instant::now();
+        }
         let frame = match pending.pop_front() {
             Some(frame) => frame,
-            None => match frame_rx.recv() {
+            None => match frame_rx.recv_timeout(RESOURCE_POLL) {
                 Ok(event) => event,
-                Err(_) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
             },
         };
         let alive = match frame {
@@ -454,17 +478,15 @@ fn route(
             tools_call(session, incoming, frame_rx, pending);
         }
         "resources/read" => {
-            resources_read(session, incoming, frame_rx, pending);
+            resources_read(session, incoming, frame_rx, pending, ResourceAction::Read);
         }
-        // Subscriptions are not implemented and not advertised (F8): the
-        // honest answer is the protocol refusal, never an inert
-        // registration a watcher can never honor (r2 F3/codex 13).
         "resources/subscribe" | "resources/unsubscribe" => {
-            session.writer.send_error(
-                &incoming.id,
-                METHOD_NOT_FOUND,
-                "subscriptions-not-implemented",
-            );
+            let action = if incoming.method == "resources/subscribe" {
+                ResourceAction::Subscribe
+            } else {
+                ResourceAction::Unsubscribe
+            };
+            resources_read(session, incoming, frame_rx, pending, action);
         }
         _ => {
             session
@@ -512,7 +534,7 @@ fn initialize() -> Value {
         "protocolVersion": profile,
         "capabilities": {
             "tools": {"listChanged": false},
-            "resources": {"subscribe": false, "listChanged": false}
+            "resources": {"subscribe": true, "listChanged": false}
         },
         "serverInfo": {"name": "lekalo", "version": version}
     })
@@ -1189,7 +1211,23 @@ fn resources_read(
     incoming: &Incoming,
     frame_rx: &mpsc::Receiver<Result<String, super::stdio::FrameError>>,
     pending: &mut VecDeque<Result<String, super::stdio::FrameError>>,
+    action: ResourceAction,
 ) {
+    if !incoming
+        .params
+        .as_ref()
+        .and_then(Value::as_object)
+        .is_some_and(|params| {
+            params.get("uri").is_some_and(Value::is_string)
+                && params.keys().all(|key| key == "uri" || key == "_meta")
+                && params.get("_meta").is_none_or(Value::is_object)
+        })
+    {
+        session
+            .writer
+            .send_error(&incoming.id, INVALID_PARAMS, "invalid-resource-params");
+        return;
+    }
     let uri = incoming
         .params
         .as_ref()
@@ -1285,6 +1323,37 @@ fn resources_read(
             return;
         }
     }
+    if action != ResourceAction::Read {
+        let mut subscriptions = session.subscriptions.lock().expect("subscriptions");
+        if action == ResourceAction::Unsubscribe {
+            subscriptions.retain(|subscription| subscription.uri != uri);
+            session
+                .writer
+                .send_result(&incoming.id, serde_json::json!({}));
+            return;
+        }
+        if subscriptions
+            .iter()
+            .any(|subscription| subscription.uri == uri)
+        {
+            session
+                .writer
+                .send_result(&incoming.id, serde_json::json!({}));
+            return;
+        }
+        if !session.writer.admits_resource_update(uri) {
+            session
+                .writer
+                .send_error(&incoming.id, INVALID_REQUEST, "mcp.output-limit");
+            return;
+        }
+        if subscriptions.len() >= lekalo_core::mcp::version::MAX_WATCHED_IDENTITIES {
+            session
+                .writer
+                .send_error(&incoming.id, INVALID_REQUEST, "mcp.request-limit");
+            return;
+        }
+    }
     // The pre-cancelled id executes nothing and answers nothing (r2 F6).
     let key = Session::key_of(&incoming.id);
     if let Some(key) = &key {
@@ -1318,6 +1387,7 @@ fn resources_read(
     }
     let worker_session = Arc::clone(session);
     let worker_scope = scope.clone();
+    let worker_qualifier = qualifier.clone();
     let guard = WorkGuard::new(session.limits.timeout_ms);
     let worker_guard = guard.clone();
     let outcome = supervise(
@@ -1327,7 +1397,12 @@ fn resources_read(
         guard,
         move || {
             work::with_guard(worker_guard, || {
-                build_resource_checked(&worker_session, &worker_scope, family, qualifier.as_deref())
+                build_resource_checked(
+                    &worker_session,
+                    &worker_scope,
+                    family,
+                    worker_qualifier.as_deref(),
+                )
             })
         },
         frame_rx,
@@ -1336,6 +1411,24 @@ fn resources_read(
     match outcome {
         Supervised::Cancelled => {}
         Supervised::Done(Ok(document)) => {
+            if action == ResourceAction::Subscribe {
+                let revision = resource_document_revision(&document);
+                session
+                    .subscriptions
+                    .lock()
+                    .expect("subscriptions")
+                    .push_back(Subscription {
+                        uri: uri.to_owned(),
+                        scope,
+                        family,
+                        qualifier,
+                        revision,
+                    });
+                session
+                    .writer
+                    .send_result(&incoming.id, serde_json::json!({}));
+                return;
+            }
             session.writer.send_result(
                 &incoming.id,
                 serde_json::json!({
@@ -1381,6 +1474,70 @@ fn resources_read(
             send_resource_refusal(session, &incoming.id, &envelope);
         }
     }
+}
+
+fn resource_document_revision(document: &str) -> Option<String> {
+    serde_json::from_str::<Value>(document)
+        .ok()?
+        .get("revision")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// Round-robin one admitted identity per tick. No broad filesystem watcher,
+/// unbounded worker queue or raw source is introduced. Timeout/cancel and
+/// concurrency ownership are exactly the resource-read supervision policy.
+fn poll_subscription(
+    session: &Arc<Session>,
+    frame_rx: &mpsc::Receiver<Result<String, super::stdio::FrameError>>,
+    pending: &mut VecDeque<Result<String, super::stdio::FrameError>>,
+) {
+    if session.live.load(Ordering::SeqCst) >= session.limits.concurrent_calls.max(1) {
+        return;
+    }
+    let Some(mut subscription) = session
+        .subscriptions
+        .lock()
+        .expect("subscriptions")
+        .pop_front()
+    else {
+        return;
+    };
+    let worker_session = Arc::clone(session);
+    let scope = subscription.scope.clone();
+    let family = subscription.family;
+    let qualifier = subscription.qualifier.clone();
+    let guard = WorkGuard::new(session.limits.timeout_ms);
+    let worker_guard = guard.clone();
+    let outcome = supervise(
+        session,
+        None,
+        session.limits.timeout_ms,
+        guard,
+        move || {
+            work::with_guard(worker_guard, || {
+                build_resource_checked(&worker_session, &scope, family, qualifier.as_deref())
+            })
+        },
+        frame_rx,
+        pending,
+    );
+    let revision = match outcome {
+        Supervised::Done(Ok(document)) => resource_document_revision(&document),
+        _ => None,
+    };
+    if revision != subscription.revision {
+        // Notify invalidation as well as recovery. The client re-reads through
+        // the ordinary authorized surface; a failure never leaks its operand.
+        if session.writer.resource_updated(&subscription.uri) {
+            subscription.revision = revision;
+        }
+    }
+    session
+        .subscriptions
+        .lock()
+        .expect("subscriptions")
+        .push_back(subscription);
 }
 
 /// The module head of a symbol qualifier, when it is a grammar-valid

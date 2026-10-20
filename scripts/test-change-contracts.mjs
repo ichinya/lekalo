@@ -146,8 +146,13 @@ const expectedImplemented = [
   "entity-field:rename",
   "enum-case:add",
   "enum-case:change",
+  "migration:apply",
   "operation-input:set",
   "operation-output:set",
+  "query-effect:add",
+  "query-effect:remove",
+  "requirement:link",
+  "requirement:unlink",
 ];
 if (JSON.stringify(implemented) !== JSON.stringify(expectedImplemented)) {
   fail("catalog-implemented-set", { implemented, expectedImplemented });

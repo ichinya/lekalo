@@ -56,7 +56,7 @@ fn resources_read_respects_the_launch_group_ceiling() {
 }
 
 #[test]
-fn resources_subscribe_is_refused_while_unadvertised() {
+fn resources_subscribe_checks_scope_before_registering() {
     let root = ServedRoot::new();
     let mut frames = lifecycle();
     frames.push(frame(
@@ -70,11 +70,8 @@ fn resources_subscribe_is_refused_while_unadvertised() {
         json!({"uri": "lekalo://planner/summary"}),
     ));
     let session = root.serve_with_catalog(Some("mcp.local.json"), &frames, &[]);
-    // No watcher ships and the capability is advertised false (F8): the
-    // honest answer is the protocol refusal for every identity — an
-    // inert registration is never acknowledged (r2 F3/codex 13).
-    assert_eq!(session.error_code(10), Some(-32601));
-    assert_eq!(session.error_code(11), Some(-32601));
+    assert_eq!(session.error_code(10), Some(-32602));
+    assert_eq!(session.response(11)["result"], json!({}));
 }
 
 #[test]
@@ -85,7 +82,7 @@ fn only_implemented_capabilities_are_advertised() {
     let session = root.serve(&frames, &[]);
     let capabilities = &session.response(1)["result"]["capabilities"];
     assert_eq!(capabilities["tools"]["listChanged"], false);
-    assert_eq!(capabilities["resources"]["subscribe"], false);
+    assert_eq!(capabilities["resources"]["subscribe"], true);
     assert_eq!(capabilities["resources"]["listChanged"], false);
 }
 

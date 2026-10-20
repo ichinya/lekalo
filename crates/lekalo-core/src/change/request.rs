@@ -32,6 +32,13 @@ pub struct ChangeRequest {
 /// One typed operation of the implemented vertical.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operation {
+    /// A registered operation lowered to the same sealed semantic executor.
+    /// Wire intent stays intact for hashing, audit and idempotency.
+    Lowered {
+        operation: &'static str,
+        wire: Json,
+        executable: Box<Operation>,
+    },
     /// `entity-field:add`: add one field to an entity or value-object.
     EntityFieldAdd { entity: String, field: FieldDecl },
     /// `entity-field:remove`: remove one existing field.
@@ -79,6 +86,18 @@ pub enum Operation {
     },
     /// `operation-output:set`: replace a query's return type.
     OperationOutputSet { target: String, r#type: TypeRef },
+    /// Add or remove an existing read dependency of a query.
+    QueryEffect {
+        query: String,
+        effect: String,
+        add: bool,
+    },
+    /// Link or unlink a requirement identity in a symbol's derived_from list.
+    Requirement {
+        symbol: String,
+        requirement: String,
+        link: bool,
+    },
     /// A cataloged operation this implementation does not provide. The
     /// payload decoded closed and bounded; preparation refuses later with
     /// the registered unsupported outcome and never mutates.
@@ -92,6 +111,7 @@ impl Operation {
     /// The catalog discriminator of this operation.
     pub fn operation(&self) -> &str {
         match self {
+            Self::Lowered { operation, .. } => operation,
             Self::EntityFieldAdd { .. } => "entity-field:add",
             Self::EntityFieldRemove { .. } => "entity-field:remove",
             Self::EntityFieldRename { .. } => "entity-field:rename",
@@ -102,6 +122,10 @@ impl Operation {
             Self::CommandEffectRemove { .. } => "command-effect:remove",
             Self::OperationInputSet { .. } => "operation-input:set",
             Self::OperationOutputSet { .. } => "operation-output:set",
+            Self::QueryEffect { add: true, .. } => "query-effect:add",
+            Self::QueryEffect { add: false, .. } => "query-effect:remove",
+            Self::Requirement { link: true, .. } => "requirement:link",
+            Self::Requirement { link: false, .. } => "requirement:unlink",
             Self::Unsupported { operation, .. } => operation,
         }
     }
@@ -109,6 +133,7 @@ impl Operation {
     /// The natural subject token of this operation, when one is declared.
     pub fn subject(&self) -> Option<&str> {
         match self {
+            Self::Lowered { executable, .. } => executable.subject(),
             Self::EntityFieldAdd { entity, .. }
             | Self::EntityFieldRemove { entity, .. }
             | Self::EntityFieldRename { entity, .. } => Some(entity),
@@ -122,6 +147,8 @@ impl Operation {
             Self::OperationInputSet { target, .. } | Self::OperationOutputSet { target, .. } => {
                 Some(target)
             }
+            Self::QueryEffect { query, .. } => Some(query),
+            Self::Requirement { symbol, .. } => Some(symbol),
             Self::Unsupported { subject, .. } => subject.as_deref(),
         }
     }
@@ -134,6 +161,7 @@ impl Operation {
             Json::String(self.operation().to_owned()),
         );
         match self {
+            Self::Lowered { wire, .. } => return wire.clone(),
             Self::EntityFieldAdd { entity, field } => {
                 map.insert("entity".to_owned(), Json::String(entity.clone()));
                 map.insert("field".to_owned(), field.to_canonical_json());
@@ -196,12 +224,31 @@ impl Operation {
                 map.insert("operationTarget".to_owned(), Json::String(target.clone()));
                 map.insert("type".to_owned(), r#type.to_canonical_json());
             }
+            Self::QueryEffect { query, effect, .. } => {
+                map.insert("query".to_owned(), Json::String(query.clone()));
+                map.insert("effect".to_owned(), Json::String(effect.clone()));
+            }
+            Self::Requirement {
+                symbol,
+                requirement,
+                ..
+            } => {
+                map.insert("symbol".to_owned(), Json::String(symbol.clone()));
+                map.insert("requirement".to_owned(), Json::String(requirement.clone()));
+            }
             Self::Unsupported { .. } => {
                 // Unsupported rows never carry canonical bytes: they are
                 // refused before any plan is sealed.
             }
         }
         Json::Object(map)
+    }
+
+    pub(crate) fn executable(&self) -> &Operation {
+        match self {
+            Self::Lowered { executable, .. } => executable.executable(),
+            other => other,
+        }
     }
 }
 
@@ -807,8 +854,89 @@ fn decode_operation(catalog: &Catalog, value: &Json) -> Result<Operation, &'stat
                 r#type: type_ref(map.get("type").ok_or("missing-member")?, 1)?,
             })
         }
+        "query-effect:add" | "query-effect:remove" => {
+            require_members(
+                map,
+                &["operation", "query", "effect"],
+                &["operation", "query", "effect"],
+            )?;
+            let query = member_string(map, "query")?;
+            let effect = member_string(map, "effect")?;
+            if !super::symbol_id_valid(&query) || !super::symbol_id_valid(&effect) {
+                return Err("symbol-grammar");
+            }
+            Ok(Operation::QueryEffect {
+                query,
+                effect,
+                add: discriminator == "query-effect:add",
+            })
+        }
+        "requirement:link" | "requirement:unlink" => {
+            require_members(
+                map,
+                &["operation", "symbol", "requirement"],
+                &["operation", "symbol", "requirement"],
+            )?;
+            let symbol = member_string(map, "symbol")?;
+            let requirement = member_string(map, "requirement")?;
+            if !super::symbol_id_valid(&symbol) || !valid_requirement(&requirement) {
+                return Err("requirement-grammar");
+            }
+            Ok(Operation::Requirement {
+                symbol,
+                requirement,
+                link: discriminator == "requirement:link",
+            })
+        }
+        "migration:apply" => {
+            require_members(
+                map,
+                &["operation", "step", "parameters"],
+                &["operation", "step"],
+            )?;
+            let step = member_string(map, "step")?;
+            validate_unsupported_member("step", map.get("step").expect("required step"))?;
+            let parameters = map
+                .get("parameters")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}));
+            validate_unsupported_member("parameters", &parameters)?;
+            let mut nested = parameters.as_object().ok_or("payload-not-object")?.clone();
+            if nested.contains_key("operation") {
+                return Err("unknown-member");
+            }
+            let executor = match step.as_str() {
+                "model.entity-field-rename.v0.8.0" => "entity-field:rename",
+                _ => {
+                    return Ok(Operation::Unsupported {
+                        operation: "migration:apply".to_owned(),
+                        subject: Some(step),
+                    })
+                }
+            };
+            nested.insert("operation".to_owned(), Json::String(executor.to_owned()));
+            let executable = decode_operation(catalog, &Json::Object(nested))?;
+            Ok(Operation::Lowered {
+                operation: "migration:apply",
+                wire: value.clone(),
+                executable: Box::new(executable),
+            })
+        }
         _ => Err("implemented-without-executor"),
     }
+}
+
+/// The frozen Model requirement identity grammar.
+fn valid_requirement(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .next()
+            .is_some_and(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+        && value.bytes().all(|byte| {
+            byte.is_ascii_uppercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
+        })
 }
 
 /// The closed subject-member vocabulary of cataloged operations.

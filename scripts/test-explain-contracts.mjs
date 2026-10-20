@@ -38,6 +38,21 @@ const valid = (validator, value, name) => assert(validator(value), `${name}: ${J
 // and golden replay sections (the contracts CI job builds no binary).
 // ---------------------------------------------------------------------------
 const schemaOnly = process.argv.includes("--schema-only");
+const providerCatalogSchema = ajv.compile(read("contracts/explain-provider-catalog.schema.v0.8.0.json"));
+const providerCatalog = {
+  schemaVersion: "lekalo/explain-provider-catalog/v0.8.0",
+  identity: "dev.lekalo.explain-provider-catalog@0.8.0",
+  entries: [
+    { namespace: "com.example.alpha:1.0.0", originalCode: "A009", explanationRef: "urn:alpha:explain:1.0.0:A009" },
+    { namespace: "com.example.beta:2.0.0", originalCode: "B009", explanationRef: "urn:beta:explain:2.0.0:B009" },
+  ],
+};
+valid(providerCatalogSchema, providerCatalog, "provider catalog");
+for (const patch of [{ explanationRef: null }, { namespace: "core" }, { originalCode: "unsafe\ncode" }]) {
+  const bad = structuredClone(providerCatalog);
+  Object.assign(bad.entries[0], patch);
+  assert.equal(providerCatalogSchema(bad), false, "provider reference grammar stays closed");
+}
 
 // ---------------------------------------------------------------------------
 // 1. The embedded catalog: schema-valid, closed, registry-pinned, complete.
@@ -140,7 +155,8 @@ rmSync(scratch, { force: true });
 // ---------------------------------------------------------------------------
 // 4. Live CLI behavior against the real binary (when present).
 // ---------------------------------------------------------------------------
-const binary = resolve(root, "target/debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
+const binary = process.env.LEKALO_EXPLAIN_BIN ?? resolve(root, "target/debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
+if (!schemaOnly) assert.ok(existsSync(binary), "live CLI required; build the checkout first");
 let live = false;
 if (!schemaOnly && existsSync(binary)) {
   live = true;
@@ -197,6 +213,41 @@ if (!schemaOnly && existsSync(binary)) {
   const human = run(["explain", "LEK-HIDDEN-009"]);
   assert.equal(human.status, 0);
   assert.match(human.stdout, /LEK-HIDDEN-009/);
+  assert.match(human.stdout, /Checks:/);
+  const english = run(["explain", "LEK-HIDDEN-009", "--locale", "en", "--json"]);
+  const russian = run(["explain", "LEK-HIDDEN-009", "--locale", "ru", "--json"]);
+  assert.equal(english.status, 0);
+  assert.equal(russian.status, 0);
+  assert.equal(english.stdout, russian.stdout, "locale cannot change machine bytes");
+  assert.match(run(["explain", "LEK-HIDDEN-009", "--locale", "ru"]).stdout, /Проверка:/);
+  const { mkdtempSync } = await import("node:fs");
+  const stage = mkdtempSync(resolve(root, "target/explain-providers-"));
+  try {
+    const report = resolve(stage, "report.json");
+    const providerPath = resolve(stage, "providers.json");
+    writeFileSync(providerPath, JSON.stringify(providerCatalog));
+    writeFileSync(report, JSON.stringify({ diagnostics: providerCatalog.entries.map((entry) => ({
+      code: "LEK-HIDDEN-009", message: "synthetic provider finding",
+      metadata: { [entry.namespace]: { original_code: entry.originalCode } },
+    })) }));
+    const resolved = run(["explain", "--diagnostic-file", report, "--provider-catalog", providerPath, "--json"]);
+    assert.equal(resolved.status, 0, resolved.stderr);
+    const document = JSON.parse(resolved.stdout);
+    valid(resultSchema, document, "provider references result");
+    assert.deepEqual(document.explanations[0].source.providerExplanations, providerCatalog.entries);
+    const missing = run(["explain", "--diagnostic-file", report, "--json"]);
+    assert.equal(missing.status, 0);
+    assert.equal(JSON.parse(missing.stdout).explanations[0].source.providerExplanations[0].explanationRef, null);
+    const bad = structuredClone(providerCatalog);
+    bad.entries.push(bad.entries[0]);
+    writeFileSync(providerPath, JSON.stringify(bad));
+    assert.equal(run(["explain", "--diagnostic-file", report, "--provider-catalog", providerPath, "--json"]).status, 1);
+    assert.equal(run(["explain", ...Array(65).fill("LEK-HIDDEN-009"), "--json"]).status, 1, "selector limit is a typed refusal");
+    writeFileSync(report, '{"diagnostics":[],"diagnostics":[]}');
+    assert.equal(run(["explain", "--diagnostic-file", report, "--json"]).status, 1, "duplicate report keys refuse");
+  } finally {
+    rmSync(stage, { recursive: true, force: true });
+  }
   // Catalog-integrity refusals are typed; no silent fallback exists.
   assert.ok(!knownDoc.explanations[0].checks.includes("undefined"), "no placeholder prose leaks");
 }

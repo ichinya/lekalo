@@ -216,6 +216,26 @@ impl Writer {
         self.write_measured(frame, "tool-result", id)
     }
 
+    /// Notifications never carry an id or an error-response substitute.
+    /// The URI has already passed the resource scope and length policy.
+    pub fn resource_updated(&self, uri: &str) -> bool {
+        let frame = Self::resource_update_frame(uri);
+        frame.len() + 1 <= self.max_response_bytes && self.send(&frame)
+    }
+
+    pub fn admits_resource_update(&self, uri: &str) -> bool {
+        Self::resource_update_frame(uri).len() + 1 <= self.max_response_bytes
+    }
+
+    fn resource_update_frame(uri: &str) -> String {
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/resources/updated",
+            "params": {"uri": uri}
+        })
+        .to_string()
+    }
+
     /// The error-path twin of [`Writer::send_result`]: one chokepoint,
     /// one measurement, one typed substitution — with the same request-id
     /// correlation (r2 F5).

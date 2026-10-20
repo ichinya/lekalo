@@ -1305,11 +1305,16 @@ Status: **Implemented** command handlers for product 0.8.0. Handler existence do
 | `lekalo change entity-field:rename` | `lekalo change entity-field:rename [OPTIONS] --entity <ID> --name <NAME> --to <NAME>` | [reference](change.md) |
 | `lekalo change enum-case:add` | `lekalo change enum-case:add [OPTIONS] --enum <ID> --name <NAME>` | [reference](change.md) |
 | `lekalo change enum-case:change` | `lekalo change enum-case:change [OPTIONS] --enum <ID> --name <NAME>` | [reference](change.md) |
+| `lekalo change migration:apply` | `lekalo change migration:apply [OPTIONS] --step <ID>` | [reference](change.md) |
 | `lekalo change operation-input:set` | `lekalo change operation-input:set [OPTIONS] --operation <ID> --input-json <JSON>` | [reference](change.md) |
 | `lekalo change operation-output:set` | `lekalo change operation-output:set [OPTIONS] --operation <ID> --type <TYPE>` | [reference](change.md) |
+| `lekalo change query-effect:add` | `lekalo change query-effect:add [OPTIONS] --query <ID> --effect <ID>` | [reference](change.md) |
+| `lekalo change query-effect:remove` | `lekalo change query-effect:remove [OPTIONS] --query <ID> --effect <ID>` | [reference](change.md) |
 | `lekalo change receipt` | `lekalo change receipt [OPTIONS] --idempotency-key <KEY>` | [reference](change.md) |
 | `lekalo change recover` | `lekalo change recover [OPTIONS] --transaction <ID>` | [reference](change.md) |
 | `lekalo change request` | `lekalo change request [OPTIONS] --request <FILE>` | [reference](change.md) |
+| `lekalo change requirement:link` | `lekalo change requirement:link [OPTIONS] --symbol <ID> --requirement <ID>` | [reference](change.md) |
+| `lekalo change requirement:unlink` | `lekalo change requirement:unlink [OPTIONS] --symbol <ID> --requirement <ID>` | [reference](change.md) |
 | `lekalo classification` | `lekalo classification [OPTIONS] <COMMAND>` | [reference](classification.md) |
 | `lekalo classification inspect` | `lekalo classification inspect [OPTIONS] --attachment <PATH> --policy <PATH>` | [reference](classification.md) |
 | `lekalo classification validate` | `lekalo classification validate [OPTIONS] --attachment <PATH> --policy <PATH>` | [reference](classification.md) |

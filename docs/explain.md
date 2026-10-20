@@ -17,11 +17,30 @@ one stable entry per registered code, resolved completely offline.
 lekalo explain LEK-HIDDEN-009 --json
 lekalo explain hidden.observer-write
 lekalo explain --diagnostic-file report.json --json
+lekalo explain --diagnostic-file report.json --provider-catalog adapter-explanations.json --json
+lekalo explain LEK-HIDDEN-009 --locale ru
 ```
 
 Selectors are diagnostic codes (`LEK-HIDDEN-009`) or dotted rule ids
 (`hidden.observer-write`); up to 64 distinct selectors resolve per
 invocation. The command never loads a project and never writes.
+
+`--locale en|ru` selects human headings. The versioned catalog prose stays
+English; codes, risk classes and the complete JSON bytes are locale-independent.
+Human output includes causes, fix classes (including visible `BREAKING`),
+before/after examples and any available provider references.
+
+`--provider-catalog` accepts the closed, bounded
+[offline provider catalog](../contracts/explain-provider-catalog.schema.v0.8.0.json):
+`schemaVersion: lekalo/explain-provider-catalog/v0.8.0`,
+`identity: dev.lekalo.explain-provider-catalog@0.8.0`, and `entries` containing
+`namespace`, `originalCode` and the exact `explanationRef` supplied by the
+adapter owner. Namespaces and original codes come from each diagnostic's
+frozen `metadata` map. All provider identities for a code survive deduplication
+in `source.providerExplanations`; a missing offline catalog entry keeps the
+identity and an explicit null reference. A provider pointer never replaces a
+core explanation or changes a recipe's applicability. Duplicate entries,
+unknown versions and malformed metadata refuse; references are never fetched.
 
 ## The stable machine contract
 

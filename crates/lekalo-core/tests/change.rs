@@ -82,6 +82,171 @@ fn add_priority_request() -> Vec<u8> {
     add_field_request("priority")
 }
 
+#[test]
+fn registered_migration_uses_the_transaction_and_replays_its_original_identity() {
+    let sandbox = Sandbox::new("registered-migration");
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion":"lekalo/change-request/v0.8.0",
+        "operations":[{"operation":"migration:apply",
+            "step":"model.entity-field-rename.v0.8.0",
+            "parameters":{"entity":"tasks.task","name":"title","to":"label"}}]
+    }))
+    .unwrap();
+    let preview = change::prepare(&PrepareOptions {
+        project: Some(&sandbox.selection_str()),
+        request: &request,
+        policy: Some(&evidence_policy()),
+        allow_breaking: true,
+    })
+    .expect("preview");
+    assert_eq!(preview.operations()[0].operation, "migration:apply");
+    assert_eq!(
+        preview.operations()[0].detail.as_deref(),
+        Some("model.entity-field-rename.v0.8.0")
+    );
+    let receipt = apply_request_opts(
+        &sandbox,
+        &request,
+        "registered-migration",
+        true,
+        Some(evidence_policy()),
+    )
+    .expect("commit");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    let normalized = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+    let entity = normalized
+        .definitions
+        .iter()
+        .find(|definition| definition.id == "tasks.task")
+        .unwrap();
+    assert!(entity
+        .node
+        .get("fields")
+        .unwrap()
+        .as_seq()
+        .unwrap()
+        .iter()
+        .any(|field| field
+            .get("name")
+            .and_then(lekalo_core::loader::frontends::Node::as_str)
+            == Some("label")));
+    assert_eq!(
+        entity.node.get("identity").unwrap().as_seq().unwrap()[0].as_str(),
+        Some("label")
+    );
+    assert_eq!(
+        apply_request_opts(
+            &sandbox,
+            &request,
+            "registered-migration",
+            true,
+            Some(evidence_policy())
+        )
+        .unwrap()
+        .state(),
+        ReceiptState::Replayed
+    );
+    let before = sandbox.entities_bytes();
+    let unknown = String::from_utf8(request)
+        .unwrap()
+        .replace("model.entity-field-rename.v0.8.0", "unknown.recipe.v0.8.0");
+    assert!(matches!(
+        apply_request(&sandbox, unknown.as_bytes(), "unknown-migration", true),
+        Err(ChangeError::OperationUnsupported { .. })
+    ));
+    assert_eq!(sandbox.entities_bytes(), before);
+}
+
+#[test]
+fn requirement_links_use_the_model_id_grammar_and_survive_empty_list_roundtrips() {
+    let sandbox = Sandbox::new("requirement-links");
+    let original = sandbox.entities_bytes();
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion":"lekalo/change-request/v0.8.0",
+        "operations":[
+            {"operation":"requirement:link","symbol":"tasks.task","requirement":"TASK-REQ-001"},
+            {"operation":"requirement:unlink","symbol":"tasks.task","requirement":"TASK-REQ-001"},
+            {"operation":"requirement:link","symbol":"tasks.task","requirement":"TASK-REQ-001"},
+            {"operation":"requirement:link","symbol":"tasks.task","requirement":"TASK-REQ-002"}
+        ]
+    }))
+    .unwrap();
+    let receipt = apply_request(&sandbox, &request, "requirement-links", true).expect("commits");
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    let replay = apply_request(&sandbox, &request, "requirement-links", true).expect("replays");
+    assert_eq!(replay.state(), ReceiptState::Replayed);
+    let model = lekalo_core::loader::normalize_model(&sandbox.selection()).expect("accepted Model");
+    let entity = model
+        .definitions
+        .iter()
+        .find(|definition| definition.id == "tasks.task")
+        .unwrap();
+    let requirements = entity.node.get("derived_from").unwrap().as_seq().unwrap();
+    assert_eq!(
+        requirements
+            .iter()
+            .map(|item| item.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["TASK-REQ-001", "TASK-REQ-002"]
+    );
+    let after = sandbox.entities_bytes();
+    assert!(
+        after.starts_with(&original[..original.iter().rposition(|byte| *byte == b'\n').unwrap()])
+    );
+    let bad = request.as_slice().iter().copied().collect::<Vec<_>>();
+    let mut bad: serde_json::Value = serde_json::from_slice(&bad).unwrap();
+    bad["operations"][0]["requirement"] = serde_json::json!("lowercase-invalid");
+    assert!(change::ChangeRequest::decode(&serde_json::to_vec(&bad).unwrap()).is_err());
+}
+
+#[test]
+fn query_read_operations_commit_and_reject_removing_the_required_last_read() {
+    let sandbox = Sandbox::new("query-reads");
+    let mut entities = String::from_utf8(sandbox.entities_bytes()).unwrap();
+    entities.push_str("  - id: tasks.note\n    kind: entity\n    version: 1\n    fields:\n      - name: title\n        type: tasks.text\n        required: true\n    identity:\n      - title\n");
+    std::fs::write(sandbox.entities_path(), entities).unwrap();
+    let path = sandbox.root.join("lekalo/modules/tasks/queries.yaml");
+    std::fs::write(&path, "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.list_tasks\n    kind: query\n    version: 1\n    reads:\n      - tasks.task\n").unwrap();
+    let request = |operation: &str, effect: &str| {
+        serde_json::to_vec(&serde_json::json!({
+            "schemaVersion":"lekalo/change-request/v0.8.0",
+            "operations":[{"operation":operation,"query":"tasks.list_tasks","effect":effect}]
+        }))
+        .unwrap()
+    };
+    apply_request(
+        &sandbox,
+        &request("query-effect:add", "tasks.note"),
+        "add-read",
+        true,
+    )
+    .expect("adds read");
+    apply_request(
+        &sandbox,
+        &request("query-effect:remove", "tasks.note"),
+        "remove-read",
+        true,
+    )
+    .expect("removes read");
+    let before = std::fs::read(&path).unwrap();
+    assert!(apply_request(
+        &sandbox,
+        &request("query-effect:remove", "tasks.task"),
+        "last-read",
+        true
+    )
+    .is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert!(apply_request(
+        &sandbox,
+        &request("query-effect:add", "tasks.missing"),
+        "missing-read",
+        true
+    )
+    .is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
 fn add_field_request(field: &str) -> Vec<u8> {
     serde_json::to_vec(&serde_json::json!({
         "schemaVersion": "lekalo/change-request/v0.8.0",

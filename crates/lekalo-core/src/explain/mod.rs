@@ -19,6 +19,7 @@
 use serde_json::{json, Value as Json};
 
 pub mod catalog;
+pub mod providers;
 pub mod version;
 
 use crate::diagnostics::normalize::build;
@@ -48,7 +49,7 @@ pub fn resolve(selectors: &[String]) -> DomainResult {
         return DomainResult::usage_error();
     }
     if selectors.len() > MAX_SELECTORS {
-        return refused(Status::Invalid, "explain.input-invalid", "selector-limit");
+        return refused(Status::Invalid, "explain.report-invalid", "selector-limit");
     }
     let mut explanations = Vec::new();
     let mut unknown: Option<String> = None;
@@ -82,6 +83,21 @@ pub fn resolve(selectors: &[String]) -> DomainResult {
 /// and severity ride `source.report`, and nothing is inferred about any
 /// source text.
 pub fn explain_report(report_bytes: &[u8]) -> DomainResult {
+    explain_report_with_providers(report_bytes, None)
+}
+
+/// Resolve an existing report with an optional offline provider-reference catalog.
+pub fn explain_report_with_providers(
+    report_bytes: &[u8],
+    provider_bytes: Option<&[u8]>,
+) -> DomainResult {
+    let providers = match provider_bytes
+        .map(providers::ProviderCatalog::decode)
+        .transpose()
+    {
+        Ok(providers) => providers.unwrap_or_default(),
+        Err(detail) => return refused(Status::Invalid, "explain.report-invalid", detail),
+    };
     let catalog = match embedded() {
         Ok(catalog) => catalog,
         Err(result) => return result,
@@ -89,7 +105,7 @@ pub fn explain_report(report_bytes: &[u8]) -> DomainResult {
     if report_bytes.len() > MAX_REPORT_BYTES {
         return refused(Status::Invalid, "explain.report-invalid", "over-limit");
     }
-    let value: Json = match serde_json::from_slice(report_bytes) {
+    let value: Json = match crate::adoption::wire::unique_json(report_bytes) {
         Ok(value) => value,
         Err(_) => return refused(Status::Invalid, "explain.report-invalid", "json"),
     };
@@ -118,10 +134,25 @@ pub fn explain_report(report_bytes: &[u8]) -> DomainResult {
     // the first report row that exhibited the code as its context.
     let mut order: Vec<String> = Vec::new();
     let mut contexts: std::collections::BTreeMap<String, Json> = std::collections::BTreeMap::new();
+    let mut provider_refs: std::collections::BTreeMap<String, Vec<providers::ProviderReference>> =
+        std::collections::BTreeMap::new();
     for (index, item) in diagnostics.iter().enumerate() {
         let Some(code) = item.get("code").and_then(Json::as_str) else {
             return refused(Status::Invalid, "explain.report-invalid", "code-missing");
         };
+        let references = match providers.references(item) {
+            Ok(references) => references,
+            Err(detail) => return refused(Status::Invalid, "explain.report-invalid", detail),
+        };
+        let collected = provider_refs.entry(code.to_owned()).or_default();
+        for reference in references {
+            if !collected.contains(&reference) {
+                if collected.len() >= 64 {
+                    return refused(Status::Invalid, "explain.report-invalid", "provider-limit");
+                }
+                collected.push(reference);
+            }
+        }
         let message = item
             .get("message")
             .and_then(Json::as_str)
@@ -148,10 +179,13 @@ pub fn explain_report(report_bytes: &[u8]) -> DomainResult {
                 None => path.to_owned(),
             })
         });
-        let location = location.map(|location| match location.len() {
-            0..=512 => location,
-            _ => location[..512].to_owned(),
-        });
+        if location.as_ref().is_some_and(|location| {
+            location.is_empty()
+                || location.chars().count() > 512
+                || location.chars().any(char::is_control)
+        }) {
+            return refused(Status::Invalid, "explain.report-invalid", "location-limit");
+        }
         if !contexts.contains_key(code) {
             order.push(code.to_owned());
         }
@@ -174,6 +208,13 @@ pub fn explain_report(report_bytes: &[u8]) -> DomainResult {
         let mut explanation = entry_json(entry);
         if let Some(context) = contexts.get(code) {
             explanation["source"]["report"] = context.clone();
+        }
+        if let Some(references) = provider_refs
+            .get(code)
+            .filter(|entries| !entries.is_empty())
+        {
+            explanation["source"]["providerExplanations"] =
+                serde_json::to_value(references).expect("provider references serialize");
         }
         explanations.push(explanation);
     }
@@ -237,6 +278,63 @@ fn finish(catalog: &Catalog, state: &str, explanations: Vec<Json>) -> DomainResu
         serde_json::to_string_pretty(&document).expect("explain result serializes"),
         human,
     )
+}
+
+/// Change only the human projection; producer-owned JSON remains byte-identical.
+pub fn localized(mut result: DomainResult, russian: bool) -> DomainResult {
+    if let DomainResult::Valid {
+        payload: crate::result::SuccessPayload::Receipt { json, human },
+        ..
+    } = &mut result
+    {
+        if let Ok(document) = serde_json::from_str::<Json>(json) {
+            if let Some(entries) = document.get("explanations").and_then(Json::as_array) {
+                let (checks, rationale, causes, fixes, examples) = if russian {
+                    ("Проверка", "Зачем", "Причины", "Исправления", "Примеры")
+                } else {
+                    ("Checks", "Why", "Causes", "Fixes", "Examples")
+                };
+                let mut lines = Vec::new();
+                for entry in entries {
+                    let field = |name| entry.get(name).and_then(Json::as_str).unwrap_or_default();
+                    lines.push(format!("{}: {}", field("code"), field("title")));
+                    lines.push(format!("{checks}: {}", field("checks")));
+                    lines.push(format!("{rationale}: {}", field("rationale")));
+                    for cause in entry["rootCauses"].as_array().into_iter().flatten() {
+                        lines.push(format!("{causes}: {}", cause.as_str().unwrap_or_default()));
+                    }
+                    for fix in entry["fixOptions"].as_array().into_iter().flatten() {
+                        let class = fix["class"].as_str().unwrap_or_default().to_uppercase();
+                        lines.push(format!(
+                            "{fixes} [{class}]: {}",
+                            fix["description"].as_str().unwrap_or_default()
+                        ));
+                    }
+                    for example in entry["examples"].as_array().into_iter().flatten() {
+                        lines.push(format!(
+                            "{examples}:\n{}\n->\n{}",
+                            example["before"].as_str().unwrap_or_default(),
+                            example["after"].as_str().unwrap_or_default()
+                        ));
+                    }
+                    if let Some(references) = entry["source"]["providerExplanations"].as_array() {
+                        for reference in references {
+                            lines.push(format!(
+                                "{} / {}: {}",
+                                reference["namespace"].as_str().unwrap_or_default(),
+                                reference["originalCode"].as_str().unwrap_or_default(),
+                                reference["explanationRef"]
+                                    .as_str()
+                                    .unwrap_or("unavailable offline")
+                            ));
+                        }
+                    }
+                }
+                *human = lines.join("\n");
+            }
+        }
+    }
+    result
 }
 
 /// The distinct unknown-code outcome (exit 4, `unsupported`). The stable

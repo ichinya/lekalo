@@ -337,6 +337,11 @@ mod tests {
             "command-effect:remove",
             "operation-input:set",
             "operation-output:set",
+            "query-effect:add",
+            "query-effect:remove",
+            "requirement:link",
+            "requirement:unlink",
+            "migration:apply",
         ] {
             assert_eq!(
                 catalog.entry(operation).expect("entry").status(),
@@ -346,10 +351,6 @@ mod tests {
         }
         assert_eq!(
             catalog.entry("binding:add").expect("entry").status(),
-            OperationStatus::Unsupported
-        );
-        assert_eq!(
-            catalog.entry("migration:apply").expect("entry").status(),
             OperationStatus::Unsupported
         );
         assert_eq!(
@@ -364,7 +365,7 @@ mod tests {
     #[test]
     fn the_unsupported_set_is_exactly_the_documented_deferral_matrix() {
         // Regression (r5 review, finding 4): P1 family coverage is
-        // explicitly scope-deferred — the ten unsupported operations are
+        // explicitly scope-deferred — the remaining unsupported operations are
         // the documented deferral matrix of docs/change.md (increments I4
         // and I5 of docs/m8/issue-73-research.md). The catalog stays
         // honest by construction: an operation flips to `implemented`
@@ -376,17 +377,11 @@ mod tests {
         let deferred = [
             // Research I4: signature and effect verticals.
             "operation-error:set",
-            "query-effect:add",
-            "query-effect:remove",
-            // Research I5: bindings, requirements, moves, ownership,
-            // migration application.
+            // Research I5: bindings, moves, and ownership.
             "binding:add",
             "ownership:set",
-            "requirement:link",
-            "requirement:unlink",
             "symbol:move",
             "module:move",
-            "migration:apply",
         ];
         let mut unsupported = catalog
             .entries()

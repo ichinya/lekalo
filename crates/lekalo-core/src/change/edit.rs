@@ -1211,8 +1211,69 @@ fn escape_quoted(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
-/// Whether one already-trimmed line's text is a comment (starts with
-/// `#` after leading whitespace).
+/// Edit one typed scalar list, including its first and last member.
+/// The closed YAML frontend accepts block collections only, so removing
+/// the final optional member removes its key as well as its item.
+pub fn plan_scalar_list_change(
+    bytes: &[u8],
+    definition: &Node,
+    member: &str,
+    value: &str,
+    add: bool,
+) -> Result<ByteEdit, ChangeError> {
+    let Some(sequence) = definition.get(member) else {
+        return if add {
+            plan_member_append(bytes, definition, member, value)
+        } else {
+            Err(ChangeError::SubjectConflict {
+                subject: value.to_owned(),
+                detail: "member-missing",
+            })
+        };
+    };
+    let items = sequence.as_seq().ok_or(ChangeError::SourcePreservation {
+        subject: member.to_owned(),
+        detail: "member-not-sequence",
+    })?;
+    if !add && items.len() == 1 && items[0].as_str() == Some(value) {
+        let (start, end, _) = member_block_range(bytes, definition, member)?;
+        let entry = definition.get_entry(member).expect("member exists");
+        let key_end = content_end(bytes, start, line_start_after(bytes, start));
+        if bytes[start..entry.key_span.start.byte]
+            .iter()
+            .any(|byte| *byte != b' ')
+            || bytes[entry.key_span.end.byte..key_end].contains(&b'#')
+            || previous_content_is_comment(bytes, start)
+            || next_content_is_comment(bytes, end)
+        {
+            return Err(ChangeError::SourcePreservation {
+                subject: member.to_owned(),
+                detail: "comment-adjacent",
+            });
+        }
+        let mut remove_start = start
+            .checked_sub(1)
+            .ok_or(ChangeError::SourcePreservation {
+                subject: member.to_owned(),
+                detail: "member-layout",
+            })?;
+        if remove_start > 0 && bytes[remove_start - 1] == b'\r' {
+            remove_start -= 1;
+        }
+        return Ok(ByteEdit {
+            start: remove_start,
+            end,
+            replacement: String::new(),
+        });
+    }
+    if add {
+        let item = effect_item_block(bytes, definition, member, value)?;
+        plan_seq_scalar_insert(bytes, definition, member, value, &item)
+    } else {
+        plan_seq_scalar_remove(bytes, definition, member, value)
+    }
+}
+
 fn text_is_comment(line: &[u8]) -> bool {
     std::str::from_utf8(line)
         .map(|text| text.trim_start().starts_with('#'))

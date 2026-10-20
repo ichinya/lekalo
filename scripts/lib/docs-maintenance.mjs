@@ -70,7 +70,7 @@ const families = {
   "architecture-rule-catalog":"architecture-profile", "architecture-profile":"architecture-profile", "architecture-profile-resolved":"architecture-profile", "architecture-profile-lock":"architecture-profile", "architecture-profile-report":"architecture-profile", "architecture-profile-diff":"architecture-profile", "architecture-adoption":"architecture-profile",
   "change-catalog":"change", "change-history":"change", "change-plan":"change", "change-policy":"change", "change-receipt":"change", "change-request":"change",
   "fix-recipe":"fixes", "fix-result":"fixes",
-  "explain-catalog":"explain", "explain-result":"explain",
+  "explain-catalog":"explain", "explain-result":"explain", "explain-provider-catalog":"explain",
   "framework-lift-baseline":"framework-lift", "framework-lift-task":"framework-lift", "framework-lift-campaign":"framework-lift", "framework-lift-arm":"framework-lift", "framework-lift-result":"framework-lift",
   "evaluation-export-input":"metrics-export", "metrics-aggregation-definition":"metrics-export", "public-metrics":"metrics-export", "metrics-export-manifest":"metrics-export", "metrics-export-preview":"metrics-export",
   "waiver-input":"waivers", "waiver-audit":"waivers",
