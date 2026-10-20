@@ -85,7 +85,7 @@
     },
     {
       "operation": "module:move",
-      "status": "unsupported",
+      "status": "implemented",
       "title": "Relocate one module directory preserving its semantic ID",
       "mutationClass": "administrative",
       "requiredEvidence": []

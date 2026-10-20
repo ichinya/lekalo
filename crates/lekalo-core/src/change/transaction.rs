@@ -107,6 +107,7 @@ struct StagedFile {
 
 /// The open transaction: journals, backups, replacements, and history.
 pub(crate) struct Transaction {
+    module_move: Option<super::module_move::ModuleMove>,
     root: PathBuf,
     id: String,
     journal_dir: PathBuf,
@@ -220,6 +221,21 @@ impl Transaction {
         plan_id: &str,
         replacements: &[ReplacementPlan],
     ) -> Result<Self, ChangeError> {
+        Self::begin_with_move(root, id, plan_id, replacements, None)
+    }
+
+    pub(crate) fn begin_with_move(
+        root: &Path,
+        id: &str,
+        plan_id: &str,
+        replacements: &[ReplacementPlan],
+        module_move: Option<&super::module_move::ModuleMove>,
+    ) -> Result<Self, ChangeError> {
+        if let Some(movement) = module_move {
+            if movement.position(root)? != super::module_move::Position::Before {
+                return Err(ChangeError::WriteBoundaryDenied);
+            }
+        }
         let cache = validated_cache_dir(root)?;
         std::fs::create_dir_all(&cache).map_err(|_| ChangeError::WriteBoundaryDenied)?;
         let journal_dir = cache.join(id);
@@ -254,6 +270,7 @@ impl Transaction {
         let mut records = load_pending_registry(root)?;
         records.retain(|record| record.transaction != id);
         records.push(PendingRecord {
+            module_move: module_move.cloned(),
             transaction: id.to_owned(),
             plan_id: plan_id.to_owned(),
             state: STATE_STAGING.to_owned(),
@@ -273,7 +290,7 @@ impl Transaction {
             return Err(error);
         }
         let files_wire: Vec<Json> = files.iter().map(journal_file_json).collect();
-        let journal = serde_json::json!({
+        let mut journal = serde_json::json!({
             "schemaVersion": JOURNAL_SCHEMA_VERSION,
             "transaction": id,
             "planId": plan_id,
@@ -281,6 +298,9 @@ impl Transaction {
             "files": files_wire,
             "history": history,
         });
+        if let Some(movement) = module_move {
+            journal["moduleMove"] = serde_json::to_value(movement).expect("move serializes");
+        }
         if write_same_dir(
             &journal_dir.join(JOURNAL_NAME),
             journal.to_string().as_bytes(),
@@ -296,6 +316,7 @@ impl Transaction {
             });
         }
         Ok(Self {
+            module_move: module_move.cloned(),
             root: root.to_path_buf(),
             id: id.to_owned(),
             journal_dir,
@@ -411,6 +432,17 @@ impl Transaction {
     /// caller retains the journal and the reader barrier (round 2,
     /// finding 5) instead of deleting the recovery material.
     pub(crate) fn replace_all(&mut self) -> Result<(), ChangeError> {
+        if let Some(movement) = &self.module_move {
+            if let Err(error) = movement.install(&self.root) {
+                return if movement.restore(&self.root).is_ok() {
+                    Err(error)
+                } else {
+                    Err(ChangeError::RecoveryRequired {
+                        transaction: self.id.clone(),
+                    })
+                };
+            }
+        }
         let mut replaced = 0usize;
         for staged in &self.staged {
             // Re-validation immediately before the replacement (the CAS
@@ -490,6 +522,13 @@ impl Transaction {
     /// the journal in place so readers stay blocked and recovery remains
     /// possible (round 2, finding 5).
     fn restore_prefix(&self, count: usize) -> bool {
+        if self
+            .module_move
+            .as_ref()
+            .is_some_and(|movement| movement.position(&self.root).is_err())
+        {
+            return false;
+        }
         for staged in self.staged[..count].iter().rev() {
             let restored = match &staged.backup {
                 Some(backup) => {
@@ -501,7 +540,9 @@ impl Transaction {
                 return false;
             }
         }
-        true
+        self.module_move
+            .as_ref()
+            .is_none_or(|movement| movement.restore(&self.root).is_ok())
     }
 
     /// Finalize the canonical history inside the same transaction, publish
@@ -581,6 +622,8 @@ struct JournalFile {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Journal {
+    #[serde(default, rename = "moduleMove")]
+    module_move: Option<super::module_move::ModuleMove>,
     #[serde(rename = "schemaVersion")]
     schema_version: String,
     transaction: String,
@@ -641,6 +684,8 @@ impl Journal {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PendingRecord {
+    #[serde(default, rename = "moduleMove")]
+    module_move: Option<super::module_move::ModuleMove>,
     transaction: String,
     #[serde(rename = "planId")]
     plan_id: String,
@@ -773,13 +818,17 @@ fn write_pending_registry(root: &Path, records: &[PendingRecord]) -> Result<(), 
 
 /// The canonical JSON projection of one pending record.
 fn pending_record_json(record: &PendingRecord) -> Json {
-    serde_json::json!({
+    let mut value = serde_json::json!({
         "transaction": record.transaction,
         "planId": record.plan_id,
         "state": record.state,
         "files": record.files.iter().map(journal_file_json).collect::<Vec<Json>>(),
         "history": record.history,
-    })
+    });
+    if let Some(movement) = &record.module_move {
+        value["moduleMove"] = serde_json::to_value(movement).expect("move serializes");
+    }
+    value
 }
 
 /// The canonical JSON projection of one journaled file pin.
@@ -824,6 +873,7 @@ fn verify_journal_provenance(root: &Path, journal: &Journal) -> Result<(), Chang
             detail: "journal-provenance",
         })?;
     let proven = record.plan_id == journal.plan_id
+        && record.module_move == journal.module_move
         && record.history == journal.history
         && record.files.len() == journal.files.len()
         && record
@@ -1026,7 +1076,13 @@ pub(crate) fn recover(root: &Path, transaction: &str) -> Result<RecoveryResult, 
     let restorations = restorations_of(root, &journal_dir, &journal)?;
     match journal.state.as_str() {
         STATE_STAGING => recover_staging(root, transaction, &restorations),
-        STATE_REPLACING => recover_replacing(root, transaction, &journal_dir, &restorations),
+        STATE_REPLACING => recover_replacing(
+            root,
+            transaction,
+            &journal_dir,
+            &restorations,
+            journal.module_move.as_ref(),
+        ),
         STATE_COMMITTED => recover_committed(root, transaction, &journal_dir, &restorations),
         _ => Err(ChangeError::CommitFailed {
             transaction: transaction.to_owned(),
@@ -1132,6 +1188,26 @@ fn load_validated_journal(
     // recovery authority, no matter how self-consistent its digests and
     // backups are; the barrier stays up with the journal intact.
     verify_journal_provenance(root, &journal)?;
+    if let Some(movement) = &journal.module_move {
+        if !journal.history
+            || journal.files.iter().any(|file| {
+                file.path != super::version::HISTORY_LOGICAL_PATH
+                    && file.path != super::custody::LOGICAL_PATH
+            })
+            || !journal
+                .files
+                .iter()
+                .any(|file| file.path == super::custody::LOGICAL_PATH)
+        {
+            return Err(ChangeError::WriteBoundaryDenied);
+        }
+        let position = movement.position(root)?;
+        if (journal.state == STATE_STAGING && position != super::module_move::Position::Before)
+            || (journal.state == STATE_COMMITTED && position != super::module_move::Position::After)
+        {
+            return Err(ChangeError::WriteBoundaryDenied);
+        }
+    }
     Ok((journal_dir, journal))
 }
 
@@ -1355,7 +1431,11 @@ fn recover_replacing(
     transaction: &str,
     journal_dir: &Path,
     restorations: &[Restoration],
+    module_move: Option<&super::module_move::ModuleMove>,
 ) -> Result<RecoveryResult, ChangeError> {
+    if let Some(movement) = module_move {
+        movement.position(root)?;
+    }
     // Verify every backup against its journal pin before any restore
     // write; a single corrupt member fails the whole recovery with the
     // journal intact (the reader barrier stays up).
@@ -1452,6 +1532,13 @@ fn recover_replacing(
         return Err(ChangeError::RecoveryRequired {
             transaction: transaction.to_owned(),
         });
+    }
+    if let Some(movement) = module_move {
+        movement
+            .restore(root)
+            .map_err(|_| ChangeError::RecoveryRequired {
+                transaction: transaction.to_owned(),
+            })?;
     }
     std::fs::remove_dir_all(journal_dir).map_err(|_| ChangeError::RecoveryRequired {
         transaction: transaction.to_owned(),
@@ -1679,7 +1766,7 @@ fn publish_same_dir(target: &Path, bytes: &[u8], create_only: bool) -> std::io::
 /// No overwrite fallback: if the platform cannot atomically publish a
 /// new name, initialization refuses instead of weakening custody.
 #[cfg(unix)]
-fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+pub(super) fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
     #[cfg(any(
         target_os = "linux",
         target_os = "android",
@@ -1706,7 +1793,7 @@ fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(windows)]
-fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
+pub(super) fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
     let from: Vec<u16> = from.as_os_str().encode_wide().chain(Some(0)).collect();
@@ -1724,6 +1811,109 @@ fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use crate::project_writer::WriterLock;
+
+    #[test]
+    fn committed_module_move_recovery_keeps_the_new_home_and_finishes_cleanup() {
+        fn copy(from: &Path, to: &Path) {
+            std::fs::create_dir_all(to).unwrap();
+            for entry in std::fs::read_dir(from).unwrap() {
+                let entry = entry.unwrap();
+                if entry.file_type().unwrap().is_dir() {
+                    copy(&entry.path(), &to.join(entry.file_name()));
+                } else {
+                    std::fs::copy(entry.path(), to.join(entry.file_name())).unwrap();
+                }
+            }
+        }
+        let root = tempfile::tempdir().unwrap();
+        copy(
+            &Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/change/field-vertical"),
+            root.path(),
+        );
+        let load = crate::loader::load_validated_root(root.path().to_path_buf()).unwrap();
+        let request = br#"{"schemaVersion":"lekalo/change-request/v0.8.0","operations":[{"operation":"module:move","module":"tasks","directory":"new_home"}]}"#;
+        let decoded = crate::change::ChangeRequest::decode(request).unwrap();
+        let prepared = crate::change::module_move::prepare_change(
+            &load,
+            &decoded,
+            &crate::change::PrepareOptions {
+                project: None,
+                request,
+                policy: None,
+                allow_breaking: false,
+            },
+        )
+        .unwrap();
+        let receipt = crate::change::apply_prepared(
+            &prepared,
+            &crate::change::ApplyOptions {
+                idempotency_key: "committed-module-move",
+                expect_plan: None,
+                allow_breaking: false,
+            },
+        )
+        .unwrap();
+        let id = receipt.transaction.as_ref().unwrap().id.clone();
+        let history = std::fs::read(
+            root.path()
+                .join(super::super::version::HISTORY_LOGICAL_PATH),
+        )
+        .unwrap();
+        let pin = std::fs::read(root.path().join(super::super::custody::LOGICAL_PATH)).unwrap();
+        // Reconstruct the exact durable state after mark_state(committed)
+        // but before cleanup. Its history and local custody are genuine.
+        let record = PendingRecord {
+            transaction: id.clone(),
+            plan_id: prepared.plan_id(),
+            state: STATE_COMMITTED.to_owned(),
+            history: true,
+            module_move: prepared.module_move.clone(),
+            files: [
+                (super::super::version::HISTORY_LOGICAL_PATH, &history),
+                (super::super::custody::LOGICAL_PATH, &pin),
+            ]
+            .into_iter()
+            .map(|(path, bytes)| JournalFile {
+                path: path.to_owned(),
+                before_digest: super::super::absent_digest(),
+                after_digest: super::super::receipt::bytes_digest(bytes),
+                creation: true,
+            })
+            .collect(),
+        };
+        let home = validated_cache_dir(root.path()).unwrap().join(&id);
+        std::fs::create_dir(&home).unwrap();
+        std::fs::create_dir(home.join(BACKUPS_NAME)).unwrap();
+        write_pending_registry(root.path(), std::slice::from_ref(&record)).unwrap();
+        let mut journal = pending_record_json(&record);
+        journal["schemaVersion"] = Json::String(JOURNAL_SCHEMA_VERSION.to_owned());
+        write_same_dir(
+            &home.join(JOURNAL_NAME),
+            &serde_json::to_vec(&journal).unwrap(),
+        )
+        .unwrap();
+        assert!(recover(root.path(), &id).unwrap().committed);
+        assert!(!home.exists());
+        assert!(!root.path().join("lekalo/modules/tasks").exists());
+        assert!(root
+            .path()
+            .join("lekalo/modules/new_home/module.yaml")
+            .is_file());
+        assert_eq!(
+            std::fs::read(
+                root.path()
+                    .join(super::super::version::HISTORY_LOGICAL_PATH)
+            )
+            .unwrap(),
+            history
+        );
+        assert_eq!(
+            std::fs::read(root.path().join(super::super::custody::LOGICAL_PATH)).unwrap(),
+            pin
+        );
+        crate::loader::load_validated_root(root.path().to_path_buf()).unwrap();
+    }
 
     #[test]
     fn custody_initialization_is_atomic_no_clobber_and_singly_linked() {
@@ -1975,6 +2165,7 @@ mod tests {
                 creation: false,
             }],
             history: false,
+            module_move: None,
         };
         write_pending_registry(&root, std::slice::from_ref(&record)).expect("registry");
         let journal_of = |state: &str, after: &str| Journal {
@@ -1989,6 +2180,7 @@ mod tests {
                 creation: false,
             }],
             history: false,
+            module_move: None,
         };
         // Exact match: proven.
         assert!(verify_journal_provenance(&root, &journal_of(STATE_STAGING, zeros)).is_ok());
@@ -2048,6 +2240,7 @@ mod tests {
             state: STATE_STAGING.to_owned(),
             files: vec![],
             history: false,
+            module_move: None,
         };
         write_pending_registry(&root, &[record.clone(), record]).unwrap();
         assert!(matches!(

@@ -342,6 +342,7 @@ mod tests {
             "requirement:link",
             "requirement:unlink",
             "migration:apply",
+            "module:move",
         ] {
             assert_eq!(
                 catalog.entry(operation).expect("entry").status(),
@@ -381,7 +382,6 @@ mod tests {
             "binding:add",
             "ownership:set",
             "symbol:move",
-            "module:move",
         ];
         let mut unsupported = catalog
             .entries()

@@ -564,7 +564,11 @@ fn drift_reported_receipt_matches_the_published_golden() {
     let sandbox_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(&relative);
     let _ = fs::remove_dir_all(sandbox_root.parent().expect("parent"));
     fs::create_dir_all(sandbox_root.parent().expect("parent")).expect("sandbox parent");
-    fs::rename(&project, &sandbox_root).expect("move sandbox into target");
+    // The system temp home may be a different filesystem (for example
+    // tmpfs). This is fixture setup; copy rather than requiring EXDEV-free
+    // rename semantics between unrelated temporary roots.
+    fs_extra_copy_dir(&project, &sandbox_root);
+    fs::remove_dir_all(&project).expect("remove original sandbox");
     let project = sandbox_root;
     let selection = LoadSelection {
         project: Some(relative),

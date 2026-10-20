@@ -16,6 +16,7 @@ mod custody;
 pub mod diagnostic;
 pub mod edit;
 mod history_schema;
+mod module_move;
 pub mod plan;
 pub mod policy;
 pub mod receipt;
@@ -181,7 +182,7 @@ fn record_source_outcomes(record: &HistoryRecord) -> Vec<receipt::FileOutcome> {
 /// F2): replay stays reachable for the exact sequential-batch history
 /// the contract normalizes, while a grafted ledger — whose claimed edits
 /// the disk never carried — still fails the endpoint check below.
-fn chain_endpoint_after(history: &History, sequence: u64, path: &str) -> Option<String> {
+fn chain_endpoint_after(history: &History, sequence: u64, path: &str) -> Option<FileOutcome> {
     let mut endpoint = None;
     for record in &history.records {
         if record.sequence <= sequence {
@@ -190,7 +191,6 @@ fn chain_endpoint_after(history: &History, sequence: u64, path: &str) -> Option<
         if let Some(after) = record_source_outcomes(record)
             .into_iter()
             .find(|outcome| outcome.path == path)
-            .map(|outcome| outcome.after_digest)
         {
             // Records are sequence-ordered (History::decode enforces it),
             // so the last assignment wins.
@@ -248,19 +248,27 @@ pub(crate) fn verify_record_postcondition(
                 detail: "postcondition-path",
             });
         }
-        let expected = chain_endpoint_after(history, record.sequence, &outcome.path)
-            .unwrap_or_else(|| outcome.after_digest.clone());
+        let endpoint = chain_endpoint_after(history, record.sequence, &outcome.path);
+        let endpoint = endpoint.as_ref().unwrap_or(outcome);
+        let expected = &endpoint.after_digest;
+        let may_be_absent = expected == &absent_digest() && endpoint.outcome == "moved-from";
         let fs = crate::project_fs::Fs::open(root).map_err(|_| ChangeError::HistoryInvalid {
             detail: "postcondition",
         })?;
-        let current = fs
-            .read_logical(&outcome.path, crate::loader::source::MAX_DOCUMENT_BYTES)
-            .map_err(|_| ChangeError::HistoryInvalid {
-                detail: "postcondition",
-            })?;
-        let carries = current
-            .map(|bytes| format!("sha256:{}", crate::digest::sha256_hex(&bytes)))
-            .is_some_and(|digest| digest == expected);
+        let current =
+            match fs.read_logical(&outcome.path, crate::loader::source::MAX_DOCUMENT_BYTES) {
+                Ok(bytes) => bytes,
+                Err(crate::project_fs::FsErrorKind::NotFound) if may_be_absent => None,
+                Err(_) => {
+                    return Err(ChangeError::HistoryInvalid {
+                        detail: "postcondition",
+                    })
+                }
+            };
+        let carries = (current.is_none() && may_be_absent)
+            || current
+                .map(|bytes| format!("sha256:{}", crate::digest::sha256_hex(&bytes)))
+                .is_some_and(|digest| &digest == expected);
         if !carries {
             return Err(ChangeError::HistoryInvalid {
                 detail: "postcondition",
@@ -362,6 +370,19 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     let root = resolve_root(options.project)?;
     refuse_while_recovery_pending(&root)?;
     let load = crate::loader::load_validated_root(root.clone()).map_err(ChangeError::LoadFailed)?;
+    if request
+        .operations
+        .iter()
+        .any(|operation| matches!(operation, Operation::ModuleMove { .. }))
+    {
+        if request.operations.len() != 1 {
+            return Err(ChangeError::UnsupportedMember {
+                operation: "module:move".to_owned(),
+                member: "module-move-batch",
+            });
+        }
+        return module_move::prepare_change(&load, &request, options);
+    }
     let project_id = load
         .model
         .project
@@ -776,6 +797,7 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
     }
 
     let prepared = PreparedChange {
+        module_move: None,
         // The canonical re-serialization pins the request intent, not its
         // presentation: pretty file JSON and compact sugar bytes of one
         // request carry the same digest and the same plan identity.
@@ -1087,15 +1109,36 @@ pub(crate) fn apply_with_validation(
             }
         })
         .collect();
-    let files: Vec<FileOutcome> = plans
-        .iter()
-        .map(|plan| FileOutcome {
-            path: plan.logical.clone(),
-            before_digest: plan.before_digest.clone(),
-            after_digest: plan.after_digest.clone(),
-            outcome: "replaced".to_owned(),
-        })
-        .collect();
+    let files: Vec<FileOutcome> = if let Some(movement) = &prepared.module_move {
+        prepared
+            .file_edits
+            .iter()
+            .map(|edit| FileOutcome {
+                path: edit.path.clone(),
+                before_digest: edit.before_digest.clone(),
+                after_digest: edit.after_digest.clone(),
+                outcome: if edit
+                    .path
+                    .starts_with(&format!("lekalo/modules/{}/", movement.from))
+                {
+                    "moved-from"
+                } else {
+                    "moved-to"
+                }
+                .to_owned(),
+            })
+            .collect()
+    } else {
+        plans
+            .iter()
+            .map(|plan| FileOutcome {
+                path: plan.logical.clone(),
+                before_digest: plan.before_digest.clone(),
+                after_digest: plan.after_digest.clone(),
+                outcome: "replaced".to_owned(),
+            })
+            .collect()
+    };
 
     // The committed (or no-op) receipt and its history record.
     let is_no_op = prepared.is_no_op();
@@ -1116,9 +1159,9 @@ pub(crate) fn apply_with_validation(
         .map(|operation| operation.operation.clone())
         .collect();
     let record_files: Vec<String> = prepared
-        .edits
+        .file_edits
         .iter()
-        .map(|(path, _)| path.clone())
+        .map(|edit| edit.path.clone())
         .collect();
     // The chain anchor: the digest over the previous record's digest plus
     // the ENTIRE receipt projection (operations with subjects/statuses,
@@ -1247,8 +1290,18 @@ pub(crate) fn apply_with_validation(
         creation: before_pin.is_none(),
     });
 
-    let mut transaction =
-        transaction::Transaction::begin(&root, &transaction_id, &prepared.plan_id(), &plans)?;
+    let mut transaction = match &prepared.module_move {
+        Some(movement) => transaction::Transaction::begin_with_move(
+            &root,
+            &transaction_id,
+            &prepared.plan_id(),
+            &plans,
+            Some(movement),
+        )?,
+        None => {
+            transaction::Transaction::begin(&root, &transaction_id, &prepared.plan_id(), &plans)?
+        }
+    };
     for (index, plan) in plans.iter().enumerate() {
         if let Err(error) = transaction.stage(index, plan) {
             transaction.cleanup_after_restore();
@@ -1282,6 +1335,12 @@ pub(crate) fn apply_with_validation(
         for (path, bytes) in &prepared.edits {
             expected.insert(path.clone(), receipt::bytes_digest(bytes));
         }
+        if let Some(movement) = &prepared.module_move {
+            for file in &movement.files {
+                expected.remove(&movement.before_path(&file.name));
+                expected.insert(movement.after_path(&file.name), file.digest.clone());
+            }
+        }
         let actual: std::collections::BTreeMap<_, _> = load
             .documents
             .iter()
@@ -1307,7 +1366,14 @@ pub(crate) fn apply_with_validation(
         validate(&load)
     })();
     if post_validation.is_err() {
-        transaction.rollback()?;
+        if let Err(error) = transaction.rollback() {
+            if prepared.module_move.is_some() {
+                return Err(ChangeError::RecoveryRequired {
+                    transaction: transaction_id,
+                });
+            }
+            return Err(error);
+        }
         return Err(ChangeError::CommitFailed {
             transaction: transaction_id,
             detail: "post-validation",
@@ -1902,7 +1968,9 @@ fn resolve_operation(
             }
             (symbol.clone(), true)
         }
-        Operation::Lowered { .. } => unreachable!("registered operation lowered before resolution"),
+        Operation::Lowered { .. } | Operation::ModuleMove { .. } => {
+            unreachable!("registered operation lowered before resolution")
+        }
         Operation::Unsupported { subject, .. } => (subject.clone().unwrap_or_default(), false),
     };
     Ok(ResolvedOperation {
@@ -2180,7 +2248,9 @@ fn apply_tree_edit(
         return Ok(());
     }
     let subject = match operation {
-        Operation::Lowered { .. } => unreachable!("registered operation lowered before editing"),
+        Operation::Lowered { .. } | Operation::ModuleMove { .. } => {
+            unreachable!("registered operation lowered before editing")
+        }
         Operation::Unsupported { .. } => return Ok(()),
         Operation::EntityFieldAdd { entity, .. }
         | Operation::EntityFieldRemove { entity, .. }
@@ -2276,7 +2346,9 @@ fn apply_tree_edit(
                 remove_scalar_item(&mut definition.node, "derived_from", requirement)
             }
         }
-        Operation::Lowered { .. } => unreachable!("registered operation lowered before editing"),
+        Operation::Lowered { .. } | Operation::ModuleMove { .. } => {
+            unreachable!("registered operation lowered before editing")
+        }
         Operation::Unsupported { .. } | Operation::DefinitionAdd { .. } => Ok(()),
     }
 }
@@ -3002,7 +3074,9 @@ fn plan_source_edits(
                 *link,
             )?]
         }
-        Operation::Lowered { .. } => unreachable!("registered operation lowered before editing"),
+        Operation::Lowered { .. } | Operation::ModuleMove { .. } => {
+            unreachable!("registered operation lowered before editing")
+        }
         Operation::Unsupported { .. } => return Ok(Vec::new()),
     };
     Ok(edits)

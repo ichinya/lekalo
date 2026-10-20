@@ -287,6 +287,8 @@
         "outcome": {
           "enum": [
             "replaced",
+            "moved-from",
+            "moved-to",
             "unchanged"
           ]
         }

@@ -74,6 +74,18 @@ pub(crate) fn prepare_format(
     policy: Option<&[u8]>,
     allow_breaking: bool,
 ) -> Result<PreparedChange, ChangeError> {
+    let edits = crate::format::fix_candidates(load).map_err(ChangeError::LoadFailed)?;
+    prepare_source_only(load, recipe_bytes, audit, policy, allow_breaking, edits)
+}
+
+pub(crate) fn prepare_source_only(
+    load: &crate::loader::ProjectLoad,
+    recipe_bytes: Vec<u8>,
+    audit: ResolvedOperation,
+    policy: Option<&[u8]>,
+    allow_breaking: bool,
+    edits: Vec<(String, Vec<u8>)>,
+) -> Result<PreparedChange, ChangeError> {
     // Policy and acknowledgement remain exact audit intent even for a safe
     // executor. Admit the same closed policy on preparation and replay; never
     // silently replace supplied options with restrictive/null defaults.
@@ -81,7 +93,6 @@ pub(crate) fn prepare_format(
         .map(Policy::decode)
         .transpose()?
         .unwrap_or_else(Policy::restrictive);
-    let edits = crate::format::fix_candidates(load).map_err(ChangeError::LoadFailed)?;
     let compiled = ir::compile(&load.model)
         .map_err(|failure| ChangeError::LoadFailed(failure.into_result()))?;
     let profile = ValidationProfile::embedded_default()
@@ -155,6 +166,7 @@ pub(crate) fn prepare_format(
     }
     let (generation, generation_pins) = build_generation_plan(&load.root)?;
     Ok(PreparedChange {
+        module_move: None,
         request_bytes: recipe_bytes,
         policy,
         operations: vec![audit],

@@ -61,6 +61,9 @@ pub(crate) enum ChangeCommands {
     /// Apply the registered model.entity-field-rename.v0.8.0 recipe.
     #[command(name = "migration:apply")]
     MigrationApply(MigrationArgs),
+    /// Relocate a physical module directory, preserving its semantic ID.
+    #[command(name = "module:move")]
+    ModuleMove(ModuleMoveArgs),
     /// Run the complete JSON request surface from a file.
     Request(RequestArgs),
     /// Print the committed receipt of one idempotency key.
@@ -135,6 +138,16 @@ pub(crate) struct MigrationArgs {
     /// Closed recipe parameters; field rename takes entity, name, and to.
     #[arg(long, value_name = "JSON", default_value = "{}")]
     parameters_json: String,
+    #[command(flatten)]
+    execution: ExecutionArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ModuleMoveArgs {
+    #[arg(long, value_name = "ID")]
+    module: String,
+    #[arg(long, value_name = "LEAF")]
+    directory: String,
     #[command(flatten)]
     execution: ExecutionArgs,
 }
@@ -583,6 +596,9 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
             "operation":"migration:apply", "step":args.step,
             "parameters":change::parse_strict_json_literal(&args.parameters_json)?,
         }),
+        ChangeCommands::ModuleMove(args) => serde_json::json!({
+            "operation":"module:move", "module":args.module, "directory":args.directory,
+        }),
         _ => unreachable!("lower() handles sugar commands only"),
     };
     let mut request = serde_json::json!({
@@ -607,6 +623,7 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
             &args.execution
         }
         ChangeCommands::MigrationApply(args) => &args.execution,
+        ChangeCommands::ModuleMove(args) => &args.execution,
         _ => unreachable!("lower() handles sugar commands only"),
     };
     if let Some(expect_model) = &execution.expect_model {
@@ -786,6 +803,9 @@ pub(crate) fn run(command: ChangeCommands) -> DomainResult {
                         (&args.execution, args.execution.expect_plan.as_deref())
                     }
                     ChangeCommands::MigrationApply(args) => {
+                        (&args.execution, args.execution.expect_plan.as_deref())
+                    }
+                    ChangeCommands::ModuleMove(args) => {
                         (&args.execution, args.execution.expect_plan.as_deref())
                     }
                     _ => unreachable!("sugar arm"),

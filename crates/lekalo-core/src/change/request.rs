@@ -32,6 +32,8 @@ pub struct ChangeRequest {
 /// One typed operation of the implemented vertical.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operation {
+    /// Relocate one physical module home while preserving its semantic ID.
+    ModuleMove { module: String, directory: String },
     /// A registered operation lowered to the same sealed semantic executor.
     /// Wire intent stays intact for hashing, audit and idempotency.
     Lowered {
@@ -111,6 +113,7 @@ impl Operation {
     /// The catalog discriminator of this operation.
     pub fn operation(&self) -> &str {
         match self {
+            Self::ModuleMove { .. } => "module:move",
             Self::Lowered { operation, .. } => operation,
             Self::EntityFieldAdd { .. } => "entity-field:add",
             Self::EntityFieldRemove { .. } => "entity-field:remove",
@@ -133,6 +136,7 @@ impl Operation {
     /// The natural subject token of this operation, when one is declared.
     pub fn subject(&self) -> Option<&str> {
         match self {
+            Self::ModuleMove { module, .. } => Some(module),
             Self::Lowered { executable, .. } => executable.subject(),
             Self::EntityFieldAdd { entity, .. }
             | Self::EntityFieldRemove { entity, .. }
@@ -161,6 +165,10 @@ impl Operation {
             Json::String(self.operation().to_owned()),
         );
         match self {
+            Self::ModuleMove { module, directory } => {
+                map.insert("module".to_owned(), Json::String(module.clone()));
+                map.insert("directory".to_owned(), Json::String(directory.clone()));
+            }
             Self::Lowered { wire, .. } => return wire.clone(),
             Self::EntityFieldAdd { entity, field } => {
                 map.insert("entity".to_owned(), Json::String(entity.clone()));
@@ -689,6 +697,20 @@ fn decode_operation(catalog: &Catalog, value: &Json) -> Result<Operation, &'stat
         });
     }
     match discriminator {
+        "module:move" => {
+            require_members(
+                map,
+                &["operation", "module", "directory"],
+                &["operation", "module", "directory"],
+            )?;
+            let module = member_string(map, "module")?;
+            let directory = member_string(map, "directory")?;
+            if !super::field_name_valid(&module) || !super::module_move::directory_valid(&directory)
+            {
+                return Err("module-move-grammar");
+            }
+            Ok(Operation::ModuleMove { module, directory })
+        }
         "entity-field:add" => {
             require_members(
                 map,

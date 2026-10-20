@@ -82,6 +82,70 @@ fn add_priority_request() -> Vec<u8> {
     add_field_request("priority")
 }
 
+fn module_bytes(path: &Path) -> std::collections::BTreeMap<std::ffi::OsString, Vec<u8>> {
+    std::fs::read_dir(path)
+        .unwrap()
+        .map(|entry| {
+            let entry = entry.unwrap();
+            assert!(entry.file_type().unwrap().is_file());
+            (entry.file_name(), std::fs::read(entry.path()).unwrap())
+        })
+        .collect()
+}
+
+#[test]
+fn physical_module_move_preserves_identity_bytes_and_durable_replay() {
+    let sandbox = Sandbox::new("module-move");
+    let before = module_bytes(&sandbox.root.join("lekalo/modules/tasks"));
+    let original = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+    let original = lekalo_core::ir::compile(&original)
+        .unwrap()
+        .project
+        .to_canonical_json();
+    let request = serde_json::to_vec(&serde_json::json!({
+        "schemaVersion":"lekalo/change-request/v0.8.0",
+        "operations":[{"operation":"module:move","module":"tasks","directory":"task_sources"}]
+    }))
+    .unwrap();
+    let plan = prepare(&sandbox, &request).unwrap();
+    assert!(!plan.is_no_op());
+    assert_eq!(plan.file_edits().len(), before.len() * 2);
+    assert!(sandbox.entities_path().exists());
+    let receipt = apply_request(&sandbox, &request, "module-move", false).unwrap();
+    assert_eq!(receipt.state(), ReceiptState::Committed);
+    assert!(!sandbox.root.join("lekalo/modules/tasks").exists());
+    assert_eq!(
+        module_bytes(&sandbox.root.join("lekalo/modules/task_sources")),
+        before
+    );
+    let moved = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+    assert_eq!(
+        lekalo_core::ir::compile(&moved)
+            .unwrap()
+            .project
+            .to_canonical_json(),
+        original
+    );
+    assert_eq!(
+        apply_request(&sandbox, &request, "module-move", false)
+            .unwrap()
+            .state(),
+        ReceiptState::Replayed
+    );
+    // A later semantic mutation resolves the unchanged ID in its new home.
+    apply_request(&sandbox, &add_priority_request(), "post-move-field", false).unwrap();
+    let second = String::from_utf8(request.clone())
+        .unwrap()
+        .replace("task_sources", "final_sources");
+    apply_request(&sandbox, second.as_bytes(), "second-move", false).unwrap();
+    assert_eq!(
+        apply_request(&sandbox, &request, "module-move", false)
+            .unwrap()
+            .state(),
+        ReceiptState::Replayed
+    );
+}
+
 #[test]
 fn registered_migration_uses_the_transaction_and_replays_its_original_identity() {
     let sandbox = Sandbox::new("registered-migration");

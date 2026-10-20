@@ -480,7 +480,7 @@
       "kind": "command",
       "command": "change",
       "usage": "lekalo change [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:826676b3dc16453924b101a29b80508f1f495fa5ee108f4a2932619e77d973b5",
+      "helpDigest": "sha256:178556262de0385a9e82c505fa54e1a0fcdb08779998b95cb5c136a332b88072",
       "summary": "Semantic operations instead of direct YAML/code edits (issue #73): typed requests, validated candidates, bounded plans, and one durable, idempotent transaction writer",
       "leaf": false,
       "owner": "docs/change.md",
@@ -592,6 +592,17 @@
       "usage": "lekalo change migration:apply [OPTIONS] --step <ID>",
       "helpDigest": "sha256:671245020093962b35a8b66d7bcc6352f78098bd390a836299e3011152f2df8a",
       "summary": "Apply the registered model.entity-field-rename.v0.8.0 recipe",
+      "leaf": true,
+      "owner": "docs/change.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:change module:move",
+      "kind": "command",
+      "command": "change module:move",
+      "usage": "lekalo change module:move [OPTIONS] --module <ID> --directory <LEAF>",
+      "helpDigest": "sha256:661002b2ba7357afdb08110197d615bf1c11e94908318700281f199db9beb2b0",
+      "summary": "Relocate a physical module directory, preserving its semantic ID",
       "leaf": true,
       "owner": "docs/change.md",
       "status": "implemented"
@@ -3098,7 +3109,7 @@
       "id": "contract:contracts/change-catalog.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-catalog.v0.8.0.json",
-      "sourceDigest": "sha256:8412d83774d990f95acf02393ffcd14bfa6142c0b030f88da9c4df6d9dfeed81",
+      "sourceDigest": "sha256:953ad89501b0d04a2b6c37fa630efde6758e0faeb130e52404ee1bb889a91707",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3107,7 +3118,7 @@
       "id": "contract:contracts/change-history.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-history.schema.v0.8.0.json",
-      "sourceDigest": "sha256:b498c67687164d89759f6276cf51ba7907141b8a1b3bfe193cebdae26fce46b1",
+      "sourceDigest": "sha256:657806be0a431ce3adf0e4a816c6f537939d171f92b716a6cca97bff010aa950",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3134,7 +3145,7 @@
       "id": "contract:contracts/change-receipt.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-receipt.schema.v0.8.0.json",
-      "sourceDigest": "sha256:370aace43b37e0cf182bb09fd329d56914b5ac6fb812808e65167bb14ac54b9f",
+      "sourceDigest": "sha256:1923e884ee91dfa9bb9b76ca17a952daaddb7caf2dd4a950aefc82ef470c9804",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3143,7 +3154,7 @@
       "id": "contract:contracts/change-request.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-request.schema.v0.8.0.json",
-      "sourceDigest": "sha256:3a9971f21318d937564e2a107c63af1bf41c533fa80370610f7a400362b0533e",
+      "sourceDigest": "sha256:dfa8e4091b68a0f1cbc5a92b2254613c7d4194b6dd232e51d6bbe3ef76f84884",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

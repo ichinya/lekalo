@@ -168,6 +168,7 @@ pub struct GenerationProjection {
 /// The sealed prepared change: every field is pinned and deterministic.
 #[derive(Clone, Debug)]
 pub struct PreparedChange {
+    pub(crate) module_move: Option<super::module_move::ModuleMove>,
     /// The canonical request the plan was prepared from: the decoded
     /// request re-serialized with sorted object keys and compact
     /// separators, so one request presented as pretty file JSON and as

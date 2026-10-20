@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,8 +59,17 @@ try {
   const after = readFileSync(entities);
   run(["change", "migration:apply", "--step", "unknown.recipe", "--dry-run"], 4);
   assert(readFileSync(entities).equals(after));
+  const moduleBefore = readdirSync(join(stage, "lekalo/modules/tasks")).map(name => [name, readFileSync(join(stage, "lekalo/modules/tasks", name)).toString("hex")]);
+  const move = ["change", "module:move", "--module", "tasks", "--directory", "task_sources"];
+  const movePlan = run([...move, "--dry-run"]);
+  assert.equal(movePlan.fileEdits.length, moduleBefore.length * 2);
+  run([...move, "--apply", "--idempotency-key", "physical-move"]);
+  assert.equal(existsSync(join(stage, "lekalo/modules/tasks")), false);
+  assert.deepEqual(readdirSync(join(stage, "lekalo/modules/task_sources")).map(name => [name, readFileSync(join(stage, "lekalo/modules/task_sources", name)).toString("hex")]), moduleBefore);
+  assert.equal(run([...move, "--apply", "--idempotency-key", "physical-move"]).state, "replayed");
+  assert.equal(run([...migration, "--apply", "--idempotency-key", "rename-step"]).state, "replayed", "a semantic edit remains replayable after its physical source home moves");
   const history = JSON.parse(readFileSync(join(stage, "lekalo/change-history.json"), "utf8"));
   assert(schemas.history(history), JSON.stringify(schemas.history.errors));
-  assert.equal(history.records.length, 5, "replays and refused operations add no history rows");
-  console.log(JSON.stringify({ ok: true, gate: "change-extended", calls, committed: 5, verbs: 5 }));
+  assert.equal(history.records.length, 6, "replays and refused operations add no history rows");
+  console.log(JSON.stringify({ ok: true, gate: "change-extended", calls, committed: 6, verbs: 6 }));
 } finally { rmSync(stage, { recursive: true, force: true }); }

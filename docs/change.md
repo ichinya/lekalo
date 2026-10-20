@@ -40,7 +40,7 @@ unsupported 4); the implemented increments are `entity-field:add`,
 `enum-case:change`, `definition:add`, `command-effect:add`,
 `command-effect:remove`, `operation-input:set`, and
 `operation-output:set`, `query-effect:add`, `query-effect:remove`,
-`requirement:link`, `requirement:unlink`, and `migration:apply` — every implemented verb has first-class CLI
+`requirement:link`, `requirement:unlink`, `migration:apply`, and `module:move` — every implemented verb has first-class CLI
 sugar that lowers to the same closed request DTO a request file
 carries, so sugar and JSON requests are byte-identical at the core.
 The remaining cataloged operations are explicit staged refusals
@@ -56,8 +56,8 @@ silently dropped from a committed declaration.
 
 ### Deferral matrix (P1 coverage scope)
 
-Fifteen of the twenty cataloged operations are implemented and executable;
-the other five are cataloged, decodable, and refuse
+Sixteen of the twenty cataloged operations are implemented and executable;
+the other four are cataloged, decodable, and refuse
 `change.operation-unsupported` (exit 4). This is the explicit, tracked
 deferral of issue #73's P1 family list: each refusal is a designed
 fail-closed increment boundary, not an accidental gap, and each
@@ -69,7 +69,7 @@ and gates:
 | `operation-error:set` | error-binding signature vertical (research I4) |
 | `binding:add` | canonical/observed binding DTO vertical (research I5) |
 | `ownership:set` | adoption-prerequisite ownership transition vertical (research I5) |
-| `symbol:move` / `module:move` | move semantics with rename history and reference rewrites (research I5) |
+| `symbol:move` | semantic rename history and reference rewrites (research I5) |
 
 Until an increment lands, the deferred verbs are reachable only as
 JSON request documents through `change request --request <file>`, and
@@ -93,6 +93,19 @@ history. The original migration request is hashed, and its versioned step ID is
 retained in the plan and committed receipt's operation `detail`. Unknown recipes
 refuse before mutation; user scripts are never executed. This is separate from
 the Model schema-version migration command.
+
+`module:move --module tasks --directory task_sources` relocates the physical
+module directory and preserves every source byte and semantic ID. A move is one
+standalone request operation; mixing it with other operations currently refuses.
+The preview displays both old and new file coordinates and their digests. Apply
+uses an atomic no-replace directory rename under the shared writer lock and
+commits the history/custody records in the same recovery lifecycle. The exact
+module inventory is checked before the move, after it, and before recovery. An
+occupied destination, link, extra file, or changed byte refuses. Recovery keeps
+later user changes and its reader barrier until the conflict is resolved. Receipts
+distinguish `moved-from` and `moved-to`; replay follows the latest committed file
+outcome, including subsequent relocations. Unix renames use a no-follow parent
+directory capability; Windows holds parent handles against deletion/renaming.
 
 ```sh
 lekalo change entity-field:add --project sample --entity tasks.task \

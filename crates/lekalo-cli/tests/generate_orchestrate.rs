@@ -449,14 +449,13 @@ fn trace_collect_exports_and_queries_the_scenario_gate_manifest() {
 /// intentional persistence (it is never unlinked), so it is excluded —
 /// the probe answers on the project's model/source/generated state.
 fn project_fingerprint(root: &Path) -> Vec<(String, Vec<u8>)> {
-    const SHARED_LOCK_LEAF: &str = ".lekalo\\cache\\writer.lock";
     fn walk(dir: &Path, out: &mut Vec<(String, Vec<u8>)>) {
         for entry in std::fs::read_dir(dir).expect("read dir") {
             let entry = entry.expect("read entry");
             let path = entry.path();
             if path.is_dir() {
                 walk(&path, out);
-            } else if !path.to_string_lossy().ends_with(SHARED_LOCK_LEAF) {
+            } else if !path.ends_with(Path::new(".lekalo").join("cache").join("writer.lock")) {
                 let bytes = std::fs::read(&path).expect("read file");
                 out.push((path.to_string_lossy().to_string(), bytes));
             }

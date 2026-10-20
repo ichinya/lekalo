@@ -745,7 +745,16 @@ fn verify_receipt_projection<'a>(
             || outcome.path == super::version::HISTORY_LOGICAL_PATH
             || super::expect_digest(&outcome.before_digest).is_none()
             || super::expect_digest(&outcome.after_digest).is_none()
-            || outcome.outcome != "replaced"
+            || !matches!(
+                outcome.outcome.as_str(),
+                "replaced" | "moved-from" | "moved-to"
+            )
+            || (outcome.outcome == "moved-from" && outcome.after_digest != super::absent_digest())
+            || (outcome.outcome == "moved-to" && outcome.before_digest != super::absent_digest())
+            || (outcome.outcome.starts_with("moved-")
+                && !operations
+                    .iter()
+                    .any(|operation| operation == "module:move"))
             || outcome.before_digest == outcome.after_digest
         {
             return invalid("receipt-files");
