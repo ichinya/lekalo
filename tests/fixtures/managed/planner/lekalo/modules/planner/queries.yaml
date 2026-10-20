@@ -5,6 +5,6 @@ definitions:
     version: 1
     description: "Focus one task"
     reads:
-      - planner.complete_task
+      - planner.task
     returns:
       ref: planner.task

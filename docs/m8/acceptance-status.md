@@ -14,7 +14,7 @@ increment; its limitations remain part of #73 until implemented and tested.
 |---|---|---|
 | [#19](https://github.com/ichinya/lekalo/issues/19) portability | `scripts/test-portability-contracts.mjs`, core/CLI portability tests | Requalify exact final revision and check every blocker/partial/unknown criterion against the planner fixtures. |
 | [#33](https://github.com/ichinya/lekalo/issues/33) MCP | stdio, scopes, subscriptions and host SDK gates; `docs/mcp.md` | Requalify final revision. An official SDK host smoke is distinct from installing or running a user's actual AI Factory extension. |
-| [#41](https://github.com/ichinya/lekalo/issues/41) managed | `scripts/test-managed-contracts.mjs`, `test-managed-cli.mjs`, `test-managed-planner-e2e.mjs` | The legacy renderer fixture's query reads a command and fails shared Model validation. Correct the fixture, qualify the managed authority against that validation, and recheck the deterministic/native evidence oracles before acceptance. |
+| [#41](https://github.com/ichinya/lekalo/issues/41) managed | `scripts/test-managed-contracts.mjs`, `test-managed-cli.mjs`, `test-managed-planner-e2e.mjs`; shared semantic Model validation now precedes managed authority | The query-read fixture and dependent authority pins are corrected. Contract gates, 110 CLI invocations and planner regeneration/native-handler execution pass locally. Final milestone-candidate/CI qualification remains. |
 | [#51](https://github.com/ichinya/lekalo/issues/51) Worklog / Changelog | contract, admission, pilot and consumer gates | Final native/evidence qualification, keeping unsupported publication semantics distinct from executed success. |
 | [#52](https://github.com/ichinya/lekalo/issues/52) TaskExternalLink | relation/uniqueness Model successor, task-link contracts and impact/portability gates | Final public/synthetic provider evidence and exact consumer impact qualification. |
 | [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions, symbol relocation and module-ownership gates | Completion of relocation/attachment cases; field defaults, enum wire values, query inputs, command results and pure emissions with owner-compatible Model/IR successors. Module policy transitions use the existing managed owner's granularity; per-symbol changes do not silently widen to a module. Catalog coverage alone cannot close this issue. |
@@ -29,13 +29,21 @@ increment; its limitations remain part of #73 until implemented and tested.
 
 ## Verified local corrections
 
+- Managed authority now applies shared semantic validation after IR compilation;
+  the negative regression proves that compilation alone cannot authorize an
+  invalid query read. The corrected planner fixture validates with zero
+  diagnostics. Its contract gate, **110 CLI invocations**, deterministic
+  cross-root regeneration and executed generated-handler oracle all pass.
+  Contract/CLI sandboxes exclude ignored checkout runtime state and the
+  contract gate mutates only a disposable copy; no checkout cache is deleted.
 - Module ownership: the scoped workspace run passed **1,611 tests**
   (CLI library 9, core library 1,506, Change integration 96), with zero
   failures and two ignored tests. It includes rollback and retained-foreign-edit
   custody cases. The live CLI/schema gate passed **18 calls**, two policy
   commits and a no-op, preserving native bytes and unselected legacy rows.
-  Managed evidence uses a valid local Model fixture with recomputed owner
-  pins; the shared legacy renderer fixture issue in #41 remains explicit.
+  Managed evidence uses the valid planner Model and recomputed owner pins;
+  the initially detected shared-fixture issue is fixed by the managed-authority
+  correction recorded above.
   Workspace/all-target Clippy, formatter checks, the 101-step transaction
   gate, Change/Fix regressions and the live 554-surface docs inventory passed.
 - The symbol-relocation increment has **92 passing Change integration

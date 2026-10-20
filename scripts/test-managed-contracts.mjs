@@ -6,9 +6,10 @@ import './registry-union.mjs';
 import assert from 'node:assert/strict';
 import { ACCEPTED_M8_REGISTRY_FAMILIES } from './lib/registry-union.mjs';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join } from 'node:path';
+import { basename, join, resolve, sep } from 'node:path';
+import { tmpdir } from 'node:os';
 import { root, version, generate, artifacts, shapes } from './gen-managed-contracts.mjs';
 import { registryUnion } from './lib/registry-union.mjs';
 
@@ -172,7 +173,12 @@ function invoke(args, status, project) {
   }
   return envelope;
 }
-const project = join(root, wire, 'planner');
+const runtimeRoot = mkdtempSync(join(tmpdir(), 'lekalo-managed-contracts-'));
+assert(resolve(runtimeRoot).startsWith(resolve(tmpdir()) + sep));
+const runtimeFixtures = join(runtimeRoot, 'managed');
+cpSync(join(root, wire), runtimeFixtures, { recursive: true, filter: path => !['.lekalo', 'apps'].includes(basename(path)) });
+const project = join(runtimeFixtures, 'planner');
+try {
 invoke(['check', '--ownership', 'ownership.json'], 'valid', project);
 const admitted = invoke(['check', '--ownership', 'ownership.json', '--coverage', 'coverage.json'], 'valid', project);
 assert.deepEqual(admitted.managed.admitted, ['planner/node-typescript']);
@@ -190,7 +196,7 @@ const traversal = invoke(['check', '--ownership', '../hostile/traversal-ownershi
 assert.ok(traversal.reasonCodes.includes('managed.input-invalid'));
 const overlap = invoke(['check', '--ownership', '../wire/invalid/overlap-ownership.json'], 'invalid', project);
 assert.ok(overlap.reasonCodes.includes('managed.input-invalid'));
-const mixed = join(root, wire, 'mixed');
+const mixed = join(runtimeFixtures, 'mixed');
 const mixedView = invoke(['check', '--ownership', 'ownership.json'], 'valid', mixed);
 assert.deepEqual(mixedView.managed.assignments.map((row) => `${row.module}:${row.mode}`), ['billing:observed', 'planner:managed']);
 
@@ -234,3 +240,6 @@ parityOwnership((document) => {
 });
 
 console.log(JSON.stringify({ ok: true, gate: 'test-managed-contracts', families: families.length, registryEntries: registry.entries.length, managedRules: managedIds.length }));
+} finally {
+  rmSync(runtimeRoot, { recursive: true, force: true });
+}

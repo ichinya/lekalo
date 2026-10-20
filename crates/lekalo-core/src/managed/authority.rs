@@ -185,6 +185,13 @@ pub(crate) fn derive_loaded(
         Ok(compilation) => compilation,
         Err(failure) => return Err(classify(failure.into_result())),
     };
+    // A compiled IR is not a semantic acceptance verdict. Managed authority
+    // must reject invalid query reads, effects and other shared invariants
+    // before any capability claim, generation plan or native output exists.
+    let profile = crate::validator::ValidationProfile::embedded_default()
+        .map_err(|_| invalid("validation-profile"))?;
+    crate::validator::validate(&compilation, profile)
+        .map_err(crate::result::DomainResult::invalid)?;
     let ir_json = compilation.project.to_canonical_json();
     // The exact lock revision must exist and parse closed: it pins the
     // accepted contract families the pipeline compiled under, and its own

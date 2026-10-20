@@ -230,6 +230,53 @@ fn write_test_lock(root: &std::path::Path) {
 }
 
 #[test]
+fn managed_authority_refuses_a_compilable_but_semantically_invalid_model() {
+    fn snapshot(
+        root: &std::path::Path,
+        directory: &std::path::Path,
+        rows: &mut std::collections::BTreeMap<std::path::PathBuf, Option<Vec<u8>>>,
+    ) {
+        for entry in std::fs::read_dir(directory).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let key = path.strip_prefix(root).unwrap().to_path_buf();
+            if entry.file_type().unwrap().is_dir() {
+                rows.insert(key, None);
+                snapshot(root, &path, rows);
+            } else {
+                rows.insert(key, Some(std::fs::read(path).unwrap()));
+            }
+        }
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/managed/planner");
+    copy_tree(&fixture, directory.path());
+    let path = directory.path().join("lekalo/modules/planner/queries.yaml");
+    let text = std::fs::read_to_string(&path)
+        .unwrap()
+        .replace("      - planner.task", "      - planner.complete_task");
+    std::fs::write(path, text).unwrap();
+    let mut before = std::collections::BTreeMap::new();
+    snapshot(directory.path(), directory.path(), &mut before);
+    let loaded = crate::loader::load_validated_root(directory.path().to_path_buf()).unwrap();
+    assert!(
+        crate::ir::compile(&loaded.model).is_ok(),
+        "the regression needs semantic validation beyond IR decoding"
+    );
+    let error = super::authority::derive_loaded(&loaded, "planner").unwrap_err();
+    assert!(error
+        .to_json_string()
+        .contains("semantic.query-read-kind-mismatch"));
+    let mut after = std::collections::BTreeMap::new();
+    snapshot(directory.path(), directory.path(), &mut after);
+    assert_eq!(
+        after, before,
+        "rejected authority preserves every pre-existing file and directory, including caches"
+    );
+}
+
+#[test]
 fn canonical_renderer_is_byte_stable_and_ordered() {
     let coverage = coverage_doc();
     let first =

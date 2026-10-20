@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { root, version } from './gen-managed-contracts.mjs';
@@ -50,7 +50,9 @@ function assertSameTree(before, after, label) {
 function sandbox(name) {
   const directory = mkdtempSync(join(tmpdir(), `lekalo-managed-cli-${name}-`));
   const project = join(directory, 'proj');
-  cpSync(join(root, wire, 'planner'), project, { recursive: true });
+  // A fresh acceptance root contains fixture inputs, not ignored runtime
+  // locks/custody left by another local gate in the checkout fixture.
+  cpSync(join(root, wire, 'planner'), project, { recursive: true, filter: path => !['.lekalo', 'apps'].includes(basename(path)) });
   rmSync(join(project, 'expected'), { recursive: true, force: true });
   return { project, json: (relative) => JSON.parse(readFileSync(join(project, relative), 'utf8')) };
 }

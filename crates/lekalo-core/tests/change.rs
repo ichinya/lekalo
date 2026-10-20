@@ -123,14 +123,7 @@ fn ownership_request(
 
 fn ownership_managed_sandbox(tag: &str) -> Sandbox {
     let sandbox = Sandbox::from_fixture(tag, "tests/fixtures/managed/planner");
-    // The legacy managed-renderer fixture uses a command as a query read.
-    // Change validates the whole Model: use the actual entity and recompute
-    // the owner's authority, without bypassing shared semantic validation.
-    let path = sandbox.root.join("lekalo/modules/planner/queries.yaml");
-    let source = std::fs::read_to_string(&path)
-        .unwrap()
-        .replace("      - planner.complete_task", "      - planner.task");
-    std::fs::write(path, source).unwrap();
+    // Recompute the owner's pins from the current valid fixture snapshot.
     let authority =
         lekalo_core::managed::authority::derive(&sandbox.selection(), "planner").unwrap();
     let path = sandbox.root.join("coverage.json");

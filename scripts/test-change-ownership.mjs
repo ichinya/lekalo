@@ -40,10 +40,7 @@ function sugar(mode, evidence) { return ["change", "ownership:set", "--module", 
 try {
   assert(existsSync(bin), "build the current checkout CLI first");
   cpSync(join(root, "tests/fixtures/managed/planner"), stage, { recursive: true });
-  // The old renderer fixture's query-to-command read is not a valid Model.
-  // Correct the semantic fixture locally and recompute its authority pins.
-  const queries = join(stage, "lekalo/modules/planner/queries.yaml");
-  writeFileSync(queries, readFileSync(queries, "utf8").replace("      - planner.complete_task", "      - planner.task"));
+  // Recompute authority from the current valid fixture snapshot.
   function load(ir) {
     calls++;
     const result = spawnSync(bin, ["load", "--project", ".", "--json", ...(ir ? ["--ir"] : [])], { cwd: stage, encoding: "utf8", timeout: 30000, env: { ...process.env, LEKALO_PROJECT: "" } });
