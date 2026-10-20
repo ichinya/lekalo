@@ -220,11 +220,11 @@ impl Writer {
     /// The URI has already passed the resource scope and length policy.
     pub fn resource_updated(&self, uri: &str) -> bool {
         let frame = Self::resource_update_frame(uri);
-        frame.len() + 1 <= self.max_response_bytes && self.send(&frame)
+        frame.len() < self.max_response_bytes && self.send(&frame)
     }
 
     pub fn admits_resource_update(&self, uri: &str) -> bool {
-        Self::resource_update_frame(uri).len() + 1 <= self.max_response_bytes
+        Self::resource_update_frame(uri).len() < self.max_response_bytes
     }
 
     fn resource_update_frame(uri: &str) -> String {
