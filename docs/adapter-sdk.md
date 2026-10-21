@@ -19,6 +19,10 @@ The PHP runtime has no required extensions: UTF-8 character counting
 falls back to a byte-exact pure-PHP implementation when `ext-mbstring`
 is absent (`ext-mbstring` is declared as an optional `suggest` in
 `composer.json`; presence is used when available, never required).
+Path and contract-version checks use explicit ASCII rules without
+`ext-ctype`. The PHP vector runner and core-only serve probes disable
+`ctype_alpha`, `ctype_lower`, and `ctype_digit`, including on builds that
+compile those functions in, so host extensions cannot mask this boundary.
 
 Package versions are independent of the product version. A package
 version can never widen the exact accepted wire set: the emitted

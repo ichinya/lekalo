@@ -90,7 +90,10 @@ process.on("exit", () => {
 
 const RUNNERS = {
   go: { command: "go", args: ["run", "./internal/vectorsrunner"], cwd: join(ROOT, "sdk/go"), label: "go run ./internal/vectorsrunner" },
-  php: { command: "php", args: ["test/vectors.php"], cwd: join(ROOT, "sdk/php"), label: "php test/vectors.php" },
+  // Confined Linux PHP has no host ini/extensions. Also disable ctype on
+  // builds that compile it in, so every OS exercises the same dependency-free
+  // path/version grammar instead of masking an optional-extension dependency.
+  php: { command: "php", args: ["-n", "-d", "disable_functions=ctype_alpha,ctype_lower,ctype_digit", "test/vectors.php"], cwd: join(ROOT, "sdk/php"), label: "php -n (without ctype) test/vectors.php" },
   rust: {
     command: "cargo",
     args: ["run", "--quiet", "--bin", "vectors"],
@@ -501,7 +504,7 @@ if (r10HostileRequests.length === 0) fail('lifecycle-stdout-hygiene-inventory', 
 const hygieneInvocations = (lang, args) => lang === 'php' ? [
   args, [args[0], '-d', 'display_errors=1', ...args.slice(1)],
   [args[0], '-d', 'display_errors=0', ...args.slice(1)],
-  [args[0], '-n', '-d', 'display_errors=1', ...args.slice(1)],
+  [args[0], '-n', '-d', 'display_errors=1', '-d', 'disable_functions=ctype_alpha,ctype_lower,ctype_digit', ...args.slice(1)],
 ] : [args];
 {
   const fileExchangeDir = mkdtempSync(join(tmpdir(), "adapter-sdk-vectors-file-exchange-"));

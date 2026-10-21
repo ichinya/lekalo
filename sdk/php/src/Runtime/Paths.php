@@ -62,7 +62,9 @@ final class Paths {
     }
 
     private static function isDriveOrScheme(string $path): bool {
-        if (strlen($path) >= 2 && ctype_alpha($path[0]) && $path[1] === ':') {
+        // Wire grammar is ASCII and must work without optional ext-ctype
+        // or locale-dependent character classes in a confined PHP runtime.
+        if (strlen($path) >= 2 && preg_match('/\A[A-Za-z]\z/', $path[0]) === 1 && $path[1] === ':') {
             return true;
         }
         $colon = strpos($path, ':');
@@ -70,7 +72,7 @@ final class Paths {
             return false;
         }
         $stem = substr($path, 0, $colon);
-        if (!ctype_lower($stem[0])) {
+        if (preg_match('/\A[a-z]\z/', $stem[0]) !== 1) {
             return false;
         }
         return preg_match('/^[a-z0-9+.-]+\z/', $stem) === 1;
@@ -87,7 +89,7 @@ final class Paths {
         if ($tilt === false || $tilt < 1 || $tilt > 6 || $tilt + 1 >= strlen($segment)) {
             return false;
         }
-        return ctype_digit($segment[$tilt + 1]);
+        return preg_match('/\A[0-9]\z/', $segment[$tilt + 1]) === 1;
     }
 
     private static function containsPercentEscape(string $path): bool {
@@ -291,7 +293,7 @@ final class Paths {
             return false;
         }
         foreach ($parts as $part) {
-            if ($part === '' || !ctype_digit($part)) {
+            if (preg_match('/\A[0-9]+\z/', $part) !== 1) {
                 return false;
             }
         }
