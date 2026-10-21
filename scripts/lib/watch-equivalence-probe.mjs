@@ -11,6 +11,18 @@ import {StringDecoder} from 'node:string_decoder';
 const hash=bytes=>'sha256:'+createHash('sha256').update(bytes).digest('hex');
 const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,stable(value[key])])):value;
 const diagnostics=rows=>rows.map(row=>JSON.stringify(stable(row))).filter((row,i,all)=>all.indexOf(row)===i).sort();
+function replaceByRename(source,destination) {
+ // Windows readers can briefly hold the destination without delete sharing.
+ // Retry the same atomic operation; never unlink or fall back to a copy.
+ const pause=new Int32Array(new SharedArrayBuffer(4));
+ for(let attempt=0;;attempt++) {
+  try {renameSync(source,destination);return;}
+  catch(error) {
+   if(process.platform!=='win32'||!['EPERM','EACCES','EBUSY'].includes(error.code)||attempt===99)throw error;
+   Atomics.wait(pause,0,0,10);
+  }
+ }
+}
 function inventory(dir,prefix='') {
  return readdirSync(dir,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name)).filter(entry=>entry.name!=='.git').flatMap(entry=>{
   assert(entry.isFile()||entry.isDirectory());const path=prefix+entry.name;
@@ -108,7 +120,7 @@ export async function multiStageEquivalence({root,binary}) {
    const edits=scenario==='semantic-and-format'?[
     ()=>writeFileSync(source,original.replace('version: 1','version: 2')),
     ()=>writeFileSync(source,readFileSync(source,'utf8')+'\n'),
-    ()=>{const temp=source+'.tmp';writeFileSync(temp,readFileSync(source,'utf8').replace('version: 2','version: 3'));renameSync(temp,source);},
+    ()=>{const temp=source+'.tmp';writeFileSync(temp,readFileSync(source,'utf8').replace('version: 2','version: 3'));replaceByRename(temp,source);},
    ]:scenario==='semantic-membership'?[
     ()=>writeFileSync(source,original+'  - id: planner.extra\n    kind: scalar\n    version: 1\n    base: string\n'),
     ()=>writeFileSync(source,original),
