@@ -251,7 +251,14 @@ jobs:
           test "$(node -p "require('ajv/package.json').version")" = "8.17.1"
       - name: Provision the Linux process confinement backend
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes bubblewrap
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap apparmor-profiles
+          # Ubuntu restricts unprivileged namespace setup unless the
+          # distribution's dedicated Bubblewrap profile is loaded.
+          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/true
       - run: cargo build --workspace --locked
       - name: Run read-only watch native and poll probes (issue #95)
         id: watch

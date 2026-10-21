@@ -992,9 +992,7 @@ function renderFor(lang) {
       ...outputs.filter((output) => output.path !== "compatibility.json"),
       // The emitted standalone template bundles are outputs of this run,
       // pinned by the exact bytes of the freshly written candidate.
-      ...templateFiles(lang, files)
-        .entries()
-        .map(([path, text]) => ({ digest: sha256(text), path })),
+      ...Array.from(templateFiles(lang, files), ([path, text]) => ({ digest: sha256(text), path })),
       { digest: sha256(files.get("compatibility.json")), path: "compatibility.json" },
     ].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
     schemaVersion: "lekalo/adapter-sdk-generation/v0.8.0",

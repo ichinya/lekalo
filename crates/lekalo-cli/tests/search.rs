@@ -1947,8 +1947,7 @@ fn json_from(text: &str) -> serde_json::Value {
 /// Helper: bare lowercase hex SHA-256 for the forged-generation probe.
 fn sha256_hex_test(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 /// Helper: rebuild one cursor token against a different index digest
