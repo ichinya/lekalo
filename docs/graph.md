@@ -122,7 +122,7 @@ frontier count — it never silently returns the first N results.
   requirement provenance).
 - Pinned golden: `tests/fixtures/graph/golden/planner.graph.json`.
 - Independent Node gate: `node scripts/test-graph-contracts.mjs` — the
-  exact Ajv 8.17.1 schema gate plus order, coherence, and acyclic-policy
+  exact Ajv 8.20.0 schema gate plus order, coherence, and acyclic-policy
   invariants, run in CI on Node 18 and 24. Against a built CLI (`--require-binary`)
   it additionally re-exports every golden's owning fixture twice and
   byte-compares the canonical rendering against the pinned bytes (issue #52

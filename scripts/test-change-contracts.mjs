@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Issue #73 change-family contract gate: the closed change schemas, the
 // embedded catalog, the registry 0.8.0 union successor, the identity and
-// discriminator pins, and the committed golden documents. Exact Ajv 8.17.1
+// discriminator pins, and the committed golden documents. Exact Ajv 8.20.0
 // is provisioned outside this checkout like every other contract gate.
 //
 // This gate is schema- and data-only; the live CLI flow runs in
@@ -27,11 +27,11 @@ try {
   }, null, 2)}\n`);
   process.exit(1);
 }
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(`${JSON.stringify({
     ok: false,
     reason: "ajv-version",
-    detail: `expected 8.17.1, found ${ajvVersion}`,
+    detail: `expected 8.20.0, found ${ajvVersion}`,
   }, null, 2)}\n`);
   process.exit(1);
 }

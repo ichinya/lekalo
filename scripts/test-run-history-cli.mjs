@@ -8,7 +8,7 @@
 // value echo, and the absent export surface.
 //
 // Requires `cargo build -p lekalo-cli` first (CI builds before this
-// gate). Ajv 8.17.1 is provisioned outside the checkout like the other
+// gate). Ajv 8.20.0 is provisioned outside the checkout like the other
 // contract gates.
 
 import { createRequire } from "node:module";
@@ -37,8 +37,8 @@ try {
   );
   process.exit(1);
 }
-if (ajvVersion !== "8.17.1") {
-  process.stderr.write(`ajv ${ajvVersion} is not the pinned 8.17.1 contract gate\n`);
+if (ajvVersion !== "8.20.0") {
+  process.stderr.write(`ajv ${ajvVersion} is not the pinned 8.20.0 contract gate\n`);
   process.exit(1);
 }
 

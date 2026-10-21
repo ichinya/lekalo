@@ -16,7 +16,7 @@ const product = readFileSync(join(root,'Cargo.toml'),'utf8').match(/\[workspace.
 assert.ok(['0.6.4','0.6.5','0.8.0'].includes(product),'explicit product golden admission');
 const productPinnedGoldens = new Set(['report','report-waived','waivers','comparison','comparison-incomparable']);
 const require = createRequire((process.env.LEKALO_AJV_NODE_PATH || dirname(fileURLToPath(import.meta.url))) + '/');
-assert.equal(require('ajv/package.json').version, '8.17.1', 'exact Ajv gate dependency');
+assert.equal(require('ajv/package.json').version, '8.20.0', 'exact Ajv gate dependency');
 const Ajv2020 = require('ajv/dist/2020').default;
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validators = new Map();

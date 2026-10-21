@@ -81,7 +81,7 @@ order and set-like arrays sorted by unsigned UTF-8 of their typed keys.
 The digest is the SHA-256 of the canonical bytes with the digest field
 empty; the CLI appends exactly one LF. Equivalent inputs produce
 byte-identical output on every platform, and the pinned golden export is
-gate-checked with exact Ajv 8.17.1 on Node 18 and 24
+gate-checked with exact Ajv 8.20.0 on Node 18 and 24
 (`scripts/test-impact-contracts.mjs`).
 
 ## The typed Git handoff

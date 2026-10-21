@@ -115,7 +115,7 @@ if(args[0] === "--static") {
 // A missing built binary or exact schema validator is a refusal, never a skip.
 const bin = binary();
 const require = createRequire(import.meta.url);
-assert.equal(require("ajv/package.json").version,"8.17.1","provision exact Ajv 8.17.1 via NODE_PATH");
+assert.equal(require("ajv/package.json").version,"8.20.0","provision exact Ajv 8.20.0 via NODE_PATH");
 const Ajv = require("ajv/dist/2020.js").default;
 const ajv = new Ajv({strict:false,allErrors:true});
 const schemaCache = new Map();

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Issue #52 contract gate: the task-links family under exact Ajv
-// 8.17.1 (provisioned outside the checkout like every other schema
+// 8.20.0 (provisioned outside the checkout like every other schema
 // lane), the diagnostic-registry v0.8.0 union successor, the live CLI
 // validate/inspect/portability surface, and the full trigger/control
 // matrix of the eight LEK-TASKLINK rules.
@@ -29,18 +29,18 @@ try {
       ok: false,
       gate: "task-links-contracts",
       reason: "ajv-unavailable",
-      detail: `Ajv 8.17.1 is not reachable through NODE_PATH / LEKALO_AJV_NODE_PATH: ${error?.message ?? error}`,
+      detail: `Ajv 8.20.0 is not reachable through NODE_PATH / LEKALO_AJV_NODE_PATH: ${error?.message ?? error}`,
     })}\n`,
   );
   process.exit(1);
 }
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(
     `${JSON.stringify({
       ok: false,
       gate: "task-links-contracts",
       reason: "ajv-version",
-      detail: `exact Ajv 8.17.1 is required, found ${ajvVersion}`,
+      detail: `exact Ajv 8.20.0 is required, found ${ajvVersion}`,
     })}\n`,
   );
   process.exit(1);

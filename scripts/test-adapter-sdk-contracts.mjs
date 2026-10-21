@@ -3,7 +3,7 @@
  * The adapter-SDK contracts gate (issue #106).
  *
  * Validates the two closed 0.8.0 contract artifacts and every emitted
- * SDK document against them (pinned Ajv 8.17.1 through
+ * SDK document against them (pinned Ajv 8.20.0 through
  * NODE_PATH/LEKALO_AJV_NODE_PATH, like the other schema gates), and
  * cross-checks the recorded facts against reality:
  *
@@ -40,7 +40,7 @@ const fail = (reason, detail) => {
 const sha256 = (text) => "sha256:" + createHash("sha256").update(text).digest("hex");
 const read = (relative) => readFileSync(join(ROOT, relative), "utf8");
 
-// Pinned Ajv 8.17.1 through NODE_PATH / LEKALO_AJV_NODE_PATH (repo-wide
+// Pinned Ajv 8.20.0 through NODE_PATH / LEKALO_AJV_NODE_PATH (repo-wide
 // schema-gate convention; CI provisions it outside the checkout).
 const require_ = createRequire(import.meta.url);
 let Ajv;
@@ -52,7 +52,7 @@ try {
     Ajv = require_("ajv/dist/2020.js");
   }
 } catch {
-  fail("ajv-missing", "pinned Ajv 8.17.1 must be provided through NODE_PATH/LEKALO_AJV_NODE_PATH");
+  fail("ajv-missing", "pinned Ajv 8.20.0 must be provided through NODE_PATH/LEKALO_AJV_NODE_PATH");
 }
 const ajvModule = Ajv.default ?? Ajv;
 let ajvVersion = "unknown";
@@ -61,7 +61,7 @@ try {
 } catch {
   fail("ajv-missing", "ajv/package.json unreadable");
 }
-if (ajvVersion !== "8.17.1") fail("ajv-version", `expected Ajv 8.17.1, found ${ajvVersion}`);
+if (ajvVersion !== "8.20.0") fail("ajv-version", `expected Ajv 8.20.0, found ${ajvVersion}`);
 const ajv = new ajvModule({ strict: true, allErrors: true });
 
 const failures = [];

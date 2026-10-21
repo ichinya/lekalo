@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
 const require = createRequire(import.meta.url);
-assert.equal(require("ajv/package.json").version, "8.17.1");
+assert.equal(require("ajv/package.json").version, "8.20.0");
 const Ajv = require("ajv/dist/2020").default;
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const bin = process.env.LEKALO_BIN ?? join(root, "target/debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");

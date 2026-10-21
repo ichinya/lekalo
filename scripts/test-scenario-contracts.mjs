@@ -2,7 +2,7 @@
 // Issue #23 release gate: the Scenario IR wire schema, the committed
 // valid goldens, and the adversarial vectors, validated with the same
 // pinned third-party Draft 2020-12 implementation as the other contract
-// gates. Exact Ajv 8.17.1 is provisioned outside this checkout (CI does
+// gates. Exact Ajv 8.20.0 is provisioned outside this checkout (CI does
 // the same on Node 18 and 24) and exposed through NODE_PATH /
 // LEKALO_AJV_NODE_PATH.
 //
@@ -32,9 +32,9 @@ try {
   process.exit(1);
 }
 
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(
-    `ajv ${ajvVersion} is not the pinned 8.17.1 contract gate\n`,
+    `ajv ${ajvVersion} is not the pinned 8.20.0 contract gate\n`,
   );
   process.exit(1);
 }

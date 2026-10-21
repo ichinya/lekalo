@@ -4,7 +4,7 @@
 // the committed fixtures, and fresh production CLI output with an
 // independent classification/arithmetic oracle.
 //
-// Exact Ajv 8.17.1 is provisioned outside this checkout (CI does the
+// Exact Ajv 8.20.0 is provisioned outside this checkout (CI does the
 // same) and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH. The live
 // portability gate requires the built binary; a missing binary is gate
 // failure, not skip.
@@ -33,8 +33,8 @@ try {
   }, null, 2)}\n`);
   process.exit(1);
 }
-if (ajvVersion !== "8.17.1") {
-  fail("ajv-version", `expected 8.17.1, found ${ajvVersion}`);
+if (ajvVersion !== "8.20.0") {
+  fail("ajv-version", `expected 8.20.0, found ${ajvVersion}`);
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");

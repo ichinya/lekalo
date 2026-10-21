@@ -175,7 +175,7 @@ closed. Permutation of any array is normalized before comparison.
 
 ## Testing
 
-The pinned Ajv 8.17.1 gate (`scripts/test-error-contracts.mjs`,
+The pinned Ajv 8.20.0 gate (`scripts/test-error-contracts.mjs`,
 Node 18 and 24) validates both schemas, the registry instance, the
 golden bindings, and the invalid matrix with the schema-inexpressible
 invariants. The Rust integration suite

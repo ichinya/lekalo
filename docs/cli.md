@@ -1131,7 +1131,7 @@ cargo test --workspace --locked
 CI also checks the exact Rust 1.80.0 toolchain, builds and tests on Linux,
 Windows, and macOS, and runs every accepted Node contract checker and suite on
 Node.js 18 and 24. On both Node majors the contracts job additionally
-provisions exact Ajv 8.17.1 under the runner temp directory, outside the
+provisions exact Ajv 8.20.0 under the runner temp directory, outside the
 checkout, exposes it to scripts/test-model-ajv.mjs, scripts/test-lockfile-ajv.mjs,
 scripts/test-diagnostic-contracts.mjs,
 scripts/test-validation-contracts.mjs,

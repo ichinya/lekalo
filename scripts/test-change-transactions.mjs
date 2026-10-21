@@ -10,7 +10,7 @@
 // must be duplicate-key-free JSON (finding 8).
 //
 // Requires `cargo build -p lekalo-cli` first (CI builds before this gate).
-// Ajv 8.17.1 is provisioned outside the checkout like the other gates.
+// Ajv 8.20.0 is provisioned outside the checkout like the other gates.
 
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
@@ -30,8 +30,8 @@ try {
   process.stderr.write(`ajv provisioning failed: ${error?.message ?? error}\n`);
   process.exit(1);
 }
-if (ajvVersion !== "8.17.1") {
-  process.stderr.write(`ajv ${ajvVersion} is not the pinned 8.17.1 contract gate\n`);
+if (ajvVersion !== "8.20.0") {
+  process.stderr.write(`ajv ${ajvVersion} is not the pinned 8.20.0 contract gate\n`);
   process.exit(1);
 }
 

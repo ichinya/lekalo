@@ -7,7 +7,7 @@
 // implementation as the other contract gates. Cross-checks the closed
 // operation vocabulary, the schema pins, the canonical digest domain,
 // and the side-effect-free discovery guarantee against the CLI's own
-// Rust contract tests. Ajv 8.17.1 is provisioned outside this checkout
+// Rust contract tests. Ajv 8.20.0 is provisioned outside this checkout
 // (CI does the same on Node 18 and 24) and exposed through NODE_PATH /
 // LEKALO_AJV_NODE_PATH.
 //
@@ -33,11 +33,11 @@ try {
     Ajv2020 = require(join(fallback, "dist/2020.js")).default;
     ajvVersion = JSON.parse(readFileSync(join(fallback, "package.json"), "utf8")).version;
   } catch (error) {
-    process.stderr.write(`ajv-8.17.1-unavailable: ${error?.message ?? error}\n`);
+    process.stderr.write(`ajv-8.20.0-unavailable: ${error?.message ?? error}\n`);
     process.exit(1);
   }
 }
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(`ajv-version-mismatch: ${ajvVersion}\n`);
   process.exit(1);
 }

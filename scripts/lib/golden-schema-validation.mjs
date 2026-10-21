@@ -1,5 +1,5 @@
 // Shared Ajv validation for the closed golden-update plan schema.
-// Ajv 8.17.1 resolves from the repo checkout when present or from
+// Ajv 8.20.0 resolves from the repo checkout when present or from
 // LEKALO_AJV_NODE_PATH (the same provisioning as the contract gates).
 
 import { createRequire } from "node:module";
@@ -25,7 +25,7 @@ function loadAjv() {
     Ajv2020 = require(join(fallback, "dist/2020.js")).default;
     version = JSON.parse(readFileSync(join(fallback, "package.json"), "utf8")).version;
   }
-  if (version !== "8.17.1") {
+  if (version !== "8.20.0") {
     throw new Error(`ajv-version-mismatch: ${version}`);
   }
   cached = Ajv2020;

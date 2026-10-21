@@ -2728,7 +2728,10 @@ async function runConformance({ adapterArgs, executable, profile = "strict", rep
   child.stderr.on("data", (chunk) => {
     stderr += chunk;
   });
-  const code = await new Promise((resolve) => child.on("close", resolve));
+  const code = await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", resolve);
+  });
   return { code, stderr, stdout };
 }
 

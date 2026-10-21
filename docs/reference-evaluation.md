@@ -113,7 +113,7 @@ failures are deterministic, given-order permutation keeps state and
 effects byte-stable, durable-key replays never duplicate effects, and
 the goldens are byte-identical. The independent Node gate
 (`scripts/test-reference-evaluation-contracts.mjs` with exact
-Ajv 8.17.1 on Node 18 and 24, part of the CI pinned-Ajv list)
+Ajv 8.20.0 on Node 18 and 24, part of the CI pinned-Ajv list)
 re-validates every golden against the published schema, re-derives
 the canonical form, and verifies the digest manifest.
 

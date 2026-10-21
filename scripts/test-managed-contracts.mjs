@@ -14,7 +14,7 @@ import { root, version, generate, artifacts, shapes } from './gen-managed-contra
 import { registryUnion } from './lib/registry-union.mjs';
 
 const require = createRequire((process.env.LEKALO_AJV_NODE_PATH || join(root, 'scripts')) + '/');
-assert.equal(require('ajv/package.json').version, '8.17.1', 'exact Ajv gate dependency');
+assert.equal(require('ajv/package.json').version, '8.20.0', 'exact Ajv gate dependency');
 const Ajv = require('ajv/dist/2020').default;
 const ajv = new Ajv({ strict: true, allErrors: true });
 const read = (path) => JSON.parse(readFileSync(join(root, path), 'utf8'));

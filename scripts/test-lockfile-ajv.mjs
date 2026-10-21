@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Release gate for the pinned third-party JSON Schema implementation over
-// the issue #10 lock wire. Exact Ajv 8.17.1 is provisioned outside this
+// the issue #10 lock wire. Exact Ajv 8.20.0 is provisioned outside this
 // checkout (CI does the same on Node 18 and 24) and exposed through
 // NODE_PATH / LEKALO_AJV_NODE_PATH.
 
@@ -45,11 +45,11 @@ const invalidCases = listDir("tests/fixtures/lockfile/invalid").map((name) => ({
   expectValid: false,
 }));
 
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(`${JSON.stringify({
     ok: false,
     reason: "ajv-version",
-    detail: `expected 8.17.1, found ${ajvVersion}`,
+    detail: `expected 8.20.0, found ${ajvVersion}`,
   }, null, 2)}\n`);
   process.exit(1);
 }

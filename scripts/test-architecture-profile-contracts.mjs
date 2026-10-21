@@ -10,7 +10,7 @@ import {root,version,header,hash,digest,known,unknown,generate,shapes} from './g
 const write=process.argv.length===3&&process.argv[2]==='--write-goldens';
 assert.ok(process.argv.length===2||write,'usage: node scripts/test-architecture-profile-contracts.mjs [--write-goldens]');
 const require=createRequire((process.env.LEKALO_AJV_NODE_PATH||root+'/scripts')+'/');
-assert.equal(require('ajv/package.json').version,'8.17.1','exact Ajv gate dependency');
+assert.equal(require('ajv/package.json').version,'8.20.0','exact Ajv gate dependency');
 const Ajv=require('ajv/dist/2020').default;
 const ajv=new Ajv({strict:true,allErrors:true});
 const read=p=>JSON.parse(readFileSync(join(root,p),'utf8'));
@@ -252,7 +252,7 @@ try{
  }finally{assert.ok(isolated.startsWith(join(tmpdir(),'lekalo-84-gate-fault-')));rmSync(isolated,{recursive:true,force:true});}
  if(write)writeFileSync(join(root,fixture,'golden/index.json'),pretty(goldenNames));else assert.deepEqual(read(`${fixture}/golden/index.json`),goldenNames);
  assert.deepEqual(fixProbes,{multibyteRefusals:24,unicodeSuccesses:2,advisoryRequiredRefusals:36});
- console.log(JSON.stringify({ok:true,product:version,ajv:'8.17.1',families:schemas.size,goldens:goldenNames.length,registryEntries:registry.entries.length,diagnostics:emitted.size,liveProbes:probes,artifactFaults:4,fixProbes,mode:write?'authoring':'read-only'}));
+ console.log(JSON.stringify({ok:true,product:version,ajv:'8.20.0',families:schemas.size,goldens:goldenNames.length,registryEntries:registry.entries.length,diagnostics:emitted.size,liveProbes:probes,artifactFaults:4,fixProbes,mode:write?'authoring':'read-only'}));
 }finally{
  // One native shell/process owns this fully resolved, freshly created temporary root.
  assert.ok(project.startsWith(join(tmpdir(),'lekalo-issue-84-')));

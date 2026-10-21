@@ -3,7 +3,7 @@
 // evidence wire schema, the NFR report wire schema, the committed
 // planner attachment, both evidence sets, and the derived report
 // golden, validated with the same pinned third-party Draft 2020-12
-// implementation as the other contract gates. Exact Ajv 8.17.1 is
+// implementation as the other contract gates. Exact Ajv 8.20.0 is
 // provisioned outside this checkout (CI does the same on Node 18 and
 // 24) and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 //
@@ -32,18 +32,18 @@ try {
     `${JSON.stringify({
       ok: false,
       gate: "nfr",
-      error: `Ajv 8.17.1 is not reachable through NODE_PATH / LEKALO_AJV_NODE_PATH: ${error}`,
+      error: `Ajv 8.20.0 is not reachable through NODE_PATH / LEKALO_AJV_NODE_PATH: ${error}`,
     })}\n`,
   );
   process.exit(1);
 }
 
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(
     `${JSON.stringify({
       ok: false,
       gate: "nfr",
-      error: `exact Ajv 8.17.1 is required, found ${ajvVersion}`,
+      error: `exact Ajv 8.20.0 is required, found ${ajvVersion}`,
     })}\n`,
   );
   process.exit(1);

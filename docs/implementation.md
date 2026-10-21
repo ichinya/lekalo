@@ -103,7 +103,7 @@ The `implementation.*` family (registry 1.18.0, LEK-IMPL-001..007):
   references, effects, warnings), `implementation::portability` (the
   deterministic projection), `canonical_bytes`/`digest`.
 - Contract gate: `node scripts/test-implementation-contracts.mjs`
-  (exact Ajv 8.17.1, Node 18/24 in CI) over
+  (exact Ajv 8.20.0, Node 18/24 in CI) over
   `tests/fixtures/implementation/{valid,invalid}`.
 - Semantic matrix: `tests/fixtures/implementation/semantic/` driven by
   `crates/lekalo-core/tests/implementation.rs` against the compiled

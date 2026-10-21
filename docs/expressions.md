@@ -175,7 +175,7 @@ classification.
 - [`contracts/expressions-vectors.schema.v0.2.16.json`](../contracts/expressions-vectors.schema.v0.2.16.json) — the shared evaluation-vector contract,
 - [`contracts/expressions-builtin-support.schema.v0.2.16.json`](../contracts/expressions-builtin-support.schema.v0.2.16.json) — the capability-snapshot contract,
 - [`tests/fixtures/expressions/`](../tests/fixtures/expressions/) — the shared fixtures (valid planner, 91 vectors, 28 invalid refusals, capability snapshots, diff pair),
-- `scripts/test-expressions-contracts.mjs` — the independent Node release gate (pinned Ajv 8.17.1).
+- `scripts/test-expressions-contracts.mjs` — the independent Node release gate (pinned Ajv 8.20.0).
 
 Failures emit the accepted #11 diagnostic contract with the
 registry minor 1.24.0 → 0.2.16 (additions only):

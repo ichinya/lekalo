@@ -26,6 +26,10 @@ compile those functions in, so host extensions cannot mask this boundary.
 The TypeScript stdin reader consumes sequential pipe reads, preserves UTF-8
 across chunks, and refuses read errors instead of treating them as EOF.
 The stream regression gate checks non-seekable stdin on every OS.
+The TypeScript conformance client rejects its Promise when the host CLI
+cannot be launched; callers can handle that error without terminating
+their process. Successfully launched CLI stdout, stderr and exit codes
+pass through unchanged.
 
 Package versions are independent of the product version. A package
 version can never widen the exact accepted wire set: the emitted
@@ -209,6 +213,6 @@ the confined host battery remains the authority for planning/publication.
 
 CI runs the schema/generator gate in the contracts job, builds the
 templates in the same job that runs the conformance wrappers, and
-provisions pinned Ajv 8.17.1 externally through `NODE_PATH` /
+provisions pinned Ajv 8.20.0 externally through `NODE_PATH` /
 `LEKALO_AJV_NODE_PATH`. Missing required runtimes are failed setups,
 never skipped acceptance.

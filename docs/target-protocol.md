@@ -118,7 +118,7 @@ Runtime decoding rejects duplicate decoded keys (including escaped keys),
 explicit null optionals, unknown fields, invalid tokens/versions, collection
 bounds and operation-specific result shapes. All semantic fixtures execute
 against production Rust decoding and validation with exact rule/detail
-expectations. The pinned Ajv 8.17.1 gate checks the raw schema for duplicate
+expectations. The pinned Ajv 8.20.0 gate checks the raw schema for duplicate
 keys before parsing; schema acceptance is reported separately from semantic
 runtime rejection. Neither a filename whitelist nor a fixture name is a
 runtime proof.

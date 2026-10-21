@@ -11,7 +11,7 @@ import { createHash } from "node:crypto";
 
 const require = createRequire(import.meta.url);
 const Ajv2020 = require("ajv/dist/2020").default;
-assert.equal(require("ajv/package.json").version, "8.17.1");
+assert.equal(require("ajv/package.json").version, "8.20.0");
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const binary = join(root, "target/debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
 assert(existsSync(binary), "cargo build -p lekalo-cli first");

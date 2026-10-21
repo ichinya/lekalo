@@ -3,7 +3,7 @@
 // the committed valid goldens (rendered by the core pipeline itself),
 // and the adversarial schema vectors, validated with the same pinned
 // third-party Draft 2020-12 implementation as the other contract gates
-// (exact Ajv 8.17.1, provisioned outside this checkout and exposed
+// (exact Ajv 8.20.0, provisioned outside this checkout and exposed
 // through NODE_PATH / LEKALO_AJV_NODE_PATH).
 //
 // The gate independently proves the canonical form of the goldens:
@@ -26,7 +26,7 @@ try {
 } catch (error) {
   failEarly("ajv-unavailable", String(error));
 }
-if (ajvVersion !== "8.17.1") failEarly("ajv-version", ajvVersion);
+if (ajvVersion !== "8.20.0") failEarly("ajv-version", ajvVersion);
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => readFileSync(resolve(root, relative), "utf8");

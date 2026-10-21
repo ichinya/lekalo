@@ -14,7 +14,7 @@
 //
 // This script only orchestrates: every leg is the committed harness a
 // CI job runs on its own. Provisioning stays outside verification (the
-// planner vendor tree per composer.lock; Ajv 8.17.1, typescript, and
+// planner vendor tree per composer.lock; Ajv 8.20.0, typescript, and
 // @vue/compiler-sfc outside the checkout through NODE_PATH), exactly as
 // for the individual gates. Dependency-free; run from the repo root.
 import { spawnSync } from "node:child_process";
@@ -94,7 +94,7 @@ if (legs.some((leg) => leg.ajv)) {
     encoding: "utf8",
   });
   if (probe.status !== 0) {
-    ajvNote = " (warning: ajv is not reachable through NODE_PATH - the ui leg will refuse; provision Ajv 8.17.1, typescript, and @vue/compiler-sfc outside the checkout as CI does)";
+    ajvNote = " (warning: ajv is not reachable through NODE_PATH - the ui leg will refuse; provision Ajv 8.20.0, typescript, and @vue/compiler-sfc outside the checkout as CI does)";
   }
 }
 

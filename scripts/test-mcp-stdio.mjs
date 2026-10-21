@@ -5,7 +5,7 @@
 // schema. Covers the lifecycle, the seven-tool catalog, tool calls over
 // the synthetic planner, scope denial, group narrowing, write-tool
 // absence, and the read-only guarantee with a full before/after
-// inventory. Exact Ajv 8.17.1 is provisioned outside this checkout and
+// inventory. Exact Ajv 8.20.0 is provisioned outside this checkout and
 // exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 
 import "./registry-union.mjs";
@@ -24,12 +24,12 @@ try {
   ajvVersion = require("ajv/package.json").version;
 } catch (error) {
   process.stderr.write(
-    `ajv-unavailable: provision exact Ajv 8.17.1 outside the checkout and expose it through NODE_PATH / LEKALO_AJV_NODE_PATH (${error.message})\n`,
+    `ajv-unavailable: provision exact Ajv 8.20.0 outside the checkout and expose it through NODE_PATH / LEKALO_AJV_NODE_PATH (${error.message})\n`,
   );
   process.exit(2);
 }
-if (ajvVersion !== "8.17.1") {
-  process.stderr.write(`ajv-version: expected 8.17.1, got ${ajvVersion}\n`);
+if (ajvVersion !== "8.20.0") {
+  process.stderr.write(`ajv-version: expected 8.20.0, got ${ajvVersion}\n`);
   process.exit(2);
 }
 

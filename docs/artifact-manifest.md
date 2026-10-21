@@ -138,7 +138,7 @@ code until an explicit reviewed adoption.
 - Runtime behavior: `crates/lekalo-core/tests/artifact_manifest.rs`.
 - CLI integration: `crates/lekalo-cli/tests/generate.rs`.
 - Independent structural gate: `node scripts/test-artifact-manifest-contracts.mjs`
-  (exact Ajv 8.17.1, Node 18 and 24).
+  (exact Ajv 8.20.0, Node 18 and 24).
 - The wire fixtures are authored once with
   `node scripts/gen-artifact-fixtures.mjs`; outputs are committed and
   never regenerated in CI.

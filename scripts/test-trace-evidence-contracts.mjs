@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 let Ajv2020, version;
 try { Ajv2020 = require("ajv/dist/2020.js").default; version = require("ajv/package.json").version; }
 catch { const path = join(process.env.LEKALO_AJV_NODE_PATH ?? "", "ajv"); Ajv2020 = require(join(path, "dist/2020.js")).default; version = JSON.parse(readFileSync(join(path, "package.json"), "utf8")).version; }
-assert.equal(version, "8.17.1", "exact Ajv version");
+assert.equal(version, "8.20.0", "exact Ajv version");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const valid = ajv.compile(read("contracts/trace-validation-evidence.schema.v0.6.4.json"));
 const shapeInvalid = new Set(["unknown-member", "contradictory-pass", "null-test", "overlong-code"]);

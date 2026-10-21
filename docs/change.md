@@ -362,6 +362,13 @@ file produce the identical plan and idempotency binding.
 
 ## Application, idempotency, recovery
 
+An ordinary failure rollback verifies the entire replaced prefix before
+restoring any file. It checks live destination bytes and backup digests
+through no-follow reads, then checks custody again before each restore.
+Post-replacement user edits and deletions are preserved; an edited
+creation is never removed. Drift or damaged backup material retains the
+journal and reader barrier and reports `change.recovery-required`.
+
 `change::apply_prepared` is the only writer. Under the shared
 project-wide mutation lock (`.lekalo/cache/writer.lock`, held across
 the change, migration (apply and rollback), format, generate, and

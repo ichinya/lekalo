@@ -122,7 +122,7 @@ lekalo context --changed planner.focus_task,planner.edit_task_cmd --budget 12000
   (payload contract), `planner.context.envelope.json` and
   `planner.context.md` (the two CLI projections).
 - Independent Node gate: `node scripts/test-context-contracts.mjs` — the
-  exact Ajv 8.17.1 schema gate plus coverage arithmetic, manifest walk
+  exact Ajv 8.20.0 schema gate plus coverage arithmetic, manifest walk
   order, gap vocabulary, and privacy invariants, run in CI on Node 18
   and 24.
 - Rust suites: `crates/lekalo-core/tests/context.rs` (selection,

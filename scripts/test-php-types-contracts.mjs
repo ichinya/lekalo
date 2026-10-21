@@ -3,7 +3,7 @@
 // bounded types-input document, the emitted mapping sidecar, and the
 // observed class-shape evidence), validated with the same pinned
 // third-party Draft 2020-12 implementation as the other contract gates
-// (exact Ajv 8.17.1, provisioned outside this checkout and exposed
+// (exact Ajv 8.20.0, provisioned outside this checkout and exposed
 // through NODE_PATH / LEKALO_AJV_NODE_PATH).
 //
 // The gate proves:
@@ -42,7 +42,7 @@ try {
 } catch (error) {
   failEarly("ajv-unavailable", String(error));
 }
-if (ajvVersion !== "8.17.1") failEarly("ajv-version", ajvVersion);
+if (ajvVersion !== "8.20.0") failEarly("ajv-version", ajvVersion);
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => readFileSync(resolve(root, relative), "utf8");

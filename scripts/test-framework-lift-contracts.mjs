@@ -11,7 +11,7 @@ const require=createRequire(import.meta.url),root=resolve(dirname(fileURLToPath(
 const args=process.argv.slice(2),families=['baseline','task','campaign','arm','result'];
 assert.ok(args.length===0||(args.length===2&&args[0]==='--family'&&families.includes(args[1])),'unknown gate arguments');
 const selected=args[1]??'all';
-assert.equal(require('ajv/package.json').version,'8.17.1','exact Ajv required');
+assert.equal(require('ajv/package.json').version,'8.20.0','exact Ajv required');
 const Ajv=require('ajv/dist/2020').default,ajv=new Ajv({strict:true,allErrors:true});
 const schemas=new Map(families.map(f=>[f,ajv.compile(JSON.parse(readFileSync(join(root,`contracts/framework-lift-${f}.schema.v0.6.4.json`))))]));
 const binary=join(root,'target/debug',process.platform==='win32'?'lekalo.exe':'lekalo');assert.ok(existsSync(binary),'binary-missing');

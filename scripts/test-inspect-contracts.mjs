@@ -2,7 +2,7 @@
 // Issue #15 release gate: the inspect wire schema and the pinned
 // canonical golden envelopes, validated with the same pinned third-party
 // Draft 2020-12 implementation as the other contract gates. Exact
-// Ajv 8.17.1 is provisioned outside this checkout (CI does the same on
+// Ajv 8.20.0 is provisioned outside this checkout (CI does the same on
 // Node 18 and 24) and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 
 import { createRequire } from "node:module";
@@ -19,13 +19,13 @@ try {
   ajvVersion = require("ajv/package.json").version;
 } catch (error) {
   process.stderr.write(
-    `ajv-unavailable: provision exact Ajv 8.17.1 outside the checkout and expose it through NODE_PATH / LEKALO_AJV_NODE_PATH (${error.message})\n`,
+    `ajv-unavailable: provision exact Ajv 8.20.0 outside the checkout and expose it through NODE_PATH / LEKALO_AJV_NODE_PATH (${error.message})\n`,
   );
   process.exit(2);
 }
 
-if (ajvVersion !== "8.17.1") {
-  process.stderr.write(`ajv-version: expected 8.17.1, got ${ajvVersion}\n`);
+if (ajvVersion !== "8.20.0") {
+  process.stderr.write(`ajv-version: expected 8.20.0, got ${ajvVersion}\n`);
   process.exit(2);
 }
 

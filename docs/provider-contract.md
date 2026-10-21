@@ -257,7 +257,7 @@ anonymization.
 - Node boundary gate: `node scripts/test-provider-contracts.mjs`
   (schema + golden + live binary + digest recomputation + live
   `validate`/`drift` receipts against their describing schemas, Ajv
-  8.17.1).
+  8.20.0).
 - Schemas: `contracts/provider-capabilities.schema.v0.6.4.json`
   (closed, `additionalProperties:false`, per-operation const tuples
   and exact pin tuples),

@@ -140,5 +140,5 @@ relative logical source path and pointer from the #8 source map. The
 canonical bytes depend only on the compiled model: randomized module
 directories, LF/CRLF, JSON/YAML twins, locale, timezone, and cwd produce
 byte-identical output. The pinned goldens
-(`tests/fixtures/inspect/golden/`) are gate-checked with exact Ajv 8.17.1
+(`tests/fixtures/inspect/golden/`) are gate-checked with exact Ajv 8.20.0
 on Node 18 and 24 (`scripts/test-inspect-contracts.mjs`).

@@ -155,4 +155,4 @@ control; audit retention is an explicit consumer/CI responsibility.
 
 The implementation and acceptance evidence are mapped in
 [issue-88-implementation](m7/issue-88-implementation.md). Each new family has
-synthetic goldens and a live Ajv **8.17.1** gate after the workspace build in CI.
+synthetic goldens and a live Ajv **8.20.0** gate after the workspace build in CI.

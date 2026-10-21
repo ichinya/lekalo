@@ -44,14 +44,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build the checkout CLI for live contract probes
         run: cargo build --workspace --locked
-      - name: Provision exact Ajv 8.17.1 and the OpenAPI validator outside the checkout
+      - name: Provision exact Ajv 8.20.0 and the OpenAPI validator outside the checkout
         run: |
           set -euo pipefail
-          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.17.1" --ignore-scripts --no-audit --no-fund --no-save ajv@8.17.1 @seriousme/openapi-schema-validator@2.8.0 ajv-draft-04@1.0.0 ajv-formats@3.0.1
-          test "$(node -p "require('$RUNNER_TEMP/lekalo-ajv-8.17.1/node_modules/ajv/package.json').version")" = "8.17.1"
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.20.0" --ignore-scripts --no-audit --no-fund --no-save ajv@8.20.0 @seriousme/openapi-schema-validator@2.8.0 ajv-draft-04@1.0.0 ajv-formats@3.0.1
+          test "$(node -p "require('$RUNNER_TEMP/lekalo-ajv-8.20.0/node_modules/ajv/package.json').version")" = "8.20.0"
       - name: Run pinned Ajv schema release gate
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-model-ajv.mjs
@@ -113,7 +113,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-explain-contracts.mjs --schema-only
       - name: Run the adapter-SDK schema, digest, and generator gates (issue #106)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         # CI permits only the read-only generator --check; --write stays a
         # local development action. The emitted outputs and records are
         # pinned by committed digests, so drift fails here.
@@ -125,7 +125,7 @@ jobs:
         run: cargo test -p lekalo-core target_protocol_conformance --locked
       - name: Run contract checkers and suites
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           node scripts/check-contract-versions.mjs --base HEAD^
           node scripts/check-registry-union.mjs
@@ -156,7 +156,7 @@ jobs:
         # cargo-built CLI, so it runs in build-test with the other
         # binary-dependent gates (the update-policy rehearsal too).
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-golden-catalog.mjs
@@ -255,12 +255,12 @@ jobs:
             appendFileSync(process.env.GITHUB_ENV, `${name}=${root}\n`);
           }
           NODE
-      - name: Provision exact Ajv 8.17.1 outside the checkout (issues #32, #48)
+      - name: Provision exact Ajv 8.20.0 outside the checkout (issues #32, #48)
         run: |
           set -euo pipefail
-          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.17.1" --ignore-scripts --no-audit --no-fund --no-save ajv@8.17.1
-          export NODE_PATH="$RUNNER_TEMP/lekalo-ajv-8.17.1/node_modules"
-          test "$(node -p "require('ajv/package.json').version")" = "8.17.1"
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.20.0" --ignore-scripts --no-audit --no-fund --no-save ajv@8.20.0
+          export NODE_PATH="$RUNNER_TEMP/lekalo-ajv-8.20.0/node_modules"
+          test "$(node -p "require('ajv/package.json').version")" = "8.20.0"
       - name: Provision the Linux process confinement backend
         if: runner.os == 'Linux'
         run: |
@@ -287,7 +287,7 @@ jobs:
         id: watch
         timeout-minutes: 10
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-platform.mjs
@@ -301,7 +301,7 @@ jobs:
         run: cargo test -p lekalo-core --lib unix_confined_ --locked -- --nocapture
       - name: Run the read-only MCP stdio gate (issue #33)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-stdio.mjs
@@ -316,13 +316,13 @@ jobs:
           node scripts/test-mcp-host.mjs
       - name: Run the live portability contract gate (issue #19)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-portability-contracts.mjs
       - name: Run neutral trace evidence and assessment contracts (issue #35)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-evidence-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-assessment-contracts.mjs --require-binary
@@ -333,7 +333,7 @@ jobs:
         # pinned bytes, so a stale-but-schema-valid golden fails the Node
         # gate at the same commit the Rust golden tests would catch it.
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-graph-contracts.mjs --require-binary
       - name: Run the CI report smoke and gate (issue #103)
         # Dogfood the closed report surface on every OS: validate over a
@@ -392,7 +392,7 @@ jobs:
       - name: Run AI lint contract families (issue #76)
         id: ai-lint
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-report-contracts.mjs
@@ -405,7 +405,7 @@ jobs:
         run: cargo test -p lekalo-core --lib unix_confined_ --locked -- --nocapture
       - name: Run scoped governance waiver contracts (issue #88)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-waivers-contracts.mjs
@@ -415,25 +415,25 @@ jobs:
         # Needs the binary built above; the schema-only Ajv list in the
         # contracts job never builds one (R2-B1).
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-context-budget-contracts.mjs
       - name: Run the coupling contract gate (issue #77)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-coupling-contracts.mjs
       - name: Run the module API boundary gate (issue #113)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-module-api-contracts.mjs
       - name: Run every Framework Lift family live gate (issue #100)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           for family in baseline task campaign arm result; do
@@ -441,7 +441,7 @@ jobs:
           done
       - name: Run the local run-history end-to-end gate (issue #121)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-run-history-cli.mjs
@@ -464,14 +464,14 @@ jobs:
         # The binary is the workspace build above. Both gates
         # fail closed when their inputs are missing.
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-search-cli.mjs
           node scripts/bench-search.mjs
       - name: Run the semantic change contract and live CLI gates (issue #73)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-contracts.mjs
@@ -487,26 +487,26 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-transactions.mjs
       - name: Run the versioned fix recipe contract and live CLI gates (issue #74)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-fix-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-fix-cli.mjs
       - name: Run the diagnostic explanation contract and live CLI gates (issue #96)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-explain-contracts.mjs
       - name: Run the architecture profile contract gate (issue #84)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-architecture-profile-contracts.mjs
       - name: Run the canonical formatter gates (issue #94)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-format-contracts.mjs
@@ -518,7 +518,7 @@ jobs:
           cargo test --locked -p lekalo-cli --test format
       - name: Run the managed ownership, custody and planner gates (issue #41)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/gen-managed-contracts.mjs --check
@@ -527,7 +527,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-managed-planner-e2e.mjs
       - name: Run the public metrics contract and live CLI gates (issue #102)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           for family in evaluation-export-input metrics-aggregation-definition public-metrics metrics-export-manifest metrics-export-preview; do
@@ -535,7 +535,7 @@ jobs:
           done
       - name: Run the workflow-provider discovery boundary gate (issue #34)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-provider-contracts.mjs
@@ -546,7 +546,7 @@ jobs:
         run: composer install --no-interaction --prefer-dist --no-scripts --working-dir tests/fixtures/php-laravel/planner
       - name: Run the task-links pilot gates (issue #52)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-task-links-contracts.mjs
@@ -598,7 +598,7 @@ jobs:
         # rehearsal — all in external sandboxes against the binary
         # built above.
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         timeout-minutes: 20
         run: |
           node scripts/run-golden.mjs --verify
@@ -618,7 +618,7 @@ jobs:
         # the tutorial replay (the documented walkthrough runs
         # verbatim). All need the binary built above.
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         timeout-minutes: 20
         run: |
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-adoption-contracts.mjs
@@ -628,7 +628,7 @@ jobs:
       - name: Replay portable documentation commands in disposable copies (issue #105)
         timeout-minutes: 15
         env:
-          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           node scripts/test-docs-ownership.mjs
@@ -637,11 +637,11 @@ jobs:
         run: node scripts/test-node-typescript-kernel.mjs
       - name: Run the adapter manifest contract gate (issue #32)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: node scripts/test-adapter-manifest-contracts.mjs
       - name: Run the PHP types contract gate (issue #58)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: node scripts/test-php-types-contracts.mjs
       - name: Verify the shipped adapter manifest golden (issue #32, #54)
         run: node scripts/test-adapter-manifest-golden.mjs
@@ -753,7 +753,7 @@ jobs:
           go-version: "1.23.5"
       - name: Run the client-SDK runtime gate (issue #72)
         env:
-          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           npm install --prefix "$RUNNER_TEMP/lekalo-client-sdk-vue" --ignore-scripts --no-audit --no-fund --no-save typescript@5.9.3 @vue/compiler-sfc@3.4.38
@@ -763,7 +763,7 @@ jobs:
       - name: Replay the Laravel and Vue tutorial in a disposable copy (issue #105)
         timeout-minutes: 20
         env:
-          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           delim=":"; if [ "$RUNNER_OS" = "Windows" ]; then delim=";"; fi
@@ -774,7 +774,7 @@ jobs:
         run: node scripts/test-node-scenario-units.mjs
       - name: Run the native gate contract gate (issue #48)
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-native-gate-contracts.mjs
@@ -858,14 +858,14 @@ jobs:
         run: |
           set -euo pipefail
           cargo build -p lekalo-cli --locked
-          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.17.1" --ignore-scripts --no-audit --no-fund --no-save ajv@8.17.1
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.20.0" --ignore-scripts --no-audit --no-fund --no-save ajv@8.20.0
       - name: Provision the synthetic fixture from its committed npm lock
         # Visible setup only; replay never installs or uses a production URL.
         run: npm ci --prefix tests/fixtures/pilot/brownfield-mysql --ignore-scripts --no-audit --no-fund
       - name: Replay actual-package typecheck, HTTP and MySQL persistence
         timeout-minutes: 10
         env:
-          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
           LEKALO_DOCS_MYSQL_PORT: '3306'
         run: node scripts/test-docs-examples.mjs --lane mysql
 
@@ -945,10 +945,10 @@ jobs:
         run: |
           set -euo pipefail
           cargo build -p lekalo-cli --locked
-          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.17.1" --ignore-scripts --no-audit --no-fund --no-save ajv@8.17.1
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.20.0" --ignore-scripts --no-audit --no-fund --no-save ajv@8.20.0
       - name: Run the pilot harness, impact, and neutrality gates
         env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target php --profile strict --case all

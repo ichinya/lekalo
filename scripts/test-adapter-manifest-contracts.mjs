@@ -2,7 +2,7 @@
  * Issue #32 contract gate: the adapter package manifest schema
  * (fix round 1, cline F-7 — the gate that would have caught F-1).
  *
- * Dependency-free except the pinned Ajv 8.17.1 release gate (CI provisions
+ * Dependency-free except the pinned Ajv 8.20.0 release gate (CI provisions
  * it outside the checkout and exposes it through NODE_PATH /
  * LEKALO_AJV_NODE_PATH). The gate:
  *

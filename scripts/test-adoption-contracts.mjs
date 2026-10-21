@@ -3,7 +3,7 @@
 // diagnostic-registry 0.8.0 union successor, the committed adoption
 // fixtures, and the live CLI analysis/confirmation/coverage flows,
 // validated with the same pinned third-party Draft 2020-12
-// implementation as the other contract gates (exact Ajv 8.17.1 through
+// implementation as the other contract gates (exact Ajv 8.20.0 through
 // NODE_PATH / LEKALO_AJV_NODE_PATH) and a freshly built real binary.
 // Schema-only checks never replace the end-to-end acceptance in
 // test-adoption-refactor.mjs and test-adoption-hybrid.mjs, which must
@@ -28,7 +28,7 @@ try {
   process.stderr.write(`${JSON.stringify({ ok: false, reason: "ajv-unavailable", detail: String(error) }, null, 2)}\n`);
   process.exit(1);
 }
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(`${JSON.stringify({ ok: false, reason: "ajv-version", detail: ajvVersion }, null, 2)}\n`);
   process.exit(1);
 }

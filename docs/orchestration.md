@@ -174,7 +174,7 @@ precedence (5 > 1 > 3 > 4).
 - `node scripts/test-orchestration-contracts.mjs` — the receipt schema,
   the pinned golden receipts (regenerate with the documented fixture
   sequence when the fixture project bytes change), and the
-  cross-language invariants, with exact Ajv 8.17.1 on Node 18 and 24.
+  cross-language invariants, with exact Ajv 8.20.0 on Node 18 and 24.
 
 ## Adapter package gate (issue #32)
 

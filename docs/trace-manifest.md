@@ -101,5 +101,5 @@ those bytes. The pinned golden
 is re-derived byte-identically from permuted input, and the
 `scripts/test-trace-contracts.mjs` gate recomputes canonical bytes,
 digest, and relation identities with a second independent
-implementation under exact Ajv 8.17.1 strict on Node 18 and 24,
+implementation under exact Ajv 8.20.0 strict on Node 18 and 24,
 alongside the 37-fixture invalid matrix.

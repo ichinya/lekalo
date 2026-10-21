@@ -12,7 +12,7 @@
 // this gate). Runs fully offline in an empty environment; no adapter,
 // network, or target-source access happens, and the gate fails if any
 // expected artifact is missing instead of skipping. Every successful
-// search/find response is validated live with pinned Ajv 8.17.1 (same
+// search/find response is validated live with pinned Ajv 8.20.0 (same
 // NODE_PATH / LEKALO_AJV_NODE_PATH provisioning as the contract gate).
 
 import { createRequire } from "node:module";
@@ -49,7 +49,7 @@ const require = createRequire(
 let validateResult;
 try {
   const version = require("ajv/package.json").version;
-  if (version !== "8.17.1") fail("ajv-version", version);
+  if (version !== "8.20.0") fail("ajv-version", version);
   const Ajv2020 = require("ajv/dist/2020").default;
   validateResult = new Ajv2020({ strict: true, allErrors: true }).compile(
     JSON.parse(readFileSync(join(root, "contracts/search-result.schema.v0.8.0.json"), "utf8")),

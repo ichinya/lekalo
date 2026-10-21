@@ -19,7 +19,7 @@ const php = (process.env.LEKALO_PHP ?? "php").split(";").find((candidate) =>
 assert.ok(php, "native interpreter required");
 const require = createRequire(import.meta.url);
 const { default: Ajv2020 } = require("ajv/dist/2020");
-assert.equal(require("ajv/package.json").version, "8.17.1");
+assert.equal(require("ajv/package.json").version, "8.20.0");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateScenario = ajv.compile(JSON.parse(readFileSync(join(root, "contracts/scenario-ir.schema.v0.2.16.json"), "utf8")));
 const execute = (command, args, cwd = root, env = process.env) => {

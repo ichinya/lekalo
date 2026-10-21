@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Issue #16 release gate: the impact wire schema and the pinned canonical
 // golden export, validated with the same pinned third-party Draft 2020-12
-// implementation as the other contract gates. Exact Ajv 8.17.1 is
+// implementation as the other contract gates. Exact Ajv 8.20.0 is
 // provisioned outside this checkout (CI does the same on Node 18 and 24)
 // and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 
@@ -22,13 +22,13 @@ try {
   Ajv2020 = undefined;
 }
 
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(
     `${JSON.stringify(
       {
         ok: false,
         reason: "ajv-version",
-        detail: `expected 8.17.1, found ${ajvVersion}`,
+        detail: `expected 8.20.0, found ${ajvVersion}`,
       },
       null,
       2,

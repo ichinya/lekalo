@@ -125,7 +125,7 @@ the CLI has no issuer authenticity or wall-clock expiry service. No AIFHub
 service integration is claimed here.
 
 Run `scripts/test-metrics-export-contracts.mjs --family FAMILY` after
-`cargo build --locked -p lekalo-cli`, with exact Ajv 8.17.1 provisioned
+`cargo build --locked -p lekalo-cli`, with exact Ajv 8.20.0 provisioned
 through `NODE_PATH`. Each CI family gate compiles closed schemas, validates
 goldens, and executes the real offline binary against synthetic records,
 including preview, confirmation, uncertainty, denial and deletion cases.

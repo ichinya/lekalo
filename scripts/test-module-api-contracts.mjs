@@ -20,7 +20,7 @@ const fail = (reason, detail) => { process.stderr.write(JSON.stringify({ ok: fal
 let Ajv;
 try {
   Ajv = require('ajv/dist/2020').default;
-  if (require('ajv/package.json').version !== '8.17.1') fail('ajv-version', 'expected 8.17.1');
+  if (require('ajv/package.json').version !== '8.20.0') fail('ajv-version', 'expected 8.20.0');
 } catch { fail('ajv-unavailable', 'set NODE_PATH=$LEKALO_AJV_NODE_PATH'); }
 const binary = process.env.LEKALO_MODULE_API_BIN ?? join(root, 'target/debug', process.platform === 'win32' ? 'lekalo.exe' : 'lekalo');
 if (!existsSync(binary)) fail('binary-missing', 'cargo build --workspace --locked');
@@ -870,4 +870,4 @@ const resealBundle = (bundle) => {
   checked.push('r7-nonnullable-admission-and-optional-invariant');
 }
 
-process.stdout.write(JSON.stringify({ ok: true, gate: 'module-api-contracts', ajv: '8.17.1', schemas: families.length, checks: checked.length, checked }) + '\n');
+process.stdout.write(JSON.stringify({ ok: true, gate: 'module-api-contracts', ajv: '8.20.0', schemas: families.length, checks: checked.length, checked }) + '\n');

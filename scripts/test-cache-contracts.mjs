@@ -2,7 +2,7 @@
 // Issue #20 release gate: the cache wire schema, the pinned golden record
 // fixtures, and the cross-language canonical digest vectors, validated with
 // the same pinned third-party Draft 2020-12 implementation as the other
-// contract gates. Exact Ajv 8.17.1 is provisioned outside this checkout
+// contract gates. Exact Ajv 8.20.0 is provisioned outside this checkout
 // (CI does the same on Node 18 and 24) and exposed through NODE_PATH /
 // LEKALO_AJV_NODE_PATH.
 
@@ -22,8 +22,8 @@ try {
   console.error(`ajv is not provisioned: ${error.message}`);
   process.exit(1);
 }
-if (ajvVersion !== "8.17.1") {
-  console.error(`pinned Ajv 8.17.1 is required, found ${ajvVersion}`);
+if (ajvVersion !== "8.20.0") {
+  console.error(`pinned Ajv 8.20.0 is required, found ${ajvVersion}`);
   process.exit(1);
 }
 

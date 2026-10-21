@@ -520,7 +520,8 @@ impl Transaction {
     /// Restore the first `count` replacements in reverse order. Returns
     /// whether every restoration completed; a failed restoration leaves
     /// the journal in place so readers stay blocked and recovery remains
-    /// possible (round 2, finding 5).
+    /// possible (round 2, finding 5). A destination edited after replacement
+    /// is no longer owned by this transaction and must remain untouched.
     fn restore_prefix(&self, count: usize) -> bool {
         if self
             .module_move
@@ -529,12 +530,25 @@ impl Transaction {
         {
             return false;
         }
-        for staged in self.staged[..count].iter().rev() {
-            let restored = match &staged.backup {
-                Some(backup) => {
-                    std::fs::read(backup).and_then(|bytes| write_same_dir(&staged.target, &bytes))
-                }
-                None => std::fs::remove_file(&staged.target).map(|_| ()),
+        let prefix = &self.staged[..count];
+        // Discover drift or damaged recovery material anywhere in the prefix
+        // before restoring any member. Recheck immediately before each write
+        // too: the project writer lock does not serialize external editors.
+        for (index, staged) in prefix.iter().enumerate() {
+            if self.rollback_bytes(index, staged).is_err() {
+                return false;
+            }
+        }
+        for (index, staged) in prefix.iter().enumerate().rev() {
+            let bytes = match self.rollback_bytes(index, staged) {
+                Ok(Some(bytes)) => bytes,
+                Ok(None) => continue,
+                Err(()) => return false,
+            };
+            let restored = if staged.backup.is_some() {
+                write_same_dir(&staged.target, &bytes)
+            } else {
+                std::fs::remove_file(&staged.target)
             };
             if restored.is_err() {
                 return false;
@@ -543,6 +557,50 @@ impl Transaction {
         self.module_move
             .as_ref()
             .map_or(true, |movement| movement.restore(&self.root).is_ok())
+    }
+
+    /// Decide rollback custody using fresh no-follow reads. `None` means
+    /// already restored; `Some` contains a verified preimage (or the empty
+    /// creation sentinel). Missing or unreadable existing files are drift.
+    fn rollback_bytes(&self, index: usize, staged: &StagedFile) -> Result<Option<Vec<u8>>, ()> {
+        validated_target(&self.root, &staged.logical).map_err(|_| ())?;
+        let current = match read_target_bytes(&self.root, &staged.logical) {
+            Ok(bytes) => bytes,
+            Err(error)
+                if staged.backup.is_none() && error.kind() == std::io::ErrorKind::NotFound =>
+            {
+                return Ok(None);
+            }
+            Err(_) => return Err(()),
+        };
+        let digest = super::receipt::bytes_digest(&current);
+        if staged.backup.is_some() && digest == staged.before_digest {
+            return Ok(None);
+        }
+        if digest != staged.after_digest {
+            return Err(());
+        }
+        if staged.backup.is_none() {
+            return Ok(Some(Vec::new()));
+        }
+        let fs = Fs::open(&self.root).map_err(|_| ())?;
+        let home = format!(
+            "{}/{}/{BACKUPS_NAME}",
+            super::version::TRANSACTION_CACHE_ROOT,
+            self.id
+        );
+        let bytes = fs
+            .read_file_opt(
+                &home,
+                &index.to_string(),
+                crate::loader::source::MAX_DOCUMENT_BYTES,
+            )
+            .map_err(|_| ())?
+            .ok_or(())?;
+        if super::receipt::bytes_digest(&bytes) != staged.before_digest {
+            return Err(());
+        }
+        Ok(Some(bytes))
     }
 
     /// Finalize the canonical history inside the same transaction, publish
@@ -1825,6 +1883,113 @@ pub(super) fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
 mod tests {
     use super::*;
     use crate::project_writer::WriterLock;
+
+    fn applied_rollback_fixture(creation: bool) -> (tempfile::TempDir, Transaction, PathBuf) {
+        let root = tempfile::tempdir().unwrap();
+        let logical = "lekalo/modules/tasks/entities.yaml";
+        let target = root.path().join(logical);
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        if !creation {
+            std::fs::write(&target, b"before\n").unwrap();
+        }
+        let plan = ReplacementPlan {
+            logical: logical.to_owned(),
+            before_digest: super::super::receipt::bytes_digest(if creation {
+                b""
+            } else {
+                b"before\n"
+            }),
+            after_digest: super::super::receipt::bytes_digest(b"after\n"),
+            after_bytes: b"after\n".to_vec(),
+            creation,
+        };
+        let mut transaction = Transaction::begin(
+            root.path(),
+            "change-rollback001",
+            &format!("sha256:{}", "0".repeat(64)),
+            std::slice::from_ref(&plan),
+        )
+        .unwrap();
+        transaction.stage(0, &plan).unwrap();
+        transaction.mark_state(STATE_REPLACING).unwrap();
+        transaction.replace_all().unwrap();
+        (root, transaction, target)
+    }
+
+    #[test]
+    fn rollback_preserves_user_edits_and_the_recovery_barrier() {
+        for creation in [false, true] {
+            let (root, transaction, target) = applied_rollback_fixture(creation);
+            std::fs::write(&target, b"user edit\n").unwrap();
+            assert!(!transaction.restore_prefix(1));
+            assert_eq!(std::fs::read(&target).unwrap(), b"user edit\n");
+            assert!(transaction.journal_dir.join(JOURNAL_NAME).is_file());
+            assert!(root.path().join(".lekalo").join(PENDING_NAME).is_file());
+            assert_eq!(
+                recovery_barrier_code(&Fs::open(root.path()).unwrap()),
+                Some(super::super::diagnostic::RECOVERY_REQUIRED)
+            );
+        }
+    }
+
+    #[test]
+    fn rollback_preserves_a_user_deletion() {
+        let (_root, transaction, target) = applied_rollback_fixture(false);
+        std::fs::remove_file(&target).unwrap();
+        assert!(!transaction.restore_prefix(1));
+        assert!(!target.exists());
+        assert!(transaction.journal_dir.join(JOURNAL_NAME).is_file());
+    }
+
+    #[test]
+    fn rollback_verifies_backup_bytes_before_restoring() {
+        let (_root, transaction, target) = applied_rollback_fixture(false);
+        std::fs::write(
+            transaction.staged[0].backup.as_ref().unwrap(),
+            b"corrupt backup\n",
+        )
+        .unwrap();
+        assert!(!transaction.restore_prefix(1));
+        assert_eq!(std::fs::read(&target).unwrap(), b"after\n");
+        assert!(transaction.journal_dir.join(JOURNAL_NAME).is_file());
+    }
+
+    #[test]
+    fn rollback_restores_owned_bytes_and_is_idempotent() {
+        for creation in [false, true] {
+            let (_root, transaction, target) = applied_rollback_fixture(creation);
+            assert!(transaction.restore_prefix(1));
+            if creation {
+                assert!(!target.exists());
+            } else {
+                assert_eq!(std::fs::read(&target).unwrap(), b"before\n");
+            }
+            assert!(transaction.restore_prefix(1));
+        }
+    }
+
+    #[test]
+    fn rollback_preflights_the_entire_prefix_before_any_restore() {
+        let (root, mut transaction, target) = applied_rollback_fixture(false);
+        let second = root.path().join("lekalo/modules/tasks/commands.yaml");
+        std::fs::write(&second, b"after two\n").unwrap();
+        let backup = transaction.journal_dir.join(BACKUPS_NAME).join("1");
+        std::fs::write(&backup, b"before two\n").unwrap();
+        transaction.staged.push(StagedFile {
+            target: second.clone(),
+            logical: "lekalo/modules/tasks/commands.yaml".to_owned(),
+            backup: Some(backup),
+            before_digest: super::super::receipt::bytes_digest(b"before two\n"),
+            after_digest: super::super::receipt::bytes_digest(b"after two\n"),
+            after_bytes: b"after two\n".to_vec(),
+        });
+        // Reverse-order rollback would restore the second file before
+        // discovering this conflict unless the whole prefix is preflighted.
+        std::fs::write(&target, b"user edit\n").unwrap();
+        assert!(!transaction.restore_prefix(2));
+        assert_eq!(std::fs::read(&target).unwrap(), b"user edit\n");
+        assert_eq!(std::fs::read(&second).unwrap(), b"after two\n");
+    }
 
     #[test]
     fn committed_module_move_recovery_keeps_the_new_home_and_finishes_cleanup() {

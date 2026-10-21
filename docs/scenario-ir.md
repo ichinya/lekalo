@@ -127,7 +127,7 @@ Diagnostics reuse the accepted #11 infrastructure rules
 with fixed detail tokens and bounded echoes; the registry file is
 unchanged. There is no CLI command in v1; vectors run through the
 contract gates (`scripts/test-scenario-contracts.mjs` with exact
-Ajv 8.17.1 on Node 18 and 24, plus
+Ajv 8.20.0 on Node 18 and 24, plus
 `crates/lekalo-core/tests/scenario.rs`).
 
 ## References

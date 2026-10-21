@@ -3,7 +3,7 @@
  * Issue #29 contract gate: the composable target profile contract.
  *
  * Validates `contracts/target-profile.schema.v0.2.16.json` with the pinned
- * Ajv 8.17.1, proves the committed fixture set round-trips through the
+ * Ajv 8.20.0, proves the committed fixture set round-trips through the
  * closed schema — the issue's Node and Laravel profiles, a Go runtime
  * reusing the storage/transport/deployment components, a monorepo
  * document with inheritance and explicit overrides, decode-level
@@ -29,7 +29,7 @@ try {
     Ajv = require("ajv/dist/2020.js");
   }
 } catch {
-  fail("ajv-missing", "pinned Ajv 8.17.1 must be provided through NODE_PATH/LEKALO_AJV_NODE_PATH");
+  fail("ajv-missing", "pinned Ajv 8.20.0 must be provided through NODE_PATH/LEKALO_AJV_NODE_PATH");
 }
 
 const ajvModule = Ajv.default ?? Ajv;
@@ -46,8 +46,8 @@ const packageJson = (() => {
     return undefined;
   }
 })();
-if (!packageJson || packageJson.version !== "8.17.1") {
-  fail("ajv-version", `expected Ajv 8.17.1, found ${packageJson ? packageJson.version : "none"}`);
+if (!packageJson || packageJson.version !== "8.20.0") {
+  fail("ajv-version", `expected Ajv 8.20.0, found ${packageJson ? packageJson.version : "none"}`);
 }
 
 const ajv = new ajvModule({ strict: true, allErrors: true });

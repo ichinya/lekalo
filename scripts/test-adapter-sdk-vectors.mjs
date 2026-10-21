@@ -72,7 +72,7 @@ const ALL = ["typescript", "rust", "go", "php"];
 const languages = language === "all" ? ALL : ALL.includes(language) ? [language] : null;
 if (!languages) fail("usage", "--language must be one of rust|typescript|go|php|all");
 if (languages.includes('typescript')) {
-  const stream = spawnSync(process.execPath, ['--test', join(ROOT, 'sdk/typescript/test/stream.mjs')], { encoding: 'utf8', timeout: 30000 });
+  const stream = spawnSync(process.execPath, ['--test', join(ROOT, 'sdk/typescript/test/stream.mjs'), join(ROOT, 'sdk/typescript/test/conformance.mjs')], { encoding: 'utf8', timeout: 30000 });
   if (stream.status !== 0) fail('typescript-stream', `${stream.stdout ?? ''}${stream.stderr ?? ''}`);
 }
 

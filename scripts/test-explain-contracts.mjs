@@ -15,7 +15,7 @@ import { registryUnion, assertRegistryUnion, ACCEPTED_M8_REGISTRY_FAMILIES } fro
 
 const require = createRequire(import.meta.url);
 const Ajv2020 = require("ajv/dist/2020").default;
-assert.equal(require("ajv/package.json").version, "8.17.1", "exact gate dependency required");
+assert.equal(require("ajv/package.json").version, "8.20.0", "exact gate dependency required");
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (path) => JSON.parse(readFileSync(resolve(root, path), "utf8"));
 const ajv = new Ajv2020({ strict: true, allErrors: true });

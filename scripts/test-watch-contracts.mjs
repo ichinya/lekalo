@@ -9,7 +9,7 @@ import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {ACCEPTED_M8_REGISTRY_FAMILIES,assertRegistryUnion} from './lib/registry-union.mjs';
 const require=createRequire(import.meta.url);
-assert.equal(require('ajv/package.json').version,'8.17.1');
+assert.equal(require('ajv/package.json').version,'8.20.0');
 const Ajv=require('ajv/dist/2020').default;
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const load=name=>JSON.parse(readFileSync(resolve(root,`contracts/${name}.schema.v0.8.0.json`),'utf8'));

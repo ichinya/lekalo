@@ -12,7 +12,7 @@ import {fileURLToPath} from 'node:url';
 import {generatedProbe} from './lib/watch-generated-probe.mjs';
 const require=createRequire(import.meta.url);
 const Ajv=require('ajv/dist/2020').default;
-assert.equal(require('ajv/package.json').version,'8.17.1','pinned independent validator');
+assert.equal(require('ajv/package.json').version,'8.20.0','pinned independent validator');
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const binary=process.env.LEKALO_BIN??join(root,'target/debug',process.platform==='win32'?'lekalo.exe':'lekalo');
 const schema=JSON.parse(readFileSync(join(root,'contracts/watch-event.schema.v0.8.0.json'),'utf8'));

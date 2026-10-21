@@ -200,7 +200,7 @@ credential-shaped tokens.
   (schema shape, canonical bytes, independently recomputed digests, closed
   wire, invalid fixtures, registry parity).
 - `node scripts/test-lockfile-ajv.mjs` — the same fixtures against the
-  pinned Draft 2020-12 validator (exact Ajv 8.17.1, provisioned outside the
+  pinned Draft 2020-12 validator (exact Ajv 8.20.0, provisioned outside the
   checkout exactly like `scripts/test-model-ajv.mjs`).
 - `cargo test --workspace --locked` — wire, resolution, verification, plan,
   and CLI behavior on the accepted 0/1/3/4/5 envelope.
