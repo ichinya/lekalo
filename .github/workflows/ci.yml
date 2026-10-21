@@ -35,7 +35,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          # The AI Workspace hook gate checks historical contract commits.
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
@@ -243,6 +244,16 @@ jobs:
           # platform extensions; every dependency-free suite is unaffected.
           extensions: mbstring, openssl, pdo_sqlite, sqlite3, tokenizer, xml, dom, xmlwriter, ctype, fileinfo, iconv, session
         id: php
+      - name: Use physical temporary paths for synthetic project fixtures
+        run: |
+          node --input-type=module <<'NODE'
+          import {appendFileSync, realpathSync} from 'node:fs';
+          import {tmpdir} from 'node:os';
+          const root = realpathSync(tmpdir());
+          for (const name of ['TEMP', 'TMP', 'TMPDIR']) {
+            appendFileSync(process.env.GITHUB_ENV, `${name}=${root}\n`);
+          }
+          NODE
       - name: Provision exact Ajv 8.17.1 outside the checkout (issues #32, #48)
         run: |
           set -euo pipefail
