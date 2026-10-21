@@ -1189,6 +1189,36 @@ mod tests {
         assert!(!root.path().join("other").exists());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn unix_confined_php_runtime_qualification() {
+        let root = tempfile::tempdir().unwrap();
+        let sandbox = Sandbox::new(root.path(), &[], &[], false, SandboxPolicy::strict()).unwrap();
+        let command = transport::AdapterCommand {
+            program: "php".into(),
+            args: vec![
+                "-r".into(),
+                "if (!function_exists('token_get_all')) { fwrite(STDERR, 'php-tokenizer-unavailable'); exit(23); } echo 'lekalo-confined-php-ok';".into(),
+            ],
+        };
+        let limits = transport::TransportLimits {
+            timeout_ms: 10_000,
+            max_output_bytes: 1_024,
+            max_stderr_bytes: 8_192,
+            ..Default::default()
+        };
+        let result = sandbox
+            .run(&command, b"", &limits, false, None, &[])
+            .unwrap();
+        assert_eq!(
+            result.exit_code,
+            0,
+            "private synthetic PHP launch evidence: stderr={:?}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"lekalo-confined-php-ok");
+    }
+
     // The kernel-release parser runs the per-userns gate; its floor and
     // spellings are pinned here (linux-only: the gate reads /proc).
     #[cfg(target_os = "linux")]

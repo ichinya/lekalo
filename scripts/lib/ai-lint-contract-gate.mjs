@@ -42,7 +42,7 @@ export function run(project,args,expected='valid') {
   assert.ifError(child.error);
   const text=child.stdout.trim()||child.stderr.trim();
   let envelope;try { envelope=JSON.parse(text); } catch { throw new Error(`CLI output (${child.status}): ${text.slice(0,1000)}`); }
-  if(expected) assert.equal(envelope.status,expected,text.slice(0,1000));
+  if(expected) assert.equal(envelope.status,expected,`scanTarget=${args.includes('--scan-target')?args[args.indexOf('--scan-target')+1]:'none'} ${text.slice(0,1000)}`);
   assert.equal(child.status,({valid:0,invalid:1,'unsupported-version':5,denied:3})[expected??envelope.status],`exit: ${text.slice(0,500)}`);
   return {envelope,report:envelope.report??envelope.payload?.report,code:child.status};
 }

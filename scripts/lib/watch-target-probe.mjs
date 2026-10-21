@@ -84,7 +84,7 @@ export async function selectiveTargetProbe({root,binary,env,fixture='project'}){
      }
     }
    }catch(error){failure=error;child.kill();}});
-   child.on('close',(code,signal)=>{clearTimeout(timer);try{if(failure)throw failure;assert.equal(signal,null);assert.equal(code,0,stderr);assert.equal(pending,'');resolve();}catch(error){reject(error);}});
+   child.on('close',(code,signal)=>{clearTimeout(timer);try{if(failure)throw failure;assert.equal(signal,null);assert.equal(code,0,JSON.stringify({stderr,completed:completed.map(e=>({run:e.runId,status:e.status,diagnostics:e.result.diagnostics}))}));assert.equal(pending,'');resolve();}catch(error){reject(error);}});
   });
   assert.equal(completed.length,4);
   assert.deepEqual(completed.map(e=>e.status),['invalid','invalid','invalid','valid']);

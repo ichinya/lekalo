@@ -298,7 +298,7 @@ jobs:
           node scripts/test-watch-consumers.mjs
       - name: Diagnose a failed watch lane with the synthetic confined runtime
         if: failure() && steps.watch.outcome == 'failure' && runner.os != 'Windows'
-        run: cargo test -p lekalo-core --lib unix_confined_runtime_qualification --locked -- --nocapture
+        run: cargo test -p lekalo-core --lib unix_confined_ --locked -- --nocapture
       - name: Run the read-only MCP stdio gate (issue #33)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
@@ -390,6 +390,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Run AI lint contract families (issue #76)
+        id: ai-lint
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
         run: |
@@ -399,6 +400,9 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-config-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-waivers-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-comparison-contracts.mjs
+      - name: Diagnose a failed AI lint lane with the synthetic confined runtimes
+        if: failure() && steps.ai-lint.outcome == 'failure' && runner.os != 'Windows'
+        run: cargo test -p lekalo-core --lib unix_confined_ --locked -- --nocapture
       - name: Run scoped governance waiver contracts (issue #88)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
@@ -560,7 +564,7 @@ jobs:
       - name: Qualify confined Unix execution and denied host paths
         if: runner.os != 'Windows'
         timeout-minutes: 3
-        run: cargo test -p lekalo-core --lib unix_confined_runtime_qualification --locked -- --nocapture
+        run: cargo test -p lekalo-core --lib unix_confined_ --locked -- --nocapture
       - name: Qualify bounded Unix process and request-file lifecycle
         if: runner.os != 'Windows'
         timeout-minutes: 3
