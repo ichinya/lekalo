@@ -2690,12 +2690,10 @@ function readRequestInput() {
   let total = 0;
   let text = "";
   while (total <= MAX_REQUEST_BYTES) {
-    let got;
-    try {
-      got = readSync(0, buffer, 0, chunk, total === 0 ? null : total);
-    } catch {
-      break;
-    }
+    // stdin may be a pipe: positional reads fail with ESPIPE on Unix.
+    // Only a zero-byte read is EOF; IO failures must refuse the exchange,
+    // even if the bytes already read happen to contain complete JSON.
+    const got = readSync(0, buffer, 0, Math.min(chunk, MAX_REQUEST_BYTES + 1 - total), null);
     if (got === 0) break;
     text += decoder.decode(buffer.subarray(0, got), { stream: true });
     total += got;

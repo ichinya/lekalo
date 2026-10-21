@@ -23,6 +23,9 @@ Path and contract-version checks use explicit ASCII rules without
 `ext-ctype`. The PHP vector runner and core-only serve probes disable
 `ctype_alpha`, `ctype_lower`, and `ctype_digit`, including on builds that
 compile those functions in, so host extensions cannot mask this boundary.
+The TypeScript stdin reader consumes sequential pipe reads, preserves UTF-8
+across chunks, and refuses read errors instead of treating them as EOF.
+The stream regression gate checks non-seekable stdin on every OS.
 
 Package versions are independent of the product version. A package
 version can never widen the exact accepted wire set: the emitted
