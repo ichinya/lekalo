@@ -82,7 +82,7 @@ const zodScratchRoot = join(adapterRoot, ".build-zod");
 // build assertion: provisioning installs `drizzle-orm` with this exact
 // version and the collector refuses any drift.
 const DRIZZLE_PACKAGE = "drizzle-orm";
-const DRIZZLE_VERSION_PIN = "0.44.7";
+const DRIZZLE_VERSION_PIN = "0.45.4";
 /** The public subpaths whose declaration closure is embedded. Exact,
  * bounded surface: any other subpath stays unresolved and therefore
  * unsupported, never guessed. */

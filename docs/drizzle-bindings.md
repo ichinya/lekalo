@@ -7,6 +7,12 @@ adapter maps statically decodable Drizzle surfaces onto a closed
 target-evidence document consumed by tests and — through the existing
 observed scan path — by the host.
 
+The embedded declaration pin is `drizzle-orm@0.45.4`, a patched release
+for [GHSA-gpj5-g38j-94v9](https://github.com/drizzle-team/drizzle-orm/security/advisories/GHSA-gpj5-g38j-94v9).
+Projects using this evidence path must declare that exact version. An
+older pin, including `0.44.7`, produces `pin-mismatch`; update the project
+dependency and rescan to obtain evidence under the new closure digest.
+
 ## What the adapter produces
 
 One read-only compiler pass over the scanner's Program attaches
@@ -63,7 +69,7 @@ changes the revision and the digest.
 
 1. **Compiler identity is primary.** A recognizer only trusts callees
    whose declarations resolve into the embedded upstream closure
-   (`drizzle-orm@0.44.7`, vendored at build time, type-context-only).
+   (`drizzle-orm@0.45.4`, vendored at build time, type-context-only).
    Name similarity is never evidence.
 2. **Pin policy.** The closure is offered to a program only when every
    consumer manifest that declares `drizzle-orm` pins exactly the
