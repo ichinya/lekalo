@@ -7,6 +7,15 @@ non-Node adapter speaking the same wire through the same production
 conformance battery in both profiles and the capability declarations
 stay honest about what the MVP does not do.
 
+Static PHP lint needs the standard tokenizer. On split Unix CLI builds the
+collector loads only `tokenizer.so` from PHP's runtime module directory,
+inside the existing OS sandbox. A missing module or disabled loader produces
+the bounded `lint-tokenizer-unavailable` refusal. The collector never loads
+application PHP files or accepts a module name from a request.
+The macOS PHP runtime can read Homebrew shared libraries under its fixed
+`Cellar`/`opt` library paths; application and configuration files there are
+outside those read grants.
+
 ## Version history
 
 - **0.1.0 (issue #54):** the protocol kernel MVP — the closed wire

@@ -25,7 +25,10 @@ export async function selectiveTargetProbe({root,binary,env,fixture='project'}){
   assert.ifError(lock.error);assert.equal(lock.status,0,lock.stdout+lock.stderr);
   const source=join(project,'lekalo/modules/planner/entities.yaml'),original=readFileSync(source,'utf8');
   const events=[],completed=[],decoder=new StringDecoder('utf8');let pending='',stderr='',failure,cancelOnStart=false,expected=inventory(project);
-  const flags=['watch',...(fixture==='project-successor'?['--locked']:[]),'--backend','poll','--poll-interval-ms','100','--reconcile-ms','100','--debounce-ms','30','--max-wait-ms','150','--adapter-timeout-ms','5000','--target','watch-fixture','--validate','--json-lines'];
+  // Copied Node launches include macOS loader/codesign startup work. This
+  // fixture deadline is independent of the cancellation/read-only assertions.
+  const adapterTimeout=process.platform==='darwin'?'15000':'5000';
+  const flags=['watch',...(fixture==='project-successor'?['--locked']:[]),'--backend','poll','--poll-interval-ms','100','--reconcile-ms','100','--debounce-ms','30','--max-wait-ms','150','--adapter-timeout-ms',adapterTimeout,'--target','watch-fixture','--validate','--json-lines'];
   const child=spawn(binary,[...flags,'--stop-after-runs','4'],{cwd:project,env,stdio:['ignore','pipe','pipe']});
   const edit=mode=>{writeFileSync(control,mode);expected=inventory(project);};
   await new Promise((resolve,reject)=>{
@@ -41,6 +44,7 @@ export async function selectiveTargetProbe({root,binary,env,fixture='project'}){
      if(e.event!=='run-completed')continue;
      assert.deepEqual(inventory(project),expected,'selected adapters never write project state');completed.push(e);
      assert.equal(e.diagnosticsMode,'replace');
+     assert.equal(e.result.pins.adapters.length,1,JSON.stringify({run:e.runId,status:e.status,diagnostics:e.result.diagnostics}));
      if(completed.length===1){
       for(let version=2;version<=9;version++)writeFileSync(source,original.replace('version: 1',`version: ${version}`));
       expected=inventory(project);
@@ -84,7 +88,7 @@ export async function selectiveTargetProbe({root,binary,env,fixture='project'}){
      }
     }
    }catch(error){failure=error;child.kill();}});
-   child.on('close',(code,signal)=>{clearTimeout(timer);try{if(failure)throw failure;assert.equal(signal,null);assert.equal(code,0,JSON.stringify({stderr,completed:completed.map(e=>({run:e.runId,status:e.status,diagnostics:e.result.diagnostics}))}));assert.equal(pending,'');resolve();}catch(error){reject(error);}});
+   child.on('close',(code,signal)=>{clearTimeout(timer);try{if(failure)throw failure;assert.equal(signal,null);assert.equal(code,0,JSON.stringify({stderr,events,pending}));assert.equal(pending,'');resolve();}catch(error){reject(error);}});
   });
   assert.equal(completed.length,4);
   assert.deepEqual(completed.map(e=>e.status),['invalid','invalid','invalid','valid']);

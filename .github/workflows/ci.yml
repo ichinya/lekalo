@@ -445,9 +445,16 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-run-history-cli.mjs
+      - name: Provision ripgrep for the Windows search comparison
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ripgrep --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rg --version
       - name: Run the semantic search live and benchmark gates (issue #93)
-        # The comparison leg needs ripgrep, preinstalled on GitHub
-        # runners; the binary is the workspace build above. Both gates
+        # The comparison leg needs ripgrep; Windows provisions it in the
+        # preceding step. The binary is the workspace build above. Both gates
         # fail closed when their inputs are missing.
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules

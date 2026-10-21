@@ -6,9 +6,9 @@
  * GENERATED FILE — regenerate with `php adapters/php-laravel/build.php`;
  * verify with `php adapters/php-laravel/build.php --check`. Never edit.
  *
- * Self-contained: PHP built-ins only (json, hash, SPL), no Composer
- * package, no extension beyond always-compiled basics, so the confined
- * core runtime can copy the interpreter plus exactly this script.
+ * Self-contained artifact: no Composer package or application loading.
+ * Static PHP lint uses the standard tokenizer, built in or loaded by its
+ * fixed module name within the interpreter's existing confinement.
  */
 
 declare(strict_types=1);
@@ -16,6 +16,18 @@ declare(strict_types=1);
 function lint_unknown(): array { return ['state' => 'unknown']; }
 function lint_known(mixed $value): array { return ['state' => 'known', 'value' => $value]; }
 function lint_hash(mixed $value): string { return 'sha256:' . hash('sha256', canonical_json($value)); }
+/** Load only PHP's standard tokenizer from its configured runtime module directory. */
+function lint_require_tokenizer(): void
+{
+    if (function_exists('token_get_all')) { return; }
+    // Debian-style CLI builds ship this standard extension separately. The
+    // confined interpreter has no host php.ini; its OS mount boundary still
+    // governs this fixed module name. No request path or module is accepted.
+    if (PHP_SAPI === 'cli' && PHP_SHLIB_SUFFIX === 'so' && function_exists('dl')) {
+        @dl('tokenizer.so');
+    }
+    if (!function_exists('token_get_all')) { throw new RequestRefusal('lint-tokenizer-unavailable'); }
+}
 function lint_validate_request(array $request): void
 {
     $lint = $request['lint_request'] ?? null;
@@ -55,6 +67,7 @@ function lint_read_source(string $path): string
 }
 function lint_collect(array $request): array
 {
+    lint_require_tokenizer();
     $lint=$request['lint_request'];$sources=[];$locations=[];$records=[];$files=[];$bytesTotal=0;$work=0;
     foreach ($lint['files'] as $path) {
         $text=lint_read_source($path);$bytesTotal+=strlen($text);if ($bytesTotal>8*1024*1024) {throw new RequestRefusal('lint-source','limit');}

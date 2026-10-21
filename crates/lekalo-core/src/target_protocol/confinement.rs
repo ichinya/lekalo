@@ -553,9 +553,17 @@ impl Sandbox {
             return Err(refusal("sandbox-project-location"));
         }
         #[cfg(target_os = "macos")]
-        if ["/System", "/usr/lib", "/dev"]
-            .iter()
-            .any(|p| root.starts_with(p))
+        if [
+            "/System",
+            "/usr/lib",
+            "/dev",
+            "/opt/homebrew/Cellar",
+            "/opt/homebrew/opt",
+            "/usr/local/Cellar",
+            "/usr/local/opt",
+        ]
+        .iter()
+        .any(|p| root.starts_with(p))
         {
             return Err(refusal("sandbox-project-location"));
         }
@@ -888,6 +896,7 @@ impl Sandbox {
         // dyld opens the filesystem root while resolving its runtime paths.
         // This literal permits that directory alone, never its descendants.
         let mut profile = format!("(version 1)(deny default)(allow process-exec)(allow sysctl-read)(allow mach-lookup (global-name \"com.apple.system.logger\"))(allow file-read* (literal \"/\") (subpath \"/System\") (subpath \"/usr/lib\") (subpath \"/dev\") (subpath {}) (subpath {}))", quoted(&self.runtime), quoted(&self.project));
+        profile.push_str(macos_interpreter_library_rules(&command.program));
         if self.policy.bounded_resources && self.policy.children_denied {
             profile.push_str("(deny process-fork)");
         }
@@ -905,6 +914,17 @@ impl Sandbox {
             args,
         }
     }
+}
+
+// Homebrew PHP links to platform libraries outside /usr/lib. Permit only
+// shared-library files in its two fixed package roots, with metadata traversal;
+// never package configuration, application sources or whole-prefix reads.
+#[cfg(any(target_os = "macos", test))]
+fn macos_interpreter_library_rules(program: &Path) -> &'static str {
+    if program.file_name() != Some(std::ffi::OsStr::new("php")) {
+        return "";
+    }
+    r##"(allow file-read-metadata (literal "/opt") (literal "/opt/homebrew") (literal "/usr") (literal "/usr/local") (subpath "/opt/homebrew/Cellar") (subpath "/opt/homebrew/opt") (subpath "/usr/local/Cellar") (subpath "/usr/local/opt"))(allow file-read* (regex #"^/(opt/homebrew|usr/local)/(Cellar|opt)/[^/]+(/[^/]+)?/lib/[^/]+[.]dylib$"))"##
 }
 
 fn checked_destination(
@@ -999,6 +1019,20 @@ fn runtime_assets(program: &Path) -> &'static [&'static str] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn homebrew_library_rules_are_fixed_and_interpreter_specific() {
+        assert_eq!(
+            macos_interpreter_library_rules(Path::new("runtime/node")),
+            ""
+        );
+        assert_eq!(
+            macos_interpreter_library_rules(Path::new("runtime/php-fake")),
+            ""
+        );
+        let rules = macos_interpreter_library_rules(Path::new("runtime/php"));
+        assert!(!rules.is_empty());
+    }
 
     // The lane model is hermetic: every platform combination resolves
     // identically on any development host, so the Linux/macOS watch
@@ -1193,13 +1227,44 @@ mod tests {
     #[test]
     fn unix_confined_php_runtime_qualification() {
         let root = tempfile::tempdir().unwrap();
+        let source = include_str!("../../../../adapters/php-laravel/src/ai-lint.php");
+        let script = root.path().join("php-runtime.php");
+        std::fs::write(
+            &script,
+            format!(
+                "<?php\nclass RequestRefusal extends RuntimeException {{}}\n{}\nlint_require_tokenizer(); if (isset($argv[1]) && @file_get_contents($argv[1]) !== false) {{ fwrite(STDERR, 'private-runtime-file-readable'); exit(24); }} echo 'lekalo-confined-php-ok';",
+                source.strip_prefix("<?php").expect("PHP source header")
+            ),
+        )
+        .unwrap();
+        #[cfg(target_os = "macos")]
+        let protected_runtime = ["/opt/homebrew/Cellar", "/usr/local/Cellar"]
+            .iter()
+            .find(|path| Path::new(path).is_dir())
+            .map(|base| {
+                let owned = tempfile::Builder::new()
+                    .prefix("lekalo-runtime-boundary-")
+                    .tempdir_in(base)
+                    .expect("owned Homebrew boundary fixture");
+                let lib = owned.path().join("1/lib");
+                std::fs::create_dir_all(&lib).unwrap();
+                let private = lib.join("private.ini");
+                std::fs::write(&private, b"not-a-runtime-library").unwrap();
+                (owned, private)
+            });
+        let args = vec![script.to_string_lossy().into_owned()];
+        #[cfg(target_os = "macos")]
+        let args = {
+            let mut args = args;
+            if let Some((_, private)) = &protected_runtime {
+                args.push(private.to_string_lossy().into_owned());
+            }
+            args
+        };
         let sandbox = Sandbox::new(root.path(), &[], &[], false, SandboxPolicy::strict()).unwrap();
         let command = transport::AdapterCommand {
             program: "php".into(),
-            args: vec![
-                "-r".into(),
-                "if (!function_exists('token_get_all')) { fwrite(STDERR, 'php-tokenizer-unavailable'); exit(23); } echo 'lekalo-confined-php-ok';".into(),
-            ],
+            args,
         };
         let limits = transport::TransportLimits {
             timeout_ms: 10_000,

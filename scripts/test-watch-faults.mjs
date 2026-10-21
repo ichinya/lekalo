@@ -29,7 +29,8 @@ try {
  let expected=inventory(project),pending='',stderr='',failure,staleStarted=false,editOnStart=false;
  const events=[],completed=[],decoder=new StringDecoder('utf8');
  const change=mode=>{writeFileSync(control,mode);expected=inventory(project);};
- const child=spawn(binary,['watch','--backend','poll','--poll-interval-ms','100','--reconcile-ms','100','--debounce-ms','30','--max-wait-ms','150','--adapter-timeout-ms','5000','--target','watch-fixture','--validate','--json-lines','--stop-after-runs','4'],{cwd:project,env,stdio:['ignore','pipe','pipe']});
+ const adapterTimeout=process.platform==='darwin'?'15000':'5000';
+ const child=spawn(binary,['watch','--backend','poll','--poll-interval-ms','100','--reconcile-ms','100','--debounce-ms','30','--max-wait-ms','150','--adapter-timeout-ms',adapterTimeout,'--target','watch-fixture','--validate','--json-lines','--stop-after-runs','4'],{cwd:project,env,stdio:['ignore','pipe','pipe']});
  await new Promise((resolve,reject)=>{
   const timer=setTimeout(()=>{child.kill();reject(new Error(`watch fault deadline: ${stderr}`));},60000);
   child.on('error',error=>{clearTimeout(timer);reject(error);});
