@@ -1584,34 +1584,28 @@ mod tests {
     }
 }
 
-/// The loader resolves the fixture through the process working
-/// directory: serialize every cwd mutation across the join suites that
-/// share this test binary.
-#[cfg(test)]
-static GENERATE_CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 #[cfg(test)]
 mod operations_join_tests {
     use super::*;
-    use crate::loader::{normalize_model, LoadSelection};
+    use crate::loader::load_validated_root;
 
     /// The join runs before any adapter exchange: a bogus policy
     /// binding refuses the run as the registered
     /// `php-operations.join-invalid` invalid result.
     #[test]
     fn a_bogus_policy_binding_refuses_the_generate_run() {
-        let _guard = GENERATE_CWD_LOCK.lock().expect("cwd lock");
         let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let workspace = crate_dir
             .parent()
             .and_then(Path::parent)
             .expect("workspace");
-        let original = std::env::current_dir().expect("current dir");
-        std::env::set_current_dir(workspace).expect("enter workspace");
-        let selection = LoadSelection {
-            project: Some("tests/fixtures/php-laravel/operations/model".to_owned()),
-        };
-        let model = normalize_model(&selection).expect("fixture loads");
+        // Other unit suites use invocation-relative selectors concurrently.
+        // Load this owned fixture directly without mutating process cwd.
+        let fixture = workspace
+            .join("tests/fixtures/php-laravel/operations/model")
+            .canonicalize()
+            .expect("fixture root");
+        let model = load_validated_root(fixture).expect("fixture loads").model;
         let compilation = crate::ir::compile(&model).expect("fixture compiles");
         let sandbox =
             std::env::temp_dir().join(format!("lekalo-join-wiring-{}", std::process::id()));
@@ -1672,36 +1666,29 @@ mod operations_join_tests {
             "the typed finding code rides the data: {rendered}"
         );
         let _ = std::fs::remove_dir_all(&sandbox);
-        std::env::set_current_dir(original).expect("restore cwd");
     }
 }
 
 #[cfg(test)]
 mod routes_join_tests {
     use super::*;
-    use crate::loader::{normalize_model, LoadSelection};
+    use crate::loader::load_validated_root;
 
     /// The join runs before any adapter exchange: a route record bound
     /// to an unresolvable endpoint refuses the run as the registered
     /// `php-routes.join-invalid` invalid result.
     #[test]
     fn an_unresolvable_endpoint_refuses_the_generate_run() {
-        // The loader path policy only accepts workspace-relative project
-        // selections resolved through the process working directory, so
-        // this suite enters the workspace root under the shared cwd lock
-        // (the operations join suite mutates cwd in this same binary).
-        let _guard = GENERATE_CWD_LOCK.lock().expect("cwd lock");
         let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let workspace = crate_dir
             .parent()
             .and_then(Path::parent)
             .expect("workspace");
-        let original = std::env::current_dir().expect("current dir");
-        std::env::set_current_dir(workspace).expect("enter workspace");
-        let selection = LoadSelection {
-            project: Some("tests/fixtures/php-laravel/routes/model".to_owned()),
-        };
-        let model = normalize_model(&selection).expect("fixture loads");
+        let fixture = workspace
+            .join("tests/fixtures/php-laravel/routes/model")
+            .canonicalize()
+            .expect("fixture root");
+        let model = load_validated_root(fixture).expect("fixture loads").model;
         let compilation = crate::ir::compile(&model).expect("fixture compiles");
         let sandbox =
             std::env::temp_dir().join(format!("lekalo-routes-join-{}", std::process::id()));
@@ -1809,6 +1796,5 @@ mod routes_join_tests {
             "the typed finding code rides the data: {rendered}"
         );
         let _ = std::fs::remove_dir_all(&sandbox);
-        std::env::set_current_dir(original).expect("restore cwd");
     }
 }
