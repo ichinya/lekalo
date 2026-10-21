@@ -259,6 +259,9 @@ impl EnumValue {
             self.description.as_ref().map(text_value),
         ));
         fields.push(pair("value", string(self.value.as_str())));
+        if let Some(value) = &self.wire_value {
+            fields.push(pair("wireValue", value.canonical_json()));
+        }
         object(&mut fields)
     }
 }

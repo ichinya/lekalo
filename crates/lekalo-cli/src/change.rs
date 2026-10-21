@@ -306,6 +306,9 @@ pub(crate) struct ChangeCaseArgs {
     /// The new bounded description text.
     #[arg(long, value_name = "TEXT")]
     description: Option<String>,
+    /// The new bounded JSON wire encoding (Model/IR 0.8.0).
+    #[arg(long = "value-json", value_name = "JSON")]
+    value_json: Option<String>,
     #[command(flatten)]
     execution: ExecutionArgs,
 }
@@ -522,6 +525,12 @@ fn lower(command: &ChangeCommands) -> Result<Vec<u8>, DomainResult> {
             }
             if let Some(description) = &args.description {
                 definition.insert("description".to_owned(), Json::String(description.clone()));
+            }
+            if let Some(value) = &args.value_json {
+                definition.insert(
+                    "value".to_owned(),
+                    change::parse_strict_json_literal(value)?,
+                );
             }
             serde_json::json!({
                 "operation": "enum-case:change",

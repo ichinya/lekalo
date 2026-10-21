@@ -640,9 +640,11 @@ fn diff_payload(
         (
             Payload::Enum {
                 values: base_values,
+                wire_values: base_wire,
             },
             Payload::Enum {
                 values: candidate_values,
+                wire_values: candidate_wire,
             },
         ) => {
             for value in sorted_difference(base_values, candidate_values) {
@@ -650,7 +652,7 @@ fn diff_payload(
                     ChangeKind::TypeMemberRemoved,
                     Side::Both,
                     Subject::with_member(subject.family(), subject.id(), format!("member.{value}")),
-                    Summary::Text(value.clone()),
+                    enum_member_summary(&value, base_wire),
                     Summary::None,
                     vec![reason::kind_reason(ChangeKind::TypeMemberRemoved.key())],
                 ));
@@ -661,9 +663,42 @@ fn diff_payload(
                     Side::Both,
                     Subject::with_member(subject.family(), subject.id(), format!("member.{value}")),
                     Summary::None,
-                    Summary::Text(value.clone()),
+                    enum_member_summary(&value, candidate_wire),
                     vec![reason::kind_reason(ChangeKind::TypeMemberAdded.key())],
                 ));
+            }
+            for value in base_values {
+                if candidate_values.binary_search(value).is_err() {
+                    continue;
+                }
+                let before = base_wire
+                    .get(value)
+                    .cloned()
+                    .unwrap_or_else(|| canonical::quote(value));
+                let after = candidate_wire
+                    .get(value)
+                    .cloned()
+                    .unwrap_or_else(|| canonical::quote(value));
+                if before != after {
+                    changes.push(ChangeRecord::assemble(
+                        ChangeKind::TypeMemberWireChanged,
+                        Side::Both,
+                        Subject::with_member(
+                            subject.family(),
+                            subject.id(),
+                            format!("member.{value}"),
+                        ),
+                        Summary::Text(format!(
+                            "sha256:{}",
+                            crate::digest::sha256_hex(before.as_bytes())
+                        )),
+                        Summary::Text(format!(
+                            "sha256:{}",
+                            crate::digest::sha256_hex(after.as_bytes())
+                        )),
+                        vec![reason::kind_reason(ChangeKind::TypeMemberWireChanged.key())],
+                    ));
+                }
             }
         }
         (
@@ -1055,6 +1090,16 @@ fn diff_fields(
                 vec![reason::kind_reason(ChangeKind::FieldAdded.key())],
             ));
         }
+    }
+}
+
+fn enum_member_summary(name: &str, wire: &BTreeMap<String, String>) -> Summary {
+    match wire.get(name) {
+        Some(value) => Summary::Text(format!(
+            "{name}@sha256:{}",
+            crate::digest::sha256_hex(value.as_bytes())
+        )),
+        None => Summary::Text(name.to_owned()),
     }
 }
 
@@ -1781,6 +1826,7 @@ fn derive_hints(changes: &[ChangeRecord]) -> Vec<MigrationHint> {
             | ChangeKind::FieldRemoved
             | ChangeKind::SignatureInputRemoved
             | ChangeKind::TypeMemberRemoved
+            | ChangeKind::TypeMemberWireChanged
             | ChangeKind::FieldTypeChanged
             | ChangeKind::TypeShapeChanged
             | ChangeKind::InvariantIdentityChanged => Some((

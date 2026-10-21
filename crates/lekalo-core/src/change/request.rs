@@ -457,6 +457,8 @@ pub struct CaseChangeDecl {
     pub rename: Option<String>,
     /// The replaced description, when the change redescribes it.
     pub description: Option<String>,
+    /// The new explicit encoding; `Some(Null)` is a JSON null encoding.
+    pub value: Option<Literal>,
 }
 
 impl CaseChangeDecl {
@@ -468,6 +470,9 @@ impl CaseChangeDecl {
         }
         if let Some(description) = &self.description {
             map.insert("description".to_owned(), Json::String(description.clone()));
+        }
+        if let Some(value) = &self.value {
+            map.insert("value".to_owned(), value.to_json_value());
         }
         Json::Object(map)
     }
@@ -1558,10 +1563,10 @@ fn case_decl(value: &Json) -> Result<CaseDecl, &'static str> {
 }
 
 /// Decode one closed enum-case change declaration: at least one of
-/// rename/description; wire values stay outside the accepted Model.
+/// rename/description/value; wire values require the Model successor.
 fn case_change_decl(value: &Json) -> Result<CaseChangeDecl, &'static str> {
     let map = value.as_object().ok_or("type-invalid")?;
-    require_members(map, &["rename", "description"], &[])?;
+    require_members(map, &["rename", "description", "value"], &[])?;
     if map.is_empty() {
         return Err("empty-change");
     }
@@ -1578,6 +1583,10 @@ fn case_change_decl(value: &Json) -> Result<CaseChangeDecl, &'static str> {
     Ok(CaseChangeDecl {
         rename,
         description: member_text(map, "description")?,
+        value: map
+            .get("value")
+            .map(|v| literal_of(v, 1).map_err(|_| "literal-invalid"))
+            .transpose()?,
     })
 }
 

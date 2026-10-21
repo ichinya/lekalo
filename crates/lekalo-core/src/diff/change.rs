@@ -37,6 +37,7 @@ pub enum ChangeKind {
     TypeShapeChanged,
     TypeMemberAdded,
     TypeMemberRemoved,
+    TypeMemberWireChanged,
     SignatureInputAdded,
     SignatureInputRemoved,
     SignatureInputTypeChanged,
@@ -82,6 +83,7 @@ impl ChangeKind {
             Self::TypeShapeChanged => "type.shape-changed",
             Self::TypeMemberAdded => "type.member-added",
             Self::TypeMemberRemoved => "type.member-removed",
+            Self::TypeMemberWireChanged => "type.member-wire-changed",
             Self::SignatureInputAdded => "signature.input-added",
             Self::SignatureInputRemoved => "signature.input-removed",
             Self::SignatureInputTypeChanged => "signature.input-type-changed",
@@ -111,7 +113,7 @@ impl ChangeKind {
 }
 
 /// Every kind in canonical (wire-spelling byte) order.
-pub const ALL: [ChangeKind; 39] = [
+pub const ALL: [ChangeKind; 40] = [
     ChangeKind::SymbolAdded,
     ChangeKind::SymbolRemoved,
     ChangeKind::SymbolRenamed,
@@ -132,6 +134,7 @@ pub const ALL: [ChangeKind; 39] = [
     ChangeKind::TypeShapeChanged,
     ChangeKind::TypeMemberAdded,
     ChangeKind::TypeMemberRemoved,
+    ChangeKind::TypeMemberWireChanged,
     ChangeKind::SignatureInputAdded,
     ChangeKind::SignatureInputRemoved,
     ChangeKind::SignatureInputTypeChanged,

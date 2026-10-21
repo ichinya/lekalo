@@ -50,8 +50,8 @@ published request schema exactly: an
 optional member a schema variant admits (for example `symbol:move`'s
 `toName`) decodes and reaches its registered executor —
 never an unknown-member rejection. Field defaults are represented by the
-Model/IR **0.8.0** successor. Model 0.2.16 and enum wire values retain an
-explicit unsupported-member refusal rather than silently dropping intent.
+Model/IR **0.8.0** successor, as are explicit enum wire values. Model 0.2.16
+retains an explicit unsupported-member refusal for both features.
 
 Defaults are admitted by every field writer: field addition, command input
 replacement, and new command/event declarations. The typed decoder checks
@@ -76,6 +76,20 @@ operations do not execute target generation or inject runtime fallback code.
 The frozen context-capsule, Module API, client SDK and managed-generation
 projections explicitly refuse defaults they cannot represent. Target adapters
 that accept only IR 0.2.16 retain their version refusal for this successor.
+
+Enum case identity (`value` in Model) is separate from its optional encoding
+(`wire_value` in Model, `wireValue` in IR). `enum-case:add` and
+`enum-case:change` accept `--value-json`; omitted encodings use the case name.
+Wire values use the same bounded JSON literal contract as field defaults.
+Effective encodings must be unique, including collisions between an explicit
+encoding and another case's implicit name. Enum defaults match the effective
+encoding. Changing an existing encoding produces `type.member-wire-changed`,
+classified as source-breaking, wire-breaking and data-loss-risk; apply requires
+the corresponding acknowledgement and migration evidence. Diff summaries use
+canonical-literal digests. OpenAPI preserves the actual JSON enum values.
+The frozen projections listed above refuse explicit encodings they cannot
+represent. Symbol relocation rewrites typed references, leaving wire literals
+and default data unchanged; Model 0.8.0 symbol rename history is supported.
 
 ### Deferral matrix (P1 coverage scope)
 

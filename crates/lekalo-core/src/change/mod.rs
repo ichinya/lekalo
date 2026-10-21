@@ -1638,7 +1638,7 @@ fn resolve_operation(
                     detail: "case-duplicate",
                 });
             }
-            if case.value.is_some() {
+            if case.value.is_some() && version != crate::loader::ModelVersion::Successor {
                 return Err(ChangeError::UnsupportedMember {
                     operation: operation.operation().to_owned(),
                     member: "case-wire-value",
@@ -1651,6 +1651,12 @@ fn resolve_operation(
             name,
             change,
         } => {
+            if change.value.is_some() && version != crate::loader::ModelVersion::Successor {
+                return Err(ChangeError::UnsupportedMember {
+                    operation: operation.operation().to_owned(),
+                    member: "case-wire-value",
+                });
+            }
             let definition = find_definition(documents, enum_id)?;
             if definition_kind_of(definition) != "enum" {
                 return Err(ChangeError::SubjectConflict {
@@ -2347,13 +2353,29 @@ fn change_member_item(
         identity.value = Value::Scalar(Scalar::Str(rename.to_owned()));
     }
     if let Some(description) = &change.description {
-        let entry = item
-            .get_mut("description")
-            .ok_or(ChangeError::SourcePreservation {
-                subject: name.to_owned(),
-                detail: "description-member-absent",
-            })?;
-        entry.value = Value::Scalar(Scalar::Str(description.to_owned()));
+        upsert_case_member(
+            item,
+            "description",
+            Node::scalar(Scalar::Str(description.to_owned()), placeholder_span()),
+        )?;
+    }
+    if let Some(value) = &change.value {
+        upsert_case_member(item, "wire_value", literal_node(value, placeholder_span()))?;
+    }
+    Ok(())
+}
+
+fn upsert_case_member(item: &mut Node, key: &str, value: Node) -> Result<(), ChangeError> {
+    if let Some(existing) = item.get_mut(key) {
+        existing.value = value.value;
+    } else if let Value::Map(entries) = &mut item.value {
+        entries.push(MapEntry {
+            key: key.to_owned(),
+            key_span: placeholder_span(),
+            value,
+        });
+    } else {
+        return Err(ChangeError::WriteBoundaryDenied);
     }
     Ok(())
 }
@@ -2775,6 +2797,13 @@ fn push_case_item(node: &mut Node, case: &request::CaseDecl) -> Result<(), Chang
             value: Node::scalar(Scalar::Str(description.clone()), span),
         });
     }
+    if let Some(value) = &case.value {
+        entries.push(MapEntry {
+            key: "wire_value".to_owned(),
+            key_span: span,
+            value: literal_node(value, span),
+        });
+    }
     push_seq_item(
         node,
         "values",
@@ -2974,33 +3003,12 @@ fn plan_source_edits(
                 "values",
                 &case.name,
                 case.description.as_deref(),
+                case.value.as_ref(),
             )?;
             vec![edit::plan_seq_insert(bytes, node, "values", &item)?]
         }
         Operation::EnumCaseChange { name, change, .. } => {
-            let mut edits = Vec::new();
-            if let Some(rename) = &change.rename {
-                edits.push(edit::plan_seq_item_rename(
-                    bytes, node, "values", name, rename,
-                )?);
-            }
-            if let Some(description) = &change.description {
-                edits.push(edit::plan_member_scalar_replace(
-                    bytes,
-                    node,
-                    "values",
-                    name,
-                    "description",
-                    description,
-                )?);
-            }
-            if edits.len() >= 2 && edits[0].start < edits[1].end && edits[1].start < edits[0].end {
-                return Err(ChangeError::SourcePreservation {
-                    subject: name.clone(),
-                    detail: "edit-overlap",
-                });
-            }
-            edits
+            edit::plan_case_change(bytes, node, name, change)?
         }
         Operation::DefinitionAdd {
             kind,

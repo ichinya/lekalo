@@ -590,7 +590,7 @@
       "kind": "command",
       "command": "change enum-case:change",
       "usage": "lekalo change enum-case:change [OPTIONS] --enum <ID> --name <NAME>",
-      "helpDigest": "sha256:8c2a08952774a23646fce76151fcbd0467e32ac94e06a78f8494d41b6468e9fd",
+      "helpDigest": "sha256:204b86e2b8f0ff6cbeaca76ec9dba2232e7d5cba9bb71d8417ef30e7e88813a3",
       "summary": "Rename or redescribe one existing enum case",
       "leaf": true,
       "owner": "docs/change.md",
@@ -3171,7 +3171,7 @@
       "id": "contract:contracts/change-plan.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-plan.schema.v0.8.0.json",
-      "sourceDigest": "sha256:c6fc9155270be028c9502836fc2d52eeddb8593ce5a3cf39634bb46c24dfc2e6",
+      "sourceDigest": "sha256:fa763de6fa1aea4332604fa90fa2c45cdd417864e5b563cd2da26894e8a6c4b8",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3198,7 +3198,7 @@
       "id": "contract:contracts/change-request.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-request.schema.v0.8.0.json",
-      "sourceDigest": "sha256:f3425c85c61d546709d399aa29e0ac33479c902d734619151a9a7f44234e950b",
+      "sourceDigest": "sha256:214b627ae3f0f06a14bf3cfb2fb6370643cbd1ad94391e7edd12f406e87fa84a",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3765,7 +3765,7 @@
       "id": "contract:contracts/ir.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/ir.schema.v0.8.0.json",
-      "sourceDigest": "sha256:dccce73eeb29cbdcb8648820bc688e09fffcb1c3ccfcd152e97069fceba3aa79",
+      "sourceDigest": "sha256:3d087e5937520596c50eda44bebca230ddde695271cd5cc77404f8de4afb9c23",
       "owner": "docs/ir.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4062,7 +4062,7 @@
       "id": "contract:contracts/model.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/model.schema.v0.8.0.json",
-      "sourceDigest": "sha256:e73a65ff5d3ab1926ccd459b9129199e41d7334c942bfec371f1d4e1aea257ff",
+      "sourceDigest": "sha256:3834a7f5fe834d9bc03990271f96f0ceacd576871fd5f8645bec5d8f40f94ba9",
       "owner": "docs/model.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4674,7 +4674,7 @@
       "id": "contract:contracts/semantic-diff.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/semantic-diff.schema.v0.8.0.json",
-      "sourceDigest": "sha256:d31b3ce1bacf79a449adcc94cdd38e1b6c62036f962a9fdfc90d0edb1574c108",
+      "sourceDigest": "sha256:80e4ccb5193448e8166e06fdb3be8fb563ff45e9c74229fe6acdd15e11e9da25",
       "owner": "docs/semantic-diff.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

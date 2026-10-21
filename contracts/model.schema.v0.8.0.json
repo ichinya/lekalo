@@ -544,6 +544,9 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 2000
+                  },
+                  "wire_value": {
+                    "$ref": "#/$defs/defaultLiteral1"
                   }
                 }
               }

@@ -324,6 +324,7 @@
         "type.shape-changed",
         "type.member-added",
         "type.member-removed",
+        "type.member-wire-changed",
         "signature.input-added",
         "signature.input-removed",
         "signature.input-type-changed",

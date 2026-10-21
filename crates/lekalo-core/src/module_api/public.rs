@@ -476,6 +476,9 @@ fn project_export(
             )?;
         }
         Definition::Enum(enum_def) => {
+            if enum_def.values.iter().any(|v| v.wire_value.is_some()) {
+                return Err(super::diagnostic::invalid("enum-wire-contract-unsupported"));
+            }
             push_type(
                 "enum",
                 None,

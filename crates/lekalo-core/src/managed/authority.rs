@@ -192,6 +192,9 @@ pub(crate) fn derive_loaded(
         .map_err(|_| invalid("validation-profile"))?;
     crate::validator::validate(&compilation, profile)
         .map_err(crate::result::DomainResult::invalid)?;
+    if compilation.project.has_enum_wire_values() {
+        return Err(invalid("enum-wire-contract-unsupported"));
+    }
     if compilation.project.has_field_defaults() {
         return Err(invalid("field-default-contract-unsupported"));
     }

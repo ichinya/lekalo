@@ -67,6 +67,7 @@ pub(crate) enum Payload {
     },
     Enum {
         values: Vec<String>,
+        wire_values: BTreeMap<String, String>,
     },
     Struct {
         fields: Vec<FieldProjection>,
@@ -223,6 +224,16 @@ pub(crate) fn project(compiled: &CompiledProject) -> Result<Projection, usize> {
                 base: def.base.as_str().to_owned(),
             },
             Definition::Enum(def) => Payload::Enum {
+                wire_values: def
+                    .values
+                    .iter()
+                    .filter_map(|v| {
+                        v.wire_value
+                            .as_ref()
+                            .map(|w| (v.value.as_str().to_owned(), w.canonical_json()))
+                    })
+                    .filter(|(name, value)| value != &super::canonical::quote(name))
+                    .collect(),
                 values: sorted(
                     def.values
                         .iter()
@@ -409,8 +420,23 @@ fn payload_bytes(payload: &Payload) -> String {
             "{{\"base\":{},\"kind\":\"scalar\"}}",
             super::canonical::quote(base)
         ),
-        Payload::Enum { values } => {
-            format!("{{\"kind\":\"enum\",\"values\":{}}}", string_array(values))
+        Payload::Enum {
+            values,
+            wire_values,
+        } => {
+            if wire_values.is_empty() {
+                format!("{{\"kind\":\"enum\",\"values\":{}}}", string_array(values))
+            } else {
+                let mapping = wire_values
+                    .iter()
+                    .map(|(name, value)| format!("{}:{value}", super::canonical::quote(name)))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!(
+                    "{{\"kind\":\"enum\",\"values\":{},\"wireValues\":{{{mapping}}}}}",
+                    string_array(values)
+                )
+            }
         }
         Payload::Struct {
             fields,

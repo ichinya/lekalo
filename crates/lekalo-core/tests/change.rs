@@ -3660,6 +3660,185 @@ fn defaults_request(operations: serde_json::Value) -> Vec<u8> {
 }
 
 #[test]
+fn enum_wire_changes_validate_defaults_require_policy_and_preserve_comments() {
+    let sandbox = Sandbox::new("enum-wire");
+    enable_default_successor(&sandbox);
+    let source = std::fs::read_to_string(sandbox.entities_path())
+        .unwrap()
+        .replace("\r\n", "\n")
+        .replace('\n', "\r\n");
+    std::fs::write(sandbox.entities_path(), source).unwrap();
+    let add = defaults_request(
+        serde_json::json!([{"operation":"enum-case:add", "enum":"tasks.priority", "case":{"name":"urgent", "value":"URGENT"}}]),
+    );
+    apply_request(&sandbox, &add, "wire-add", false).unwrap();
+    let field = |value: &str| serde_json::json!({"operation":"entity-field:add", "entity":"tasks.task", "field":{"name":"priority", "type":{"ref":"tasks.priority"}, "default":value}});
+    let before = sandbox.entities_bytes();
+    assert!(
+        prepare(
+            &sandbox,
+            &defaults_request(serde_json::json!([field("urgent")]))
+        )
+        .is_err(),
+        "defaults name actual wire values"
+    );
+    assert_eq!(sandbox.entities_bytes(), before);
+    apply_request(
+        &sandbox,
+        &defaults_request(serde_json::json!([field("URGENT")])),
+        "wire-default",
+        false,
+    )
+    .unwrap();
+    let source = std::fs::read_to_string(sandbox.entities_path())
+        .unwrap()
+        .replace(
+            "wire_value: \"URGENT\"",
+            "wire_value: \"URGENT\" # retain this comment",
+        );
+    std::fs::write(sandbox.entities_path(), source).unwrap();
+    let change = serde_json::json!({"operation":"enum-case:change", "enum":"tasks.priority", "name":"urgent", "definition":{"value":"NEW", "description":"Explicit encoding"}});
+    assert!(
+        prepare(
+            &sandbox,
+            &defaults_request(serde_json::json!([change.clone()]))
+        )
+        .is_err(),
+        "a stale default cannot survive a wire change"
+    );
+    let request = defaults_request(
+        serde_json::json!([change, {"operation":"entity-field:remove", "entity":"tasks.task", "name":"priority"}, field("NEW")]),
+    );
+    let before = sandbox.entities_bytes();
+    assert!(
+        apply_request(&sandbox, &request, "wire-denied", true).is_err(),
+        "wire changes require migration evidence in addition to acknowledgment"
+    );
+    assert_eq!(sandbox.entities_bytes(), before);
+    apply_request_opts(
+        &sandbox,
+        &request,
+        "wire-approved",
+        true,
+        Some(evidence_policy()),
+    )
+    .unwrap();
+    let after = std::fs::read_to_string(sandbox.entities_path()).unwrap();
+    assert!(after.contains("wire_value: \"NEW\" # retain this comment\r\n"));
+    assert!(after.contains("description: \"Explicit encoding\""));
+    assert!(!after.replace("\r\n", "").contains('\n'));
+    let noop = defaults_request(
+        serde_json::json!([{"operation":"enum-case:change", "enum":"tasks.priority", "name":"urgent", "definition":{"value":"NEW"}}]),
+    );
+    let plan = prepare(&sandbox, &noop).unwrap();
+    let plan: serde_json::Value = serde_json::from_str(&plan.to_json_string().unwrap()).unwrap();
+    assert_eq!(plan["equal"], true);
+    assert!(plan["fileEdits"].as_array().unwrap().is_empty());
+    let duplicate = defaults_request(
+        serde_json::json!([{"operation":"enum-case:add", "enum":"tasks.priority", "case":{"name":"duplicate", "value":"NEW"}}]),
+    );
+    assert!(prepare(&sandbox, &duplicate).is_err());
+    assert_eq!(
+        std::fs::read_to_string(sandbox.entities_path()).unwrap(),
+        after
+    );
+}
+
+#[test]
+fn structured_enum_wire_values_are_data_and_survive_symbol_relocation() {
+    let sandbox = Sandbox::new("enum-wire-data");
+    enable_default_successor(&sandbox);
+    let request = defaults_request(serde_json::json!([
+        {"operation":"enum-case:add", "enum":"tasks.priority", "case":{"name":"object_wire", "value":{"ref":"tasks.text", "items":[1,true,null]}}},
+        {"operation":"enum-case:add", "enum":"tasks.priority", "case":{"name":"numeric_wire", "value":17}},
+        {"operation":"enum-case:add", "enum":"tasks.priority", "case":{"name":"null_wire", "value":null}},
+        {"operation":"entity-field:add", "entity":"tasks.task", "field":{"name":"wire_choice", "type":{"ref":"tasks.priority"}, "default":{"ref":"tasks.text", "items":[1,true,null]}}}
+    ]));
+    apply_request(&sandbox, &request, "structured-wires", false).unwrap();
+    let moved = defaults_request(
+        serde_json::json!([{"operation":"symbol:move", "symbol":"tasks.text", "toModule":"tasks", "toName":"label"}]),
+    );
+    apply_request(&sandbox, &moved, "wire-symbol-move", true).unwrap();
+    let model = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+    let compilation = lekalo_core::ir::compile(&model).unwrap();
+    let declaration = compilation
+        .project
+        .definitions
+        .iter()
+        .find(|d| d.id().as_str() == "tasks.priority")
+        .unwrap();
+    let mut mapper = lekalo_core::openapi::SchemaMapper::new(
+        &compilation.project,
+        lekalo_core::openapi::DocumentVersion::V3_1,
+    );
+    let body = lekalo_core::openapi::component_body(declaration, &mut mapper).unwrap();
+    assert!(
+        body.get("type").is_none(),
+        "mixed JSON wire values cannot be advertised as strings"
+    );
+    let encodings = body["enum"].as_array().unwrap();
+    assert!(encodings.contains(&serde_json::json!(17)));
+    assert!(encodings.contains(&serde_json::json!(null)));
+    assert!(encodings.contains(&serde_json::json!({"ref":"tasks.text", "items":[1,true,null]})));
+    let ir: serde_json::Value =
+        serde_json::from_str(&compilation.project.to_canonical_json()).unwrap();
+    let values = ir["definitions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == "tasks.priority")
+        .unwrap()["values"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        values.iter().find(|v| v["value"] == "object_wire").unwrap()["wireValue"],
+        serde_json::json!({"ref":"tasks.text", "items":[1,true,null]})
+    );
+    assert_eq!(
+        values
+            .iter()
+            .find(|v| v["value"] == "numeric_wire")
+            .unwrap()["wireValue"],
+        17
+    );
+    assert!(values
+        .iter()
+        .find(|v| v["value"] == "null_wire")
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .contains_key("wireValue"));
+    assert!(lekalo_core::context::plan(
+        &lekalo_core::context::CapsuleScope::Symbol("tasks.priority".to_owned()),
+        2000,
+        false,
+        &compilation
+    )
+    .is_err());
+}
+
+#[test]
+fn predecessor_enum_wire_add_and_change_refuse_without_source_mutation() {
+    let sandbox = Sandbox::new("legacy-wire");
+    let before = sandbox.entities_bytes();
+    for operation in [
+        serde_json::json!({"operation":"enum-case:add", "enum":"tasks.priority", "case":{"name":"urgent", "value":"N"}}),
+        serde_json::json!({"operation":"enum-case:change", "enum":"tasks.priority", "name":"normal", "definition":{"value":null}}),
+    ] {
+        let request = defaults_request(serde_json::json!([operation]));
+        assert!(matches!(
+            prepare(&sandbox, &request),
+            Err(ChangeError::UnsupportedMember {
+                member: "case-wire-value",
+                ..
+            })
+        ));
+        assert_eq!(sandbox.entities_bytes(), before);
+        assert!(!sandbox.history_path().exists());
+    }
+}
+
+#[test]
 fn successor_defaults_survive_all_field_writers_and_default_only_diff() {
     let sandbox = Sandbox::new("successor-defaults");
     enable_default_successor(&sandbox);

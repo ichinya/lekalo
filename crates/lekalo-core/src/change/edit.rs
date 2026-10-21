@@ -88,7 +88,7 @@ fn yaml_default_field_item(
 
 /// A YAML event span can include trailing trivia. Prove the scalar token's
 /// lexical end before replacing it, so an inline comment retains its owner.
-fn default_scalar_end(bytes: &[u8], node: &Node) -> Result<usize, ChangeError> {
+fn literal_scalar_end(bytes: &[u8], node: &Node, member: &str) -> Result<usize, ChangeError> {
     let start = node.span.start.byte;
     let end = node.span.end.byte;
     let original = bytes
@@ -127,20 +127,25 @@ fn default_scalar_end(bytes: &[u8], node: &Node) -> Result<usize, ChangeError> {
         }
     }
     Err(ChangeError::SourcePreservation {
-        subject: "default".to_owned(),
+        subject: member.to_owned(),
         detail: "scalar-layout",
     })
 }
 
-fn replace_default(bytes: &[u8], item: &Node, suffix: &str) -> Result<ByteEdit, ChangeError> {
+fn replace_literal_member(
+    bytes: &[u8],
+    item: &Node,
+    member: &str,
+    suffix: &str,
+) -> Result<ByteEdit, ChangeError> {
     let entry = item
-        .get_entry("default")
+        .get_entry(member)
         .ok_or(ChangeError::WriteBoundaryDenied)?;
     if !matches!(entry.value.value, Value::Scalar(_)) {
-        return plan_raw_member_replace(bytes, item, "default", suffix);
+        return plan_raw_member_replace(bytes, item, member, suffix);
     }
     let span = entry.value.span;
-    let token_end = default_scalar_end(bytes, &entry.value)?;
+    let token_end = literal_scalar_end(bytes, &entry.value, member)?;
     let line_end = content_end(
         bytes,
         line_start_at(bytes, token_end),
@@ -148,7 +153,7 @@ fn replace_default(bytes: &[u8], item: &Node, suffix: &str) -> Result<ByteEdit, 
     );
     if suffix.starts_with(['\n', '\r']) && bytes[token_end..line_end].contains(&b'#') {
         return Err(ChangeError::SourcePreservation {
-            subject: "default".to_owned(),
+            subject: member.to_owned(),
             detail: "comment-adjacent",
         });
     }
@@ -169,7 +174,7 @@ fn remove_default(bytes: &[u8], item: &Node) -> Result<ByteEdit, ChangeError> {
         return Ok(removal);
     }
     let start = line_start_at(bytes, entry.key_span.start.byte);
-    let token_end = default_scalar_end(bytes, &entry.value)?;
+    let token_end = literal_scalar_end(bytes, &entry.value, "default")?;
     let end = content_end(
         bytes,
         line_start_at(bytes, token_end),
@@ -513,10 +518,21 @@ pub fn case_item_block(
     member: &str,
     name: &str,
     description: Option<&str>,
+    wire_value: Option<&Literal>,
 ) -> Result<String, ChangeError> {
     let items = member_sequence(definition, member)?;
     let (anchor, _) = seq_anchor(bytes, items)?;
-    Ok(yaml_case_item(bytes, anchor, name, description))
+    let mut block = yaml_case_item(bytes, anchor, name, description);
+    if let Some(value) = wire_value {
+        let newline = newline_before(bytes, bytes.len());
+        block.push_str(&format!("{newline}{}wire_value:", " ".repeat(anchor + 2)));
+        block.push_str(&yaml_literal_suffix(
+            &value.to_json_value(),
+            anchor + 2,
+            newline,
+        )?);
+    }
+    Ok(block)
 }
 
 /// Build the YAML block of one effect-reference item (a scalar string
@@ -683,42 +699,6 @@ pub fn plan_document_definition_append(
         start: end,
         end,
         replacement: item.to_owned(),
-    })
-}
-
-/// Plan the replace of one scalar member inside one sequence item
-/// (the case description). A missing member refuses: adding a member
-/// whose ownership layout is unproven would guess.
-pub fn plan_member_scalar_replace(
-    _bytes: &[u8],
-    definition: &Node,
-    member: &str,
-    name: &str,
-    scalar: &str,
-    new_text: &str,
-) -> Result<ByteEdit, ChangeError> {
-    let items = member_sequence(definition, member)?;
-    let item = items
-        .iter()
-        .find(|item| {
-            item.get("name").and_then(Node::as_str) == Some(name)
-                || item.get("value").and_then(Node::as_str) == Some(name)
-        })
-        .ok_or(ChangeError::SubjectConflict {
-            subject: name.to_owned(),
-            detail: "member-missing",
-        })?;
-    let entry = item
-        .get_entry(scalar)
-        .ok_or(ChangeError::SourcePreservation {
-            subject: name.to_owned(),
-            detail: "member-absent",
-        })?;
-    let span = entry.value.span;
-    Ok(ByteEdit {
-        start: span.start.byte,
-        end: span.end.byte,
-        replacement: format!("\"{}\"", escape_quoted(new_text)),
     })
 }
 
@@ -931,7 +911,9 @@ pub fn plan_member_sequence_replace(
                 .map(|v| yaml_literal_suffix(v, indent, newline_before(bytes, bytes.len())))
                 .transpose()?;
             match (default, suffix) {
-                (Some(_), Some(suffix)) => edits.push(replace_default(bytes, item, &suffix)?),
+                (Some(_), Some(suffix)) => {
+                    edits.push(replace_literal_member(bytes, item, "default", &suffix)?)
+                }
                 (Some(_), None) => {
                     edits.push(remove_default(bytes, item)?);
                 }
@@ -1717,6 +1699,86 @@ pub fn plan_member_append(
         end: insert_at,
         replacement: block,
     })
+}
+
+/// Case edits share the same literal-token and member-boundary proofs as
+/// defaults. No-op values retain all original quoting and comments.
+pub fn plan_case_change(
+    bytes: &[u8],
+    definition: &Node,
+    name: &str,
+    change: &super::request::CaseChangeDecl,
+) -> Result<Vec<ByteEdit>, ChangeError> {
+    let items = member_sequence(definition, "values")?;
+    let item = items
+        .iter()
+        .find(|item| item.get("value").and_then(Node::as_str) == Some(name))
+        .ok_or(ChangeError::SourcePreservation {
+            subject: name.to_owned(),
+            detail: "member-missing",
+        })?;
+    let mut requested = Vec::new();
+    if let Some(rename) = &change.rename {
+        requested.push(("value", serde_json::Value::String(rename.clone())));
+    }
+    if let Some(description) = &change.description {
+        requested.push((
+            "description",
+            serde_json::Value::String(description.clone()),
+        ));
+    }
+    if let Some(value) = &change.value {
+        requested.push(("wire_value", value.to_json_value()));
+    }
+    let indent = item
+        .get_entry("value")
+        .ok_or(ChangeError::WriteBoundaryDenied)?
+        .key_span
+        .start
+        .column
+        - 1;
+    let mut edits = Vec::new();
+    for (key, value) in requested {
+        if let Some(existing) = item.get(key) {
+            let existing = crate::ir::DefaultValue::from_node(existing).ok_or(
+                ChangeError::SourcePreservation {
+                    subject: name.to_owned(),
+                    detail: "literal-layout",
+                },
+            )?;
+            if existing.as_json() == &value {
+                continue;
+            }
+            let mut suffix =
+                yaml_literal_suffix(&value, indent, newline_before(bytes, bytes.len()))?;
+            if key == "value" {
+                let alias = value.as_str().ok_or(ChangeError::WriteBoundaryDenied)?;
+                let original = item.get(key).ok_or(ChangeError::WriteBoundaryDenied)?;
+                suffix = match bytes.get(original.span.start.byte) {
+                    Some(b'\'') => format!(" '{alias}'"),
+                    Some(b'"') => suffix,
+                    _ => format!(" {alias}"),
+                };
+            }
+            edits.push(replace_literal_member(bytes, item, key, &suffix)?);
+        } else {
+            let suffix = yaml_literal_suffix(&value, indent, newline_before(bytes, bytes.len()))?;
+            edits.push(plan_raw_member_append(bytes, item, key, &suffix)?);
+        }
+    }
+    for (i, left) in edits.iter().enumerate() {
+        if edits
+            .iter()
+            .skip(i + 1)
+            .any(|right| left.start < right.end && right.start < left.end)
+        {
+            return Err(ChangeError::SourcePreservation {
+                subject: name.to_owned(),
+                detail: "edit-overlap",
+            });
+        }
+    }
+    Ok(edits)
 }
 
 #[cfg(test)]

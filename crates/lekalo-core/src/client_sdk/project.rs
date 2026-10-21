@@ -101,6 +101,13 @@ pub fn project(
         )
     })?;
     let project = context.project;
+    if project.has_enum_wire_values() {
+        return Err(diagnostic::rule_invalid(
+            diagnostic::MAPPING_UNSUPPORTED,
+            "enum-wire-contract-unsupported",
+            None,
+        ));
+    }
     if project.has_field_defaults() {
         return Err(diagnostic::rule_invalid(
             diagnostic::MAPPING_UNSUPPORTED,

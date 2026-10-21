@@ -196,14 +196,17 @@ const sugarCase = run([
   "--dry-run",
   "--json",
 ]);
-// The fixture's compact enum layout (`- value: low`, no descriptions)
-// refuses the description insert with the registered preservation rule
-// instead of guessing the layout — the sugar path reaches the same
-// source-preservation barrier as the JSON request path.
-if (sugarCase.code !== 3) fail("sugar-case-exit", { code: sugarCase.code, json: sugarCase.json });
-if (!sugarCase.json?.reasonCodes?.includes("change.source-preservation-unavailable")) {
-  fail("sugar-case-rule", sugarCase.json?.reasonCodes);
+// A proven append supports a description on a compact enum case.
+// Preview preserves source bytes and keeps the semantic projection equal.
+if (sugarCase.code !== 0) fail("sugar-case-exit", { code: sugarCase.code, json: sugarCase.json });
+if (!planValidate(sugarCase.json)) fail("sugar-case-schema", planValidate.errors);
+if (!sugarCase.json.semanticDiff.equal || sugarCase.json.fileEdits.length !== 1) {
+  fail("sugar-case-metadata", sugarCase.json);
 }
+if (!sugarCase.json.fileDiff[0].after.includes('      - value: low\n        description: "Lowest tier"\n')) {
+  fail("sugar-case-append", sugarCase.json.fileDiff);
+}
+if (!readFileSync(entities).equals(entitiesBefore)) fail("sugar-case-preview-mutated-source");
 const sugarDefinition = run([
   "change",
   "definition:add",

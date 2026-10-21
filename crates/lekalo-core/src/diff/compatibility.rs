@@ -314,6 +314,7 @@ fn baseline_kind(kind: ChangeKind, record: &ChangeRecord) -> Vec<CompatibilityCl
             Summary::Flag(true) => vec![SourceBreaking],
             _ => vec![Additive],
         },
+        ChangeKind::TypeMemberWireChanged => vec![SourceBreaking, WireBreaking, DataLossRisk],
         ChangeKind::TypeMemberAdded => vec![Behavioral],
         ChangeKind::FieldDefaultChanged => vec![Behavioral],
         ChangeKind::TypeMemberRemoved => vec![SourceBreaking, DataLossRisk],

@@ -35,6 +35,7 @@ projection**:
 
 - kept: stable semantic IDs, definition kinds and versions, type wrappers
   (`list`, `optional`), presence (`required`) and nullability (`?`),
+  Model 0.8.0 field defaults and effective enum wire values,
   references (reads, effects, emits, applies-to, covers, imports,
   identity, derived-from), visibility, portability, scenario summaries,
   endpoint method/path, binding targets;
@@ -53,7 +54,7 @@ change set is empty.
 One closed record per independently observable semantic change, with a
 stable `sha256` identity derived from side, subject, kind, and the
 canonical before/after summaries — never an array position. The v1
-taxonomy is exactly the 38 kinds the accepted Model can produce:
+predecessor taxonomy has 38 kinds:
 `symbol.*` (added, removed, renamed, replaced, tombstoned, kind-changed,
 visibility-, portability-, version-, derived-from-changed),
 `module.imports-changed`, `field.*` (added, removed, type-, nullability-,
@@ -69,6 +70,14 @@ signature changes even when one operation causes both. Families without a
 declared source in the accepted Model (standalone invariants, error
 unions, storage projections, artifact manifests) have no kinds; a
 contract successor activates them.
+
+Model 0.8.0 adds `field.default-changed` (behavioral) and
+`type.member-wire-changed` (source-breaking, wire-breaking and data-loss-risk).
+Their before/after summaries contain SHA-256 digests of canonical JSON
+literals. These bounded summaries preserve literal identity without exceeding
+the wire summary limit. Explicit enum encodings equal to their implicit case
+name do not create a semantic encoding change. Enum member additions and
+removals include a digest when the encoding differs from the case name.
 
 Every record carries its own kind as its first reason plus direct
 `history.*` / `symbol.*` reasons where they apply — never an inference

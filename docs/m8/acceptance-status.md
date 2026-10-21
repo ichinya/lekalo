@@ -17,7 +17,7 @@ increment; its limitations remain part of #73 until implemented and tested.
 | [#41](https://github.com/ichinya/lekalo/issues/41) managed | `scripts/test-managed-contracts.mjs`, `test-managed-cli.mjs`, `test-managed-planner-e2e.mjs`; shared semantic Model validation now precedes managed authority | The query-read fixture and dependent authority pins are corrected. Contract gates, 110 CLI invocations and planner regeneration/native-handler execution pass locally. Final milestone-candidate/CI qualification remains. |
 | [#51](https://github.com/ichinya/lekalo/issues/51) Worklog / Changelog | contract, admission, pilot and consumer gates | Final native/evidence qualification, keeping unsupported publication semantics distinct from executed success. |
 | [#52](https://github.com/ichinya/lekalo/issues/52) TaskExternalLink | relation/uniqueness Model successor, task-link contracts and impact/portability gates | Final public/synthetic provider evidence and exact consumer impact qualification. |
-| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions, symbol relocation, module ownership and Model/IR 0.8.0 field defaults | Completion of relocation/attachment cases; enum wire values, query inputs, command results and pure emissions with owner-compatible successors. Default literals retain the documented YAML-layout and legacy-consumer boundaries. Module policy transitions use the existing managed owner's granularity; per-symbol changes do not silently widen to a module. Catalog coverage alone cannot close this issue. |
+| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions, symbol relocation, module ownership and Model/IR 0.8.0 field defaults / enum wire values | Completion of relocation/attachment cases; query inputs, command results and pure emissions with owner-compatible successors. Literals retain the documented YAML-layout and legacy-consumer boundaries. Module policy transitions use the existing managed owner's granularity; per-symbol changes do not silently widen to a module. Catalog coverage alone cannot close this issue. |
 | [#74](https://github.com/ichinya/lekalo/issues/74) safe fixes | Fix contracts/CLI and rollback tests | Requalify final Change catalog identity, stale/conflicting plans, replay and rollback. |
 | [#93](https://github.com/ichinya/lekalo/issues/93) semantic search | search contracts/CLI and `scripts/bench-search.mjs` | Final result/ambiguity/offline gates and representative benchmark evidence; separate retrieval metrics from agent answer quality. |
 | [#94](https://github.com/ichinya/lekalo/issues/94) formatter | format contracts, CLI, atomicity and portability gates | Final semantic invariance/trivia checks and Linux/Windows/macOS evidence. |
@@ -29,6 +29,23 @@ increment; its limitations remain part of #73 until implemented and tested.
 
 ## Verified local corrections
 
+- Explicit enum wire values now survive Change add/change and Model/IR
+  0.8.0 decoding, including structured JSON and explicit null. Effective
+  encodings are unique; enum defaults use those encodings. Encoding changes
+  have a dedicated breaking diff kind, bounded canonical digests and a
+  migration-evidence policy gate. Core OpenAPI retains mixed JSON encodings;
+  frozen consumers refuse unsupported projections. Symbol moves preserve
+  literal data and now accept successor symbol rename-history claims.
+  The final Change/IR/diff run passed **140 tests** (102 core Change tests),
+  zero failures or ignored tests. The CLI gate passed **17 calls and five
+  independent JSON Schemas**; defaults (11 calls), legacy Change CLI
+  (22 steps), symbol relocation (14 calls) and extended operations (16 calls)
+  also passed. Contract/schema and live 554-surface documentation gates pass.
+  Workspace/all-target Clippy passed with warnings denied; formatter and
+  whitespace checks passed. These are local Windows checks, not hosted CI.
+  The restart interrupted compilation, with no test result; that unfinished
+  run was resumed by a new process. Earlier failed runs are retained under
+  `target/m8-enum-*.log` and do not establish milestone acceptance.
 - Field defaults now survive every Change field writer in the Model/IR
   0.8.0 successor, with type checks, bounded literals, null/absence
   preservation, behavioral diff records and bounded canonical-literal

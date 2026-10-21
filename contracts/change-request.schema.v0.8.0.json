@@ -722,17 +722,20 @@
       }
     },
     "caseChangeDecl": {
-      "description": "Closed declaration of one enum-case change. At least one member; wire values require the reviewed Model successor and stay outside this contract.",
+      "description": "Closed enum-case change declaration: rename, description or an explicit bounded JSON wire value (Model/IR 0.8.0 only).",
       "type": "object",
       "additionalProperties": false,
       "minProperties": 1,
-      "maxProperties": 2,
+      "maxProperties": 3,
       "properties": {
         "rename": {
           "$ref": "#/$defs/fieldName"
         },
         "description": {
           "$ref": "#/$defs/text"
+        },
+        "value": {
+          "$ref": "#/$defs/literal"
         }
       }
     },

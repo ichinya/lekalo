@@ -171,7 +171,14 @@ fn pointer_token(token: &str) -> String {
 }
 
 /// Keys whose source-map entry is recorded by their dedicated value decoder.
-const VALUE_DECODED_KEYS: &[&str] = &["type", "returns", "entity", "invokes", "default"];
+const VALUE_DECODED_KEYS: &[&str] = &[
+    "type",
+    "returns",
+    "entity",
+    "invokes",
+    "default",
+    "wire_value",
+];
 
 /// Decode state threaded through every decoder.
 struct Context {
@@ -1635,7 +1642,12 @@ fn decode_symbol(
         "target-binding" => &["target"],
         _ => unreachable!("closed kind set"),
     };
-    let keys = common_keys(extra, cx.version);
+    let mut keys = common_keys(extra, cx.version);
+    if cx.version == ModelVersion::Successor {
+        // The successor allows symbol rename claims, while project and
+        // module containers remain immutable (their decoders do not add it).
+        keys.push("renamed_from");
+    }
     let found = cx.scan(&definition.node, pointer, &keys)?;
     let id = decode_id(cx.require(&found, "id")?, cx, false, false)?;
     let common = decode_common(&found, pointer, cx)?;
@@ -1911,7 +1923,11 @@ fn decode_enum_values(node: &Node, pointer: &str, cx: &mut Context) -> Option<Ve
     for (position, item) in items.iter().enumerate() {
         let base = format!("{pointer}/{position}");
         cx.record(&base, item.span, None);
-        let Some(found) = cx.scan(item, &base, &["value", "description"]) else {
+        let allowed: &[&str] = match cx.version {
+            ModelVersion::Current => &["value", "description"],
+            ModelVersion::Successor => &["value", "description", "wire_value"],
+        };
+        let Some(found) = cx.scan(item, &base, allowed) else {
             ok = false;
             continue;
         };
@@ -1936,9 +1952,26 @@ fn decode_enum_values(node: &Node, pointer: &str, cx: &mut Context) -> Option<Ve
             Some(entry) => Some(cx.text(&entry.value, "description-type")?),
             None => None,
         };
+        let wire_value = match cx.find(&found, "wire_value") {
+            None => None,
+            Some(entry) => {
+                cx.record(&format!("{base}/wire_value"), entry.value.span, None);
+                let Some(value) = super::DefaultValue::from_node(&entry.value) else {
+                    cx.push(
+                        VALUE_INVALID,
+                        entry.value.span,
+                        serde_json::json!({"detail":"enum-wire-literal"}),
+                    );
+                    ok = false;
+                    continue;
+                };
+                Some(value)
+            }
+        };
         values.push(EnumValue {
             value: EnumValueName(value),
             description,
+            wire_value,
         });
     }
     if ok {

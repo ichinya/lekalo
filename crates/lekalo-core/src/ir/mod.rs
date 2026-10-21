@@ -81,6 +81,13 @@ pub struct Compilation {
 }
 
 impl CompiledProject {
+    /// Whether a consumer needs the successor's enum wire-value mapping.
+    pub fn has_enum_wire_values(&self) -> bool {
+        self.definitions.iter().any(
+            |d| matches!(d, Definition::Enum(e) if e.values.iter().any(|v| v.wire_value.is_some())),
+        )
+    }
+
     /// Whether a legacy consumer would lose declared default semantics.
     pub fn has_field_defaults(&self) -> bool {
         self.definitions.iter().any(|definition| match definition {
@@ -312,6 +319,27 @@ pub enum TypeRef {
 pub struct EnumValue {
     pub value: EnumValueName,
     pub description: Option<Text>,
+    /// Optional JSON encoding; absent means the canonical case name.
+    /// Available only in the Model/IR 0.8.0 successor.
+    pub wire_value: Option<DefaultValue>,
+}
+
+impl EnumValue {
+    /// The effective wire encoding, preserving null and structured literals.
+    pub fn wire_json(&self) -> serde_json::Value {
+        self.wire_value
+            .as_ref()
+            .map(|v| v.as_json().clone())
+            .unwrap_or_else(|| serde_json::Value::String(self.value.as_str().to_owned()))
+    }
+
+    /// Canonical encoding used by semantic identity and duplicate checks.
+    pub fn canonical_wire_json(&self) -> String {
+        self.wire_value
+            .as_ref()
+            .map(DefaultValue::canonical_json)
+            .unwrap_or_else(|| serde_json::to_string(self.value.as_str()).expect("case name"))
+    }
 }
 
 /// The closed scalar base vocabulary.

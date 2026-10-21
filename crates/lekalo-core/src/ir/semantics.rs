@@ -13,7 +13,7 @@
 
 use super::diagnostic::{bounded_field_echo, VALUE_INVALID};
 use super::{Compilation, Definition, TypeRef, UniqueConstraintDef};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One entity's decoded semantic surface: the exact type expression of
 /// every field, keyed by field name.
@@ -157,6 +157,22 @@ pub(crate) fn validate(compilation: &Compilation) -> Vec<crate::loader::error::D
         }
     }
     validate_defaults(compilation, &mut diagnostics);
+    for definition in &compilation.project.definitions {
+        if let Definition::Enum(enumeration) = definition {
+            if enumeration.values.iter().any(|v| v.wire_value.is_some()) {
+                let mut values = std::collections::BTreeSet::new();
+                for value in &enumeration.values {
+                    if !values.insert(value.canonical_wire_json()) {
+                        diagnostics.push(defect(
+                            definition_span(compilation, enumeration.id.as_str()),
+                            "enum-wire-duplicate",
+                            value.value.as_str(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
     diagnostics
 }
 
@@ -164,16 +180,35 @@ fn validate_defaults(
     compilation: &Compilation,
     diagnostics: &mut Vec<crate::loader::error::Diagnostic>,
 ) {
+    if !compilation.project.has_field_defaults() {
+        return;
+    }
     let definitions: BTreeMap<_, _> = compilation
         .project
         .definitions
         .iter()
         .map(|d| (d.id().as_str(), d))
         .collect();
+    let enum_values: BTreeMap<_, BTreeSet<_>> = compilation
+        .project
+        .definitions
+        .iter()
+        .filter_map(|d| match d {
+            Definition::Enum(e) => Some((
+                e.id.as_str(),
+                e.values
+                    .iter()
+                    .map(super::EnumValue::canonical_wire_json)
+                    .collect(),
+            )),
+            _ => None,
+        })
+        .collect();
     fn matches_type(
         value: &serde_json::Value,
         typ: &TypeRef,
         definitions: &BTreeMap<&str, &Definition>,
+        enum_values: &BTreeMap<&str, BTreeSet<String>>,
         depth: usize,
     ) -> bool {
         if depth > 32 {
@@ -181,27 +216,34 @@ fn validate_defaults(
         }
         match typ {
             TypeRef::Optional(inner) => {
-                value.is_null() || matches_type(value, inner, definitions, depth + 1)
+                value.is_null() || matches_type(value, inner, definitions, enum_values, depth + 1)
             }
             TypeRef::List(inner) => value.as_array().is_some_and(|items| {
                 items
                     .iter()
-                    .all(|v| matches_type(v, inner, definitions, depth + 1))
+                    .all(|v| matches_type(v, inner, definitions, enum_values, depth + 1))
             }),
             TypeRef::Ref(id) => match definitions.get(id.as_str()) {
                 Some(Definition::Scalar(s)) => match s.base {
                     super::ScalarBase::Boolean => value.is_boolean(),
                     super::ScalarBase::Number => value.is_number(),
-                    _ => value.is_string(),
+                    super::ScalarBase::String
+                    | super::ScalarBase::Date
+                    | super::ScalarBase::Datetime
+                    | super::ScalarBase::Uuid
+                    | super::ScalarBase::Uri => value.is_string(),
                 },
-                Some(Definition::Enum(e)) => value
-                    .as_str()
-                    .is_some_and(|v| e.values.iter().any(|case| case.value.as_str() == v)),
+                Some(Definition::Enum(e)) => super::DefaultValue::from_json(value.clone())
+                    .is_some_and(|value| {
+                        enum_values
+                            .get(e.id.as_str())
+                            .is_some_and(|values| values.contains(&value.canonical_json()))
+                    }),
                 Some(Definition::Entity(e)) => {
-                    matches_fields(value, &e.fields, definitions, depth + 1)
+                    matches_fields(value, &e.fields, definitions, enum_values, depth + 1)
                 }
                 Some(Definition::ValueObject(v)) => {
-                    matches_fields(value, &v.fields, definitions, depth + 1)
+                    matches_fields(value, &v.fields, definitions, enum_values, depth + 1)
                 }
                 _ => false,
             },
@@ -211,6 +253,7 @@ fn validate_defaults(
         value: &serde_json::Value,
         fields: &[super::Field],
         definitions: &BTreeMap<&str, &Definition>,
+        enum_values: &BTreeMap<&str, BTreeSet<String>>,
         depth: usize,
     ) -> bool {
         let Some(object) = value.as_object() else {
@@ -222,7 +265,9 @@ fn validate_defaults(
             && fields
                 .iter()
                 .all(|field| match object.get(field.name.as_str()) {
-                    Some(value) => matches_type(value, &field.r#type, definitions, depth + 1),
+                    Some(value) => {
+                        matches_type(value, &field.r#type, definitions, enum_values, depth + 1)
+                    }
                     None => !field.required,
                 })
     }
@@ -236,7 +281,13 @@ fn validate_defaults(
         };
         for field in fields {
             if let Some(default) = &field.default {
-                if !matches_type(default.as_json(), &field.r#type, &definitions, 0) {
+                if !matches_type(
+                    default.as_json(),
+                    &field.r#type,
+                    &definitions,
+                    &enum_values,
+                    0,
+                ) {
                     diagnostics.push(defect(
                         definition_span(compilation, definition.id().as_str()),
                         "field-default-type-mismatch",

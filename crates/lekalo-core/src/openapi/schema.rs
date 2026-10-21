@@ -259,16 +259,15 @@ pub fn component_body(definition: &Definition, mapper: &mut SchemaMapper) -> Opt
         Definition::Scalar(def) => scalar_json(def.base),
         Definition::Enum(def) => {
             let mut object = Map::new();
-            object.insert("type".to_owned(), Json::String("string".to_owned()));
-            object.insert(
-                "enum".to_owned(),
-                Json::Array(
-                    def.values
-                        .iter()
-                        .map(|value| Json::String(value.value.as_str().to_owned()))
-                        .collect(),
-                ),
-            );
+            let values: Vec<_> = def
+                .values
+                .iter()
+                .map(crate::ir::EnumValue::wire_json)
+                .collect();
+            if values.iter().all(Json::is_string) {
+                object.insert("type".to_owned(), Json::String("string".to_owned()));
+            }
+            object.insert("enum".to_owned(), Json::Array(values));
             Json::Object(object)
         }
         Definition::ValueObject(def) => mapper.object_schema(&def.fields),

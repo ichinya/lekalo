@@ -234,6 +234,9 @@ fn contract_parts(definition: &Definition, parts: &mut Vec<String>) {
         Definition::Enum(enumeration) => {
             for value in &enumeration.values {
                 parts.push(value.value.as_str().to_owned());
+                if let Some(wire) = &value.wire_value {
+                    parts.push(format!("wire={}", wire.canonical_json()));
+                }
                 if let Some(description) = &value.description {
                     parts.push(description.as_str().to_owned());
                 }
