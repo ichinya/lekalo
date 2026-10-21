@@ -73,8 +73,10 @@ pub enum TransportFailure {
     Cancelled,
     /// A response stream exceeded its cap; the child was killed.
     OutputLimit { stream: Stream },
-    /// Resident-memory threshold exceeded or its monitor became unavailable.
+    /// Resident-memory threshold exceeded.
     ResourceLimit,
+    /// The resident-memory monitor could not establish a sample.
+    ResourceMonitorUnavailable,
 }
 
 impl TransportFailure {
@@ -87,6 +89,7 @@ impl TransportFailure {
             Self::Cancelled => "caller",
             Self::OutputLimit { .. } => "output-limit",
             Self::ResourceLimit => "resident-memory-limit",
+            Self::ResourceMonitorUnavailable => "resident-monitor-unavailable",
         }
     }
 }
@@ -399,6 +402,8 @@ pub(super) fn pump(
                 Err(error) => {
                     refusal = if error.kind() == std::io::ErrorKind::OutOfMemory {
                         TransportFailure::ResourceLimit
+                    } else if resident_monitor_unavailable(&error) {
+                        TransportFailure::ResourceMonitorUnavailable
                     } else {
                         TransportFailure::Spawn
                     };
@@ -449,6 +454,20 @@ pub(super) fn pump(
         let _ = stderr_handle.join();
     }
     Err(refusal)
+}
+
+fn resident_monitor_unavailable(error: &std::io::Error) -> bool {
+    #[cfg(any(target_os = "macos", test))]
+    {
+        error
+            .get_ref()
+            .is_some_and(|error| error.is::<super::memory::MonitorUnavailable>())
+    }
+    #[cfg(not(any(target_os = "macos", test)))]
+    {
+        let _ = error;
+        false
+    }
 }
 
 /// Read one stream to EOF or the cap, reporting whether the cap was hit.

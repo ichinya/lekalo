@@ -135,7 +135,9 @@ impl ServedRoot {
                 if path.is_dir() {
                     walk(&path, base, out);
                 } else {
-                    let bytes = std::fs::read(&path).expect("read file");
+                    let bytes = std::fs::read(&path).unwrap_or_else(|error| {
+                        panic!("read inventory file {}: {error}", path.display())
+                    });
                     let relative = path
                         .strip_prefix(base)
                         .expect("inside root")

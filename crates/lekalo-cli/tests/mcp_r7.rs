@@ -216,6 +216,8 @@ fn admitted_git_status_never_refreshes_the_index_even_with_inherited_optional_lo
         );
     };
     git(&["init", "--quiet"]);
+    git(&["config", "maintenance.auto", "false"]);
+    git(&["config", "gc.auto", "0"]);
     git(&["-c", "core.autocrlf=false", "add", "."]);
     git(&[
         "-c",

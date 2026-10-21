@@ -1,9 +1,30 @@
 //! Watch's macOS resident-memory supervisor. This is a sampled kill
-//! threshold, NOT a kernel allocation ceiling: overshoot between the 5 ms
-//! transport polls is possible and evidence must remain `degraded`.
+//! threshold, NOT a kernel allocation ceiling: overshoot between transport
+//! polls (including at most three 1 ms sample retries) is possible and
+//! evidence must remain `degraded`.
 //! Seatbelt denies fork, so the one observed process is the whole payload.
 use super::transport::Process;
 use std::io::{Read, Write};
+
+#[derive(Debug)]
+pub(super) struct MonitorUnavailable;
+impl std::fmt::Display for MonitorUnavailable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("resident-monitor-unavailable")
+    }
+}
+impl std::error::Error for MonitorUnavailable {}
+
+fn sample_resident(mut sample: impl FnMut() -> std::io::Result<u64>) -> std::io::Result<u64> {
+    for attempt in 0..4 {
+        match sample() {
+            Ok(bytes) => return Ok(bytes),
+            Err(error) if attempt == 3 => return Err(error),
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(1)),
+        }
+    }
+    unreachable!("bounded sample loop returns")
+}
 
 pub(super) trait ResidentDriver {
     fn resident_bytes(&mut self) -> std::io::Result<u64>;
@@ -32,20 +53,17 @@ impl<P: Process, D: ResidentDriver> Process for Monitored<P, D> {
         }
         match self.driver.resident_bytes() {
             Ok(bytes) if bytes <= self.limit => Ok(None),
-            sample => {
+            Ok(_) => Err(std::io::Error::new(
+                std::io::ErrorKind::OutOfMemory,
+                "resident-memory-limit",
+            )),
+            Err(_) => {
                 // proc_pidinfo can lose a race to exit. Accept only positively
                 // observed exit, otherwise fail closed and let pump kill/reap.
                 if let Some(code) = self.process.poll()? {
                     return Ok(Some(code));
                 }
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::OutOfMemory,
-                    if sample.is_err() {
-                        "resident-monitor-unavailable"
-                    } else {
-                        "resident-memory-limit"
-                    },
-                ))
+                Err(std::io::Error::other(MonitorUnavailable))
             }
         }
     }
@@ -62,6 +80,13 @@ pub(super) struct MacResident(pub u32);
 #[cfg(target_os = "macos")]
 impl ResidentDriver for MacResident {
     fn resident_bytes(&mut self) -> std::io::Result<u64> {
+        sample_resident(|| self.sample_once())
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl MacResident {
+    fn sample_once(&mut self) -> std::io::Result<u64> {
         let mut info = std::mem::MaybeUninit::<libc::proc_taskinfo>::zeroed();
         // SAFETY: proc_pidinfo writes at most the supplied struct size to a
         // valid, aligned buffer. No field is read unless it returned the
@@ -109,6 +134,7 @@ mod tests {
     }
     struct Fake {
         done: bool,
+        exit_after_first_poll: bool,
         killed: Arc<AtomicBool>,
         reaped: Arc<AtomicBool>,
     }
@@ -123,7 +149,11 @@ mod tests {
             Some(Box::new(std::io::empty()))
         }
         fn poll(&mut self) -> std::io::Result<Option<i32>> {
-            Ok(self.done.then_some(0))
+            let status = self.done.then_some(0);
+            if self.exit_after_first_poll {
+                self.done = true;
+            }
+            Ok(status)
         }
         fn terminate(&mut self) {
             self.killed.store(true, Ordering::SeqCst);
@@ -137,15 +167,19 @@ mod tests {
     fn macos_driver_threshold_and_probe_failure_kill_and_reap_fail_closed() {
         // Hermetic driver qualification on every host. This executes the
         // production pump/monitor, not Darwin's proc_pidinfo or seatbelt.
-        for sample in [
-            Ok(101),
-            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+        for (sample, expected) in [
+            (Ok(101), TransportFailure::ResourceLimit),
+            (
+                Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+                TransportFailure::ResourceMonitorUnavailable,
+            ),
         ] {
             let killed = Arc::new(AtomicBool::new(false));
             let reaped = Arc::new(AtomicBool::new(false));
             let mut child = Monitored {
                 process: Fake {
                     done: false,
+                    exit_after_first_poll: false,
                     killed: killed.clone(),
                     reaped: reaped.clone(),
                 },
@@ -154,7 +188,7 @@ mod tests {
             };
             let failure =
                 transport::pump(&mut child, b"", &TransportLimits::default(), None).unwrap_err();
-            assert_eq!(failure, TransportFailure::ResourceLimit);
+            assert_eq!(failure, expected);
             assert!(killed.load(Ordering::SeqCst) && reaped.load(Ordering::SeqCst));
         }
     }
@@ -163,6 +197,7 @@ mod tests {
         let mut child = Monitored {
             process: Fake {
                 done: true,
+                exit_after_first_poll: false,
                 killed: Arc::new(AtomicBool::new(false)),
                 reaped: Arc::new(AtomicBool::new(false)),
             },
@@ -181,6 +216,7 @@ mod tests {
         let mut child = Monitored {
             process: Fake {
                 done: false,
+                exit_after_first_poll: false,
                 killed: Arc::new(AtomicBool::new(false)),
                 reaped: Arc::new(AtomicBool::new(false)),
             },
@@ -199,5 +235,49 @@ mod tests {
             TransportFailure::Cancelled
         );
         assert!(child.process.killed.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn transient_samples_recover_but_persistent_unknown_samples_never_become_zero() {
+        let mut attempts = 0;
+        let bytes = sample_resident(|| {
+            attempts += 1;
+            if attempts == 1 {
+                Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+            } else {
+                Ok(42)
+            }
+        })
+        .unwrap();
+        assert_eq!(bytes, 42);
+        assert!(attempts > 1 && attempts <= 4);
+        let mut attempts = 0;
+        assert!(sample_resident(|| {
+            attempts += 1;
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+        })
+        .is_err());
+        assert!(attempts > 0 && attempts <= 4);
+    }
+
+    #[test]
+    fn an_observed_limit_violation_is_not_erased_by_a_later_exit() {
+        let killed = Arc::new(AtomicBool::new(false));
+        let reaped = Arc::new(AtomicBool::new(false));
+        let mut child = Monitored {
+            process: Fake {
+                done: false,
+                exit_after_first_poll: true,
+                killed: killed.clone(),
+                reaped: reaped.clone(),
+            },
+            driver: Driver(Ok(101)),
+            limit: 100,
+        };
+        assert_eq!(
+            transport::pump(&mut child, b"", &TransportLimits::default(), None).unwrap_err(),
+            TransportFailure::ResourceLimit
+        );
+        assert!(killed.load(Ordering::SeqCst) && reaped.load(Ordering::SeqCst));
     }
 }

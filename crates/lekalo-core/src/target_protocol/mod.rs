@@ -1187,6 +1187,9 @@ fn transport_failure(error: transport::TransportFailure) -> TargetFailure {
         transport::TransportFailure::ResourceLimit => TargetFailure::TransportFailed {
             detail: "resident-memory-limit",
         },
+        transport::TransportFailure::ResourceMonitorUnavailable => TargetFailure::TransportFailed {
+            detail: "resident-monitor-unavailable",
+        },
         transport::TransportFailure::RequestWrite => TargetFailure::TransportFailed {
             detail: "request-write",
         },
