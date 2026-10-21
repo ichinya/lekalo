@@ -266,7 +266,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --yes bubblewrap
+          sudo apt-get install --yes bubblewrap ripgrep
       - name: Load the CI-only AppArmor launcher prerequisite
         if: runner.os == 'Linux'
         id: apparmor
@@ -452,9 +452,16 @@ jobs:
           choco install ripgrep --yes --no-progress
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           rg --version
+      - name: Provision ripgrep for the macOS search comparison
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: |
+          brew install ripgrep
+          rg --version
       - name: Run the semantic search live and benchmark gates (issue #93)
-        # The comparison leg needs ripgrep; Windows provisions it in the
-        # preceding step. The binary is the workspace build above. Both gates
+        # Every OS provisions ripgrep explicitly for the comparison leg.
+        # The binary is the workspace build above. Both gates
         # fail closed when their inputs are missing.
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
