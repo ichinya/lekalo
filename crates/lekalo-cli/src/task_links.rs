@@ -10,6 +10,29 @@ use lekalo_core::task_links as tl;
 use lekalo_core::{loader::LoadSelection, DomainResult};
 use std::io::Read;
 
+#[cfg(all(test, unix))]
+mod file_operand_tests {
+    use super::*;
+
+    #[test]
+    fn platform_nofollow_reads_regular_operands_and_refuses_symlinks() {
+        let owned = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(owned.path()).unwrap();
+        let file = root.join("attachment.json");
+        std::fs::write(&file, b"{}").unwrap();
+        let path = file.to_str().unwrap();
+        assert_eq!(read_bounded(path).unwrap(), b"{}");
+        assert_eq!(crate::read_envelope_bounded(path).unwrap(), b"{}");
+
+        let alias = root.join("linked.json");
+        std::os::unix::fs::symlink(&file, &alias).unwrap();
+        let path = alias.to_str().unwrap();
+        assert!(open_nofollow(path).is_err());
+        assert!(read_bounded(path).is_err());
+        assert!(crate::read_envelope_bounded(path).is_err());
+    }
+}
+
 /// The `task-links` subcommand surface: `validate`, `inspect`, and
 /// `portability` with the exact proposed grammar.
 #[derive(Debug, Subcommand)]
@@ -161,8 +184,7 @@ fn open_nofollow(path: &str) -> std::io::Result<std::fs::File> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        const O_NOFOLLOW: i32 = 0o200_000;
-        options.custom_flags(O_NOFOLLOW);
+        options.custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32);
     }
     options.open(path)
 }

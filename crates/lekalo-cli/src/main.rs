@@ -5899,8 +5899,7 @@ fn read_envelope_bounded(path: &str) -> Result<Vec<u8>, DomainResult> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        const O_NOFOLLOW: i32 = 0o200_000;
-        options.custom_flags(O_NOFOLLOW);
+        options.custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32);
     }
     let file = options.open(path).map_err(|_| refused())?;
     let mut bytes = Vec::new();
