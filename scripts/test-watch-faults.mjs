@@ -65,7 +65,7 @@ try {
   });
  });
  {
-  assert.deepEqual(completed.map(e=>e.status),['valid','unavailable','invalid','valid']);
+  assert.deepEqual(completed.map(e=>e.status),['valid','unavailable','invalid','valid'],JSON.stringify(completed.map(e=>({run:e.runId,status:e.status,diagnostics:e.result.diagnostics}))));
   assert(completed[1].result.diagnostics.some(d=>d.id==='watch.adapter-recovery'));
   assert(completed[2].result.diagnostics.some(d=>d.id==='target.operation-failed'));
   assert.deepEqual(completed[3].result.diagnostics,[],'recovery removes stale failure diagnostics');

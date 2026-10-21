@@ -28,7 +28,7 @@ function inventory(dir,prefix=''){
 }
 async function probe(backend){
   const project=mkdtempSync(join(tmpdir(),'lekalo-watch-'));
-  const privateTemp=realpathSync(mkdtempSync(join(tmpdir(),'lekalo-watch-private-')));
+  const privateTemp=realpathSync.native(mkdtempSync(join(tmpdir(),'lekalo-watch-private-')));
   try{
     // Internal captures must tolerate the OS temp root's physical aliases.
     // The governed project remains a distinct, normally selected directory.

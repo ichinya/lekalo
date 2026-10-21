@@ -249,7 +249,8 @@ jobs:
           node --input-type=module <<'NODE'
           import {appendFileSync, realpathSync} from 'node:fs';
           import {tmpdir} from 'node:os';
-          const root = realpathSync(tmpdir());
+          // The native Windows resolver also expands 8.3 names.
+          const root = realpathSync.native(tmpdir());
           for (const name of ['TEMP', 'TMP', 'TMPDIR']) {
             appendFileSync(process.env.GITHUB_ENV, `${name}=${root}\n`);
           }
