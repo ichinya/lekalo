@@ -1,0 +1,31 @@
+{
+    "schemaVersion": "lekalo/php-types-golden-digests/v0.1.0",
+    "irDigest": "sha256:e1a2173af461cb43cfa58f091bd92a439f8cfa53aba7aea33481d85d6977decd",
+    "files": {
+        "classmap.php": "sha256:5635def88f19ae79153989f440aae8086892055a092675d825fac34a601c2e0a",
+        "notify/channel.php": "sha256:64a02db960cea4029a68ec0df2ac64250eaa48a6b9607623a3d93848a1c05c6d",
+        "notify/notify_user_input.php": "sha256:ebd1914e2d5b9c6b8f28e3469e05353db041bcc1398d6b4646a24e79d507e53f",
+        "notify/notify_user_input_codec.php": "sha256:67391dbbd6994c62bb57b05d2df0b07b3166353e05793f8f0768ada3fb9fa93c",
+        "notify/user_dto.php": "sha256:9d994d473f4aaed08ec221ef0e6f22d5f73ed799aafed4440f889a285e72b42f",
+        "notify/user_dto_codec.php": "sha256:657203353edaf5fd029be56c489995e198848c3ba635c6965f1444abb8ac0a39",
+        "notify/user_id.php": "sha256:bd3dc07edd66ffd4ef37c06841a51af479b1b614185572580c677824bc695a49",
+        "planner/count_focused_result_codec.php": "sha256:d39ab1c44fcda81fa14998f1e249e8ab1221826d82b0539cbc7a7b0fe25ffd52",
+        "planner/due_date.php": "sha256:e064766e0033cce5ef84a175b1da22217bb972735f0e29c8eb5e539c0d5e1739",
+        "planner/due_window.php": "sha256:9b9ae5fa05a6dc6c988ed710c18026821b90126cc6ab847a6d0e91036db8f3a5",
+        "planner/due_window_codec.php": "sha256:758e3a3592d26745ea582c238d90da8afc88f7d3bf098ddde900e7a2d5cfea3b",
+        "planner/due_window_list.php": "sha256:7a3697404f505f75a26057966daee410705f162e038875238abc2f60e825b4ba",
+        "planner/focus_task_input.php": "sha256:178457fd6262e7c354f66aa2b3c227a9abf8febc20e6ffe767e4ff52c0727404",
+        "planner/focus_task_input_codec.php": "sha256:0632c63f3c23646fc893d08d715200135e30911125a55b76c63c461de113e025",
+        "planner/optional/optional_due_date.php": "sha256:c92144f6ef2d3fdc06524987a62ffcef4bfab1d3139608f9aa37af78b5f3905b",
+        "planner/optional/optional_due_window_list.php": "sha256:251d4f953de70132ee76f448d59f8132587e073f9081e51191c1b65ee2d56615",
+        "planner/optional/optional_nullable_due_date.php": "sha256:8bebd8059571fa336f3858b0f243ff820b8685056555ca7c64be214e0ea8ee15",
+        "planner/task_dto.php": "sha256:3bfae0319f0547085442268eab55ba402c08a2a2a121d5f71b481703f1839fc4",
+        "planner/task_dto_codec.php": "sha256:9fe9691110355074472b38fcd8add9c4c2fe48557db2e60e3b8e7958e721082c",
+        "planner/task_focused_payload.php": "sha256:78a7e8db0777131061ff0b0f9a4a67c53a3f8d200faac827476ba623386b80d7",
+        "planner/task_focused_payload_codec.php": "sha256:65ddd34be3221065a092363dcc7942dc1914bef97d07e2d217c8506d698913f5",
+        "planner/task_id.php": "sha256:42ac5e854208ddf1a83a609d0bbd9ccf7c57857e40774b6cc86cce685d80001f",
+        "planner/task_state.php": "sha256:12a53902d1f241cb684fa4c768f56d9457ea80428f835852e296313b3c8254e0",
+        "planner/text.php": "sha256:b743206a23afee05e4c40c7851b15c3e615b73b2c92061f1bd4e0f6587df5a3b",
+        "types.map.json": "sha256:b048612cb5a3015a961baf2c25c9c48270dabc6ae567818d2977c823b7834771"
+    }
+}

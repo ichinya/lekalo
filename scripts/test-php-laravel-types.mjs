@@ -197,13 +197,25 @@ step("managed generation matches the committed golden digests", () => {
   goldenRoot = mkdtempSync(join(tmpdir(), "lekalo-types-a-"));
   materialize(goldenRoot, "inputs/planner.types.json", corpusIr);
   const { dry, apply } = generate(goldenRoot, "lekalo/types/planner.types.json", "managed-a");
-  const golden = readJson(join(fixtures, "goldens", "digests.json"));
+  const adapterVersion = readJson(join(repoRoot, "adapters/php-laravel/adapter.manifest.json")).adapter.version;
+  assert.ok(["0.2.0", "0.8.0"].includes(adapterVersion), "explicit PHP type golden admission");
+  const predecessor = readJson(join(fixtures, "goldens", "digests.json"));
+  const golden = adapterVersion === "0.8.0"
+    ? readJson(join(fixtures, "goldens", "digests.product-0.8.0.json"))
+    : predecessor;
+  assert.deepEqual(Object.keys(golden.files), Object.keys(predecessor.files));
   assert.equal(dry.writes.length, Object.keys(golden.files).length);
   assert.ok(apply.writes.length >= dry.writes.length - 0);
   for (const [relative, digest] of Object.entries(golden.files)) {
     const path = join(goldenRoot, TYPES, relative);
     assert.ok(existsSync(path), `missing emitted file ${relative}`);
     assert.equal(sha256(readFileSync(path)), digest, `golden drift on ${relative}`);
+    // The M8 successor changes only the producer version in headers/sidecars.
+    // Keep the original byte contract independently pinned as well.
+    const previousBytes = readFileSync(path, "utf8")
+      .replaceAll("php-laravel@0.8.0", "php-laravel@0.2.0")
+      .replaceAll('"version":"0.8.0"', '"version":"0.2.0"');
+    assert.equal(sha256(previousBytes), predecessor.files[relative], `predecessor drift on ${relative}`);
   }
   // The binding refused inputs stay refused: a stale digest is an error.
   materialize(goldenRoot, "inputs/planner-stale-digest.types.json", corpusIr, "stale.types.json", true);
