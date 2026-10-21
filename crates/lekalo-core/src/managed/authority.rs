@@ -192,6 +192,9 @@ pub(crate) fn derive_loaded(
         .map_err(|_| invalid("validation-profile"))?;
     crate::validator::validate(&compilation, profile)
         .map_err(crate::result::DomainResult::invalid)?;
+    if compilation.project.has_field_defaults() {
+        return Err(invalid("field-default-contract-unsupported"));
+    }
     let ir_json = compilation.project.to_canonical_json();
     // The exact lock revision must exist and parse closed: it pins the
     // accepted contract families the pipeline compiled under, and its own

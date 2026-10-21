@@ -38,7 +38,7 @@ function request(operations, flags = [], expected = 0) {
   return run(["change", "request", "--request", "request.json", ...flags], expected);
 }
 try {
-  cpSync(join(root, "tests/fixtures/change/field-vertical"), stage, { recursive: true });
+  cpSync(join(root, "tests/fixtures/change/field-vertical"), stage, { recursive: true, filter: path => !/[\\/]\.lekalo$/.test(path) });
   const entities = join(stage, "lekalo/modules/tasks/entities.yaml");
   writeFileSync(entities, readFileSync(entities, "utf8").replace(/\r?\n/g, "\r\n")
     .replace("base: string\r\n", "base: string   \r\n")

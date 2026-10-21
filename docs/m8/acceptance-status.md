@@ -1,7 +1,7 @@
 # M8 acceptance status
 
 GitHub milestone [M8](https://github.com/ichinya/lekalo/milestone/9) was
-checked on 2026-10-20: **14 open issues, zero closed**. This inventory does
+checked on 2026-10-21: **14 open issues, zero closed**. This inventory does
 not close issues or publish the local branch. A merged implementation is
 not, by itself, acceptance evidence for every criterion in an issue.
 
@@ -17,7 +17,7 @@ increment; its limitations remain part of #73 until implemented and tested.
 | [#41](https://github.com/ichinya/lekalo/issues/41) managed | `scripts/test-managed-contracts.mjs`, `test-managed-cli.mjs`, `test-managed-planner-e2e.mjs`; shared semantic Model validation now precedes managed authority | The query-read fixture and dependent authority pins are corrected. Contract gates, 110 CLI invocations and planner regeneration/native-handler execution pass locally. Final milestone-candidate/CI qualification remains. |
 | [#51](https://github.com/ichinya/lekalo/issues/51) Worklog / Changelog | contract, admission, pilot and consumer gates | Final native/evidence qualification, keeping unsupported publication semantics distinct from executed success. |
 | [#52](https://github.com/ichinya/lekalo/issues/52) TaskExternalLink | relation/uniqueness Model successor, task-link contracts and impact/portability gates | Final public/synthetic provider evidence and exact consumer impact qualification. |
-| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions, symbol relocation and module-ownership gates | Completion of relocation/attachment cases; field defaults, enum wire values, query inputs, command results and pure emissions with owner-compatible Model/IR successors. Module policy transitions use the existing managed owner's granularity; per-symbol changes do not silently widen to a module. Catalog coverage alone cannot close this issue. |
+| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions, symbol relocation, module ownership and Model/IR 0.8.0 field defaults | Completion of relocation/attachment cases; enum wire values, query inputs, command results and pure emissions with owner-compatible successors. Default literals retain the documented YAML-layout and legacy-consumer boundaries. Module policy transitions use the existing managed owner's granularity; per-symbol changes do not silently widen to a module. Catalog coverage alone cannot close this issue. |
 | [#74](https://github.com/ichinya/lekalo/issues/74) safe fixes | Fix contracts/CLI and rollback tests | Requalify final Change catalog identity, stale/conflicting plans, replay and rollback. |
 | [#93](https://github.com/ichinya/lekalo/issues/93) semantic search | search contracts/CLI and `scripts/bench-search.mjs` | Final result/ambiguity/offline gates and representative benchmark evidence; separate retrieval metrics from agent answer quality. |
 | [#94](https://github.com/ichinya/lekalo/issues/94) formatter | format contracts, CLI, atomicity and portability gates | Final semantic invariance/trivia checks and Linux/Windows/macOS evidence. |
@@ -29,6 +29,24 @@ increment; its limitations remain part of #73 until implemented and tested.
 
 ## Verified local corrections
 
+- Field defaults now survive every Change field writer in the Model/IR
+  0.8.0 successor, with type checks, bounded literals, null/absence
+  preservation, behavioral diff records and bounded canonical-literal
+  digests. Newly created kind documents inherit the source contract.
+  The live CLI gate passed **11 calls and five independent JSON Schemas**;
+  the final Change/IR/diff integration run passed **137 tests**, including
+  **99 core Change tests**, with no failures or ignored tests. It includes
+  preserved inline comments, CRLF without an EOF newline, no-op and safe
+  refusals. Legacy CLI/symbol/binding/error-union gates also passed.
+  Workspace/all-target Clippy passed with warnings denied after the final
+  field-argument grouping; formatter and whitespace checks also passed.
+  An earlier core-library run passed **1,510 tests**, with no failures and
+  two ignored tests; it preceded the final source-token trivia correction,
+  which the final integration run covers. Initial failed runs are retained
+  in `target/m8-defaults-*.log`; they are not milestone acceptance evidence.
+  Fixture copying excludes runtime caches. The one cache created by this
+  session's checkout probe was moved into `target/` with matching SHA-256;
+  no pre-existing user cache or native source was deleted.
 - Managed authority now applies shared semantic validation after IR compilation;
   the negative regression proves that compilation alone cannot authorize an
   invalid query read. The corrected planner fixture validates with zero

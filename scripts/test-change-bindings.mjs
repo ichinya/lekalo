@@ -38,7 +38,7 @@ function request(cwd, symbol, definition, expected = 0, flags = []) {
 }
 try {
   const canonical = join(stage, "canonical");
-  cpSync(join(root, "tests/fixtures/change/field-vertical"), canonical, { recursive: true });
+  cpSync(join(root, "tests/fixtures/change/field-vertical"), canonical, { recursive: true, filter: path => !/[\\/]\.lekalo$/.test(path) });
   mkdirSync(join(canonical, "lekalo/targets"), { recursive: true });
   writeFileSync(join(canonical, "lekalo/targets/node-typescript.yaml"), "target: node-typescript\n");
   const symbol = "tasks.binding_node";

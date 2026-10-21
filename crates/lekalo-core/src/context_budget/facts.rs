@@ -225,6 +225,9 @@ fn contract_parts(definition: &Definition, parts: &mut Vec<String>) {
             parts.push("required".to_owned());
         }
         parts.push(type_spelling(&field.r#type));
+        if let Some(default) = &field.default {
+            parts.push(format!("default={}", default.canonical_json()));
+        }
     };
     match definition {
         Definition::Scalar(scalar) => parts.push(scalar.base.as_str().to_owned()),

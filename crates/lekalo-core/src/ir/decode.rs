@@ -171,7 +171,7 @@ fn pointer_token(token: &str) -> String {
 }
 
 /// Keys whose source-map entry is recorded by their dedicated value decoder.
-const VALUE_DECODED_KEYS: &[&str] = &["type", "returns", "entity", "invokes"];
+const VALUE_DECODED_KEYS: &[&str] = &["type", "returns", "entity", "invokes", "default"];
 
 /// Decode state threaded through every decoder.
 struct Context {
@@ -971,7 +971,11 @@ fn decode_fields(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<Fie
     for (position, item) in items.iter().enumerate() {
         let base = format!("{pointer}/{position}");
         cx.record(&base, item.span, None);
-        let Some(found) = cx.scan(item, &base, &["name", "type", "required", "description"]) else {
+        let allowed: &[&str] = match cx.version {
+            ModelVersion::Current => &["name", "type", "required", "description"],
+            ModelVersion::Successor => &["name", "type", "required", "description", "default"],
+        };
+        let Some(found) = cx.scan(item, &base, allowed) else {
             ok = false;
             continue;
         };
@@ -1021,11 +1025,28 @@ fn decode_fields(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<Fie
             Some(entry) => Some(cx.text(&entry.value, "description-type")?),
             None => None,
         };
+        let default = match cx.find(&found, "default") {
+            Some(entry) => {
+                cx.record(&format!("{base}/default"), entry.value.span, None);
+                let Some(value) = super::DefaultValue::from_node(&entry.value) else {
+                    cx.push(
+                        VALUE_INVALID,
+                        entry.value.span,
+                        serde_json::json!({"detail": "field-default-literal"}),
+                    );
+                    ok = false;
+                    continue;
+                };
+                Some(value)
+            }
+            None => None,
+        };
         fields.push(Field {
             name: FieldName(name),
             r#type: field_type,
             required,
             description,
+            default,
         });
     }
     if ok {

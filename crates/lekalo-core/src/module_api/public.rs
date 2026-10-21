@@ -657,6 +657,11 @@ fn project_fields(
     fields
         .iter()
         .map(|field| {
+            if field.default.is_some() {
+                return Err(super::diagnostic::invalid(
+                    "field-default-contract-unsupported",
+                ));
+            }
             Ok(PublicField {
                 name: field.name.as_str().to_owned(),
                 r#type: project_type(&field.r#type, by_id, module, exported, foreign)?,

@@ -17,6 +17,9 @@ fn copy_dir(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).expect("create target");
     for entry in std::fs::read_dir(from).expect("read source") {
         let entry = entry.expect("entry");
+        if entry.file_name() == ".lekalo" {
+            continue;
+        }
         let target = to.join(entry.file_name());
         if entry.file_type().expect("type").is_dir() {
             copy_dir(&entry.path(), &target);
@@ -3636,6 +3639,217 @@ fn declared_defaults_refuse_at_every_field_consuming_operation() {
     let committed =
         std::fs::read(sandbox.root.join("lekalo/modules/tasks/commands.yaml")).expect("commands");
     assert_eq!(committed, commands.as_bytes(), "the source is untouched");
+}
+
+fn enable_default_successor(sandbox: &Sandbox) {
+    for file in [
+        "lekalo/project.yaml",
+        "lekalo/modules/tasks/module.yaml",
+        "lekalo/modules/tasks/entities.yaml",
+    ] {
+        let path = sandbox.root.join(file);
+        let text = std::fs::read_to_string(&path)
+            .unwrap()
+            .replace("0.2.16", "0.8.0");
+        std::fs::write(path, text).unwrap();
+    }
+}
+
+fn defaults_request(operations: serde_json::Value) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({ "schemaVersion": "lekalo/change-request/v0.8.0", "operations": operations })).unwrap()
+}
+
+#[test]
+fn successor_defaults_survive_all_field_writers_and_default_only_diff() {
+    let sandbox = Sandbox::new("successor-defaults");
+    enable_default_successor(&sandbox);
+    let entities = std::fs::read_to_string(sandbox.entities_path()).unwrap();
+    std::fs::write(sandbox.entities_path(), format!("{entities}\n  - id: tasks.snapshot\n    kind: value-object\n    version: 1\n    fields:\n      - name: title\n        type: tasks.text\n        required: true\n      - name: done\n        type: tasks.bool\n")).unwrap();
+    let request = defaults_request(serde_json::json!([
+        {"operation":"entity-field:add", "entity":"tasks.task", "field":{"name":"priority", "type":{"ref":"tasks.priority"}, "default":"normal"}},
+        {"operation":"entity-field:add", "entity":"tasks.task", "field":{"name":"labels", "type":{"list":{"ref":"tasks.text"}}, "default":["a", "b\n#literal"]}},
+        {"operation":"entity-field:add", "entity":"tasks.task", "field":{"name":"nullable", "type":{"optional":{"ref":"tasks.text"}}, "default":null}},
+        {"operation":"entity-field:add", "entity":"tasks.task", "field":{"name":"snapshot", "type":{"ref":"tasks.snapshot"}, "default":{"title":"saved", "done":false}}},
+        {"operation":"definition:add", "kind":"command", "module":"tasks", "definition":{"name":"save", "input":[{"name":"title", "type":{"ref":"tasks.text"}, "default":"before"}]}},
+        {"operation":"definition:add", "kind":"event", "module":"tasks", "definition":{"name":"saved", "payload":[{"name":"title", "type":{"ref":"tasks.text"}, "default":"event"}]}}
+    ]));
+    apply_request(&sandbox, &request, "default-writers", false).unwrap();
+    let load = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+    let compiled = lekalo_core::ir::compile(&load).unwrap();
+    assert!(
+        lekalo_core::context::plan(
+            &lekalo_core::context::CapsuleScope::Symbol("tasks.task".to_owned()),
+            2000,
+            false,
+            &compiled
+        )
+        .is_err(),
+        "the frozen capsule must not silently drop defaults"
+    );
+    let ir: serde_json::Value =
+        serde_json::from_str(&compiled.project.to_canonical_json()).unwrap();
+    let definitions = ir["definitions"].as_array().unwrap();
+    let entity = definitions
+        .iter()
+        .find(|d| d["id"] == "tasks.task")
+        .unwrap();
+    let fields = entity["fields"].as_array().unwrap();
+    assert_eq!(
+        fields.iter().find(|f| f["name"] == "priority").unwrap()["default"],
+        "normal"
+    );
+    assert_eq!(
+        fields.iter().find(|f| f["name"] == "labels").unwrap()["default"],
+        serde_json::json!(["a", "b\n#literal"])
+    );
+    assert!(fields
+        .iter()
+        .find(|f| f["name"] == "nullable")
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .contains_key("default"));
+    assert_eq!(
+        fields.iter().find(|f| f["name"] == "snapshot").unwrap()["default"],
+        serde_json::json!({"title":"saved", "done":false})
+    );
+    assert_eq!(
+        definitions
+            .iter()
+            .find(|d| d["id"] == "tasks.saved")
+            .unwrap()["payload"][0]["default"],
+        "event"
+    );
+    let commands = sandbox.root.join("lekalo/modules/tasks/commands.yaml");
+    assert!(std::fs::read_to_string(&commands)
+        .unwrap()
+        .starts_with("schema_version: \"0.8.0\""));
+    let input = defaults_request(
+        serde_json::json!([{"operation":"operation-input:set", "operationTarget":"tasks.save", "definition":{"input":[{"name":"title", "type":{"ref":"tasks.text"}, "default":"after"}]}}]),
+    );
+    let prepared = prepare(&sandbox, &input).unwrap();
+    let plan: serde_json::Value =
+        serde_json::from_str(&prepared.to_json_string().unwrap()).unwrap();
+    assert!(plan["semanticDiff"]["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|d| d["kind"] == "field.default-changed"));
+    apply_request(&sandbox, &input, "default-only", false).unwrap();
+    let after = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+    let after = lekalo_core::ir::compile(&after).unwrap();
+    let diff = lekalo_core::diff::compare(
+        &compiled.project,
+        &after.project,
+        &lekalo_core::diff::DiffRequest::new(),
+    )
+    .unwrap();
+    let delta = diff
+        .changes()
+        .iter()
+        .find(|d| d.kind() == lekalo_core::diff::ChangeKind::FieldDefaultChanged)
+        .unwrap();
+    assert_eq!(
+        delta.before(),
+        &lekalo_core::diff::Summary::Text(format!(
+            "sha256:{}",
+            lekalo_core::digest::sha256_hex(b"\"before\"")
+        ))
+    );
+    assert_eq!(
+        delta.after(),
+        &lekalo_core::diff::Summary::Text(format!(
+            "sha256:{}",
+            lekalo_core::digest::sha256_hex(b"\"after\"")
+        ))
+    );
+    let before = std::fs::read(&commands).unwrap();
+    let unchanged = prepare(&sandbox, &input).unwrap();
+    let plan: serde_json::Value =
+        serde_json::from_str(&unchanged.to_json_string().unwrap()).unwrap();
+    assert_eq!(plan["equal"], true);
+    assert_eq!(std::fs::read(&commands).unwrap(), before);
+    // Dropping a default is also a semantic change, not a no-op.
+    let remove = defaults_request(
+        serde_json::json!([{"operation":"operation-input:set", "operationTarget":"tasks.save", "definition":{"input":[{"name":"title", "type":{"ref":"tasks.text"}}]}}]),
+    );
+    apply_request(&sandbox, &remove, "remove-default", false).unwrap();
+    assert!(!std::fs::read_to_string(&commands)
+        .unwrap()
+        .contains("default:"));
+}
+
+#[test]
+fn successor_default_type_mismatches_and_unspellable_yaml_never_write() {
+    let sandbox = Sandbox::new("invalid-defaults");
+    enable_default_successor(&sandbox);
+    let before = sandbox.entities_bytes();
+    for (typ, default) in [
+        (
+            serde_json::json!({"ref":"tasks.priority"}),
+            serde_json::json!("missing"),
+        ),
+        (
+            serde_json::json!({"ref":"tasks.text"}),
+            serde_json::json!(17),
+        ),
+        (
+            serde_json::json!({"ref":"tasks.task"}),
+            serde_json::json!({"ghost":true}),
+        ),
+        (
+            serde_json::json!({"list":{"ref":"tasks.text"}}),
+            serde_json::json!([]),
+        ),
+    ] {
+        let request = defaults_request(
+            serde_json::json!([{"operation":"entity-field:add", "entity":"tasks.task", "field":{"name":"invalid", "type":typ, "default":default}}]),
+        );
+        assert!(prepare(&sandbox, &request).is_err());
+        assert_eq!(sandbox.entities_bytes(), before);
+        assert!(!sandbox.history_path().exists());
+    }
+}
+
+#[test]
+fn successor_default_updates_preserve_crlf_and_inline_comments() {
+    let sandbox = Sandbox::new("default-crlf");
+    enable_default_successor(&sandbox);
+    let command = defaults_request(
+        serde_json::json!([{"operation":"definition:add", "kind":"command", "module":"tasks", "definition":{"name":"save", "input":[{"name":"title", "type":{"ref":"tasks.text"}, "default":"before"}]}}]),
+    );
+    apply_request(&sandbox, &command, "new-default-command", false).unwrap();
+    let commands = sandbox.root.join("lekalo/modules/tasks/commands.yaml");
+    let original = std::fs::read_to_string(&commands)
+        .unwrap()
+        .replace("\r\n", "\n")
+        .trim_end_matches('\n')
+        .replace('\n', "\r\n");
+    std::fs::write(&commands, &original).unwrap();
+    let request = defaults_request(
+        serde_json::json!([{"operation":"operation-input:set", "operationTarget":"tasks.save", "definition":{"input":[{"name":"title", "type":{"ref":"tasks.text"}, "default":"after"}]}}]),
+    );
+    apply_request(&sandbox, &request, "crlf-default", false).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&commands).unwrap(),
+        original.replace("before", "after")
+    );
+    let with_comment = original.replace("\"before\"", "\"after\" # owned comment");
+    std::fs::write(&commands, &with_comment).unwrap();
+    let changed = defaults_request(
+        serde_json::json!([{"operation":"operation-input:set", "operationTarget":"tasks.save", "definition":{"input":[{"name":"title", "type":{"ref":"tasks.text"}, "default":"last"}]}}]),
+    );
+    apply_request(&sandbox, &changed, "inline-comment-default", false).unwrap();
+    let expected = with_comment.replace("\"after\"", "\"last\"");
+    assert_eq!(std::fs::read_to_string(&commands).unwrap(), expected);
+    let remove = defaults_request(
+        serde_json::json!([{"operation":"operation-input:set", "operationTarget":"tasks.save", "definition":{"input":[{"name":"title", "type":{"ref":"tasks.text"}}]}}]),
+    );
+    assert!(matches!(
+        prepare(&sandbox, &remove),
+        Err(ChangeError::SourcePreservation { .. })
+    ));
+    assert_eq!(std::fs::read_to_string(&commands).unwrap(), expected);
 }
 
 #[test]

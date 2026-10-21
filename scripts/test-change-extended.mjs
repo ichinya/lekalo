@@ -29,7 +29,7 @@ function run(args, expected = 0) {
   return doc;
 }
 try {
-  cpSync(join(root, "tests/fixtures/change/field-vertical"), stage, { recursive: true });
+  cpSync(join(root, "tests/fixtures/change/field-vertical"), stage, { recursive: true, filter: path => !/[\\/]\.lekalo$/.test(path) });
   const entities = join(stage, "lekalo/modules/tasks/entities.yaml");
   const queries = join(stage, "lekalo/modules/tasks/queries.yaml");
   writeFileSync(entities, readFileSync(entities, "utf8") + "  - id: tasks.note\n    kind: entity\n    version: 1\n    fields:\n      - name: title\n        type: tasks.text\n        required: true\n    identity:\n      - title\n");

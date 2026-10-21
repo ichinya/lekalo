@@ -12,6 +12,186 @@
 use crate::loader::frontends::{Node, Scalar, Value};
 
 use super::diagnostic::ChangeError;
+use super::request::{FieldDecl, Literal};
+
+pub type FieldSpec<'a> = (&'a str, &'a str, bool, Option<&'a str>, Option<&'a Literal>);
+type OwnedFieldSpec = (
+    String,
+    String,
+    bool,
+    Option<String>,
+    Option<serde_json::Value>,
+);
+
+/// Render one admitted JSON literal using the existing block-only YAML
+/// grammar. Empty collections have no spelling in that grammar and refuse
+/// before any source write; JSON source decoding still represents them.
+fn yaml_literal_suffix(
+    value: &serde_json::Value,
+    indent: usize,
+    newline: &str,
+) -> Result<String, ChangeError> {
+    use serde_json::Value as Json;
+    let prefix = format!("{newline}{}", " ".repeat(indent + 2));
+    match value {
+        Json::Array(items) if !items.is_empty() => {
+            let mut out = String::new();
+            for item in items {
+                out.push_str(&prefix);
+                out.push('-');
+                out.push_str(&yaml_literal_suffix(item, indent + 2, newline)?);
+            }
+            Ok(out)
+        }
+        Json::Object(entries) if !entries.is_empty() => {
+            let mut out = String::new();
+            let mut entries: Vec<_> = entries.iter().collect();
+            entries.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
+            for (key, value) in entries {
+                out.push_str(&prefix);
+                out.push_str(&serde_json::to_string(key).expect("key"));
+                out.push(':');
+                out.push_str(&yaml_literal_suffix(value, indent + 2, newline)?);
+            }
+            Ok(out)
+        }
+        Json::Array(_) | Json::Object(_) => Err(ChangeError::SourcePreservation {
+            subject: "default".to_owned(),
+            detail: "literal-empty-collection",
+        }),
+        _ => Ok(format!(
+            " {}",
+            serde_json::to_string(value).expect("literal")
+        )),
+    }
+}
+
+fn yaml_default_field_item(
+    bytes: &[u8],
+    anchor: usize,
+    field: FieldSpec<'_>,
+) -> Result<String, ChangeError> {
+    let (name, typ, required, description, default) = field;
+    let mut block = yaml_field_item(bytes, anchor, name, typ, required, description);
+    if let Some(default) = default {
+        block.push_str(newline_before(bytes, bytes.len()));
+        block.push_str(&" ".repeat(anchor + 2));
+        block.push_str("default:");
+        block.push_str(&yaml_literal_suffix(
+            &default.to_json_value(),
+            anchor + 2,
+            newline_before(bytes, bytes.len()),
+        )?);
+    }
+    Ok(block)
+}
+
+/// A YAML event span can include trailing trivia. Prove the scalar token's
+/// lexical end before replacing it, so an inline comment retains its owner.
+fn default_scalar_end(bytes: &[u8], node: &Node) -> Result<usize, ChangeError> {
+    let start = node.span.start.byte;
+    let end = node.span.end.byte;
+    let original = bytes
+        .get(start..end)
+        .ok_or(ChangeError::WriteBoundaryDenied)?;
+    if let Some(quote @ (b'\'' | b'"')) = original.first().copied() {
+        let mut cursor = 1;
+        while cursor < original.len() {
+            if quote == b'"' && original[cursor] == b'\\' {
+                cursor += 2;
+            } else if original[cursor] == quote {
+                if quote == b'\'' && original.get(cursor + 1) == Some(&quote) {
+                    cursor += 2;
+                } else {
+                    return Ok(start + cursor + 1);
+                }
+            } else {
+                cursor += 1;
+            }
+        }
+    } else if !matches!(original.first(), Some(b'|' | b'>')) {
+        let mut cursor = 0;
+        while cursor < original.len() && !matches!(original[cursor], b'\r' | b'\n') {
+            if original[cursor] == b'#'
+                && (cursor == 0 || matches!(original[cursor - 1], b' ' | b'\t'))
+            {
+                break;
+            }
+            cursor += 1;
+        }
+        while cursor > 0 && matches!(original[cursor - 1], b' ' | b'\t') {
+            cursor -= 1;
+        }
+        if cursor > 0 {
+            return Ok(start + cursor);
+        }
+    }
+    Err(ChangeError::SourcePreservation {
+        subject: "default".to_owned(),
+        detail: "scalar-layout",
+    })
+}
+
+fn replace_default(bytes: &[u8], item: &Node, suffix: &str) -> Result<ByteEdit, ChangeError> {
+    let entry = item
+        .get_entry("default")
+        .ok_or(ChangeError::WriteBoundaryDenied)?;
+    if !matches!(entry.value.value, Value::Scalar(_)) {
+        return plan_raw_member_replace(bytes, item, "default", suffix);
+    }
+    let span = entry.value.span;
+    let token_end = default_scalar_end(bytes, &entry.value)?;
+    let line_end = content_end(
+        bytes,
+        line_start_at(bytes, token_end),
+        line_start_after(bytes, token_end),
+    );
+    if suffix.starts_with(['\n', '\r']) && bytes[token_end..line_end].contains(&b'#') {
+        return Err(ChangeError::SourcePreservation {
+            subject: "default".to_owned(),
+            detail: "comment-adjacent",
+        });
+    }
+    Ok(ByteEdit {
+        start: span.start.byte,
+        end: token_end,
+        replacement: suffix.strip_prefix(' ').unwrap_or(suffix).to_owned(),
+    })
+}
+
+fn remove_default(bytes: &[u8], item: &Node) -> Result<ByteEdit, ChangeError> {
+    let entry = item
+        .get_entry("default")
+        .ok_or(ChangeError::WriteBoundaryDenied)?;
+    if !matches!(entry.value.value, Value::Scalar(_)) {
+        let mut removal = plan_raw_member_replace(bytes, item, "default", "")?;
+        removal.replacement.clear();
+        return Ok(removal);
+    }
+    let start = line_start_at(bytes, entry.key_span.start.byte);
+    let token_end = default_scalar_end(bytes, &entry.value)?;
+    let end = content_end(
+        bytes,
+        line_start_at(bytes, token_end),
+        line_start_after(bytes, token_end),
+    );
+    if bytes[start..entry.key_span.start.byte]
+        .iter()
+        .any(|b| *b != b' ')
+        || bytes[token_end..end].contains(&b'#')
+        || previous_content_is_comment(bytes, start)
+    {
+        return Err(ChangeError::SourcePreservation {
+            subject: "default".to_owned(),
+            detail: "comment-adjacent",
+        });
+    }
+    Ok(ByteEdit {
+        start,
+        end,
+        replacement: String::new(),
+    })
+}
 
 /// One planned byte replacement over original document bytes.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -318,21 +498,11 @@ pub fn field_item_block(
     bytes: &[u8],
     definition: &Node,
     member: &str,
-    name: &str,
-    type_spelling: &str,
-    required: bool,
-    description: Option<&str>,
+    field: FieldSpec<'_>,
 ) -> Result<String, ChangeError> {
     let items = member_sequence(definition, member)?;
     let (anchor, _) = seq_anchor(bytes, items)?;
-    Ok(yaml_field_item(
-        bytes,
-        anchor,
-        name,
-        type_spelling,
-        required,
-        description,
-    ))
+    yaml_default_field_item(bytes, anchor, field)
 }
 
 /// Build the YAML block of one enum-case item at the anchor of the named
@@ -638,12 +808,12 @@ pub fn plan_member_sequence_replace(
     bytes: &[u8],
     definition: &Node,
     member: &str,
-    fields: &[(&str, &str, bool, Option<&str>)],
+    fields: &[FieldSpec<'_>],
 ) -> Result<Vec<ByteEdit>, ChangeError> {
     let items = member_sequence(definition, member)?;
-    // Decode the exact current member facts (the closed four-member field
-    // grammar; anything else refuses instead of being silently dropped).
-    let mut existing: Vec<(String, String, bool, Option<String>)> = Vec::with_capacity(items.len());
+    // Decode the exact current member facts, including successor defaults;
+    // anything else refuses instead of being silently dropped.
+    let mut existing: Vec<OwnedFieldSpec> = Vec::with_capacity(items.len());
     for item in items {
         let Value::Map(entries) = &item.value else {
             return Err(ChangeError::SourcePreservation {
@@ -655,6 +825,7 @@ pub fn plan_member_sequence_replace(
         let mut field_type = None;
         let mut required = false;
         let mut description = None;
+        let mut default = None;
         let mut extra = 0usize;
         for entry in entries {
             match entry.key.as_str() {
@@ -664,6 +835,15 @@ pub fn plan_member_sequence_replace(
                     required = matches!(entry.value.value, Value::Scalar(Scalar::Bool(true)))
                 }
                 "description" => description = entry.value.as_str().map(str::to_owned),
+                "default" => {
+                    let value = crate::ir::DefaultValue::from_node(&entry.value).ok_or(
+                        ChangeError::SourcePreservation {
+                            subject: member.to_owned(),
+                            detail: "field-default-literal",
+                        },
+                    )?;
+                    default = Some(value.as_json().clone());
+                }
                 _ => extra += 1,
             }
         }
@@ -679,16 +859,17 @@ pub fn plan_member_sequence_replace(
                 detail: "member-layout",
             });
         }
-        existing.push((name, field_type, required, description));
+        existing.push((name, field_type, required, description, default));
     }
-    let requested: Vec<(String, String, bool, Option<String>)> = fields
+    let requested: Vec<OwnedFieldSpec> = fields
         .iter()
-        .map(|(name, field_type, required, description)| {
+        .map(|(name, field_type, required, description, default)| {
             (
                 (*name).to_owned(),
                 (*field_type).to_owned(),
                 *required,
                 description.map(str::to_owned),
+                default.map(Literal::to_json_value),
             )
         })
         .collect();
@@ -730,13 +911,36 @@ pub fn plan_member_sequence_replace(
     // at the last kept item's end) resolves with the appended member
     // landing inside its item and the new item after it.
     let mut appended = Vec::new();
-    for (index, (name, field_type, required, description)) in existing.iter().enumerate() {
-        let Some((_, requested_type, requested_required, requested_description)) =
+    for (index, (name, field_type, required, description, default)) in existing.iter().enumerate() {
+        let Some((_, requested_type, requested_required, requested_description, requested_default)) =
             requested.iter().find(|(other, ..)| other == name)
         else {
             continue;
         };
         let item = &items[index];
+        if default != requested_default {
+            let indent = item
+                .get_entry("name")
+                .ok_or(ChangeError::WriteBoundaryDenied)?
+                .key_span
+                .start
+                .column
+                - 1;
+            let suffix = requested_default
+                .as_ref()
+                .map(|v| yaml_literal_suffix(v, indent, newline_before(bytes, bytes.len())))
+                .transpose()?;
+            match (default, suffix) {
+                (Some(_), Some(suffix)) => edits.push(replace_default(bytes, item, &suffix)?),
+                (Some(_), None) => {
+                    edits.push(remove_default(bytes, item)?);
+                }
+                (None, Some(suffix)) => {
+                    appended.push(plan_raw_member_append(bytes, item, "default", &suffix)?)
+                }
+                (None, None) => {}
+            }
+        }
         if field_type != requested_type {
             edits.push(replace_item_scalar(bytes, item, "type", requested_type)?);
         }
@@ -772,14 +976,14 @@ pub fn plan_member_sequence_replace(
     // end anchor (requested order preserved; comment-adjacent refusal
     // applies). An empty member (no items yet) cannot reach here — the
     // sequence exists because the member decodes.
-    let new_fields: Vec<&(String, String, bool, Option<String>)> = requested
+    let new_fields: Vec<&OwnedFieldSpec> = requested
         .iter()
         .filter(|(name, ..)| !existing.iter().any(|(other, ..)| other == name))
         .collect();
     if !new_fields.is_empty() {
         let (anchor, _) = seq_anchor(bytes, items)?;
         let mut block = String::new();
-        for (name, field_type, required, description) in new_fields {
+        for (name, field_type, required, description, default) in new_fields {
             block.push_str(&yaml_field_item(
                 bytes,
                 anchor,
@@ -788,6 +992,16 @@ pub fn plan_member_sequence_replace(
                 *required,
                 description.as_deref(),
             ));
+            if let Some(default) = default {
+                block.push_str(newline_before(bytes, bytes.len()));
+                block.push_str(&" ".repeat(anchor + 2));
+                block.push_str("default:");
+                block.push_str(&yaml_literal_suffix(
+                    default,
+                    anchor + 2,
+                    newline_before(bytes, bytes.len()),
+                )?);
+            }
         }
         edits.push(plan_seq_insert(bytes, definition, member, &block)?);
     }
@@ -965,38 +1179,27 @@ pub fn yaml_field_list(
     bytes: &[u8],
     anchor_column: usize,
     member: &str,
-    fields: &[(&str, &str, bool, Option<&str>)],
-) -> String {
-    let inner = " ".repeat(anchor_column + 2);
-    let item_indent = " ".repeat(anchor_column + 4);
-    let newline = newline_before(bytes, bytes.len());
-    let mut out = String::new();
-    out.push_str(newline);
-    out.push_str(&inner);
-    out.push_str(member);
-    out.push(':');
-    for (name, type_spelling, required, description) in fields {
-        out.push_str(newline);
-        out.push_str(&item_indent);
-        out.push_str("- name: ");
-        out.push_str(&quote_yaml(name));
-        out.push_str(newline);
-        out.push_str(&item_indent);
-        out.push_str("  type: ");
-        out.push_str(&quote_yaml(type_spelling));
-        if *required {
-            out.push_str(newline);
-            out.push_str(&item_indent);
-            out.push_str("  required: true");
-        }
-        if let Some(description) = description {
-            out.push_str(newline);
-            out.push_str(&item_indent);
-            out.push_str("  description: ");
-            out.push_str(&quote_yaml(description));
-        }
+    fields: &[FieldDecl],
+) -> Result<String, ChangeError> {
+    let mut out = format!(
+        "{}{}{member}:",
+        newline_before(bytes, bytes.len()),
+        " ".repeat(anchor_column + 2)
+    );
+    for field in fields {
+        out.push_str(&yaml_default_field_item(
+            bytes,
+            anchor_column + 4,
+            (
+                &field.name,
+                &field.r#type.to_spelling(),
+                field.required,
+                field.description.as_deref(),
+                field.default.as_ref(),
+            ),
+        )?);
     }
-    out
+    Ok(out)
 }
 
 /// The members block of one id-reference list (`effects`, `reads`,

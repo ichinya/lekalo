@@ -38,6 +38,7 @@
 
 pub mod canonical;
 pub mod decode;
+mod default_value;
 pub mod diagnostic;
 pub mod grammar;
 pub(crate) mod semantics;
@@ -77,6 +78,19 @@ pub struct CompiledProject {
 pub struct Compilation {
     pub project: CompiledProject,
     pub source_map: SourceMap,
+}
+
+impl CompiledProject {
+    /// Whether a legacy consumer would lose declared default semantics.
+    pub fn has_field_defaults(&self) -> bool {
+        self.definitions.iter().any(|definition| match definition {
+            Definition::Entity(d) => d.fields.iter().any(|f| f.default.is_some()),
+            Definition::ValueObject(d) => d.fields.iter().any(|f| f.default.is_some()),
+            Definition::Command(d) => d.input.iter().any(|f| f.default.is_some()),
+            Definition::Event(d) => d.payload.iter().any(|f| f.default.is_some()),
+            _ => false,
+        })
+    }
 }
 
 /// Compile the loader aggregate into typed IR.
@@ -278,7 +292,11 @@ pub struct Field {
     /// Present only as the exact literal `true` in source.
     pub required: bool,
     pub description: Option<Text>,
+    /// Typed JSON default; available only in the Model/IR 0.8.0 successor.
+    pub default: Option<DefaultValue>,
 }
+
+pub use default_value::DefaultValue;
 
 /// The closed type reference: a symbol reference, a list, or a nullable
 /// wrapper, at most [`MAX_TYPE_LEVELS`] deep including the leaf.

@@ -425,6 +425,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-errors.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-symbols.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-ownership.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-defaults.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-transactions.mjs
       - name: Run the versioned fix recipe contract and live CLI gates (issue #74)
         env:

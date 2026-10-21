@@ -26,6 +26,7 @@ pub(crate) struct FieldProjection {
     pub name: String,
     pub field_type: String,
     pub required: bool,
+    pub default: Option<String>,
 }
 
 /// One projected typed relation: the exact declared cardinality and
@@ -176,6 +177,10 @@ fn fields(fields: &[crate::ir::Field]) -> Vec<FieldProjection> {
             name: field.name.as_str().to_owned(),
             field_type: type_expression(&field.r#type),
             required: field.required,
+            default: field
+                .default
+                .as_ref()
+                .map(crate::ir::DefaultValue::canonical_json),
         })
         .collect();
     projected.sort();
@@ -491,6 +496,14 @@ fn payload_bytes(payload: &Payload) -> String {
 
 /// The canonical bytes of one projected field.
 fn field_bytes(field: &FieldProjection) -> String {
+    if let Some(default) = &field.default {
+        return format!(
+            "{{\"default\":{default},\"name\":{},\"required\":{},\"type\":{}}}",
+            super::canonical::quote(&field.name),
+            field.required,
+            super::canonical::quote(&field.field_type)
+        );
+    }
     format!(
         "{{\"name\":{},\"required\":{},\"type\":{}}}",
         super::canonical::quote(&field.name),

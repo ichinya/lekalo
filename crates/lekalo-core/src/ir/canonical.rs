@@ -482,6 +482,9 @@ impl TargetBindingDef {
 impl Field {
     fn write_json(&self) -> String {
         let mut fields: Vec<(&'static str, String)> = Vec::new();
+        if let Some(default) = &self.default {
+            fields.push(pair("default", default.canonical_json()));
+        }
         fields.extend(optional(
             "description",
             self.description.as_ref().map(text_value),

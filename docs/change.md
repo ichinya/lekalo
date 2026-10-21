@@ -44,16 +44,38 @@ unsupported 4); the implemented increments are `entity-field:add`,
 `binding:add`, `operation-error:set`, `symbol:move`, and `ownership:set` — every implemented verb has first-class CLI
 sugar that lowers to the same closed request DTO a request file
 carries, so sugar and JSON requests are byte-identical at the core.
-The remaining cataloged operations are explicit staged refusals
-pending their sealed executors (the deferral matrix below). Runtime
-decoding mirrors the
+Representation-specific refusals remain explicit in the deferral matrix
+below. Runtime decoding mirrors the
 published request schema exactly: an
 optional member a schema variant admits (for example `symbol:move`'s
 `toName`) decodes and reaches its registered executor —
-never an unknown-member rejection. Declared field defaults and enum
-wire values are decoded and refused explicitly at every
-field-consuming operation (`change.operation-unsupported`), never
-silently dropped from a committed declaration.
+never an unknown-member rejection. Field defaults are represented by the
+Model/IR **0.8.0** successor. Model 0.2.16 and enum wire values retain an
+explicit unsupported-member refusal rather than silently dropping intent.
+
+Defaults are admitted by every field writer: field addition, command input
+replacement, and new command/event declarations. The typed decoder checks
+the default against its declared scalar category, enum members, list or
+nullable wrapper, and closed entity/value-object fields. A default does not
+relax `required` presence. Literals have four levels, at most 64 array items,
+16 object members, 64-byte keys, 8192-byte strings and signed 64-bit integers;
+floating-point defaults are outside this bounded literal contract.
+Null and absence remain distinct in source and IR. Object keys canonicalize
+recursively; list order remains semantic. A change to an existing default
+produces `field.default-changed` with behavioral compatibility and SHA-256
+before/after summaries over its exact canonical literal, keeping even large
+defaults inside the closed diff-summary bound. Context Budget's contract
+facts include the default literal. OpenAPI carries it as a schema annotation
+without turning an optional field into a required field or vice versa.
+
+Source edits preserve unrelated bytes and unchanged defaults. The existing
+block-only YAML grammar cannot spell empty collections, so a requested empty
+collection refuses source planning; JSON Model/IR decoding can represent it.
+Ambiguous comments around a changed default refuse before mutation. These
+operations do not execute target generation or inject runtime fallback code.
+The frozen context-capsule, Module API, client SDK and managed-generation
+projections explicitly refuse defaults they cannot represent. Target adapters
+that accept only IR 0.2.16 retain their version refusal for this successor.
 
 ### Deferral matrix (P1 coverage scope)
 
@@ -508,6 +530,5 @@ receipt states, never envelope statuses.
 No automatic generated-target writes (run `lekalo generate --locked`
 separately), no arbitrary textual patching, no semantic module-ID
 renames, no distributed transactions, and no MCP server shipping claim
-in this increment. The remaining cataloged operations land in later
-increments and refuse with the registered unsupported outcome until
-then.
+in this increment. Remaining representation and relocation gaps are
+listed above and retain their registered unsupported outcomes.

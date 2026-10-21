@@ -315,6 +315,7 @@ fn baseline_kind(kind: ChangeKind, record: &ChangeRecord) -> Vec<CompatibilityCl
             _ => vec![Additive],
         },
         ChangeKind::TypeMemberAdded => vec![Behavioral],
+        ChangeKind::FieldDefaultChanged => vec![Behavioral],
         ChangeKind::TypeMemberRemoved => vec![SourceBreaking, DataLossRisk],
         ChangeKind::SignatureReadsChanged
         | ChangeKind::SignatureEffectsChanged

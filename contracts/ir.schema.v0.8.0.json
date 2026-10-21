@@ -123,6 +123,9 @@
         },
         "type": {
           "$ref": "#/$defs/typeExpression"
+        },
+        "default": {
+          "$ref": "#/$defs/defaultLiteral1"
         }
       }
     },
@@ -1133,6 +1136,141 @@
           "$ref": "#/$defs/definitionCommon/properties/visibility"
         }
       }
+    },
+    "defaultLiteral4": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        {
+          "type": "string",
+          "maxLength": 8192
+        },
+        {
+          "type": "array",
+          "maxItems": 0
+        },
+        {
+          "type": "object",
+          "maxProperties": 0
+        }
+      ]
+    },
+    "defaultLiteral3": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        {
+          "type": "string",
+          "maxLength": 8192
+        },
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/defaultLiteral4"
+          }
+        },
+        {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "maxLength": 64
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/defaultLiteral4"
+          }
+        }
+      ]
+    },
+    "defaultLiteral2": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        {
+          "type": "string",
+          "maxLength": 8192
+        },
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/defaultLiteral3"
+          }
+        },
+        {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "maxLength": 64
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/defaultLiteral3"
+          }
+        }
+      ]
+    },
+    "defaultLiteral1": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        {
+          "type": "string",
+          "maxLength": 8192
+        },
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/defaultLiteral2"
+          }
+        },
+        {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "maxLength": 64
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/defaultLiteral2"
+          }
+        }
+      ]
     }
   }
 }

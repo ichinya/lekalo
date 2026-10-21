@@ -31,6 +31,7 @@ pub enum ChangeKind {
     FieldAdded,
     FieldRemoved,
     FieldTypeChanged,
+    FieldDefaultChanged,
     FieldNullabilityChanged,
     FieldPresenceChanged,
     TypeShapeChanged,
@@ -75,6 +76,7 @@ impl ChangeKind {
             Self::FieldAdded => "field.added",
             Self::FieldRemoved => "field.removed",
             Self::FieldTypeChanged => "field.type-changed",
+            Self::FieldDefaultChanged => "field.default-changed",
             Self::FieldNullabilityChanged => "field.nullability-changed",
             Self::FieldPresenceChanged => "field.presence-changed",
             Self::TypeShapeChanged => "type.shape-changed",
@@ -109,7 +111,7 @@ impl ChangeKind {
 }
 
 /// Every kind in canonical (wire-spelling byte) order.
-pub const ALL: [ChangeKind; 38] = [
+pub const ALL: [ChangeKind; 39] = [
     ChangeKind::SymbolAdded,
     ChangeKind::SymbolRemoved,
     ChangeKind::SymbolRenamed,
@@ -124,6 +126,7 @@ pub const ALL: [ChangeKind; 38] = [
     ChangeKind::FieldAdded,
     ChangeKind::FieldRemoved,
     ChangeKind::FieldTypeChanged,
+    ChangeKind::FieldDefaultChanged,
     ChangeKind::FieldNullabilityChanged,
     ChangeKind::FieldPresenceChanged,
     ChangeKind::TypeShapeChanged,

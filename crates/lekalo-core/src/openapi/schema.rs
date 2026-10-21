@@ -213,7 +213,16 @@ impl<'a> SchemaMapper<'a> {
     /// One field schema with its declared description (G6: verbatim,
     /// present-tense metadata only).
     fn field_schema(&mut self, field: &Field) -> Json {
-        let schema = self.map_type(&field.r#type);
+        let mut schema = self.map_type(&field.r#type);
+        if field.default.is_some()
+            && self.version == DocumentVersion::V3_0
+            && schema.get("$ref").is_some()
+        {
+            schema = json!({"allOf": [schema]});
+        }
+        if let (Some(default), Json::Object(inner)) = (&field.default, &mut schema) {
+            inner.insert("default".to_owned(), default.as_json().clone());
+        }
         match &field.description {
             Some(description) => match schema {
                 Json::Object(mut inner) => {
@@ -345,7 +354,42 @@ mod tests {
             r#type: typeref,
             required,
             description: None,
+            default: None,
         }
+    }
+
+    #[test]
+    fn default_annotations_preserve_null_and_do_not_relax_required_fields() {
+        let project = fixture_project();
+        let mut mapper = SchemaMapper::new(&project, DocumentVersion::V3_1);
+        let mut nullable_field = field(
+            "name",
+            TypeRef::Optional(Box::new(TypeRef::Ref(crate::ir::SymbolId::of(
+                "planner.text",
+            )))),
+            true,
+        );
+        nullable_field.default = Some(crate::ir::DefaultValue::from_json(json!(null)).unwrap());
+        let schema = mapper.object_schema(&[nullable_field]);
+        assert_eq!(schema["required"], json!(["name"]));
+        assert!(schema["properties"]["name"]
+            .as_object()
+            .unwrap()
+            .contains_key("default"));
+        assert_eq!(schema["properties"]["name"]["default"], json!(null));
+        let mut field = field(
+            "title",
+            TypeRef::Ref(crate::ir::SymbolId::of("planner.text")),
+            false,
+        );
+        field.default = Some(crate::ir::DefaultValue::from_json(json!("hello")).unwrap());
+        let mut mapper = SchemaMapper::new(&project, DocumentVersion::V3_0);
+        let schema = mapper.object_schema(&[field]);
+        assert_eq!(schema["properties"]["title"]["default"], json!("hello"));
+        assert_eq!(
+            schema["properties"]["title"]["allOf"][0]["$ref"],
+            "#/components/schemas/PlannerText"
+        );
     }
 
     #[test]

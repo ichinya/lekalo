@@ -3171,7 +3171,7 @@
       "id": "contract:contracts/change-plan.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-plan.schema.v0.8.0.json",
-      "sourceDigest": "sha256:7bec9af4d5f6b544b3acaa3a203a97508d367f9af0de82bad6957571f1485fe7",
+      "sourceDigest": "sha256:c6fc9155270be028c9502836fc2d52eeddb8593ce5a3cf39634bb46c24dfc2e6",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3765,7 +3765,7 @@
       "id": "contract:contracts/ir.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/ir.schema.v0.8.0.json",
-      "sourceDigest": "sha256:a3a77a7bccb14cc596ead83a6a53c709895d5c8464866ca8f319dac0fe160483",
+      "sourceDigest": "sha256:dccce73eeb29cbdcb8648820bc688e09fffcb1c3ccfcd152e97069fceba3aa79",
       "owner": "docs/ir.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4062,7 +4062,7 @@
       "id": "contract:contracts/model.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/model.schema.v0.8.0.json",
-      "sourceDigest": "sha256:f811ce758c7eb0be88c08a7f52a1490b14482876dc2eec44581b3da958dc9ec6",
+      "sourceDigest": "sha256:e73a65ff5d3ab1926ccd459b9129199e41d7334c942bfec371f1d4e1aea257ff",
       "owner": "docs/model.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4674,7 +4674,7 @@
       "id": "contract:contracts/semantic-diff.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/semantic-diff.schema.v0.8.0.json",
-      "sourceDigest": "sha256:4a4caa560aef2f795dc4eddbc831192a525381bd2d7e6f3ffada26bc3cbe6778",
+      "sourceDigest": "sha256:d31b3ce1bacf79a449adcc94cdd38e1b6c62036f962a9fdfc90d0edb1574c108",
       "owner": "docs/semantic-diff.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

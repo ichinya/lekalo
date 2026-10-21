@@ -318,6 +318,7 @@
         "field.added",
         "field.removed",
         "field.type-changed",
+        "field.default-changed",
         "field.nullability-changed",
         "field.presence-changed",
         "type.shape-changed",

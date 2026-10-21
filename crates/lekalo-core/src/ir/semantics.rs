@@ -156,7 +156,96 @@ pub(crate) fn validate(compilation: &Compilation) -> Vec<crate::loader::error::D
             }
         }
     }
+    validate_defaults(compilation, &mut diagnostics);
     diagnostics
+}
+
+fn validate_defaults(
+    compilation: &Compilation,
+    diagnostics: &mut Vec<crate::loader::error::Diagnostic>,
+) {
+    let definitions: BTreeMap<_, _> = compilation
+        .project
+        .definitions
+        .iter()
+        .map(|d| (d.id().as_str(), d))
+        .collect();
+    fn matches_type(
+        value: &serde_json::Value,
+        typ: &TypeRef,
+        definitions: &BTreeMap<&str, &Definition>,
+        depth: usize,
+    ) -> bool {
+        if depth > 32 {
+            return false;
+        }
+        match typ {
+            TypeRef::Optional(inner) => {
+                value.is_null() || matches_type(value, inner, definitions, depth + 1)
+            }
+            TypeRef::List(inner) => value.as_array().is_some_and(|items| {
+                items
+                    .iter()
+                    .all(|v| matches_type(v, inner, definitions, depth + 1))
+            }),
+            TypeRef::Ref(id) => match definitions.get(id.as_str()) {
+                Some(Definition::Scalar(s)) => match s.base {
+                    super::ScalarBase::Boolean => value.is_boolean(),
+                    super::ScalarBase::Number => value.is_number(),
+                    _ => value.is_string(),
+                },
+                Some(Definition::Enum(e)) => value
+                    .as_str()
+                    .is_some_and(|v| e.values.iter().any(|case| case.value.as_str() == v)),
+                Some(Definition::Entity(e)) => {
+                    matches_fields(value, &e.fields, definitions, depth + 1)
+                }
+                Some(Definition::ValueObject(v)) => {
+                    matches_fields(value, &v.fields, definitions, depth + 1)
+                }
+                _ => false,
+            },
+        }
+    }
+    fn matches_fields(
+        value: &serde_json::Value,
+        fields: &[super::Field],
+        definitions: &BTreeMap<&str, &Definition>,
+        depth: usize,
+    ) -> bool {
+        let Some(object) = value.as_object() else {
+            return false;
+        };
+        object
+            .keys()
+            .all(|k| fields.iter().any(|f| f.name.as_str() == k))
+            && fields
+                .iter()
+                .all(|field| match object.get(field.name.as_str()) {
+                    Some(value) => matches_type(value, &field.r#type, definitions, depth + 1),
+                    None => !field.required,
+                })
+    }
+    for definition in &compilation.project.definitions {
+        let fields = match definition {
+            Definition::Entity(d) => &d.fields,
+            Definition::ValueObject(d) => &d.fields,
+            Definition::Command(d) => &d.input,
+            Definition::Event(d) => &d.payload,
+            _ => continue,
+        };
+        for field in fields {
+            if let Some(default) = &field.default {
+                if !matches_type(default.as_json(), &field.r#type, &definitions, 0) {
+                    diagnostics.push(defect(
+                        definition_span(compilation, definition.id().as_str()),
+                        "field-default-type-mismatch",
+                        field.name.as_str(),
+                    ));
+                }
+            }
+        }
+    }
 }
 
 /// The unique-constraint surface re-exported for the typed signature.

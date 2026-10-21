@@ -14,6 +14,9 @@ fn copy_dir(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).expect("create target");
     for entry in std::fs::read_dir(from).expect("read source") {
         let entry = entry.expect("entry");
+        if entry.file_name() == ".lekalo" {
+            continue;
+        }
         let target = to.join(entry.file_name());
         if entry.file_type().expect("type").is_dir() {
             copy_dir(&entry.path(), &target);

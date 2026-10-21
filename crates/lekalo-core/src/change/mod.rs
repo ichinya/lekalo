@@ -506,7 +506,7 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
                 binding::require_target(&root, target)?;
             }
         }
-        let mut row = resolve_operation(&documents, operation)?;
+        let mut row = resolve_operation(&documents, operation, load.model.model_version)?;
         row.operation = requested.operation().to_owned();
         if let Operation::Lowered { wire, .. } = requested {
             row.detail = wire.get("step").and_then(Json::as_str).map(str::to_owned);
@@ -545,7 +545,7 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
             None
         };
         // The typed tree edit advances the semantic candidate.
-        apply_tree_edit(&mut documents, operation)?;
+        apply_tree_edit(&mut documents, operation, load.model.model_version)?;
         // The byte edit is planned against the file's evolving prospective
         // bytes, re-decoded so spans match exactly what earlier operations
         // in this batch already wrote.
@@ -559,7 +559,7 @@ pub fn prepare(options: &PrepareOptions) -> Result<PreparedChange, ChangeError> 
             // The whole kind-home document is new: synthesize its exact
             // bytes (header + the one definition block) — no byte edit is
             // planned against a nonexistent anchor.
-            let bytes = synthesize_kind_home_bytes(operation, &home)?;
+            let bytes = synthesize_kind_home_bytes(operation, load.model.model_version)?;
             match prospective.iter_mut().find(|(planned, _)| planned == &home) {
                 Some((_, target)) => *target = bytes,
                 None => prospective.push((home.clone(), bytes)),
@@ -1576,6 +1576,7 @@ fn stored_receipt(record: &HistoryRecord) -> Result<Receipt, ChangeError> {
 fn resolve_operation(
     documents: &[LoadedDocument],
     operation: &Operation,
+    version: crate::loader::ModelVersion,
 ) -> Result<ResolvedOperation, ChangeError> {
     let (subject, supported) = match operation {
         Operation::EntityFieldAdd { entity, field } => {
@@ -1587,7 +1588,7 @@ fn resolve_operation(
                     detail: "field-duplicate",
                 });
             }
-            if field.default.is_some() {
+            if field.default.is_some() && version != crate::loader::ModelVersion::Successor {
                 return Err(ChangeError::UnsupportedMember {
                     operation: operation.operation().to_owned(),
                     member: "field-default",
@@ -1686,15 +1687,14 @@ fn resolve_operation(
                 });
             }
             definition_decl_members_fit_kind(kind, definition)?;
-            // Declared defaults are refused consistently at every
-            // field-consuming operation (round 3, finding 13): they need
-            // the reviewed Model/IR successor and are never silently
-            // discarded from a committed declaration.
+            // Defaults require the Model/IR successor at every field
+            // writer; the predecessor never silently discards intent.
             if definition
                 .input
                 .iter()
                 .chain(definition.payload.iter())
                 .any(|field| field.default.is_some())
+                && version != crate::loader::ModelVersion::Successor
             {
                 return Err(ChangeError::UnsupportedMember {
                     operation: operation.operation().to_owned(),
@@ -1808,13 +1808,11 @@ fn resolve_operation(
                     });
                 }
             }
-            // Declared defaults are refused consistently at every
-            // field-consuming operation (round 3, finding 13): an
-            // accepted signature update must carry exactly the requested
-            // semantics — a default this implementation cannot represent
-            // is an explicit unsupported member, never a silently dropped
-            // declaration that still commits.
-            if input.iter().any(|field| field.default.is_some()) {
+            // The predecessor cannot represent defaults. Successor
+            // signature writes carry the exact typed requested literal.
+            if input.iter().any(|field| field.default.is_some())
+                && version != crate::loader::ModelVersion::Successor
+            {
                 return Err(ChangeError::UnsupportedMember {
                     operation: operation.operation().to_owned(),
                     member: "field-default",
@@ -2137,6 +2135,7 @@ fn definition_member_exists(node: &Node, member: &str, name: &str) -> bool {
 fn apply_tree_edit(
     documents: &mut Vec<LoadedDocument>,
     operation: &Operation,
+    version: crate::loader::ModelVersion,
 ) -> Result<(), ChangeError> {
     // `definition:add` targets the declaring module's document and pushes
     // a whole new definition; every other operation mutates one existing
@@ -2174,9 +2173,7 @@ fn apply_tree_edit(
                     document: crate::loader::Document {
                         path: home,
                         kind: crate::loader::DocKind::Symbol,
-                        version: crate::loader::project_docs::ModelVersion::Current
-                            .as_str()
-                            .to_owned(),
+                        version: version.as_str().to_owned(),
                         version_span: placeholder_span(),
                         definitions: vec![crate::loader::project_docs::Definition {
                             id,
@@ -2460,6 +2457,13 @@ fn replace_member_sequence(
                 value: Node::scalar(Scalar::Bool(true), span),
             });
         }
+        if let Some(default) = &field.default {
+            entries.push(MapEntry {
+                key: "default".to_owned(),
+                key_span: span,
+                value: literal_node(default, span),
+            });
+        }
         if let Some(description) = &field.description {
             entries.push(MapEntry {
                 key: "description".to_owned(),
@@ -2541,6 +2545,13 @@ fn synthesized_definition_node(
                 ];
                 if field.required {
                     entries.push(entry("required", Node::scalar(Scalar::Bool(true), span)));
+                }
+                if let Some(default) = &field.default {
+                    entries.push(MapEntry {
+                        key: "default".to_owned(),
+                        key_span: span,
+                        value: literal_node(default, span),
+                    });
                 }
                 if let Some(description) = &field.description {
                     entries.push(entry(
@@ -2678,6 +2689,27 @@ fn placeholder_span() -> Span {
     )
 }
 
+fn literal_node(literal: &request::Literal, span: Span) -> Node {
+    use request::Literal;
+    let value = match literal {
+        Literal::Null => Value::Scalar(Scalar::Null),
+        Literal::Bool(v) => Value::Scalar(Scalar::Bool(*v)),
+        Literal::Int(v) => Value::Scalar(Scalar::Int((*v).into())),
+        Literal::Str(v) => Value::Scalar(Scalar::Str(v.clone())),
+        Literal::Seq(v) => Value::Seq(v.iter().map(|v| literal_node(v, span)).collect()),
+        Literal::Map(v) => Value::Map(
+            v.iter()
+                .map(|(k, v)| MapEntry {
+                    key: k.clone(),
+                    key_span: span,
+                    value: literal_node(v, span),
+                })
+                .collect(),
+        ),
+    };
+    Node { span, value }
+}
+
 /// Push one synthesized field item into the member sequence.
 fn push_member_item(
     node: &mut Node,
@@ -2702,6 +2734,13 @@ fn push_member_item(
             key: "required".to_owned(),
             key_span: span,
             value: Node::scalar(Scalar::Bool(true), span),
+        });
+    }
+    if let Some(default) = &field.default {
+        entries.push(MapEntry {
+            key: "default".to_owned(),
+            key_span: span,
+            value: literal_node(default, span),
         });
     }
     if let Some(description) = &field.description {
@@ -2895,10 +2934,13 @@ fn plan_source_edits(
                 bytes,
                 node,
                 "fields",
-                &field.name,
-                &field.r#type.to_spelling(),
-                field.required,
-                field.description.as_deref(),
+                (
+                    &field.name,
+                    &field.r#type.to_spelling(),
+                    field.required,
+                    field.description.as_deref(),
+                    field.default.as_ref(),
+                ),
             )?;
             vec![edit::plan_seq_insert(bytes, node, "fields", &item)?]
         }
@@ -3009,14 +3051,17 @@ fn plan_source_edits(
             )?]
         }
         Operation::OperationInputSet { input, .. } => {
-            let fields: Vec<(&str, &str, bool, Option<&str>)> = input
+            let spellings: Vec<_> = input.iter().map(|f| f.r#type.to_spelling()).collect();
+            let fields: Vec<edit::FieldSpec<'_>> = input
                 .iter()
-                .map(|field| {
+                .zip(&spellings)
+                .map(|(field, spelling)| {
                     (
                         field.name.as_str(),
-                        Box::leak(field.r#type.to_spelling().into_boxed_str()) as &str,
+                        spelling.as_str(),
                         field.required,
                         field.description.as_deref(),
+                        field.default.as_ref(),
                     )
                 })
                 .collect();
@@ -3063,7 +3108,10 @@ fn plan_source_edits(
 /// block at the canonical two-space dash indentation. The bytes must
 /// re-decode to exactly the synthesized tree node — the reparse check
 /// enforces it.
-fn synthesize_kind_home_bytes(operation: &Operation, _home: &str) -> Result<Vec<u8>, ChangeError> {
+fn synthesize_kind_home_bytes(
+    operation: &Operation,
+    version: crate::loader::ModelVersion,
+) -> Result<Vec<u8>, ChangeError> {
     let Operation::DefinitionAdd {
         kind,
         module,
@@ -3085,7 +3133,7 @@ fn synthesize_kind_home_bytes(operation: &Operation, _home: &str) -> Result<Vec<
         declaration.description.as_deref(),
         &members,
     );
-    let mut text = String::from("schema_version: \"0.2.16\"\ndefinitions:");
+    let mut text = format!("schema_version: \"{}\"\ndefinitions:", version.as_str());
     text.push_str(&item);
     text.push('\n');
     Ok(text.into_bytes())
@@ -3099,18 +3147,6 @@ fn definition_members_block(
     kind: &str,
     declaration: &request::DefinitionDecl,
 ) -> Result<String, ChangeError> {
-    fn field_tuples(list: &[request::FieldDecl]) -> Vec<(&str, &str, bool, Option<&str>)> {
-        list.iter()
-            .map(|field| {
-                (
-                    field.name.as_str(),
-                    Box::leak(field.r#type.to_spelling().into_boxed_str()) as &str,
-                    field.required,
-                    field.description.as_deref(),
-                )
-            })
-            .collect()
-    }
     fn ids(list: &[String]) -> Vec<&str> {
         list.iter().map(|id| id.as_str()).collect()
     }
@@ -3137,8 +3173,8 @@ fn definition_members_block(
                     bytes,
                     anchor_column,
                     "input",
-                    &field_tuples(&declaration.input),
-                ));
+                    &declaration.input,
+                )?);
             }
             if !declaration.effects.is_empty() {
                 block.push_str(&edit::yaml_id_list(
@@ -3176,8 +3212,8 @@ fn definition_members_block(
                     bytes,
                     anchor_column,
                     "payload",
-                    &field_tuples(&declaration.payload),
-                ));
+                    &declaration.payload,
+                )?);
             }
             block
         }

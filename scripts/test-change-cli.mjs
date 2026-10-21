@@ -64,7 +64,7 @@ const requestValidate = ajv.compile(readJson("contracts/change-request.schema.v0
 const sandbox = join(tmpdir(), `lekalo-change-gate-${process.pid}`);
 rmSync(sandbox, { recursive: true, force: true });
 mkdirSync(sandbox, { recursive: true });
-cpSync(join(root, "tests/fixtures/change/field-vertical"), sandbox, { recursive: true });
+cpSync(join(root, "tests/fixtures/change/field-vertical"), sandbox, { recursive: true, filter: path => !/[\\/]\.lekalo$/.test(path) });
 
 let step = 0;
 function run(args) {

@@ -65,6 +65,11 @@ pub fn plan(
     compilation: &Compilation,
 ) -> Result<Capsule, DiagnosticSet> {
     let project = &compilation.project;
+    if project.has_field_defaults() {
+        return Err(diagnostic::input_invalid_set(
+            "field-default-contract-unsupported",
+        ));
+    }
     let graph = crate::graph::build(project)?;
     let effects = crate::effects::build(project)?;
     let inner = select::plan(

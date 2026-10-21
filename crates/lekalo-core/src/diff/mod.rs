@@ -1003,6 +1003,34 @@ fn diff_fields(
                         reasons,
                     ));
                 }
+                if base_field.default != candidate_field.default {
+                    changes.push(ChangeRecord::assemble(
+                        ChangeKind::FieldDefaultChanged,
+                        Side::Both,
+                        field_member(subject, name),
+                        base_field
+                            .default
+                            .as_ref()
+                            .map(|value| {
+                                Summary::Text(format!(
+                                    "sha256:{}",
+                                    crate::digest::sha256_hex(value.as_bytes())
+                                ))
+                            })
+                            .unwrap_or(Summary::None),
+                        candidate_field
+                            .default
+                            .as_ref()
+                            .map(|value| {
+                                Summary::Text(format!(
+                                    "sha256:{}",
+                                    crate::digest::sha256_hex(value.as_bytes())
+                                ))
+                            })
+                            .unwrap_or(Summary::None),
+                        vec![reason::kind_reason(ChangeKind::FieldDefaultChanged.key())],
+                    ));
+                }
                 if base_field.required != candidate_field.required {
                     changes.push(ChangeRecord::assemble(
                         ChangeKind::FieldPresenceChanged,
@@ -1084,6 +1112,34 @@ fn diff_input(
                         vec![reason::kind_reason(
                             ChangeKind::SignatureInputTypeChanged.key(),
                         )],
+                    ));
+                }
+                if base_field.default != candidate_field.default {
+                    changes.push(ChangeRecord::assemble(
+                        ChangeKind::FieldDefaultChanged,
+                        Side::Both,
+                        field_member(subject, name),
+                        base_field
+                            .default
+                            .as_ref()
+                            .map(|value| {
+                                Summary::Text(format!(
+                                    "sha256:{}",
+                                    crate::digest::sha256_hex(value.as_bytes())
+                                ))
+                            })
+                            .unwrap_or(Summary::None),
+                        candidate_field
+                            .default
+                            .as_ref()
+                            .map(|value| {
+                                Summary::Text(format!(
+                                    "sha256:{}",
+                                    crate::digest::sha256_hex(value.as_bytes())
+                                ))
+                            })
+                            .unwrap_or(Summary::None),
+                        vec![reason::kind_reason(ChangeKind::FieldDefaultChanged.key())],
                     ));
                 }
                 if base_field.required != candidate_field.required {
