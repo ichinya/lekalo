@@ -266,11 +266,22 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --yes bubblewrap apparmor-profiles
-          # Ubuntu restricts unprivileged namespace setup unless the
-          # distribution's dedicated Bubblewrap profile is loaded.
-          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
-          /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/true
+          sudo apt-get install --yes bubblewrap
+      - name: Load the CI-only AppArmor launcher prerequisite
+        if: runner.os == 'Linux'
+        id: apparmor
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          test "$GITHUB_ACTIONS" = true
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          if sudo grep -Eq '^lekalo-ci-bwrap(-child)? ' /sys/kernel/security/apparmor/profiles; then
+            exit 1
+          fi
+          sudo apparmor_parser --skip-cache --add .github/ci/bwrap.apparmor
+      - name: Verify the Linux namespace backend before adapter probes
+        if: runner.os == 'Linux'
+        run: /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/true
       - run: cargo build --workspace --locked
       - name: Run read-only watch native and poll probes (issue #95)
         id: watch
@@ -546,18 +557,6 @@ jobs:
         run: node scripts/test-privacy-leak-corpus.mjs
       - name: Run the classification CLI e2e gate (issue #87)
         run: node scripts/test-classification-cli.mjs
-      - name: Load the CI-only AppArmor launcher prerequisite
-        if: runner.os == 'Linux'
-        id: apparmor
-        timeout-minutes: 1
-        run: |
-          set -euo pipefail
-          test "$GITHUB_ACTIONS" = true
-          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
-          if sudo grep -Eq '^lekalo-ci-bwrap(-child)? ' /sys/kernel/security/apparmor/profiles; then
-            exit 1
-          fi
-          sudo apparmor_parser --skip-cache --add .github/ci/bwrap.apparmor
       - name: Qualify confined Unix execution and denied host paths
         if: runner.os != 'Windows'
         timeout-minutes: 3
