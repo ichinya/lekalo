@@ -43,13 +43,20 @@ const cleanupIndex = blocks.findIndex((lines) => lines.some((line) => line.start
 if (cleanupIndex < 0 || cleanupIndex !== blocks.length - 1) fail("cleanup-block-missing");
 rmSync(join(root, ".adoption-tutorial"), { recursive: true, force: true });
 
-const binDir = dirname(BINARY);
-const env = { ...process.env, PATH: `${binDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH}` };
+// A Windows environment can expose Path while this harness adds PATH.
+// Keep exactly one spelling so the spawned shell cannot retain a global CLI.
+const env = { ...process.env };
+for (const key of Object.keys(env)) if (key.toLowerCase() === "path") delete env[key];
 let cwd = root;
 let blockSeq = 0;
 const scriptDir = join(root, "target", "adoption-tutorial-scripts");
 rmSync(scriptDir, { recursive: true, force: true });
 mkdirSync(scriptDir, { recursive: true });
+// Pin the executable, including when target/debug also contains an artifact
+// for another OS. The document still invokes its literal `lekalo` commands.
+const shellQuote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+writeFileSync(join(scriptDir, "lekalo"), `#!/bin/sh\nexec ${shellQuote(BINARY.replaceAll("\\", "/"))} "$@"\n`, { mode: 0o755 });
+env.PATH = `${scriptDir}${process.platform === "win32" ? ";" : ":"}${process.env.PATH}`;
 const runBlocks = (from, upto) => {
   for (let index = from; index < upto; index += 1) {
     let current = [];
