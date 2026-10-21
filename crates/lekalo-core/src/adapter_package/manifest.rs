@@ -1010,15 +1010,12 @@ mod committed_exemplar_tests {
             .expect("the committed adapter manifest must parse");
         assert_eq!(document.adapter_id(), "lekalo-target-node-typescript");
         assert_eq!(document.adapter_version().as_str(), "0.4.0");
-        // Issues #115 and #116 share this bundle: the merged tree
-        // carries the Hono framework-provider modules and the Drizzle
-        // evidence extraction with all review fixes, so the committed
-        // artifact bytes (and with them the canonical package digest)
-        // change; the exemplar guard keeps the manifest bound to the
-        // exact committed bytes.
+        // The Drizzle 0.45.4 security update changes the embedded
+        // declaration closure. Keep the exemplar bound to the package
+        // digest independently verified by test-adapter-manifest-golden.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:bb0459dd683b0d5f0763ead0769f87a3006df4a0d17eeaa7dc7ba6a2fbd59275"
+            "sha256:6a2244b188b769920284d78da1c79885caa8835b5d54c948c78ee62877256f6e"
         );
     }
 

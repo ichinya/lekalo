@@ -96,9 +96,9 @@ export function attachments(env) {
 export function golden(name,value,update) {
   const family=['report','evidence','config','waivers','comparison'].find(f=>name===f||name.startsWith(f+'-'));
   const legacyPath=family?join(root,'tests/fixtures',`ai-lint-${family}`,'golden',name+'.json'):join(fixture,'golden',name+'.json');
-  // M8 upgrades the PHP producer identity and artifact while its evidence
-  // wire stays frozen. Retain the predecessor receipt as a schema vector.
-  const m8Adapter=product==='0.8.0'&&name==='adapter-php-laravel';
+  // M8 upgrades the PHP producer and the Node declaration closure while
+  // the evidence wire stays frozen. Preserve both predecessor receipts.
+  const m8Adapter=product==='0.8.0'&&['adapter-php-laravel','adapter-node-typescript'].includes(name);
   const qualified=m8Adapter||(productPinnedGoldens.has(name)&&(product==='0.6.5'||product==='0.8.0'));
   const path=qualified?legacyPath.replace(/\.json$/,`.product-${product}.json`):legacyPath;
   if(qualified) schema(m8Adapter?'evidence':family,JSON.parse(readFileSync(legacyPath,'utf8')));
