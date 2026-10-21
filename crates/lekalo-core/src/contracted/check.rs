@@ -338,7 +338,19 @@ pub(super) fn canonical_members(project: &CompiledProject, id: &str) -> Option<C
             reads.dedup();
             CanonicalMembers {
                 signature: Some(SignatureEvidence {
-                    inputs: Vec::new(),
+                    inputs: {
+                        let mut inputs: Vec<_> = query
+                            .input
+                            .iter()
+                            .map(|field| SignatureField {
+                                name: field.name.as_str().to_owned(),
+                                r#type: render_type(&field.r#type),
+                                required: field.required,
+                            })
+                            .collect();
+                        inputs.sort_by(|a, b| a.name.cmp(&b.name));
+                        inputs
+                    },
                     output: query.returns.as_ref().map(render_type),
                     reads,
                 }),

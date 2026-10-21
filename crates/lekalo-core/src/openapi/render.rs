@@ -86,6 +86,12 @@ pub fn render(
     context: &ValidationContext<'_>,
     config: &RenderConfig,
 ) -> Result<OpenApiDocument, DiagnosticSet> {
+    if context.project.has_query_inputs() {
+        return Err(diagnostic::version_unsupported(
+            "query-input-contract",
+            "0.8.0",
+        ));
+    }
     let version = config.version;
     if document.endpoints().len() > MAX_OPERATIONS {
         return Err(diagnostic::export_limit_set(MAX_OPERATIONS));

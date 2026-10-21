@@ -390,6 +390,10 @@ impl CommandDef {
 impl QueryDef {
     fn write_json(&self) -> String {
         let mut fields = self.common.fields();
+        fields.extend(present_list(
+            "input",
+            array(self.input.iter().map(Field::write_json)),
+        ));
         fields.push(pair("id", symbol(&self.id)));
         fields.push(pair("kind", literal("query")));
         fields.push(pair(

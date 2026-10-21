@@ -231,6 +231,13 @@ fn contract_section(definition: &Definition, limits: &InspectLimits) -> Contract
                 .get(limits.section_items)
                 .map(|field| field.name.as_str().to_owned()),
         ),
+        Definition::Query(query) => (
+            query.input.len(),
+            query
+                .input
+                .get(limits.section_items)
+                .map(|field| field.name.as_str().to_owned()),
+        ),
         Definition::Event(event) => (
             event.payload.len(),
             event
@@ -269,6 +276,7 @@ fn contract_section(definition: &Definition, limits: &InspectLimits) -> Contract
             input: fields_projection(&command.input, limits),
         },
         Definition::Query(query) => ContractBody::Query {
+            input: fields_projection(&query.input, limits),
             reads: query
                 .reads
                 .iter()

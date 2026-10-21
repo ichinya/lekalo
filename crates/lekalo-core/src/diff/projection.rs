@@ -84,6 +84,7 @@ pub(crate) enum Payload {
         effects: Vec<String>,
     },
     Query {
+        input: Vec<FieldProjection>,
         reads: Vec<String>,
         returns: Option<String>,
     },
@@ -307,6 +308,7 @@ pub(crate) fn project(compiled: &CompiledProject) -> Result<Projection, usize> {
                 ),
             },
             Definition::Query(def) => Payload::Query {
+                input: fields(&def.input),
                 reads: sorted(
                     def.reads
                         .iter()
@@ -468,14 +470,24 @@ fn payload_bytes(payload: &Payload) -> String {
             string_array(effects),
             field_array(input)
         ),
-        Payload::Query { reads, returns } => format!(
-            "{{\"kind\":\"query\",\"reads\":{},\"returns\":{}}}",
-            string_array(reads),
-            match returns {
-                Some(expression) => super::canonical::quote(expression),
-                None => "null".to_owned(),
+        Payload::Query {
+            input,
+            reads,
+            returns,
+        } => {
+            let mut body = format!(
+                "{{\"kind\":\"query\",\"reads\":{},\"returns\":{}}}",
+                string_array(reads),
+                match returns {
+                    Some(expression) => super::canonical::quote(expression),
+                    None => "null".to_owned(),
+                }
+            );
+            if !input.is_empty() {
+                body.insert_str(1, &format!("\"input\":{},", field_array(input)));
             }
-        ),
+            body
+        }
         Payload::Policy {
             applies_to,
             decision,
@@ -675,7 +687,14 @@ pub(crate) fn substitute_references(projection: &mut Projection, from: &str, to:
                 }
                 substitute_slice(effects, from, to);
             }
-            Payload::Query { reads, returns } => {
+            Payload::Query {
+                input,
+                reads,
+                returns,
+            } => {
+                for field in input {
+                    field.field_type = substitute_expression(&field.field_type, from, to);
+                }
                 substitute_slice(reads, from, to);
                 if let Some(expression) = returns {
                     *expression = substitute_expression(expression, from, to);

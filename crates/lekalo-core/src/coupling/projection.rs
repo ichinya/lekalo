@@ -22,6 +22,7 @@ pub fn fields(d: &Definition) -> &[Field] {
         Definition::Entity(v) => &v.fields,
         Definition::ValueObject(v) => &v.fields,
         Definition::Command(v) => &v.input,
+        Definition::Query(v) => &v.input,
         Definition::Event(v) => &v.payload,
         _ => &[],
     }

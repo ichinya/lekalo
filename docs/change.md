@@ -53,8 +53,8 @@ never an unknown-member rejection. Field defaults are represented by the
 Model/IR **0.8.0** successor, as are explicit enum wire values. Model 0.2.16
 retains an explicit unsupported-member refusal for both features.
 
-Defaults are admitted by every field writer: field addition, command input
-replacement, and new command/event declarations. The typed decoder checks
+Defaults are admitted by every field writer: field addition, command/query
+input replacement, and new command/query/event declarations. The typed decoder checks
 the default against its declared scalar category, enum members, list or
 nullable wrapper, and closed entity/value-object fields. A default does not
 relax `required` presence. Literals have four levels, at most 64 array items,
@@ -90,6 +90,21 @@ canonical-literal digests. OpenAPI preserves the actual JSON enum values.
 The frozen projections listed above refuse explicit encodings they cannot
 represent. Symbol relocation rewrites typed references, leaving wire literals
 and default data unchanged; Model 0.8.0 symbol rename history is supported.
+
+`operation-input:set` supports command inputs and Model 0.8.0 query inputs;
+`definition:add --kind query --input-json ...` carries the same field grammar.
+The first input list is appended with a proven source boundary; an empty
+replacement removes the member, subject to the same comment-ownership proof.
+An unchanged list leaves its source bytes untouched. Query input types resolve
+under shared validation and add `accepts` graph edges with the successor
+`query-input` role. Input changes use the existing `signature.input-*` taxonomy;
+defaults also produce `field.default-changed`. Inspect and Context Budget
+include the input fields, and portability dependencies include their types.
+The predecessor refuses query inputs. Context capsules, Module API exports,
+client SDK and managed generation, coupling reports, reference execution and
+the older query-model/HTTP projections explicitly refuse query inputs until
+their parameter contracts can represent them. No implicit join between
+query-model parameters and Model inputs is invented.
 
 ### Deferral matrix (P1 coverage scope)
 

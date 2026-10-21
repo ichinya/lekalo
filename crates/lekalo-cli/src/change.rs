@@ -381,7 +381,7 @@ pub(crate) struct CommandEffectArgs {
 /// one typed JSON array of field declarations.
 #[derive(Debug, Args)]
 pub(crate) struct OperationInputArgs {
-    /// The semantic id of the command whose input is replaced.
+    /// The semantic id of the command or Model 0.8.0 query whose input is replaced.
     #[arg(long = "operation", value_name = "ID")]
     operation_target: String,
     /// Typed JSON array of the complete new input field declarations.

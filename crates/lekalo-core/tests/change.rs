@@ -3659,6 +3659,159 @@ fn defaults_request(operations: serde_json::Value) -> Vec<u8> {
     serde_json::to_vec(&serde_json::json!({ "schemaVersion": "lekalo/change-request/v0.8.0", "operations": operations })).unwrap()
 }
 
+fn query_inputs_request(input: serde_json::Value) -> Vec<u8> {
+    defaults_request(serde_json::json!([{
+        "operation":"operation-input:set", "operationTarget":"tasks.list",
+        "definition":{"input":input}
+    }]))
+}
+
+#[test]
+fn successor_query_inputs_have_typed_edges_defaults_and_lossless_signature_changes() {
+    let sandbox = Sandbox::new("query-inputs");
+    enable_default_successor(&sandbox);
+    let path = sandbox.root.join("lekalo/modules/tasks/queries.yaml");
+    let source = "schema_version: \"0.8.0\"\r\ndefinitions:\r\n  - id: tasks.list\r\n    kind: query\r\n    version: 1\r\n    reads:\r\n      - tasks.task\r\n    returns: tasks.task # keep query comment";
+    std::fs::write(&path, source).unwrap();
+    let entities = sandbox.entities_bytes();
+    let input =
+        serde_json::json!([{"name":"search", "type":{"ref":"tasks.text"}, "default":"tasks.text"}]);
+    let request = query_inputs_request(input.clone());
+    let preview = prepare(&sandbox, &request).unwrap();
+    let plan: serde_json::Value = serde_json::from_str(&preview.to_json_string().unwrap()).unwrap();
+    assert!(plan["semanticDiff"]["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|c| c["kind"] == "signature.input-added"));
+    assert_eq!(std::fs::read(&path).unwrap(), source.as_bytes());
+    apply_request(&sandbox, &request, "query-inputs-add", false).unwrap();
+    let after = std::fs::read_to_string(&path).unwrap();
+    assert!(after.contains("returns: tasks.task # keep query comment\r\n"));
+    assert!(!after.ends_with('\n'));
+    assert!(!after.replace("\r\n", "").contains('\n'));
+    let compilation = compiled_sandbox(&sandbox);
+    let ir: serde_json::Value =
+        serde_json::from_str(&compilation.project.to_canonical_json()).unwrap();
+    let query = ir["definitions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == "tasks.list")
+        .unwrap();
+    assert_eq!(query["input"][0]["default"], "tasks.text");
+    let graph = lekalo_core::graph::build(&compilation.project).unwrap();
+    let graph_json = graph.to_canonical_json().unwrap();
+    assert!(graph_json.contains("query-input"));
+    assert!(graph_json.contains("accepts"));
+    let noop = prepare(&sandbox, &request).unwrap();
+    let noop: serde_json::Value = serde_json::from_str(&noop.to_json_string().unwrap()).unwrap();
+    assert_eq!(noop["equal"], true);
+    assert!(noop["fileEdits"].as_array().unwrap().is_empty());
+    for input in [
+        serde_json::json!([{"name":"bad", "type":{"ref":"tasks.text"}, "default":true}]),
+        serde_json::json!([{"name":"bad", "type":{"ref":"tasks.ghost"}}]),
+    ] {
+        assert!(prepare(&sandbox, &query_inputs_request(input)).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), after);
+    }
+    let rename = defaults_request(
+        serde_json::json!([{"operation":"symbol:move", "symbol":"tasks.text", "toModule":"tasks", "toName":"label"}]),
+    );
+    apply_request(&sandbox, &rename, "query-input-rename", true).unwrap();
+    let moved = std::fs::read_to_string(&path).unwrap();
+    assert!(moved.contains("type: \"tasks.label\""));
+    assert!(moved.contains("default: \"tasks.text\""));
+    assert_ne!(sandbox.entities_bytes(), entities);
+    let clear = query_inputs_request(serde_json::json!([]));
+    apply_request_opts(
+        &sandbox,
+        &clear,
+        "query-input-clear",
+        true,
+        Some(evidence_policy()),
+    )
+    .unwrap();
+    assert!(!std::fs::read_to_string(&path).unwrap().contains("input:"));
+    assert!(!compiled_sandbox(&sandbox).project.has_query_inputs());
+}
+
+fn compiled_sandbox(sandbox: &Sandbox) -> lekalo_core::ir::Compilation {
+    let loaded = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+    lekalo_core::ir::compile(&loaded).unwrap()
+}
+
+#[test]
+fn query_input_type_and_description_edits_preserve_inline_comments_and_quoted_apostrophes() {
+    let sandbox = Sandbox::new("query-input-trivia");
+    enable_default_successor(&sandbox);
+    let path = sandbox.root.join("lekalo/modules/tasks/queries.yaml");
+    std::fs::write(&path, "schema_version: \"0.8.0\"\r\ndefinitions:\r\n  - id: tasks.list\r\n    kind: query\r\n    version: 1\r\n    reads:\r\n      - tasks.task\r\n    input:\r\n      - name: search\r\n        type: 'tasks.text' # keep type note\r\n        description: 'old description' # keep description note").unwrap();
+    let compilation = compiled_sandbox(&sandbox);
+    assert!(lekalo_core::context::plan(
+        &lekalo_core::context::CapsuleScope::Symbol("tasks.list".to_owned()),
+        2000,
+        false,
+        &compilation
+    )
+    .is_err());
+    let request = query_inputs_request(
+        serde_json::json!([{"name":"search", "type":{"ref":"tasks.bool"}, "description":"can't"}]),
+    );
+    apply_request_opts(
+        &sandbox,
+        &request,
+        "query-input-type-trivia",
+        true,
+        Some(evidence_policy()),
+    )
+    .unwrap();
+    let after = std::fs::read_to_string(&path).unwrap();
+    assert!(after.contains("type: 'tasks.bool' # keep type note\r\n"));
+    assert!(after.ends_with("description: 'can''t' # keep description note"));
+    assert!(!after.replace("\r\n", "").contains('\n'));
+}
+
+#[test]
+fn query_input_declarations_inherit_successor_and_legacy_refuses_without_writes() {
+    let sandbox = Sandbox::new("query-input-declare");
+    let definition = defaults_request(
+        serde_json::json!([{"operation":"definition:add", "kind":"query", "module":"tasks", "definition":{"name":"list", "input":[{"name":"search", "type":{"ref":"tasks.text"}, "default":"initial"}], "reads":["tasks.task"], "returns":{"ref":"tasks.task"}}}]),
+    );
+    assert!(matches!(
+        prepare(&sandbox, &definition),
+        Err(ChangeError::UnsupportedMember {
+            member: "query-input",
+            ..
+        })
+    ));
+    assert!(!sandbox
+        .root
+        .join("lekalo/modules/tasks/queries.yaml")
+        .exists());
+    enable_default_successor(&sandbox);
+    apply_request(&sandbox, &definition, "query-input-declare", false).unwrap();
+    assert!(compiled_sandbox(&sandbox).project.has_query_inputs());
+    let legacy = Sandbox::new("query-input-legacy");
+    let path = legacy.root.join("lekalo/modules/tasks/queries.yaml");
+    let source = "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.list\n    kind: query\n    version: 1\n    reads:\n      - tasks.task\n";
+    std::fs::write(&path, source).unwrap();
+    assert!(matches!(
+        prepare(
+            &legacy,
+            &query_inputs_request(
+                serde_json::json!([{"name":"search", "type":{"ref":"tasks.text"}}])
+            )
+        ),
+        Err(ChangeError::UnsupportedMember {
+            member: "query-input",
+            ..
+        })
+    ));
+    assert_eq!(std::fs::read(&path).unwrap(), source.as_bytes());
+    assert!(!legacy.history_path().exists());
+}
+
 #[test]
 fn enum_wire_changes_validate_defaults_require_policy_and_preserve_comments() {
     let sandbox = Sandbox::new("enum-wire");

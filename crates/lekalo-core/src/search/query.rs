@@ -373,6 +373,7 @@ fn enforce_filter_grammar(filters: &FilterSet) -> Result<(), crate::diagnostics:
                 | "effect-entity"
                 | "scenario-covers"
                 | "command-input"
+                | "query-input"
                 | "query-returns"
                 | "query-reads"
                 | "policy-applies-to"

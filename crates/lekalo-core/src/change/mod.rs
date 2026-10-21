@@ -1692,6 +1692,15 @@ fn resolve_operation(
                     detail: "wrong-kind",
                 });
             }
+            if kind == "query"
+                && !definition.input.is_empty()
+                && version != crate::loader::ModelVersion::Successor
+            {
+                return Err(ChangeError::UnsupportedMember {
+                    operation: operation.operation().to_owned(),
+                    member: "query-input",
+                });
+            }
             definition_decl_members_fit_kind(kind, definition)?;
             // Defaults require the Model/IR successor at every field
             // writer; the predecessor never silently discards intent.
@@ -1790,13 +1799,12 @@ fn resolve_operation(
             let definition = find_definition(documents, target)?;
             match definition_kind_of(definition).as_str() {
                 "command" => {}
-                // The query-input surface needs the reviewed IR successor;
-                // the branch stays an explicit unsupported member.
+                "query" if version == crate::loader::ModelVersion::Successor => {}
                 "query" => {
                     return Err(ChangeError::UnsupportedMember {
                         operation: operation.operation().to_owned(),
                         member: "query-input",
-                    });
+                    })
                 }
                 _ => {
                     return Err(ChangeError::SubjectConflict {
@@ -1965,7 +1973,6 @@ fn definition_decl_members_fit_kind(
             unused(has_ids(&definition.covers), "covers")?;
         }
         "query" => {
-            unused(has(&definition.input), "input")?;
             unused(has_ids(&definition.effects), "effects")?;
             unused(has(&definition.payload), "payload")?;
             unused(has_ids(&definition.applies_to), "appliesTo")?;
@@ -2454,10 +2461,6 @@ fn replace_member_sequence(
     fields: &[request::FieldDecl],
 ) -> Result<(), ChangeError> {
     let span = placeholder_span();
-    let sequence = node.get_mut(member).ok_or(ChangeError::SubjectConflict {
-        subject: member.to_owned(),
-        detail: "member-missing",
-    })?;
     let mut items = Vec::with_capacity(fields.len());
     for field in fields {
         let mut entries = vec![
@@ -2498,7 +2501,23 @@ fn replace_member_sequence(
             value: Value::Map(entries),
         });
     }
-    sequence.value = Value::Seq(items);
+    let Value::Map(entries) = &mut node.value else {
+        return Err(ChangeError::WriteBoundaryDenied);
+    };
+    if items.is_empty() {
+        entries.retain(|e| e.key != member);
+    } else if let Some(existing) = entries.iter_mut().find(|e| e.key == member) {
+        existing.value.value = Value::Seq(items);
+    } else {
+        entries.push(MapEntry {
+            key: member.to_owned(),
+            key_span: span,
+            value: Node {
+                span,
+                value: Value::Seq(items),
+            },
+        });
+    }
     Ok(())
 }
 
@@ -2645,6 +2664,9 @@ fn synthesized_definition_node(
             }
         }
         "query" => {
+            if let Some(input) = seq_entry("input", field_items(&declaration.input)) {
+                entries.push(input);
+            }
             if let Some(reads) = seq_entry("reads", id_items(&declaration.reads)) {
                 entries.push(reads);
             }
@@ -3196,6 +3218,14 @@ fn definition_members_block(
         }
         "query" => {
             let mut block = String::new();
+            if !declaration.input.is_empty() {
+                block.push_str(&edit::yaml_field_list(
+                    bytes,
+                    anchor_column,
+                    "input",
+                    &declaration.input,
+                )?);
+            }
             if !declaration.reads.is_empty() {
                 block.push_str(&edit::yaml_id_list(
                     bytes,

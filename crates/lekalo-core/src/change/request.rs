@@ -118,7 +118,7 @@ pub enum Operation {
         effect: String,
         emit: Option<String>,
     },
-    /// `operation-input:set`: replace a command's input field list.
+    /// `operation-input:set`: replace a command or successor query input field list.
     OperationInputSet {
         target: String,
         input: Vec<FieldDecl>,

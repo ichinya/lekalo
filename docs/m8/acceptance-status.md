@@ -5,10 +5,12 @@ checked on 2026-10-21: **14 open issues, zero closed**. This inventory does
 not close issues or publish the local branch. A merged implementation is
 not, by itself, acceptance evidence for every criterion in an issue.
 
-The integration branch is `ichinya/M8`. Local checkpoints `8befa2f0`
-(project error unions and consumers) and `15ad603c` (PHP adapter input
-scopes) are committed. Semantic symbol relocation is a subsequent work
-increment; its limitations remain part of #73 until implemented and tested.
+The integration branch is `ichinya/M8`. Local checkpoints include `8befa2f0`
+(project error unions and consumers), `15ad603c` (PHP adapter input scopes),
+`9c2aaf28` (semantic symbol relocation), `a1f0f5c8` (field defaults) and
+`7c523b31` (enum wire values). The query-input increment follows those
+checkpoints. Their remaining representation and relocation boundaries still
+belong to #73; the final milestone candidate is not yet qualified.
 
 | Issue | Available implementation / qualification entry points | Remaining acceptance work |
 |---|---|---|
@@ -17,7 +19,7 @@ increment; its limitations remain part of #73 until implemented and tested.
 | [#41](https://github.com/ichinya/lekalo/issues/41) managed | `scripts/test-managed-contracts.mjs`, `test-managed-cli.mjs`, `test-managed-planner-e2e.mjs`; shared semantic Model validation now precedes managed authority | The query-read fixture and dependent authority pins are corrected. Contract gates, 110 CLI invocations and planner regeneration/native-handler execution pass locally. Final milestone-candidate/CI qualification remains. |
 | [#51](https://github.com/ichinya/lekalo/issues/51) Worklog / Changelog | contract, admission, pilot and consumer gates | Final native/evidence qualification, keeping unsupported publication semantics distinct from executed success. |
 | [#52](https://github.com/ichinya/lekalo/issues/52) TaskExternalLink | relation/uniqueness Model successor, task-link contracts and impact/portability gates | Final public/synthetic provider evidence and exact consumer impact qualification. |
-| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions, symbol relocation, module ownership and Model/IR 0.8.0 field defaults / enum wire values | Completion of relocation/attachment cases; query inputs, command results and pure emissions with owner-compatible successors. Literals retain the documented YAML-layout and legacy-consumer boundaries. Module policy transitions use the existing managed owner's granularity; per-symbol changes do not silently widen to a module. Catalog coverage alone cannot close this issue. |
+| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions, symbol relocation, module ownership and Model/IR 0.8.0 defaults, enum wire values and query inputs | Completion of relocation/attachment cases; command results, pure emissions and joins to older query-parameter consumers with owner-compatible successors. Literals retain the documented YAML-layout and legacy-consumer boundaries. Module policy transitions use the existing managed owner's granularity; per-symbol changes do not silently widen to a module. Catalog coverage alone cannot close this issue. |
 | [#74](https://github.com/ichinya/lekalo/issues/74) safe fixes | Fix contracts/CLI and rollback tests | Requalify final Change catalog identity, stale/conflicting plans, replay and rollback. |
 | [#93](https://github.com/ichinya/lekalo/issues/93) semantic search | search contracts/CLI and `scripts/bench-search.mjs` | Final result/ambiguity/offline gates and representative benchmark evidence; separate retrieval metrics from agent answer quality. |
 | [#94](https://github.com/ichinya/lekalo/issues/94) formatter | format contracts, CLI, atomicity and portability gates | Final semantic invariance/trivia checks and Linux/Windows/macOS evidence. |
@@ -29,6 +31,27 @@ increment; its limitations remain part of #73 until implemented and tested.
 
 ## Verified local corrections
 
+- Model/IR 0.8.0 query inputs now support declaration, first-list insertion,
+  replacement and clearing through Change. Shared validation resolves their
+  types and checks defaults. Graph `query-input`/`accepts` edges, signature
+  diff, inspect, Context Budget and portability dependencies carry them.
+  The source writer preserves CRLF without an EOF newline and inline type /
+  description comments, including quoted apostrophes. Clearing inputs and
+  changing types retain the migration-evidence policy gate. Frozen query
+  parameter consumers explicitly refuse this unrepresentable successor;
+  their owner-compatible joins remain follow-up work, not executed generation.
+  The final Windows run passed **1,693 tests**, zero failed and two ignored:
+  `cargo test --workspace --lib --test change --test ir --test diff --test graph --test inspect --locked --offline -j 1`
+  (`target/m8-query-input-final.log`). It includes **105 core Change tests**
+  and **1,510 core library tests**. Workspace/all-target Clippy passed with
+  `-- -D warnings` (`target/m8-query-input-clippy.log`). The fresh checkout
+  CLI gate passed **20 calls and seven schemas**, including source-trivia,
+  replay, no-op, invalid/default and migration-policy cases. Default, enum,
+  legacy Change and extended CLI gates passed on that binary; graph/inspect
+  live successor schemas and the 554-surface docs gate also passed. Earlier
+  failed/interrupted runs remain under `target/m8-query-input-*`; the final
+  successful run supersedes those results. This is a scoped local run, not
+  full workspace, hosted CI, Linux/macOS or final milestone acceptance.
 - Explicit enum wire values now survive Change add/change and Model/IR
   0.8.0 decoding, including structured JSON and explicit null. Effective
   encodings are unique; enum defaults use those encodings. Encoding changes

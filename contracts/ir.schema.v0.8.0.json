@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "dev.lekalo.ir-schema@0.8.0",
   "title": "Lekalo compiled-IR schema v1 (0.8.0 successor)",
-  "description": "The explicit closed schema of the canonical compiled IR for Model 0.8.0 sources (contract dev.lekalo.ir@0.8.0): compact JSON, byte-sorted object keys, semantic-ID-ordered definitions and modules, and the successor's typed relation and secondary-uniqueness facts carried on entity definitions. Every definition kind is a closed union member: exactly the members its compiler emits, no fewer and no more. A 0.2.16 source never produces this contract: its IR stays dev.lekalo.ir@0.2.16 with byte-identical canonical bytes and no relation or uniqueness members. No alias under 0.2.16 exists.",
+  "description": "Canonical compiled IR for Model 0.8.0, with typed relations, secondary uniqueness, bounded field defaults, explicit enum wire values and query inputs. Objects are byte-key-sorted; definitions and modules are semantic-ID-ordered. Model 0.2.16 sources keep their frozen IR contract and canonical bytes.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -673,6 +673,13 @@
         },
         "visibility": {
           "$ref": "#/$defs/definitionCommon/properties/visibility"
+        },
+        "input": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/field"
+          }
         }
       }
     },

@@ -16,6 +16,13 @@ precomputed incoming index — never a source rescan or an IR rebuild.
 
 ## Contract identity
 
+Model 0.8.0 sources produce `dev.lekalo.graph@0.8.0`
+(`lekalo/graph/v0.8.0`), validated by
+[`graph.schema.v0.8.0.json`](../contracts/graph.schema.v0.8.0.json).
+This successor adds `entity-relation-target` and `query-input` provenance
+roles. Query input type leaves emit `accepts` edges. The predecessor
+identities and schema below apply to Model 0.2.16 sources and remain frozen.
+
 - Discriminator: `lekalo/graph/v0.2.16`
 - Identity: `dev.lekalo.graph@0.2.16`
 - Schema: [`contracts/graph.schema.v0.2.16.json`](../contracts/graph.schema.v0.2.16.json)

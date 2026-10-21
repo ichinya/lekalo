@@ -727,14 +727,17 @@ fn diff_payload(
         }
         (
             Payload::Query {
+                input: base_input,
                 reads: base_reads,
                 returns: base_returns,
             },
             Payload::Query {
+                input: candidate_input,
                 reads: candidate_reads,
                 returns: candidate_returns,
             },
         ) => {
+            diff_input(subject, base_input, candidate_input, changes);
             if base_reads != candidate_reads {
                 changes.push(ChangeRecord::assemble(
                     ChangeKind::SignatureReadsChanged,

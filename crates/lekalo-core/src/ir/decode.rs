@@ -1633,6 +1633,7 @@ fn decode_symbol(
         }
         "entity" => &["fields", "identity"],
         "command" => &["input", "effects"],
+        "query" if cx.version == ModelVersion::Successor => &["input", "reads", "returns"],
         "query" => &["reads", "returns"],
         "policy" => &["applies_to", "decision"],
         "event" => &["payload"],
@@ -1756,6 +1757,10 @@ fn decode_symbol(
             }))
         }
         "query" => {
+            let input = match cx.find(&found, "input") {
+                Some(entry) => decode_fields(&entry.value, &child("input"), cx)?,
+                None => Vec::new(),
+            };
             let reads = decode_references(
                 &cx.require(&found, "reads")?.value,
                 &child("reads"),
@@ -1770,6 +1775,7 @@ fn decode_symbol(
             Some(Definition::Query(QueryDef {
                 id: SymbolId(id),
                 common,
+                input,
                 reads,
                 returns,
             }))

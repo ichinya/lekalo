@@ -503,6 +503,12 @@ impl<'a> Builder<'a> {
                     }
                 }
                 Definition::Query(query) => {
+                    self.emit_field_leaves(
+                        symbol,
+                        ReferenceRole::QueryInput,
+                        RelationKindId::ACCEPTS,
+                        &query.input,
+                    );
                     for (ordinal, read) in query.reads.iter().enumerate() {
                         self.emit_symbol_edge(
                             symbol,

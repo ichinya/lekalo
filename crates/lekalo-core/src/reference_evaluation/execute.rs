@@ -561,6 +561,9 @@ impl Run<'_> {
 
         let outcome = match self.evaluation.definitions.get(operation.as_str()) {
             Some(Definition::Command(_)) => self.execute_command(step, &operation, &input, &clock),
+            Some(Definition::Query(query)) if !query.input.is_empty() => Ok(Outcome::Unsupported {
+                reason: "query-input-contract-unsupported",
+            }),
             Some(Definition::Query(_)) => self.execute_query(&operation, &input),
             Some(_) => Ok(Outcome::Unsupported {
                 reason: "operation-not-invokable",

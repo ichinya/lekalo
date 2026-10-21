@@ -160,7 +160,15 @@ fn contract_bytes(contract: &ContractSection) -> String {
             json.push_str(",\"input\":");
             json.push_str(&fields_bytes(input));
         }
-        ContractBody::Query { reads, output } => {
+        ContractBody::Query {
+            input,
+            reads,
+            output,
+        } => {
+            if !input.is_empty() {
+                json.push_str(",\"input\":");
+                json.push_str(&fields_bytes(input));
+            }
             json.push_str(",\"reads\":");
             json.push_str(&string_array(reads));
             if let Some(output) = output {

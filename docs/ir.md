@@ -32,6 +32,16 @@ the CLI: `loader::normalize_model` + `ir::compile`.
 
 ## Contract identity
 
+Model 0.8.0 sources produce `dev.lekalo.ir@0.8.0`, with the corresponding
+closed [successor schema](../contracts/ir.schema.v0.8.0.json). Its optional
+extensions include entity relations/secondary uniqueness, field defaults,
+enum wire values and query input fields. Missing query inputs are empty;
+an empty input list is omitted from canonical IR, preserving predecessor
+bytes. Defaults and enum wire values use bounded canonical JSON literals;
+explicit null is distinct from absence. Consumer support and refusal
+boundaries are recorded in [Change API](change.md). The historical identity
+below remains the producer for Model 0.2.16 sources.
+
 The IR contract is `dev.lekalo.ir@0.2.16` (`FAMILY`/`VERSION`/`IDENTITY` in
 `ir::version`). It is its own family: independent of the product version,
 of the source Model versions, and of every other contract family. Every

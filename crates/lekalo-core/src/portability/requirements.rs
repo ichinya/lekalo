@@ -125,6 +125,7 @@ pub fn extract(project: &CompiledProject, recipe: &Recipe) -> Subjects {
             Definition::Query(d) => {
                 let mut deps: Vec<String> =
                     d.reads.iter().map(|id| id.as_str().to_owned()).collect();
+                deps.extend(field_refs(&d.input));
                 if let Some(returns) = &d.returns {
                     type_refs(returns, &mut deps);
                 }

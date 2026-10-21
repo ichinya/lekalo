@@ -264,6 +264,9 @@ fn contract_parts(definition: &Definition, parts: &mut Vec<String>) {
             }
         }
         Definition::Query(query) => {
+            for member in &query.input {
+                field(member, parts);
+            }
             for read in &query.reads {
                 parts.push(read.as_str().to_owned());
             }

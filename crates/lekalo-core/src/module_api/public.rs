@@ -544,6 +544,9 @@ fn project_export(
             });
         }
         Definition::Query(query) => {
+            if !query.input.is_empty() {
+                return Err(invalid("query-input-contract-unsupported"));
+            }
             let returns = query
                 .returns
                 .as_ref()

@@ -65,6 +65,11 @@ pub fn plan(
     compilation: &Compilation,
 ) -> Result<Capsule, DiagnosticSet> {
     let project = &compilation.project;
+    if project.has_query_inputs() {
+        return Err(diagnostic::input_invalid_set(
+            "query-input-contract-unsupported",
+        ));
+    }
     if project.has_enum_wire_values() {
         return Err(diagnostic::input_invalid_set(
             "enum-wire-contract-unsupported",

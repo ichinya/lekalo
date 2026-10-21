@@ -190,6 +190,14 @@ fn resolve_query(
         _ => return Err(invalid(SOURCE_INVALID, "query-symbol-kind", subject)),
     };
 
+    if !query_def.input.is_empty() {
+        return Err(invalid(
+            SOURCE_INVALID,
+            "query-input-contract-unsupported",
+            subject,
+        ));
+    }
+
     // The source must be an entity the bound query reads.
     let source = symbols
         .get(decl.source.as_str())

@@ -81,6 +81,13 @@ pub struct Compilation {
 }
 
 impl CompiledProject {
+    /// Whether a consumer needs the Model 0.8.0 query input contract.
+    pub fn has_query_inputs(&self) -> bool {
+        self.definitions
+            .iter()
+            .any(|d| matches!(d, Definition::Query(q) if !q.input.is_empty()))
+    }
+
     /// Whether a consumer needs the successor's enum wire-value mapping.
     pub fn has_enum_wire_values(&self) -> bool {
         self.definitions.iter().any(
@@ -94,6 +101,7 @@ impl CompiledProject {
             Definition::Entity(d) => d.fields.iter().any(|f| f.default.is_some()),
             Definition::ValueObject(d) => d.fields.iter().any(|f| f.default.is_some()),
             Definition::Command(d) => d.input.iter().any(|f| f.default.is_some()),
+            Definition::Query(d) => d.input.iter().any(|f| f.default.is_some()),
             Definition::Event(d) => d.payload.iter().any(|f| f.default.is_some()),
             _ => false,
         })
@@ -596,6 +604,7 @@ pub struct CommandDef {
 pub struct QueryDef {
     pub id: SymbolId,
     pub common: Common,
+    pub input: Vec<Field>,
     pub reads: Vec<SymbolId>,
     pub returns: Option<TypeRef>,
 }

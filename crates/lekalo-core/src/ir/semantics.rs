@@ -276,6 +276,7 @@ fn validate_defaults(
             Definition::Entity(d) => &d.fields,
             Definition::ValueObject(d) => &d.fields,
             Definition::Command(d) => &d.input,
+            Definition::Query(d) => &d.input,
             Definition::Event(d) => &d.payload,
             _ => continue,
         };

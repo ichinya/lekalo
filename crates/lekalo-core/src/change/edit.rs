@@ -278,8 +278,10 @@ fn quote_yaml(value: &str) -> String {
 fn newline_before(bytes: &[u8], offset: usize) -> &'static str {
     if offset >= 2 && bytes[offset - 2] == b'\r' && bytes[offset - 1] == b'\n' {
         "\r\n"
-    } else {
+    } else if offset >= 1 && bytes[offset - 1] == b'\n' {
         "\n"
+    } else {
+        newline_near(bytes, offset)
     }
 }
 
@@ -790,6 +792,30 @@ pub fn plan_member_sequence_replace(
     member: &str,
     fields: &[FieldSpec<'_>],
 ) -> Result<Vec<ByteEdit>, ChangeError> {
+    if fields.is_empty() {
+        if definition.get(member).is_none() {
+            return Ok(Vec::new());
+        }
+        let mut removal = plan_raw_member_replace(bytes, definition, member, "")?;
+        removal.replacement.clear();
+        return Ok(vec![removal]);
+    }
+    if definition.get(member).is_none() {
+        let indent = definition
+            .get_entry("id")
+            .ok_or(ChangeError::WriteBoundaryDenied)?
+            .key_span
+            .start
+            .column
+            - 1;
+        let mut suffix = String::new();
+        for field in fields {
+            suffix.push_str(&yaml_default_field_item(bytes, indent + 2, *field)?);
+        }
+        return Ok(vec![plan_raw_member_append(
+            bytes, definition, member, &suffix,
+        )?]);
+    }
     let items = member_sequence(definition, member)?;
     // Decode the exact current member facts, including successor defaults;
     // anything else refuses instead of being silently dropped.
@@ -1006,21 +1032,23 @@ fn replace_item_scalar(
             detail: "member-absent",
         })?;
     let span = entry.value.span;
-    let original = std::str::from_utf8(&bytes[span.start.byte..span.end.byte])
+    let token_end = literal_scalar_end(bytes, &entry.value, member)?;
+    let original = std::str::from_utf8(&bytes[span.start.byte..token_end])
         .map_err(|_| ChangeError::SourcePreservation {
             subject: member.to_owned(),
             detail: "encoding",
         })?
         .to_owned();
-    let replacement = if original.starts_with('"') || original.starts_with('\'') {
-        let quote = &original[..1];
-        format!("{quote}{}{quote}", escape_quoted(new_text))
+    let replacement = if original.starts_with('\'') {
+        format!("'{}'", new_text.replace('\'', "''"))
+    } else if original.starts_with('"') {
+        format!("\"{}\"", escape_quoted(new_text))
     } else {
         new_text.to_owned()
     };
     Ok(ByteEdit {
         start: span.start.byte,
-        end: span.end.byte,
+        end: token_end,
         replacement,
     })
 }

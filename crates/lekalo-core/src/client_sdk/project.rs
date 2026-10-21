@@ -101,6 +101,13 @@ pub fn project(
         )
     })?;
     let project = context.project;
+    if project.has_query_inputs() {
+        return Err(diagnostic::rule_invalid(
+            diagnostic::MAPPING_UNSUPPORTED,
+            "query-input-contract-unsupported",
+            None,
+        ));
+    }
     if project.has_enum_wire_values() {
         return Err(diagnostic::rule_invalid(
             diagnostic::MAPPING_UNSUPPORTED,
