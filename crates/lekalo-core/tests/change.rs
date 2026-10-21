@@ -3744,7 +3744,7 @@ fn policy_declarations_use_model_spelling_and_replay_on_both_models() {
             apply_request(&sandbox, &request, "policy-add", false)
                 .unwrap()
                 .state,
-            ReceiptState::Replayed
+            "replayed"
         );
         let bytes =
             std::fs::read_to_string(sandbox.root.join("lekalo/modules/tasks/policies.yaml"))

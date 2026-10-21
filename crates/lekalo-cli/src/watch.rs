@@ -327,17 +327,23 @@ fn start(
         let mut service = service;
         let outcome = tempfile::tempdir()
             .map_err(|_| warning_result("auto", Status::Unavailable))
-            .map(|scratch| {
-                service.run_revision(
+            .and_then(|scratch| {
+                // The OS temp root may use a symlink or Windows case/8.3
+                // alias. This is our owned capture, after project selection;
+                // give the loader its physical spelling without relaxing
+                // alias refusal for user-selected project paths.
+                let root = std::fs::canonicalize(scratch.path())
+                    .map_err(|_| warning_result("auto", Status::Unavailable))?;
+                Ok(service.run_revision(
                     &snapshot,
-                    scratch.path(),
+                    &root,
                     &RunContext {
                         run_id: id,
                         generation,
                         full_rescan: full,
                         cancel: &worker_cancel,
                     },
-                )
+                ))
             });
         drop(snapshot);
         let _ = tx.send((service, outcome));
@@ -561,8 +567,10 @@ fn run_inner(args: WatchArgs, json_requested: bool, no_cache: bool) -> Result<u8
     if let Some(scope) = &request.module {
         let scratch =
             tempfile::tempdir().map_err(|_| warning_result("auto", Status::Unavailable))?;
-        snapshot::materialize(&discovery, scratch.path()).map_err(|error| error.domain_result())?;
-        let model = lekalo_core::loader::normalize_captured_root(scratch.path())?;
+        let scratch_root = std::fs::canonicalize(scratch.path())
+            .map_err(|_| warning_result("auto", Status::Unavailable))?;
+        snapshot::materialize(&discovery, &scratch_root).map_err(|error| error.domain_result())?;
+        let model = lekalo_core::loader::normalize_captured_root(&scratch_root)?;
         let compilation =
             lekalo_core::ir::compile(&model).map_err(|failure| failure.into_result())?;
         if !compilation

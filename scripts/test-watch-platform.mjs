@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {createRequire} from 'node:module';
-import {cpSync,mkdtempSync,readFileSync,writeFileSync,readdirSync,rmSync,renameSync,unlinkSync} from 'node:fs';
+import {cpSync,mkdtempSync,readFileSync,writeFileSync,readdirSync,rmSync,renameSync,unlinkSync,realpathSync,symlinkSync} from 'node:fs';
 import {StringDecoder} from 'node:string_decoder';
 import {tmpdir} from 'node:os';
 import {resolve,join,dirname} from 'node:path';
@@ -28,7 +28,13 @@ function inventory(dir,prefix=''){
 }
 async function probe(backend){
   const project=mkdtempSync(join(tmpdir(),'lekalo-watch-'));
+  const privateTemp=realpathSync(mkdtempSync(join(tmpdir(),'lekalo-watch-private-')));
   try{
+    // Internal captures must tolerate the OS temp root's physical aliases.
+    // The governed project remains a distinct, normally selected directory.
+    const tempAlias=process.platform==='win32'?privateTemp.toUpperCase():join(privateTemp,'alias');
+    if(process.platform!=='win32')symlinkSync(privateTemp,tempAlias,'dir');
+    const env={...process.env,TEMP:tempAlias,TMP:tempAlias,TMPDIR:tempAlias};delete env.LEKALO_PROJECT;
     cpSync(join(root,'tests/fixtures/watch/project'),project,{recursive:true});
     const path=join(project,'lekalo/modules/planner/entities.yaml');
     const moved=join(project,'lekalo/modules/moved/entities.yaml');
@@ -42,7 +48,7 @@ async function probe(backend){
       ()=>unlinkSync(moved),
     ];
     const decoder=new StringDecoder('utf8');
-    const child=spawn(binary,['watch','--backend',backend,'--poll-interval-ms','100','--reconcile-ms','100','--debounce-ms','20','--max-wait-ms','100','--json-lines','--stop-after-runs','5'],{cwd:project,stdio:['ignore','pipe','pipe']});
+    const child=spawn(binary,['watch','--backend',backend,'--poll-interval-ms','100','--reconcile-ms','100','--debounce-ms','20','--max-wait-ms','100','--json-lines','--stop-after-runs','5'],{cwd:project,env,stdio:['ignore','pipe','pipe']});
     let pending='',stderr='',failure;
     await new Promise((resolve,reject)=>{
       const timer=setTimeout(()=>{child.kill();reject(new Error(`${backend}: watch deadline; ${stderr}`));},45000);
@@ -91,7 +97,7 @@ async function probe(backend){
     }
     assert.deepEqual(inventory(project),expected,'watch writes no cache, history, Model or output');
     return {backend,platform:process.platform,events:events.length,settled:completed.length};
-  }finally{rmSync(project,{recursive:true,force:true});}
+  }finally{rmSync(project,{recursive:true,force:true});rmSync(privateTemp,{recursive:true,force:true});}
 }
 const results=[];for(const backend of ['native','poll'])results.push({...await probe(backend),generatedFeedback:await generatedProbe({root,binary,backend,validate,inventory})});
 process.stdout.write(JSON.stringify({ok:true,results})+'\n');

@@ -111,6 +111,8 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-explain-contracts.mjs --schema-only
       - name: Run the adapter-SDK schema, digest, and generator gates (issue #106)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
         # CI permits only the read-only generator --check; --write stays a
         # local development action. The emitted outputs and records are
         # pinned by committed digests, so drift fails here.
@@ -266,7 +268,7 @@ jobs:
           node scripts/test-watch-consumers.mjs
       - name: Diagnose a failed watch lane with the synthetic confined runtime
         if: failure() && steps.watch.outcome == 'failure' && runner.os != 'Windows'
-        run: cargo test -p lekalo-core unix_confined_runtime_qualification --locked -- --nocapture
+        run: cargo test -p lekalo-core --lib unix_confined_runtime_qualification --locked -- --nocapture
       - name: Run the read-only MCP stdio gate (issue #33)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
