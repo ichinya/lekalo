@@ -41,6 +41,8 @@ jobs:
           node-version: ${{ matrix.node-version }}
           package-manager-cache: false
       - uses: dtolnay/rust-toolchain@stable
+      - name: Build the checkout CLI for live contract probes
+        run: cargo build --workspace --locked
       - name: Provision exact Ajv 8.17.1 and the OpenAPI validator outside the checkout
         run: |
           set -euo pipefail
@@ -250,6 +252,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes bubblewrap
       - run: cargo build --workspace --locked
       - name: Run read-only watch native and poll probes (issue #95)
+        id: watch
         timeout-minutes: 10
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules
@@ -261,6 +264,9 @@ jobs:
           node scripts/test-watch-faults.mjs
           node scripts/test-watch-successor.mjs
           node scripts/test-watch-consumers.mjs
+      - name: Diagnose a failed watch lane with the synthetic confined runtime
+        if: failure() && steps.watch.outcome == 'failure' && runner.os != 'Windows'
+        run: cargo test -p lekalo-core unix_confined_runtime_qualification --locked -- --nocapture
       - name: Run the read-only MCP stdio gate (issue #33)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.17.1/node_modules

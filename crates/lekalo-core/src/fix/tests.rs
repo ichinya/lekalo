@@ -82,7 +82,7 @@ fn copy(from: &Path, to: &Path) {
         }
     }
 }
-fn consent<'a>(id: &'a str) -> Confirmation<'a> {
+fn consent(id: &str) -> Confirmation<'_> {
     Confirmation {
         expect_plan: Some(id),
         allow_unsafe: false,

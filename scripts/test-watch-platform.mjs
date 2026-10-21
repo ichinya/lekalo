@@ -56,7 +56,7 @@ async function probe(backend){
             const event=JSON.parse(line);assert(validate(event),JSON.stringify(validate.errors));
             assert.equal(event.sequence,events.length+1,'strict sequence');events.push(event);
             if(event.event==='run-completed'){
-              assert.equal(event.result.status,'valid');
+              assert.equal(event.result.status,'valid',JSON.stringify({backend,run:event.runId,sequence:event.sequence,diagnostics:event.result.diagnostics}));
               revisions.push(event);
               assert.deepEqual(inventory(project),expected,'no watcher writes between edit barriers');
               if(revisions.length<=actions.length){actions[revisions.length-1]();expected=inventory(project);}

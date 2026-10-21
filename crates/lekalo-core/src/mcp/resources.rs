@@ -255,8 +255,13 @@ impl Cursor {
     /// `snapshot:offset` UTF-8 bytes. Deterministic, reversible, and
     /// never a readable disclosure of the snapshot identity.
     pub fn encode(&self) -> String {
+        use std::fmt::Write;
         let raw = format!("{}:{}", self.snapshot, self.offset);
-        raw.bytes().map(|byte| format!("{byte:02x}")).collect()
+        let mut encoded = String::with_capacity(raw.len() * 2);
+        for byte in raw.bytes() {
+            write!(encoded, "{byte:02x}").expect("String writer");
+        }
+        encoded
     }
 
     /// Decode one opaque cursor; unrelated spellings are a stale refusal.

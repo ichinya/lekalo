@@ -108,6 +108,16 @@ pub(crate) fn absent_digest() -> String {
     format!("sha256:{}", crate::digest::sha256_hex(b""))
 }
 
+/// Hash the exact ordered pin inventory without changing its wire bytes.
+fn pin_inventory_digest(inputs: &[InputPin]) -> String {
+    use std::fmt::Write;
+    let mut bytes = String::new();
+    for pin in inputs {
+        writeln!(bytes, "{}\u{1f}{}", pin.path, pin.digest).expect("String writer");
+    }
+    receipt::bytes_digest(bytes.as_bytes())
+}
+
 /// The exact bytes of the canonical history sidecar: `None` when the file
 /// does not exist. Any other read failure is corruption and fails closed
 /// (round 2, finding 8): an existing empty ledger is decoded by
@@ -2680,7 +2690,7 @@ fn synthesized_definition_node(
             }
         }
         "policy" => {
-            if let Some(applies_to) = seq_entry("appliesTo", id_items(&declaration.applies_to)) {
+            if let Some(applies_to) = seq_entry("applies_to", id_items(&declaration.applies_to)) {
                 entries.push(applies_to);
             }
             entries.push(entry(
@@ -3261,7 +3271,7 @@ fn definition_members_block(
                 block.push_str(&edit::yaml_id_list(
                     bytes,
                     anchor_column,
-                    "appliesTo",
+                    "applies_to",
                     &ids(&declaration.applies_to),
                 ));
             }

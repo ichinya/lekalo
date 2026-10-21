@@ -330,14 +330,7 @@ pub(crate) fn prepare(
         });
     }
     if let Some(expected) = &request.expect_model {
-        let current = receipt::bytes_digest(
-            prepared
-                .inputs
-                .iter()
-                .map(|pin| format!("{}\u{1f}{}\n", pin.path, pin.digest))
-                .collect::<String>()
-                .as_bytes(),
-        );
+        let current = pin_inventory_digest(&prepared.inputs);
         if *expected != current {
             return Err(stale("model", "expect-model"));
         }

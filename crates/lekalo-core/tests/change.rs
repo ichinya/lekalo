@@ -3667,6 +3667,106 @@ fn query_inputs_request(input: serde_json::Value) -> Vec<u8> {
 }
 
 #[test]
+fn definition_add_rejects_duplicate_field_names_before_mutation_on_both_models() {
+    for successor in [false, true] {
+        for kind in ["command", "query", "event"] {
+            let sandbox = Sandbox::new("duplicate-definition-fields");
+            if successor {
+                enable_default_successor(&sandbox);
+            }
+            let before = sandbox.entities_bytes();
+            let fields = serde_json::json!([
+                {"name":"search", "type":{"ref":"tasks.text"}},
+                {"name":"search", "type":{"ref":"tasks.bool"}}
+            ]);
+            let mut definition = serde_json::json!({"name":"duplicate"});
+            definition[if kind == "event" { "payload" } else { "input" }] = fields;
+            if kind == "query" {
+                definition["reads"] = serde_json::json!(["tasks.task"]);
+            }
+            let request = defaults_request(serde_json::json!([{
+                "operation":"definition:add", "kind":kind, "module":"tasks", "definition":definition
+            }]));
+            let result = prepare(&sandbox, &request);
+            if kind == "query" && !successor {
+                assert!(matches!(
+                    result,
+                    Err(ChangeError::UnsupportedMember {
+                        member: "query-input",
+                        ..
+                    })
+                ));
+            } else {
+                assert!(
+                    matches!(result, Err(ChangeError::LoadFailed(_))),
+                    "{kind} / successor={successor}"
+                );
+            }
+            assert_eq!(sandbox.entities_bytes(), before);
+            for name in ["commands", "queries", "events"] {
+                assert!(!sandbox
+                    .root
+                    .join(format!("lekalo/modules/tasks/{name}.yaml"))
+                    .exists());
+            }
+            assert!(!sandbox.history_path().exists());
+        }
+        // A raw authored Model must fail at the same IR owner, even when
+        // it never passes through Change's operation-specific decoder.
+        let sandbox = Sandbox::new("duplicate-model-fields");
+        if successor {
+            enable_default_successor(&sandbox);
+        }
+        let source = String::from_utf8(sandbox.entities_bytes())
+            .unwrap()
+            .replace("name: done", "name: title");
+        std::fs::write(sandbox.entities_path(), source).unwrap();
+        let model = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
+        assert!(lekalo_core::ir::compile(&model).is_err());
+    }
+}
+
+#[test]
+fn policy_declarations_use_model_spelling_and_replay_on_both_models() {
+    for successor in [false, true] {
+        let sandbox = Sandbox::new("policy-model-spelling");
+        if successor {
+            enable_default_successor(&sandbox);
+        }
+        let version = if successor { "0.8.0" } else { "0.2.16" };
+        std::fs::write(sandbox.root.join("lekalo/modules/tasks/commands.yaml"), format!("schema_version: \"{version}\"\ndefinitions:\n  - id: tasks.complete\n    kind: command\n    version: 1\n")).unwrap();
+        let request = defaults_request(serde_json::json!([{
+            "operation":"definition:add", "kind":"policy", "module":"tasks",
+            "definition":{"name":"permit", "appliesTo":["tasks.complete"], "decision":"allow"}
+        }]));
+        apply_request(&sandbox, &request, "policy-add", false).unwrap();
+        assert_eq!(
+            apply_request(&sandbox, &request, "policy-add", false)
+                .unwrap()
+                .state,
+            ReceiptState::Replayed
+        );
+        let bytes =
+            std::fs::read_to_string(sandbox.root.join("lekalo/modules/tasks/policies.yaml"))
+                .unwrap();
+        assert!(bytes.contains("applies_to:"));
+        assert!(!bytes.contains("appliesTo:"));
+        assert!(bytes.starts_with(&format!("schema_version: \"{version}\"")));
+        let compilation = compiled_sandbox(&sandbox);
+        let definition = compilation
+            .project
+            .definitions
+            .iter()
+            .find(|d| d.id().as_str() == "tasks.permit")
+            .unwrap();
+        let lekalo_core::ir::Definition::Policy(policy) = definition else {
+            panic!("policy kind")
+        };
+        assert_eq!(policy.applies_to[0].as_str(), "tasks.complete");
+    }
+}
+
+#[test]
 fn successor_query_inputs_have_typed_edges_defaults_and_lossless_signature_changes() {
     let sandbox = Sandbox::new("query-inputs");
     enable_default_successor(&sandbox);

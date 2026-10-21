@@ -1034,14 +1034,15 @@ fn admits(index: &SearchIndex, card: &Card, filters: &FilterSet) -> bool {
     }) {
         return false;
     }
-    if !any_of(&filters.requirement_sources, |source| {
+    let matches_requirement_source = any_of(&filters.requirement_sources, |source| {
         let prefix = format!("req:{source}:");
         (card.kind == CardKind::Requirement && card.key.starts_with(&prefix))
             || card
                 .requirements
                 .iter()
                 .any(|reference| reference_source_match(reference, &prefix, filters.include_stale))
-    }) {
+    });
+    if !matches_requirement_source {
         return false;
     }
     if !any_of(&filters.binding_paths, |path| {

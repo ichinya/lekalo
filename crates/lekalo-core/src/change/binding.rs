@@ -4,7 +4,10 @@
 
 use std::path::Path;
 
-use super::{plan, receipt, ChangeError, ChangeRequest, Operation, PrepareOptions, PreparedChange};
+use super::{
+    pin_inventory_digest, plan, receipt, ChangeError, ChangeRequest, Operation, PrepareOptions,
+    PreparedChange,
+};
 use crate::project_fs::{Fs, FsErrorKind};
 
 pub(crate) const INDEX_PATH: &str = ".lekalo/import/observed/index.json";
@@ -184,14 +187,7 @@ pub(crate) fn prepare_confirmation(
         vec![],
     )?;
     if let Some(expected) = &request.expect_model {
-        let actual = receipt::bytes_digest(
-            prepared
-                .inputs
-                .iter()
-                .map(|pin| format!("{}\u{1f}{}\n", pin.path, pin.digest))
-                .collect::<String>()
-                .as_bytes(),
-        );
+        let actual = pin_inventory_digest(&prepared.inputs);
         if *expected != actual {
             return Err(conflict("expect-model"));
         }

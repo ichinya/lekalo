@@ -6,7 +6,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{receipt, ChangeError};
+use super::{pin_inventory_digest, receipt, ChangeError};
 use crate::loader::ProjectLoad;
 use crate::project_fs::{EntryType, Fs, FsErrorKind, StructureOutcome};
 
@@ -67,14 +67,7 @@ pub(crate) fn prepare_change(
         });
     }
     if let Some(expected) = &request.expect_model {
-        let current = receipt::bytes_digest(
-            prepared
-                .inputs
-                .iter()
-                .map(|pin| format!("{}\u{1f}{}\n", pin.path, pin.digest))
-                .collect::<String>()
-                .as_bytes(),
-        );
+        let current = pin_inventory_digest(&prepared.inputs);
         if expected != &current {
             return Err(ChangeError::PreconditionFailed {
                 subject: "model".to_owned(),

@@ -974,6 +974,7 @@ fn decode_fields(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<Fie
         }
     };
     let mut fields = Vec::with_capacity(items.len());
+    let mut names = std::collections::BTreeSet::new();
     let mut ok = true;
     for (position, item) in items.iter().enumerate() {
         let base = format!("{pointer}/{position}");
@@ -1012,6 +1013,15 @@ fn decode_fields(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<Fie
                     "detail": "field-name-syntax",
                     "value": bounded_field_echo(&name),
                 }),
+            );
+            ok = false;
+            continue;
+        }
+        if !names.insert(name.clone()) {
+            cx.push(
+                DUPLICATE_MEMBER,
+                item.span,
+                serde_json::json!({"field":"name", "value":bounded_field_echo(&name)}),
             );
             ok = false;
             continue;

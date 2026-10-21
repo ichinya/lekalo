@@ -209,16 +209,7 @@ pub(super) fn finish(
     }
 
     // Optional exact Model precondition.
-    let model_digest = format!(
-        "sha256:{}",
-        crate::digest::sha256_hex(
-            inputs
-                .iter()
-                .map(|pin| format!("{}\u{1f}{}\n", pin.path, pin.digest))
-                .collect::<String>()
-                .as_bytes()
-        )
-    );
+    let model_digest = pin_inventory_digest(&inputs);
     if let Some(expected) = &request.expect_model {
         if expected != &model_digest {
             return Err(ChangeError::PreconditionFailed {

@@ -2418,20 +2418,12 @@ fn project_trace(
     for relation in &relations {
         let from_key = node_keys.get(&relation.from).cloned();
         let to_key = node_keys.get(&relation.to).cloned();
-        let to_evidence = to_key.clone().unwrap_or_else(|| {
-            evidence_key_of(
-                &relation.to,
-                &relation.source,
-                &|node_id, requirement_id| requirement_key(node_id, requirement_id),
-            )
-        });
-        let from_evidence = from_key.clone().unwrap_or_else(|| {
-            evidence_key_of(
-                &relation.from,
-                &relation.source,
-                &|node_id, requirement_id| requirement_key(node_id, requirement_id),
-            )
-        });
+        let to_evidence = to_key
+            .clone()
+            .unwrap_or_else(|| evidence_key_of(&relation.to, &relation.source, &requirement_key));
+        let from_evidence = from_key
+            .clone()
+            .unwrap_or_else(|| evidence_key_of(&relation.from, &relation.source, &requirement_key));
         for (side_key, other_key, direction) in [
             (from_key.clone(), to_evidence.clone(), "outgoing"),
             (to_key.clone(), from_evidence.clone(), "incoming"),

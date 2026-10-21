@@ -15,7 +15,7 @@ pub(crate) fn attach_execution(
     transactions: &TransactionConcurrencyAttachment,
     extended: &ExtendedEffectsAttachment,
 ) -> Result<EffectGraph, DiagnosticSet> {
-    let refuse = |detail| diagnostic::input_invalid_detail(detail);
+    let refuse = diagnostic::input_invalid_detail;
     let envelope = execution.envelope();
     // Prevent a declaration-only graph from inheriting another run's trust.
     if graph.envelope_count() != 0 || graph.execution_digest.is_some() {
