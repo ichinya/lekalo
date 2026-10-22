@@ -1,73 +1,29 @@
 {
-  "$comment": "Issue #33: registration template for a local read-only Lekalo MCP server in an AI Factory extension manifest. This file is a recipe the host operator copies into the extension's own extension.json (or equivalent registration seam); Lekalo never installs, edits, or negotiates with an extension on its own. The command must resolve to a built lekalo binary on the host running the extension runtime. The cwd is the workspace root and the project selector stays relative to it ('.' for a workspace-root project, a relative path for a nested one): the loader's selection policy refuses absolute selectors, so an absolute ${workspaceRoot} spelling in --project would fail the first tool call with structure.selection-absolute. The resource families below use the opaque served project id 'project' (single-project startup) and the exact served URI spellings (the summary family's URI key is 'summary', not the contract kind 'project-summary'). The capabilities block is truthful: subscribe/listChanged are false — change notifications are deferred (recorded in docs/mcp.md against the issue requirement), and resources/subscribe refuses (-32601) instead of acknowledging an inert registration the server could never honor.",
+  "$schema": "https://raw.githubusercontent.com/lee-to/ai-factory/2.x/schemas/extension.schema.json",
   "name": "lekalo-mcp",
   "version": "0.8.0",
-  "description": "Read-only Lekalo semantic-layer access: inspect, impact, context, graph, validate, target status, and trace export over the pinned MCP stdio profile.",
-  "mcpServers": {
-    "lekalo-mcp": {
-      "type": "stdio",
-      "command": "lekalo",
-      "args": [
-        "mcp",
-        "serve",
-        "--stdio",
-        "--project",
-        ".",
-        "--timeout-ms",
-        "30000",
-        "--max-response-bytes",
-        "1048576"
-      ],
-      "cwd": "${workspaceRoot}",
-      "env": {
-        "LEKALO_PROJECT": ""
-      }
-    }
-  },
-  "serverDescription": {
-    "protocolProfile": "2025-11-25",
-    "transport": "stdio",
-    "readOnly": true,
-    "capabilities": {
-      "tools": true,
-      "resources": {
-        "subscribe": false,
-        "listChanged": false
+  "description": "Read-only Lekalo semantic-layer access over the pinned MCP stdio profile.",
+  "mcpServers": [
+    {
+      "key": "lekalo-mcp",
+      "template": {
+        "command": "lekalo",
+        "args": [
+          "mcp",
+          "serve",
+          "--stdio",
+          "--project",
+          ".",
+          "--timeout-ms",
+          "30000",
+          "--max-response-bytes",
+          "1048576"
+        ],
+        "env": {
+          "LEKALO_PROJECT": ""
+        }
       },
-      "prompts": false,
-      "sampling": false,
-      "elicitation": false,
-      "tasks": false
-    },
-    "contracts": {
-      "capabilities": "dev.lekalo.mcp-capabilities@0.8.0",
-      "diagnosticRegistry": "dev.lekalo.diagnostic-registry@0.8.0"
-    },
-    "tools": [
-      "lekalo_inspect",
-      "lekalo_impact",
-      "lekalo_context",
-      "lekalo_graph",
-      "lekalo_validate",
-      "lekalo_target_status",
-      "lekalo_trace_export"
-    ],
-    "resourceFamilies": [
-      "lekalo://{projectId}/summary",
-      "lekalo://{projectId}/modules",
-      "lekalo://{projectId}/symbol/{symbol}",
-      "lekalo://{projectId}/targets",
-      "lekalo://{projectId}/diagnostics"
-    ]
-  },
-  "qualification": {
-    "note": "A registration is qualified only after the host launches the real binary and completes initialize, tools/list, one resources/read, and one tools/call lekalo_context round trip with the captured protocol and contract pins recorded. Schema validity alone is not qualification.",
-    "requiredChecks": [
-      "initialize negotiates exactly 2025-11-25",
-      "tools/list exposes exactly the seven read tools with readOnlyHint",
-      "resources/read returns application/json with the lekalo/mcp-resource/v0.8.0 envelope",
-      "tools/call lekalo_context returns the full capsule in one call with budget facts intact",
-      "every refusal carries a registered mcp.* diagnostic or preserved domain diagnostics"
-    ]
-  }
+      "instruction": "Put the reviewed lekalo executable on PATH and launch this server with the project root as its working directory. The project selector stays relative ('.'); the server exposes read tools and scoped resources without sampling or write operations."
+    }
+  ]
 }

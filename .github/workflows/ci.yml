@@ -314,6 +314,15 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/test-mcp-host.mjs
+      - name: Provision the pinned AI Factory extension installer (issue #33)
+        run: npm install --prefix "$RUNNER_TEMP/lekalo-ai-factory" --ignore-scripts --no-audit --no-fund --no-save ai-factory@2.19.0
+      - name: Qualify the installed AI Factory extension (issue #33)
+        timeout-minutes: 5
+        env:
+          NODE_PATH: ${{ runner.temp }}/lekalo-mcp-sdk/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+          LEKALO_AI_FACTORY_DIR: ${{ runner.temp }}/lekalo-ai-factory/node_modules/ai-factory
+        run: node scripts/test-mcp-ai-factory.mjs
       - name: Run the live portability contract gate (issue #19)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules

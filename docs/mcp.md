@@ -322,22 +322,39 @@ including otherwise-unused definitions.
 
 ## Connecting an AI Factory extension
 
-`examples/mcp/ai-factory-extension.json` is the registration template:
-it declares the stdio command, the pinned protocol profile, and the
-project grant. The launch shape is qualified end-to-end by
-`scripts/test-mcp-host.mjs` — a built `lekalo` binary, `mcp serve
---stdio --project <workspace-relative project directory>` with the
-server working directory at the workspace root and `LEKALO_PROJECT`
-cleared completes initialize, `tools/list`, one `tools/call
-lekalo_context`, and one `resources/read` over the official SDK.
-The project selector must stay **relative to the server's working
-directory** (`.` for a workspace-root project, `path/to/project` for a
-nested one): the loader's selection policy refuses absolute selectors,
-so a host that substitutes an absolute `${workspaceRoot}` into
-`--project` gets `structure.selection-absolute` on the first call. Host
-operators whose extension runtime cannot set a working directory should
-register with the workspace root as cwd and the relative project
-spelling. Registration is a separate opt-in change of the host's own
-extension manifest — Lekalo never installs, edits, or negotiates with an
-extension on its own. A missing, disabled, or crashed server never
-affects the ordinary CLI: no `lekalo` command startup path touches MCP.
+`examples/mcp/ai-factory-extension.json` is an installable AI Factory
+extension manifest. Copy it into a local extension directory as
+`extension.json`, then run `ai-factory extension add ./local-extension`
+from an initialized project. Put the reviewed `lekalo` executable on PATH.
+The qualified profile uses AI Factory **2.19.0** and its Claude MCP
+settings projection (`.mcp.json`). The manifest uses the upstream array
+of `{key, template, instruction}` entries; a template accepts only
+`command`, `args` and `env`. `cwd`, `type` and descriptive capability
+metadata are not valid template keys.
+
+The host launches this configuration with the project root as its working
+directory. The project selector stays **relative to that directory**
+(`.` for a workspace-root project). An absolute `${workspaceRoot}` in
+`--project` is refused with `structure.selection-absolute` on the first
+call. `LEKALO_PROJECT` is explicitly cleared by the installed template.
+
+`scripts/test-mcp-ai-factory.mjs` validates the committed manifest against
+the pinned package's actual schema, rejects the old object shape and
+unsupported `cwd`, installs the extension through the actual AI Factory
+CLI in a disposable project, and uses its rendered configuration with
+the official MCP SDK **1.32.1** and the real Lekalo binary. It completes
+initialize at **2025-11-25**, checks all seven read-only tools, obtains a
+context capsule in one call, and reads `lekalo://project/summary`.
+Resources advertise `subscribe: true` and `listChanged: false`; the
+existing notifications gate checks the subscription lifecycle separately.
+CI repeats extension installation and host calls on Linux, Windows and
+macOS. A missing required installer or server fails qualification.
+
+This gate performs no model inference or paid generation and does not
+change user projects or host configuration. It qualifies extension
+installation, configuration rendering and MCP exchanges; an AI answer or
+an arbitrary installed agent runtime is a separate observation.
+`scripts/test-mcp-host.mjs` also retains its independent direct-host gate.
+Registration is an explicit host operation: Lekalo never installs an
+extension on ordinary CLI startup. A missing, disabled or crashed MCP
+server does not affect the ordinary CLI.
