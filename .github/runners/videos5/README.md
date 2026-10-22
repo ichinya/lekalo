@@ -15,6 +15,10 @@ information and disable incremental state to bound compiler memory. This does
 not disable debug assertions, overflow checks, tests or Clippy warnings. Release
 profiles and GitHub-hosted build-test jobs keep their existing settings. See the
 [Cargo profile documentation](https://doc.rust-lang.org/cargo/reference/profiles.html#debug).
+Each worker retains its own Actions tool cache and Cargo registry beneath
+`worker-NN/_work/.cache` across executor recreation. Node 24 is seeded into
+the Actions cache from the identical Node binary/npm shipped in the image;
+`setup-node` still selects and verifies the requested version normally.
 Logs rotate at 10 MB with three files retained.
 `lekalo-ci-runtime.service` starts the pool after Docker on boot.
 
