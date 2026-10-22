@@ -384,6 +384,8 @@ pub enum ReferenceRole {
     ScenarioCovers,
     /// A command input type leaf.
     CommandInput,
+    /// A query input type leaf (Model 0.8.0).
+    QueryInput,
     /// A query return type leaf.
     QueryReturns,
     /// A query `reads` symbol.
@@ -396,6 +398,10 @@ pub enum ReferenceRole {
     EffectEmits,
     /// A requirement provenance reference.
     DerivedFrom,
+    /// One typed entity relation target (Model 0.8.0 successor). The
+    /// declaring entity references its relation target entity with the
+    /// exact declared ordinal.
+    EntityRelationTarget,
 }
 
 impl ReferenceRole {
@@ -410,12 +416,14 @@ impl ReferenceRole {
             Self::EffectEntity => "effect-entity",
             Self::ScenarioCovers => "scenario-covers",
             Self::CommandInput => "command-input",
+            Self::QueryInput => "query-input",
             Self::QueryReturns => "query-returns",
             Self::QueryReads => "query-reads",
             Self::PolicyAppliesTo => "policy-applies-to",
             Self::EndpointInvokes => "endpoint-invokes",
             Self::EffectEmits => "effect-emits",
             Self::DerivedFrom => "derived-from",
+            Self::EntityRelationTarget => "entity-relation-target",
         }
     }
 }

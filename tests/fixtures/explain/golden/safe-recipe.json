@@ -1,0 +1,75 @@
+{
+  "catalogVersion": "0.8.0",
+  "explanations": [
+    {
+      "category": "model",
+      "checks": "The rule enforces canonical formatting: pinned render, comment preservation, and Model+IR equality for every admitted edit.",
+      "code": "LEK-FORMAT-001",
+      "docsLinks": [
+        {
+          "url": "https://dev.lekalo/docs/0.8.0/format.md",
+          "version": "0.8.0"
+        }
+      ],
+      "examples": [
+        {
+          "after": "schema_version: \"0.2.16\"\ndefinitions:\n  - id: tasks.task",
+          "before": "# hand-formatted YAML, drifted from canonical\nschema_version: \"0.2.16\"\ndefinitions:\n  -    id: tasks.task"
+        }
+      ],
+      "executableRecipeId": "core.canonical-format",
+      "fixOptions": [
+        {
+          "class": "safe",
+          "description": "Apply the admitted safe canonical-format recipe: preview with lekalo fix LEK-FORMAT-001 --dry-run first, then --apply --expect-plan <id>. The recipe refuses comment loss and proves normalized Model and IR equality.",
+          "recipeId": "core.canonical-format"
+        }
+      ],
+      "rationale": "It matters because formatting diffs are the noisiest review artifacts; the canonical form plus the equality proof keep format-only changes provably semantic-free.",
+      "relatedCodes": [
+        "LEK-FORMAT-002",
+        "LEK-FORMAT-003",
+        "LEK-FORMAT-004",
+        "LEK-FORMAT-005",
+        "LEK-FORMAT-006",
+        "LEK-FORMAT-007",
+        "LEK-FORMAT-008",
+        "LEK-FORMAT-009",
+        "LEK-FORMAT-010",
+        "LEK-FORMAT-011"
+      ],
+      "rootCauses": [
+        "a document was edited outside the canonical formatter",
+        "a formatter run would lose comments or change the compiled IR",
+        "the formatter policy was changed without reformatting"
+      ],
+      "ruleId": "format.diff",
+      "severityProfile": {
+        "allowedStatuses": [
+          "denied"
+        ],
+        "blocking": false,
+        "defaultSeverity": "warning",
+        "severities": [
+          "warning"
+        ],
+        "waiverPolicy": "Not waivable: canonical formatting is the identity of a document."
+      },
+      "source": {
+        "provider": "core"
+      },
+      "targetNotes": [
+        {
+          "note": "Target-neutral: formatting owns Model documents only.",
+          "scope": "general"
+        }
+      ],
+      "title": "Canonical formatting or formatting-service failure"
+    }
+  ],
+  "identity": "dev.lekalo.explain-result@0.8.0",
+  "registryIdentity": "dev.lekalo.diagnostic-registry@0.8.0",
+  "schemaVersion": "lekalo/explain-result/v0.8.0",
+  "state": "explained",
+  "status": "valid"
+}

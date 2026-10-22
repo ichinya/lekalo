@@ -23,7 +23,12 @@ pub const VERSION: &str = "0.3.2";
 /// anything else is a registry/decoder drift refused as a developer
 /// fault before any adapter is launched.
 pub const LINT_VERSION: &str = "0.6.4";
-pub const SUPPORTED_VERSIONS: [&str; 2] = ["0.3.2", LINT_VERSION];
+/// The explicitly negotiated read-only watch partition seam.
+pub const WATCH_VERSION: &str = "0.8.0";
+/// Exact source Model/IR pairs admitted by the negotiated watch seam.
+/// A protocol upgrade never implies admission of another Model version.
+pub const WATCH_MODEL_VERSIONS: [&str; 2] = ["0.2.16", "0.8.0"];
+pub const SUPPORTED_VERSIONS: [&str; 3] = ["0.3.2", LINT_VERSION, WATCH_VERSION];
 
 /// The identity of the schema artifact for the current protocol version.
 pub const IDENTITY: &str = "dev.lekalo.target-protocol@0.3.2";
@@ -132,6 +137,11 @@ mod tests {
             "current-only: 0.3.1 refused"
         );
         assert!(is_supported_version("0.3.2"));
+        assert_eq!(
+            declared(&["0.3.2", WATCH_VERSION]).as_deref(),
+            Some(WATCH_VERSION)
+        );
+        assert_eq!(WATCH_MODEL_VERSIONS, ["0.2.16", "0.8.0"]);
         // A session that declares both still negotiates the only supported
         assert_eq!(
             declared(&["0.3.1", "0.3.2"]).as_deref(),

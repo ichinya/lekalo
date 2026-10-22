@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/change-policy.schema.v0.8.0.json",
+  "title": "Lekalo change policy",
+  "description": "Closed contract of one change acceptance policy (issue #73). A policy may authorize otherwise-denied breaking compatibility classes for reviewed batches; it can never disable structural validity, semantic validation, path safety, ownership proofs, or required evidence. Absent members are the restrictive defaults: no breaking class is allowed, so every valid breaking candidate stays denied.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/change-policy/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.change-policy@0.8.0"
+    },
+    "allowBreakingClasses": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "data-loss-risk",
+          "storage-migration-required",
+          "wire-breaking",
+          "source-breaking"
+        ]
+      }
+    },
+    "evidence": {
+      "description": "Reviewed evidence pins. Data-loss and storage-migration classes can only be authorized by a policy that carries the reviewed migration-plan digest; the boolean acknowledgement flag alone is never sufficient.",
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 1,
+      "properties": {
+        "migrationPlanDigest": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

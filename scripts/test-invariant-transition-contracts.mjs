@@ -2,7 +2,7 @@
 // Issue #63 release gate: the invariant-transition wire schema, the
 // committed valid golden, and the adversarial vectors, validated with
 // the same pinned third-party Draft 2020-12 implementation as the
-// other contract gates. Exact Ajv 8.17.1 is provisioned outside this
+// other contract gates. Exact Ajv 8.20.0 is provisioned outside this
 // checkout (CI does the same on Node 18 and 24) and exposed through
 // NODE_PATH / LEKALO_AJV_NODE_PATH.
 //
@@ -33,18 +33,18 @@ try {
     `${JSON.stringify({
       ok: false,
       gate: "invariant-transition",
-      error: `Ajv 8.17.1 is not reachable through NODE_PATH / LEKALO_AJV_NODE_PATH: ${error}`,
+      error: `Ajv 8.20.0 is not reachable through NODE_PATH / LEKALO_AJV_NODE_PATH: ${error}`,
     })}\n`,
   );
   process.exit(1);
 }
 
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(
     `${JSON.stringify({
       ok: false,
       gate: "invariant-transition",
-      error: `exact Ajv 8.17.1 is required, found ${ajvVersion}`,
+      error: `exact Ajv 8.20.0 is required, found ${ajvVersion}`,
     })}\n`,
   );
   process.exit(1);

@@ -1,0 +1,38 @@
+{
+  "name": "@lekalo/adapter-sdk",
+  "version": "0.1.0",
+  "description": "Adapter SDK for the lekalo.target/v1 process protocol (issue #106): strict wire decoding, semantic validation, honest response builders with a validate-before-write boundary, deterministic ids and canonical bytes, path/scope helpers, bounded stderr logging, and the per-exchange serve loop. No telemetry, no network, no shell; adapters stay read-only by default and inside the host's confinement.",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.mjs"
+    }
+  },
+  "files": [
+    "src",
+    "compatibility.json",
+    "generation.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ichinya/lekalo",
+    "directory": "sdk/typescript"
+  },
+  "keywords": [
+    "lekalo",
+    "adapter",
+    "sdk",
+    "target-protocol"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "private": false
+}

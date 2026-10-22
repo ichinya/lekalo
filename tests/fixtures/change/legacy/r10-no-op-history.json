@@ -1,0 +1,48 @@
+{
+  "identity": "dev.lekalo.change-history@0.8.0",
+  "nextSequence": 2,
+  "project": "tasks",
+  "records": [
+    {
+      "files": [],
+      "intentDigest": "sha256:be559fffeadea9b7295b84c387e898eb1c755c041e12f1d18648a294366a05ae",
+      "keyDigest": "sha256:9119ad31aba4daa5a50fcd6dd81bef253e55603bb247f7c87b8cef04722388e9",
+      "operations": [],
+      "planId": "sha256:8aea0e2dbebfe3e6d051e3dace3e66164659a5a30f7b449cd951c504846c56a3",
+      "receipt": {
+        "diagnosticIds": [],
+        "files": [],
+        "history": {
+          "recordDigest": "sha256:b566d60f9056d2fea155879d624b73370f6ea448ba23a3444c0b47d42ff42d76",
+          "sequence": 1
+        },
+        "identity": "dev.lekalo.change-receipt@0.8.0",
+        "keyDigest": "sha256:9119ad31aba4daa5a50fcd6dd81bef253e55603bb247f7c87b8cef04722388e9",
+        "operations": [],
+        "planId": "sha256:8aea0e2dbebfe3e6d051e3dace3e66164659a5a30f7b449cd951c504846c56a3",
+        "policy": {
+          "allowBreaking": false,
+          "evidence": null,
+          "expectPlan": null,
+          "policyDigest": null
+        },
+        "replayed": false,
+        "requestDigest": "sha256:47a0d128a02b1b677684e4e089c9cf392eb5db45a5d41e458b208ac61d4cfa1a",
+        "schemaVersion": "lekalo/change-receipt/v0.8.0",
+        "state": "no-op",
+        "status": "valid",
+        "transaction": {
+          "id": "change-8aea0e2d-1",
+          "state": "committed"
+        }
+      },
+      "requestDigest": "sha256:47a0d128a02b1b677684e4e089c9cf392eb5db45a5d41e458b208ac61d4cfa1a",
+      "sequence": 1
+    }
+  ],
+  "schemaVersion": "lekalo/change-history/v0.8.0",
+  "tip": {
+    "recordDigest": "sha256:b566d60f9056d2fea155879d624b73370f6ea448ba23a3444c0b47d42ff42d76",
+    "sequence": 1
+  }
+}

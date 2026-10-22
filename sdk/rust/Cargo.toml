@@ -1,0 +1,22 @@
+[package]
+name = "lekalo-adapter-sdk-rust"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80.0"
+license = "MIT OR Apache-2.0"
+description = "Adapter SDK for the lekalo.target/v1 process protocol (issue #106): strict wire decoding, semantic validation, validate-before-write builders, deterministic ids and canonical bytes, path/scope helpers, bounded stderr logging, and the per-exchange serve loop. No telemetry, no network, no shell; no lekalo-core coupling beyond the wire contracts."
+repository = "https://github.com/ichinya/lekalo"
+publish = false
+
+[dependencies]
+sha2 = "0.10.9"
+
+[workspace]
+
+[lib]
+name = "lekalo_adapter_sdk"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vectors"
+path = "src/bin/vectors.rs"

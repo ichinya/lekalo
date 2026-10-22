@@ -141,10 +141,15 @@ impl FactSelection {
 pub(crate) struct FactContext<'a> {
     pub(crate) definitions: BTreeMap<&'a str, &'a Definition>,
     pub(crate) filter: EdgeFilter,
+    error_operations: BTreeSet<String>,
+    explicit_errors: bool,
 }
 
 impl<'a> FactContext<'a> {
-    pub(crate) fn new(project: &'a CompiledProject) -> Self {
+    pub(crate) fn with_registry(
+        project: &'a CompiledProject,
+        registry: Option<&crate::error_contract::ErrorRegistry>,
+    ) -> Self {
         let definitions: BTreeMap<&'a str, &'a Definition> = project
             .definitions
             .iter()
@@ -153,6 +158,17 @@ impl<'a> FactContext<'a> {
         Self {
             definitions,
             filter: EdgeFilter::new(),
+            explicit_errors: registry.is_some(),
+            error_operations: registry
+                .or_else(|| crate::error_contract::ErrorRegistry::embedded().ok())
+                .map(|registry| {
+                    registry
+                        .bindings()
+                        .iter()
+                        .map(|binding| binding.operation().as_str().to_owned())
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 }
@@ -209,12 +225,18 @@ fn contract_parts(definition: &Definition, parts: &mut Vec<String>) {
             parts.push("required".to_owned());
         }
         parts.push(type_spelling(&field.r#type));
+        if let Some(default) = &field.default {
+            parts.push(format!("default={}", default.canonical_json()));
+        }
     };
     match definition {
         Definition::Scalar(scalar) => parts.push(scalar.base.as_str().to_owned()),
         Definition::Enum(enumeration) => {
             for value in &enumeration.values {
                 parts.push(value.value.as_str().to_owned());
+                if let Some(wire) = &value.wire_value {
+                    parts.push(format!("wire={}", wire.canonical_json()));
+                }
                 if let Some(description) = &value.description {
                     parts.push(description.as_str().to_owned());
                 }
@@ -242,6 +264,9 @@ fn contract_parts(definition: &Definition, parts: &mut Vec<String>) {
             }
         }
         Definition::Query(query) => {
+            for member in &query.input {
+                field(member, parts);
+            }
             for read in &query.reads {
                 parts.push(read.as_str().to_owned());
             }
@@ -524,16 +549,24 @@ pub(crate) fn collect_facts(
     // selection is explicitly incomplete — never a silently reduced F
     // (research: missing applicable attachment facts make the
     // minimum-safe estimate unknown).
-    let unrepresentable = selection.counted_operations.iter().any(|operation| {
-        crate::error_contract::ErrorRegistry::embedded()
-            .map(|registry| {
-                registry
-                    .bindings()
-                    .iter()
-                    .any(|binding| binding.operation().as_str() == operation)
-            })
-            .unwrap_or(false)
-    });
+    // Error contracts apply to selected operation contracts even when an
+    // operation has no effect edges. The effect count is not an error-owner
+    // applicability test (pure queries still have typed error unions).
+    let unrepresentable = if context.explicit_errors {
+        required_ids.keys().any(|id| {
+            graph
+                .resolve(id)
+                .is_some_and(|node| context.error_operations.contains(node.id().semantic_id()))
+        })
+    } else {
+        // Keep the legacy embedded projection byte-compatible. Its bound
+        // effect operations remain the applicability seam; only an explicit
+        // project owner supplies the complete additional operation facts.
+        selection
+            .counted_operations
+            .iter()
+            .any(|operation| context.error_operations.contains(operation))
+    };
     if unrepresentable {
         selection.gaps.push(FactGap::ErrorContractsUnrepresentable);
         selection.complete = false;

@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "lekalo/module-mapping-evidence/v0.8.0",
+  "identity": "dev.lekalo.module-mapping-evidence@0.8.0",
+  "implementation": "extracted-service",
+  "port": "tasks.api",
+  "producer": {
+    "project": "tasks",
+    "module": "tasks"
+  },
+  "publicDigest": "sha256:0c595c2b61babe2533d798f0067635b9a53775637bc607e691750429471cd8f2",
+  "observations": [
+    {
+      "operation": "tasks.get_task",
+      "kind": "query",
+      "inputs": [],
+      "results": {
+        "ref": "tasks.task_view"
+      },
+      "errors": [],
+      "effects": [],
+      "access": "read",
+      "capabilities": [
+        "http"
+      ]
+    },
+    {
+      "operation": "tasks.list_tasks",
+      "kind": "query",
+      "inputs": [],
+      "results": {
+        "list": {
+          "ref": "tasks.task_view"
+        }
+      },
+      "errors": [],
+      "effects": [],
+      "access": "read",
+      "capabilities": [
+        "http"
+      ]
+    },
+    {
+      "operation": "tasks.create_task_cmd",
+      "kind": "command",
+      "inputs": [
+        {
+          "name": "title",
+          "required": true,
+          "type": {
+            "ref": "tasks.title"
+          }
+        }
+      ],
+      "results": null,
+      "errors": [],
+      "effects": [
+        {
+          "entity": "tasks.task",
+          "operation": "create",
+          "emits": [
+            "tasks.task_created"
+          ]
+        }
+      ],
+      "access": "write",
+      "capabilities": [
+        "http"
+      ]
+    },
+    {
+      "operation": "tasks.complete_task_cmd",
+      "kind": "command",
+      "inputs": [
+        {
+          "name": "task_id",
+          "required": true,
+          "type": {
+            "ref": "tasks.task_id"
+          }
+        }
+      ],
+      "results": null,
+      "errors": [],
+      "effects": [
+        {
+          "entity": "tasks.task",
+          "operation": "update",
+          "emits": []
+        }
+      ],
+      "access": "write",
+      "capabilities": [
+        "http"
+      ]
+    }
+  ],
+  "unsupported": [],
+  "digest": "sha256:515b542967d32ff94332b06e804ac55500d1d94a30edae31537c44fa50a1c4d9"
+}

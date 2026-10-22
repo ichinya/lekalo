@@ -1,0 +1,5 @@
+{
+  "logical": false,
+  "name": "path-unc",
+  "path": "\\\\server/share/x"
+}

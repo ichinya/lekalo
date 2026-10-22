@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskhub.synthetic/changelog-entry.schema.json",
+  "title": "Taskhub public changelog entry",
+  "description": "The public application DTO of one published changelog snapshot (payload version 0.8.0): the allowlisted snapshot fields only. No worklog body, private title, internal identifiers, provider credentials, correlation or audit metadata exists on this surface.",
+  "type": "object",
+  "properties": {
+    "payloadVersion": {
+      "const": "0.8.0"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entryId",
+        "revision",
+        "body",
+        "contentDigest",
+        "snapshotSchemaVersion",
+        "publishedAt"
+      ],
+      "properties": {
+        "entryId": {
+          "type": "string",
+          "format": "uuid",
+          "description": "The stable changelog entry identifier."
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The immutable monotonic snapshot revision."
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 20000,
+          "description": "The reviewed public body in plain text; rendering applies the shared safe-URL policy."
+        },
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "The digest of the canonical public snapshot bytes."
+        },
+        "snapshotSchemaVersion": {
+          "const": "0.8.0",
+          "description": "The snapshot payload schema version the bytes were written under."
+        },
+        "publishedAt": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+          "description": "The publication timestamp."
+        }
+      }
+    }
+  },
+  "required": [
+    "payloadVersion",
+    "entry"
+  ],
+  "additionalProperties": false
+}

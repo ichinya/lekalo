@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "lekalo/managed-coverage/v0.8.0",
+  "identity": "dev.lekalo.managed-coverage@0.8.0",
+  "module": "planner",
+  "target": "node-typescript",
+  "recipe": {
+    "id": "planner-basic",
+    "version": "1",
+    "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "adapter": {
+    "entry": "adapters/managed.mjs",
+    "packageDigest": "sha256:44445a814f38c9eb06c74ca97b5b29afe44d09da2b7aa221c611587f6f5c45f8",
+    "protocol": "0.6.4"
+  },
+  "requirements": [
+    {
+      "id": "planner.complete_task",
+      "kind": "command",
+      "support": "full",
+      "witness": {
+        "state": "known",
+        "value": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "projection": [
+        {
+          "from": "done",
+          "to": "done"
+        },
+        {
+          "from": "id",
+          "to": "id"
+        }
+      ],
+      "sample": {
+        "state": "known",
+        "value": {
+          "input": {
+            "id": "t-2",
+            "done": true
+          },
+          "output": {
+            "id": "t-2",
+            "done": true
+          }
+        }
+      }
+    },
+    {
+      "id": "planner.focus_task",
+      "kind": "query",
+      "support": "full",
+      "witness": {
+        "state": "known",
+        "value": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "projection": [
+        {
+          "from": "id",
+          "to": "id"
+        },
+        {
+          "from": "title",
+          "to": "title"
+        }
+      ],
+      "sample": {
+        "state": "known",
+        "value": {
+          "input": {
+            "id": "t-1",
+            "title": "Focus"
+          },
+          "output": {
+            "id": "t-1",
+            "title": "Focus"
+          }
+        }
+      }
+    }
+  ],
+  "extensions": [],
+  "complete": true,
+  "authority": {
+    "state": "known",
+    "value": {
+      "model": "sha256:f36ae9a4769ed4e7c92683c82bf8d609c90e5aee1366fa06186c2244fc1a6bd3",
+      "ir": "sha256:a5b9e801e90c92316400eaaca22ada0738728a8750c4ef75cdaaf1798e44c2de",
+      "lock": "sha256:7ef11bfe5df256991ea482c2831f4c99ec45db5bce63d76bffe5e47ff1113062"
+    }
+  }
+}

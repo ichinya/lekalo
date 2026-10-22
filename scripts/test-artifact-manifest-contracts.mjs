@@ -3,7 +3,7 @@
 // contract (contracts/artifact-manifest.schema.v0.2.16.json) against the
 // fixture matrix under tests/fixtures/artifacts/wire with exact
 // structural Ajv checks plus the canonical-byte, self-digest, and
-// cross-field invariants the schema cannot express. Exact Ajv 8.17.1 is
+// cross-field invariants the schema cannot express. Exact Ajv 8.20.0 is
 // provisioned outside this checkout (CI does the same on Node 18 and 24)
 // and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 
@@ -22,7 +22,7 @@ try {
   console.error(JSON.stringify({ ok: false, reason: "ajv-unavailable", detail: String(error) }, null, 2));
   process.exit(1);
 }
-if (require("ajv/package.json").version !== "8.17.1") {
+if (require("ajv/package.json").version !== "8.20.0") {
   console.error(JSON.stringify({ ok: false, reason: "ajv-version", detail: require("ajv/package.json").version }, null, 2));
   process.exit(1);
 }
@@ -156,4 +156,4 @@ for (const name of invalid) {
   checked += 1;
 }
 
-console.log(JSON.stringify({ ok: true, ajv: "8.17.1", valid: valid.length, invalid: invalid.length, checked }));
+console.log(JSON.stringify({ ok: true, ajv: "8.20.0", valid: valid.length, invalid: invalid.length, checked }));

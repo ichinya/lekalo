@@ -147,6 +147,7 @@ pub(crate) enum ContractBody {
         input: Vec<FieldProjection>,
     },
     Query {
+        input: Vec<FieldProjection>,
         reads: Vec<String>,
         output: Option<TypeRefProjection>,
     },
@@ -184,10 +185,35 @@ pub(crate) struct ContractSection {
     pub body: ContractBody,
 }
 
-/// One entity identity invariant.
+/// One typed invariant of the invariants section: the primary identity
+/// membership every entity declares, plus (Model 0.8.0 sources) the
+/// typed relation cardinalities and secondary-uniqueness constraints
+/// the entity owns.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct InvariantItem {
-    pub fields: Vec<String>,
+pub(crate) enum InvariantItem {
+    /// The ordered primary identity field membership.
+    Identity { fields: Vec<String> },
+    /// One declared relation cardinality: min/max (`None` is the
+    /// explicit unbounded spelling), ownership, and both field sides.
+    Relation {
+        relation: String,
+        target: String,
+        local_fields: Vec<String>,
+        target_fields: Vec<String>,
+        min: u64,
+        max: Option<u64>,
+        ownership: &'static str,
+        on_detach: &'static str,
+        on_delete: &'static str,
+    },
+    /// One declared secondary-uniqueness constraint.
+    UniqueConstraint {
+        constraint: String,
+        fields: Vec<String>,
+        scope: String,
+        comparison: &'static str,
+        normalization_ref: Option<String>,
+    },
 }
 
 /// One applicable policy.
@@ -381,7 +407,15 @@ fn push_contract(lines: &mut Vec<String>, body: &ContractBody) {
             lines.push(format!("  {label}:"));
             push_fields(lines, fields);
         }
-        ContractBody::Query { reads, output } => {
+        ContractBody::Query {
+            input,
+            reads,
+            output,
+        } => {
+            if !input.is_empty() {
+                lines.push("  input:".to_owned());
+                push_fields(lines, input);
+            }
             lines.push(format!("  reads: {}", reads.join(", ")));
             if let Some(output) = output {
                 lines.push(format!("  returns: {}", type_ref_text(output)));
@@ -462,9 +496,41 @@ fn push_items(lines: &mut Vec<String>, label: &str, section: &ItemsSection) {
     lines.push(line);
     for item in &section.items {
         match item {
-            Item::Invariant(invariant) => {
-                lines.push(format!("  - identity {}", invariant.fields.join(", ")))
-            }
+            Item::Invariant(invariant) => match invariant {
+                InvariantItem::Identity { fields } => {
+                    lines.push(format!("  - identity {}", fields.join(", ")))
+                }
+                InvariantItem::Relation {
+                    relation,
+                    target,
+                    min,
+                    max,
+                    ownership,
+                    local_fields,
+                    target_fields,
+                    on_detach,
+                    on_delete,
+                } => lines.push(format!(
+                    "  - relation {relation} -> {target} [{min}..{}] ({ownership}; detach={on_detach}; delete={on_delete}) on ({}) -> ({})",
+                    match max {
+                        Some(max) => max.to_string(),
+                        None => "*".to_owned(),
+                    },
+                    local_fields.join(", "),
+                    target_fields.join(", ")
+                )),
+                InvariantItem::UniqueConstraint {
+                    constraint,
+                    fields,
+                    scope,
+                    comparison,
+                    normalization_ref,
+                } => lines.push(format!(
+                    "  - unique {constraint} ({}) in {scope} ({comparison}; normalization={})",
+                    fields.join(", "),
+                    normalization_ref.as_deref().unwrap_or("none"),
+                )),
+            },
             Item::Policy(policy) => lines.push(format!("  - {} {}", policy.id, policy.decision)),
             Item::Effect(effect) => lines.push(format!("  - {}", effect.human)),
             Item::Relation(relation) => lines.push(format!(

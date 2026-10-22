@@ -1,0 +1,15 @@
+{
+  "scenarioId": "tasklinks.scenario.detach_history",
+  "issueVerbatim": "detach preserves history/external object;",
+  "origin": "mock",
+  "steps": [
+    { "command": "tasklinks.detach_link", "link": "link-a", "priorState": { "inboundCursor": "r7", "pendingIntent": true } }
+  ],
+  "expects": [
+    { "kind": "link-state", "value": "detached" },
+    { "kind": "history-retained", "value": true },
+    { "kind": "external-object-retained", "value": true },
+    { "kind": "pending-cancelled", "value": true },
+    { "kind": "no-external-delete", "value": true }
+  ]
+}

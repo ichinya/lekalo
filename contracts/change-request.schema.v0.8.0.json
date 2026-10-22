@@ -1,0 +1,888 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/change-request.schema.v0.8.0.json",
+  "title": "Lekalo change request",
+  "description": "Closed contract of one ordered semantic change batch (issue #73). The request is a pure declaration: it names typed semantic subjects and closed operation payloads only. No source paths, JSON Pointers, shell fragments, executable patches, or wall-clock values may appear. Operation order is semantic and is hashed as written. Operations the running implementation does not provide decode as declared members and fail later with the registered unsupported outcome; unknown operation discriminators are malformed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/change-request/v0.8.0"
+    },
+    "expectModel": {
+      "$ref": "#/$defs/sha256"
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "$ref": "#/$defs/operation"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "symbolId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,3}$"
+    },
+    "moduleId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "fieldName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "typeRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ref"
+          ],
+          "properties": {
+            "ref": {
+              "$ref": "#/$defs/symbolId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "list"
+          ],
+          "properties": {
+            "list": {
+              "$ref": "#/$defs/typeRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "optional"
+          ],
+          "properties": {
+            "optional": {
+              "$ref": "#/$defs/typeRef"
+            }
+          }
+        }
+      ]
+    },
+    "fieldDecl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "type": {
+          "$ref": "#/$defs/typeRef"
+        },
+        "required": {
+          "const": true
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "default": {
+          "$ref": "#/$defs/literal"
+        }
+      }
+    },
+    "caseDecl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "value": {
+          "$ref": "#/$defs/literal"
+        }
+      }
+    },
+    "literal": {
+      "description": "One bounded JSON literal tree. The runtime decoder additionally bounds the depth to four and each string to 8192 bytes; deeper or larger values are malformed.",
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 8192
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/literal"
+          }
+        },
+        {
+          "type": "object",
+          "maxProperties": 16,
+          "additionalProperties": {
+            "$ref": "#/$defs/literal"
+          }
+        }
+      ]
+    },
+    "closedPayload": {
+      "description": "One bounded declaration payload carried verbatim by an operation this implementation does not provide yet. Members are never interpreted; the payload exists so a request written against the full catalog decodes and fails with the registered unsupported outcome instead of a malformed shape.",
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "maxLength": 64
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/literal"
+      }
+    },
+    "operation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "entity",
+            "field"
+          ],
+          "properties": {
+            "operation": {
+              "const": "entity-field:add"
+            },
+            "entity": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "field": {
+              "$ref": "#/$defs/fieldDecl"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "entity",
+            "name"
+          ],
+          "properties": {
+            "operation": {
+              "const": "entity-field:remove"
+            },
+            "entity": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "name": {
+              "$ref": "#/$defs/fieldName"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "entity",
+            "name",
+            "to"
+          ],
+          "properties": {
+            "operation": {
+              "const": "entity-field:rename"
+            },
+            "entity": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "name": {
+              "$ref": "#/$defs/fieldName"
+            },
+            "to": {
+              "$ref": "#/$defs/fieldName"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "enum",
+            "case"
+          ],
+          "properties": {
+            "operation": {
+              "const": "enum-case:add"
+            },
+            "enum": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "case": {
+              "$ref": "#/$defs/caseDecl"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "enum",
+            "name",
+            "definition"
+          ],
+          "properties": {
+            "operation": {
+              "const": "enum-case:change"
+            },
+            "enum": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "name": {
+              "$ref": "#/$defs/fieldName"
+            },
+            "definition": {
+              "$ref": "#/$defs/caseChangeDecl"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "kind",
+            "module",
+            "definition"
+          ],
+          "properties": {
+            "operation": {
+              "const": "definition:add"
+            },
+            "kind": {
+              "enum": [
+                "command",
+                "query",
+                "event",
+                "policy",
+                "scenario"
+              ]
+            },
+            "module": {
+              "$ref": "#/$defs/moduleId"
+            },
+            "definition": {
+              "$ref": "#/$defs/definitionDecl"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "operationTarget",
+            "definition"
+          ],
+          "properties": {
+            "operation": {
+              "const": "operation-input:set"
+            },
+            "operationTarget": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "definition": {
+              "$ref": "#/$defs/fieldList"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "operationTarget",
+            "type"
+          ],
+          "properties": {
+            "operation": {
+              "const": "operation-output:set"
+            },
+            "operationTarget": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "type": {
+              "$ref": "#/$defs/typeRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "operationTarget",
+            "definition"
+          ],
+          "properties": {
+            "operation": {
+              "const": "operation-error:set"
+            },
+            "operationTarget": {
+              "$ref": "#/$defs/errorId"
+            },
+            "definition": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "errors",
+                "registryDigest"
+              ],
+              "properties": {
+                "errors": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 256,
+                  "uniqueItems": true,
+                  "items": {
+                    "$ref": "#/$defs/errorId"
+                  }
+                },
+                "registryDigest": {
+                  "$ref": "#/$defs/sha256"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "command"
+          ],
+          "properties": {
+            "operation": {
+              "const": "command-effect:add"
+            },
+            "command": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "effect": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "emit": {
+              "$ref": "#/$defs/symbolId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "command"
+          ],
+          "properties": {
+            "operation": {
+              "const": "command-effect:remove"
+            },
+            "command": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "effect": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "emit": {
+              "$ref": "#/$defs/symbolId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "query",
+            "effect"
+          ],
+          "properties": {
+            "operation": {
+              "const": "query-effect:add"
+            },
+            "query": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "effect": {
+              "$ref": "#/$defs/symbolId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "query",
+            "effect"
+          ],
+          "properties": {
+            "operation": {
+              "const": "query-effect:remove"
+            },
+            "query": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "effect": {
+              "$ref": "#/$defs/symbolId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "symbol",
+            "definition"
+          ],
+          "properties": {
+            "operation": {
+              "const": "binding:add"
+            },
+            "symbol": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "definition": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind",
+                    "target"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "canonical-target-binding"
+                    },
+                    "target": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+                    },
+                    "description": {
+                      "$ref": "#/$defs/text"
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "kind",
+                    "proposal",
+                    "candidate",
+                    "indexDigest"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "observed-confirmation"
+                    },
+                    "proposal": {
+                      "type": "string",
+                      "pattern": "^prop-[0-9a-f]{64}$"
+                    },
+                    "candidate": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+                    },
+                    "indexDigest": {
+                      "$ref": "#/$defs/sha256"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "subject",
+            "mode",
+            "evidence"
+          ],
+          "properties": {
+            "operation": {
+              "const": "ownership:set"
+            },
+            "subject": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/moduleId"
+                },
+                {
+                  "$ref": "#/$defs/symbolId"
+                }
+              ]
+            },
+            "mode": {
+              "enum": [
+                "observed",
+                "contracted",
+                "managed"
+              ]
+            },
+            "evidence": {
+              "$ref": "#/$defs/ownershipEvidence"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "symbol",
+            "requirement"
+          ],
+          "properties": {
+            "operation": {
+              "const": "requirement:link"
+            },
+            "symbol": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "requirement": {
+              "$ref": "#/$defs/requirementId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "symbol",
+            "requirement"
+          ],
+          "properties": {
+            "operation": {
+              "const": "requirement:unlink"
+            },
+            "symbol": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "requirement": {
+              "$ref": "#/$defs/requirementId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "symbol",
+            "toModule"
+          ],
+          "properties": {
+            "operation": {
+              "const": "symbol:move"
+            },
+            "symbol": {
+              "$ref": "#/$defs/symbolId"
+            },
+            "toModule": {
+              "$ref": "#/$defs/moduleId"
+            },
+            "toName": {
+              "$ref": "#/$defs/fieldName"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "module",
+            "directory"
+          ],
+          "properties": {
+            "operation": {
+              "const": "module:move"
+            },
+            "module": {
+              "$ref": "#/$defs/moduleId"
+            },
+            "directory": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 63,
+              "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "operation",
+            "step"
+          ],
+          "properties": {
+            "operation": {
+              "const": "migration:apply"
+            },
+            "step": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-z][a-z0-9.-]{0,126}$"
+            },
+            "parameters": {
+              "$ref": "#/$defs/closedPayload"
+            }
+          }
+        }
+      ]
+    },
+    "fieldList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "input"
+      ],
+      "properties": {
+        "input": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/fieldDecl"
+          }
+        }
+      }
+    },
+    "idRefList": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/symbolId"
+      }
+    },
+    "caseChangeDecl": {
+      "description": "Closed enum-case change declaration: rename, description or an explicit bounded JSON wire value (Model/IR 0.8.0 only).",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "maxProperties": 3,
+      "properties": {
+        "rename": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "value": {
+          "$ref": "#/$defs/literal"
+        }
+      }
+    },
+    "definitionDecl": {
+      "description": "Closed declaration of one new command, query, event, policy, or scenario. Exactly the members of the declared kind are interpreted; the runtime refuses kind-mismatched members and unresolvable references.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/fieldName"
+        },
+        "description": {
+          "$ref": "#/$defs/text"
+        },
+        "input": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/fieldDecl"
+          }
+        },
+        "effects": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/symbolId"
+          }
+        },
+        "reads": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/symbolId"
+          }
+        },
+        "returns": {
+          "$ref": "#/$defs/typeRef"
+        },
+        "payload": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/fieldDecl"
+          }
+        },
+        "appliesTo": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/symbolId"
+          }
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "summary": {
+          "$ref": "#/$defs/text"
+        },
+        "covers": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/symbolId"
+          }
+        }
+      }
+    },
+    "requirementId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z0-9][A-Z0-9._-]{0,127}$"
+    },
+    "errorId": {
+      "type": "string",
+      "maxLength": 190,
+      "pattern": "^[a-z][a-z0-9_]{0,62}\\.[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+    },
+    "ownershipEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ownershipDigest"
+      ],
+      "properties": {
+        "ownershipDigest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "coverage": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "target",
+              "path",
+              "digest"
+            ],
+            "properties": {
+              "target": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9_.:/@-]+$",
+                "not": {
+                  "pattern": "[gG][hH][pPoOuUsSrR]_[A-Za-z0-9_]{20,}"
+                }
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@-]*(/[A-Za-z0-9][A-Za-z0-9_.@-]*)*$",
+                "allOf": [
+                  {
+                    "not": {
+                      "pattern": "\\.\\."
+                    }
+                  },
+                  {
+                    "not": {
+                      "pattern": "[gG][hH][pPoOuUsSrR]_[A-Za-z0-9_]{20,}"
+                    }
+                  }
+                ]
+              },
+              "digest": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

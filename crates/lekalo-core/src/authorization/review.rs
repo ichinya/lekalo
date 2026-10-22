@@ -121,7 +121,16 @@ impl ProjectIndex {
                     operations.insert(
                         query.id.as_str().to_owned(),
                         OperationInfo {
-                            input_fields: Vec::new(),
+                            input_fields: {
+                                let mut fields: Vec<_> = query
+                                    .input
+                                    .iter()
+                                    .map(|f| f.name.as_str().to_owned())
+                                    .collect();
+                                fields.sort();
+                                fields.dedup();
+                                fields
+                            },
                             entities: touched,
                             effects,
                         },

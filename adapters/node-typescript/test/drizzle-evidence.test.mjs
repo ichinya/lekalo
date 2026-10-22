@@ -1,7 +1,7 @@
 /**
  * #116 Drizzle ORM evidence suite: end-to-end scans of the committed
  * Postgres and MySQL fixtures through the production bundle (vendored
- * compiler + embedded upstream drizzle-orm@0.44.7 declaration closure),
+ * compiler + embedded upstream drizzle-orm@0.45.4 declaration closure),
  * asserting schema facts, constraints with spans, relations, query
  * effects, transaction boundaries, migration references, tenant scope
  * evidence, bindings, projection comparison, freshness invalidation,
@@ -35,7 +35,7 @@ test("drizzle closure mapping covers exactly the supported subpaths in the embed
   const adapter = await loadAdapter();
   const closure = adapter.__lekaloKernel.embeddedDrizzleDeclarations();
   assert.ok(closure, "the shipped bundle carries the embedded drizzle closure");
-  assert.equal(closure.pin, "0.44.7");
+  assert.equal(closure.pin, "0.45.4");
   assert.match(closure.digest, /^sha256:[0-9a-f]{64}$/);
   const mapping = drizzleClosureMapping(closure);
   assert.ok(mapping, "every supported subpath exists in the closure");
@@ -59,7 +59,7 @@ test("drizzle closure mapping covers exactly the supported subpaths in the embed
 });
 
 test("attachment decision: exact pin attaches; ranges, mismatch, and absence do not", () => {
-  const closure = { pin: "0.44.7", files: new Map(), digest: "sha256:" + "0".repeat(64) };
+  const closure = { pin: "0.45.4", files: new Map(), digest: "sha256:" + "0".repeat(64) };
   const manifestOf = (specs) => ({
     packageFiles: specs === null ? [] : [{
       path: "package.json",
@@ -72,28 +72,30 @@ test("attachment decision: exact pin attaches; ranges, mismatch, and absence do 
   const specs = (fn) => fn;
   void specs;
 
-  const exact = resolveDrizzleAttachment(manifestOf(["0.44.7"]), () =>
-    Buffer.from(JSON.stringify({ dependencies: { "drizzle-orm": "0.44.7" } })), closure);
+  const exact = resolveDrizzleAttachment(manifestOf(["0.45.4"]), () =>
+    Buffer.from(JSON.stringify({ dependencies: { "drizzle-orm": "0.45.4" } })), closure);
   assert.equal(exact.attached, true);
   assert.equal(exact.reason, "pin-exact");
 
-  const range = resolveDrizzleAttachment(manifestOf(["^0.44.7"]), () =>
-    Buffer.from(JSON.stringify({ dependencies: { "drizzle-orm": "^0.44.7" } })), closure);
+  const range = resolveDrizzleAttachment(manifestOf(["^0.45.4"]), () =>
+    Buffer.from(JSON.stringify({ dependencies: { "drizzle-orm": "^0.45.4" } })), closure);
   assert.equal(range.attached, false);
   assert.equal(range.reason, "pin-not-exact");
 
-  const mismatch = resolveDrizzleAttachment(manifestOf(["0.43.0"]), () =>
-    Buffer.from(JSON.stringify({ devDependencies: { "drizzle-orm": "0.43.0" } })), closure);
-  assert.equal(mismatch.attached, false);
-  assert.equal(mismatch.reason, "pin-mismatch");
-  assert.equal(mismatch.supported, "0.44.7");
+  for (const version of ["0.43.0", "0.44.7", "0.45.1"]) {
+    const mismatch = resolveDrizzleAttachment(manifestOf([version]), () =>
+      Buffer.from(JSON.stringify({ devDependencies: { "drizzle-orm": version } })), closure);
+    assert.equal(mismatch.attached, false);
+    assert.equal(mismatch.reason, "pin-mismatch");
+    assert.equal(mismatch.supported, "0.45.4");
+  }
 
   const absent = resolveDrizzleAttachment(manifestOf(null), () => Buffer.from("{}"), closure);
   assert.equal(absent.attached, false);
   assert.equal(absent.reason, "pin-absent");
 
-  const noClosure = resolveDrizzleAttachment(manifestOf(["0.44.7"]), () =>
-    Buffer.from(JSON.stringify({ dependencies: { "drizzle-orm": "0.44.7" } })), null);
+  const noClosure = resolveDrizzleAttachment(manifestOf(["0.45.4"]), () =>
+    Buffer.from(JSON.stringify({ dependencies: { "drizzle-orm": "0.45.4" } })), null);
   assert.equal(noClosure.attached, false);
   assert.equal(noClosure.reason, "declarations-absent");
   void readBytes;
@@ -128,7 +130,7 @@ test("postgres: tables, columns, defaults, nullability, and keys extract with sp
     const d = fx.index.drizzle;
     assert.ok(d, "drizzle evidence attached");
     assert.equal(d.schema, "lekalo/drizzle-evidence/v0.1.0");
-    assert.equal(d.identity.orm.pin, "0.44.7");
+    assert.equal(d.identity.orm.pin, "0.45.4");
     assert.equal(d.identity.orm.attached, true);
     assert.equal(d.identity.readOnly, true);
     assert.deepEqual(d.dialects, ["postgresql"]);
@@ -555,7 +557,7 @@ test("a semver-range drizzle pin leaves declarations unattached: imports stay un
     writeFileSync(pkgPath, JSON.stringify({
       name: "lekalo-drizzle-fixture-postgres",
       private: true,
-      dependencies: { "drizzle-orm": "^0.44.7" },
+      dependencies: { "drizzle-orm": "^0.45.4" },
     }));
     const second = fx.rescan();
     assert.equal(second.index.drizzle, null, "no evidence without an exact pin");
@@ -567,8 +569,8 @@ test("a semver-range drizzle pin leaves declarations unattached: imports stay un
     assert.deepEqual(second.index.drizzleAttachment, {
       attached: false,
       reason: "pin-not-exact",
-      declared: ["^0.44.7"],
-      supported: "0.44.7",
+      declared: ["^0.45.4"],
+      supported: "0.45.4",
     });
 
     // A non-drizzle project records no attachment rejection at all.

@@ -1,0 +1,5 @@
+{
+  "adapterMode": "slow",
+  "case": "deadline-termination",
+  "expectedTerminal": "timeout"
+}

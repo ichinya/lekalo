@@ -195,6 +195,7 @@ fn field_map(definition: &crate::ir::Definition) -> std::collections::BTreeMap<S
         crate::ir::Definition::Entity(entity) => &entity.fields,
         crate::ir::Definition::ValueObject(value_object) => &value_object.fields,
         crate::ir::Definition::Command(command) => &command.input,
+        crate::ir::Definition::Query(query) => &query.input,
         crate::ir::Definition::Event(event) => &event.payload,
         _ => &[],
     };

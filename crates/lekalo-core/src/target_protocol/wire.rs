@@ -45,6 +45,7 @@ pub fn decode_request(bytes: &[u8]) -> Result<RequestEnvelope, super::TargetFail
 
 pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFailure> {
     let invalid = |detail| Err(super::TargetFailure::RequestInvalid { detail });
+    super::watch::validate(request)?;
     if request.protocol != PROTOCOL_TOKEN {
         return Err(super::TargetFailure::ProtocolMismatch {
             detail: ProtocolMismatch::Token,
@@ -59,8 +60,10 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
         return invalid("lint-request");
     }
     if let Some(lint) = &request.lint_request {
-        if request.protocol_version != super::version::LINT_VERSION
-            || request.target.is_none()
+        if !matches!(
+            request.protocol_version.as_str(),
+            super::version::LINT_VERSION | super::version::WATCH_VERSION
+        ) || request.target.is_none()
             || request.profile.is_some()
             || request.profile_digest.is_some()
             || request.profile_capabilities.is_some()
@@ -372,8 +375,10 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
         .result
         .as_ref()
         .is_some_and(|r| r.lint_evidence.is_some())
-        && (response.protocol_version != super::version::LINT_VERSION
-            || response.operation != Operation::Lint)
+        && (!matches!(
+            response.protocol_version.as_str(),
+            super::version::LINT_VERSION | super::version::WATCH_VERSION
+        ) || response.operation != Operation::Lint)
     {
         return invalid;
     }
@@ -392,21 +397,41 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
     {
         return invalid;
     }
+    if response
+        .evidence
+        .watch_digest
+        .as_ref()
+        .is_some_and(|digest| {
+            response.protocol_version != super::version::WATCH_VERSION || !is_sha256_digest(digest)
+        })
+    {
+        return invalid;
+    }
     if let Some(c) = &response.capabilities {
+        if c.watch.as_ref().is_some_and(|support| {
+            response.protocol_version != super::version::WATCH_VERSION || !support.valid()
+        }) {
+            return invalid;
+        }
         if !identity_valid(&c.adapter)
             || !unique(&c.protocol_versions, 1, 8)
             || !c.protocol_versions.iter().all(|v| contract_version(v))
             || !unique(
                 &c.operations,
                 1,
-                if response.protocol_version == super::version::LINT_VERSION {
+                if matches!(
+                    response.protocol_version.as_str(),
+                    super::version::LINT_VERSION | super::version::WATCH_VERSION
+                ) {
                     10
                 } else {
                     9
                 },
             )
-            || (response.protocol_version != super::version::LINT_VERSION
-                && c.operations.contains(&Operation::Lint))
+            || (!matches!(
+                response.protocol_version.as_str(),
+                super::version::LINT_VERSION | super::version::WATCH_VERSION
+            ) && c.operations.contains(&Operation::Lint))
             || !unique(&c.transports, 1, 2)
             || !unique(&c.targets, 0, 64)
             || !unique(&c.profiles, 0, 64)
@@ -698,6 +723,12 @@ pub struct RequestEnvelope {
         skip_serializing_if = "Option::is_none"
     )]
     pub lint_request: Option<LintRequest>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub watch_request: Option<super::watch::WatchSelection>,
 }
 
 /// The adapter identity every response binds its evidence to.
@@ -742,6 +773,12 @@ pub struct Capabilities {
     /// Optional declared constraints (issue #28, protocol 0.3.1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub constraints: Option<AdapterConstraints>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub watch: Option<super::watch::WatchSupport>,
 }
 
 /// The closed support-state set of one named capability (issue #28).
@@ -860,6 +897,12 @@ pub struct Evidence {
         skip_serializing_if = "Option::is_none"
     )]
     pub plan_id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub watch_digest: Option<String>,
 }
 
 /// One optional structured progress step.
@@ -1507,6 +1550,7 @@ mod tests {
             native_request: None,
 
             lint_request: None,
+            watch_request: None,
         }
     }
 

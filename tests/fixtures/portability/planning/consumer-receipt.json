@@ -1,0 +1,354 @@
+{
+  "schemaVersion": "lekalo/portability-report/v0.8.0",
+  "consumer": "migration-planning/1",
+  "blockers": [
+    {
+      "subject": "command:notify.purge_cache_cmd",
+      "destination": "go-service",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "command:notify.purge_cache_cmd",
+      "destination": "php-laravel",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "effect:notify.rename_user",
+      "destination": "go-service",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "effect:notify.rename_user",
+      "destination": "php-laravel",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "command:notify.rename_user_cmd",
+      "destination": "go-service",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "command:notify.rename_user_cmd",
+      "destination": "php-laravel",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "scalar:notify.text",
+      "destination": "go-service",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "scalar:notify.text",
+      "destination": "php-laravel",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "entity:notify.user",
+      "destination": "go-service",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "entity:notify.user",
+      "destination": "php-laravel",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "scalar:notify.user_id",
+      "destination": "go-service",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "scalar:notify.user_id",
+      "destination": "php-laravel",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "effect:planner.archive_task",
+      "destination": "go-service",
+      "dimension": "behavioral",
+      "reason": "hook-external-unmapped"
+    },
+    {
+      "subject": "effect:planner.archive_task",
+      "destination": "go-service",
+      "dimension": "operational",
+      "reason": "capability-absent"
+    },
+    {
+      "subject": "effect:planner.archive_task",
+      "destination": "php-laravel",
+      "dimension": "operational",
+      "reason": "capability-absent"
+    },
+    {
+      "subject": "command:planner.archive_task_cmd",
+      "destination": "go-service",
+      "dimension": "behavioral",
+      "reason": "hook-external-unmapped"
+    },
+    {
+      "subject": "effect:planner.create_task",
+      "destination": "go-service",
+      "dimension": "operational",
+      "reason": "capability-absent"
+    },
+    {
+      "subject": "effect:planner.create_task",
+      "destination": "php-laravel",
+      "dimension": "operational",
+      "reason": "capability-absent"
+    },
+    {
+      "subject": "scalar:planner.due_date",
+      "destination": "go-service",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "scalar:planner.due_date",
+      "destination": "php-laravel",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "value-object:planner.due_window",
+      "destination": "go-service",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "value-object:planner.due_window",
+      "destination": "php-laravel",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "effect:planner.edit_task",
+      "destination": "go-service",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "effect:planner.edit_task",
+      "destination": "php-laravel",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "command:planner.edit_task_cmd",
+      "destination": "go-service",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "command:planner.edit_task_cmd",
+      "destination": "php-laravel",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "command:planner.focus_task",
+      "destination": "go-service",
+      "dimension": "operational",
+      "reason": "implicit-hook-unsupported"
+    },
+    {
+      "subject": "query:planner.list_tasks",
+      "destination": "go-service",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "query:planner.list_tasks",
+      "destination": "php-laravel",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "command:planner.schedule_calculate",
+      "destination": "go-service",
+      "dimension": "behavioral",
+      "reason": "hook-missing"
+    },
+    {
+      "subject": "command:planner.schedule_calculate",
+      "destination": "php-laravel",
+      "dimension": "behavioral",
+      "reason": "hook-foreign-partial"
+    },
+    {
+      "subject": "effect:planner.schedule_write",
+      "destination": "go-service",
+      "dimension": "behavioral",
+      "reason": "hook-missing"
+    },
+    {
+      "subject": "effect:planner.schedule_write",
+      "destination": "go-service",
+      "dimension": "operational",
+      "reason": "capability-absent"
+    },
+    {
+      "subject": "effect:planner.schedule_write",
+      "destination": "php-laravel",
+      "dimension": "behavioral",
+      "reason": "hook-foreign-partial"
+    },
+    {
+      "subject": "effect:planner.schedule_write",
+      "destination": "php-laravel",
+      "dimension": "operational",
+      "reason": "capability-absent"
+    },
+    {
+      "subject": "entity:planner.task",
+      "destination": "go-service",
+      "dimension": "storage",
+      "reason": "storage-policy-unknown"
+    },
+    {
+      "subject": "entity:planner.task",
+      "destination": "php-laravel",
+      "dimension": "storage",
+      "reason": "storage-policy-unknown"
+    },
+    {
+      "subject": "scalar:planner.task_id",
+      "destination": "go-service",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "scalar:planner.task_id",
+      "destination": "php-laravel",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "enum:planner.task_state",
+      "destination": "go-service",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "enum:planner.task_state",
+      "destination": "php-laravel",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "scalar:planner.text",
+      "destination": "go-service",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "scalar:planner.text",
+      "destination": "php-laravel",
+      "dimension": "storage",
+      "reason": "storage-inventory-incomplete"
+    },
+    {
+      "subject": "query:planner.user_names",
+      "destination": "go-service",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "query:planner.user_names",
+      "destination": "php-laravel",
+      "dimension": "behavioral",
+      "reason": "binding-evidence-absent"
+    },
+    {
+      "subject": "scalar:planner.weight",
+      "destination": "php-laravel",
+      "dimension": "storage",
+      "reason": "storage-policy-loss"
+    }
+  ],
+  "requiredImplementations": [
+    {
+      "id": "plan.implement-hook.go-service.behavioral.command.planner.schedule_calculate",
+      "subject": "command:planner.schedule_calculate",
+      "destination": "go-service"
+    },
+    {
+      "id": "plan.implement-hook.go-service.behavioral.effect.planner.schedule_write",
+      "subject": "effect:planner.schedule_write",
+      "destination": "go-service"
+    }
+  ],
+  "storageReviews": [
+    {
+      "id": "plan.review-storage-policy.php-laravel.storage.scalar.planner.weight.storage.decimal-policy.decimal.exact.18.6",
+      "subject": "scalar:planner.weight",
+      "destination": "php-laravel",
+      "required": {
+        "kind": "decimal",
+        "value": "exact",
+        "precision": 18,
+        "scale": 6
+      }
+    }
+  ],
+  "verificationTasks": [
+    {
+      "id": "plan.verify-scenario.go-service.behavioral.query.planner.count_focused.map.reading-go",
+      "subject": "query:planner.count_focused",
+      "destination": "go-service"
+    },
+    {
+      "id": "plan.verify-scenario.php-laravel.behavioral.effect.planner.create_task",
+      "subject": "effect:planner.create_task",
+      "destination": "php-laravel"
+    }
+  ],
+  "affectedScenarios": [
+    {
+      "scenario": "planner.focus_flow",
+      "state": "executed",
+      "subjects": [
+        "command:planner.focus_task",
+        "event:planner.task_focused"
+      ]
+    },
+    {
+      "scenario": "planner.schedule_flow",
+      "state": "declared",
+      "subjects": [
+        "command:planner.schedule_calculate",
+        "effect:planner.schedule_write"
+      ]
+    }
+  ],
+  "affectedGates": [
+    {
+      "gate": "planner.native-scenario-gate",
+      "state": "declared",
+      "scenarios": [
+        "planner.focus_flow",
+        "planner.schedule_flow"
+      ]
+    }
+  ],
+  "totals": {
+    "blockers": 46,
+    "requiredImplementations": 2,
+    "storageReviews": 1,
+    "verificationTasks": 2,
+    "unresolvedObligations": 46
+  }
+}

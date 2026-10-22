@@ -297,6 +297,20 @@ impl Session {
             return failure(Status::Invalid, vec![Diagnostic::new(code)]);
         }
 
+        // Phase 2c (issue #94): an interrupted formatter transaction
+        // blocks cached reads exactly like it blocks the loader.
+        if let Some(code) = crate::format::transaction::recovery_code(&fs) {
+            return failure(Status::Invalid, vec![Diagnostic::new(code)]);
+        }
+
+        // Issue #73: the same fail-closed reader barrier for interrupted
+        // change transactions under `.lekalo/cache/change`. The rule is
+        // admitted for the denied class, so the barrier escalates the
+        // reader outcome to denied instead of invalid.
+        if let Some(code) = crate::change::recovery_barrier_code(&fs) {
+            return failure(Status::Denied, vec![Diagnostic::new(code)]);
+        }
+
         // The structure gates have passed: now — and only now — the store
         // opens, so the cache never races the scan that governs its home.
         self.ensure_store();

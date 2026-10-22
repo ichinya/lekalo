@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/portability-receipt.schema.v0.8.0.json",
+  "title": "Portability receipt 0.8.0",
+  "description": "Issue #19 closed custody artifact for recorded execution results. A receipt binds the exact subject (scenario or gate), the destination target, the compilation provenance, and the destination profile pin, and states one execution result. A receipt minted for another project, another revision, another target profile, or with no result never qualifies a claimed execution, and a fail receipt can never evidence a pass.",
+  "$ref": "#/$defs/document",
+  "$defs": {
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/portability-receipt/v0.8.0"
+        },
+        "identity": {
+          "const": "dev.lekalo.portability-receipt@0.8.0"
+        },
+        "kind": {
+          "enum": [
+            "scenario",
+            "gate"
+          ]
+        },
+        "subject": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "targetId": {
+          "$ref": "#/$defs/targetId"
+        },
+        "result": {
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "projectRef": {
+          "$ref": "#/$defs/projectRef"
+        },
+        "profileRef": {
+          "$ref": "#/$defs/profileRef"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "kind",
+        "subject",
+        "targetId",
+        "result",
+        "projectRef",
+        "profileRef"
+      ],
+      "unevaluatedProperties": false
+    },
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "targetId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "projectRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "modelVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "irDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "projectId",
+        "modelVersion",
+        "irDigest"
+      ],
+      "unevaluatedProperties": false
+    },
+    "profileRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "resolvedDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "resolvedDigest"
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

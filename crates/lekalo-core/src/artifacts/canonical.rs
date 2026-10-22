@@ -574,6 +574,7 @@ fn digest(text: &str) -> Result<Sha256Digest, ArtifactFailure> {
 fn model_version(text: &str) -> Result<ModelVersion, ArtifactFailure> {
     match text {
         "0.2.16" => Ok(ModelVersion::Current),
+        "0.8.0" => Ok(ModelVersion::Successor),
         _ => Err(ArtifactFailure::ManifestInvalid),
     }
 }

@@ -110,10 +110,55 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
     // exact lock, and the parsed manifest.
     let prepared = Prepared::prepare(request.selection)
         .map_err(|failure| DomainResult::from(&Failure::Artifact(failure)))?;
+    // Shared cross-service writer serialization (r6, findings devin F2 +
+    // omp F2): an APPLY-mode generate run joins the one project-wide
+    // mutation lock before any evidence write or adapter-driven target
+    // write; dry-run stays read-only and never locks. A sibling's
+    // interrupted transaction denies with the registered infrastructure
+    // rule (exit 3), the change family's own rule when it is theirs.
+    let _shared = if request.dry_run {
+        None
+    } else {
+        match crate::project_writer::WriterLock::mutation(
+            prepared.root(),
+            crate::project_writer::MutationFamily::Generate,
+        ) {
+            Ok(lock) => Some(lock),
+            Err(crate::project_writer::MutationRefusal::ChangeRecovery { transaction }) => {
+                return Err(DomainResult::denied(
+                    crate::change::ChangeError::RecoveryRequired { transaction }.diagnostic_set(),
+                ));
+            }
+            Err(_) => {
+                let diagnostics = crate::diagnostics::normalize::build(
+                    "versioning.migration-in-progress",
+                    None,
+                    None,
+                    crate::diagnostics::DataObject::new(),
+                )
+                .map(|diagnostic| vec![diagnostic])
+                .unwrap_or_default();
+                return Err(DomainResult::invalid(DomainResult::from_wire_set(
+                    crate::result::Status::Invalid,
+                    diagnostics,
+                )));
+            }
+        }
+    };
     let Some(supply) = request.supply.as_ref() else {
         return Err(DomainResult::from(&Failure::AdapterSupplyRequired));
     };
     let compilation = compile(request.selection)?;
+    let local_registry =
+        crate::error_contract::source::read(prepared.root()).map_err(DomainResult::invalid)?;
+    if let Some(registry) = &local_registry {
+        crate::error_contract::source::validate(registry, &compilation.project)
+            .map_err(DomainResult::invalid)?;
+    }
+    let registry = match local_registry.as_ref() {
+        Some(registry) => registry,
+        None => crate::error_contract::ErrorRegistry::embedded().map_err(DomainResult::invalid)?,
+    };
     let project_id = compilation
         .project
         .project
@@ -128,7 +173,7 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
     write_evidence(prepared.root(), &evidence_path, ir_bytes.as_bytes())?;
     // Issue #59: the PHP operations join is the acceptance authority.
     // When the project declares an operations input, it joins against
-    // the compiled IR, the embedded #62 error registry, the staged
+    // the compiled IR, the bound #62 error registry, the staged
     // evidence digests, and the closed recipes HERE — before any
     // adapter exchange — and a refused join is a typed invalid result.
     let operations_input_path = prepared
@@ -172,7 +217,10 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
     match crate::transport_http::read_document(prepared.root()) {
         Err(diagnostics) => return Err(DomainResult::invalid(diagnostics)),
         Ok(Some(attachment)) => {
-            let context = crate::transport_http::ValidationContext::new(&compilation.project);
+            let mut context = crate::transport_http::ValidationContext::new(&compilation.project);
+            if local_registry.is_some() {
+                context = context.with_errors(registry);
+            }
             crate::transport_http::validate(&attachment, &context)
                 .map_err(DomainResult::invalid)?;
             let transport_path = format!("{TRANSPORT_EVIDENCE_DIR}/{project_id}.json");
@@ -183,10 +231,8 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
             // OpenAPI evidence (#46): the canonical projection of the
             // validated transport home lands beside the other evidence
             // homes — the only OpenAPI input an adapter may read. The
-            // embedded #62 registry is bound so the identity variants
+            // project-selected #62 registry is bound so the identity variants
             // render; the declared defaults (3.1, full) apply.
-            let registry =
-                crate::error_contract::ErrorRegistry::embedded().map_err(DomainResult::invalid)?;
             let context = crate::transport_http::ValidationContext::new(&compilation.project)
                 .with_errors(registry);
             let rendered =
@@ -1538,34 +1584,28 @@ mod tests {
     }
 }
 
-/// The loader resolves the fixture through the process working
-/// directory: serialize every cwd mutation across the join suites that
-/// share this test binary.
-#[cfg(test)]
-static GENERATE_CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
 #[cfg(test)]
 mod operations_join_tests {
     use super::*;
-    use crate::loader::{normalize_model, LoadSelection};
+    use crate::loader::load_validated_root;
 
     /// The join runs before any adapter exchange: a bogus policy
     /// binding refuses the run as the registered
     /// `php-operations.join-invalid` invalid result.
     #[test]
     fn a_bogus_policy_binding_refuses_the_generate_run() {
-        let _guard = GENERATE_CWD_LOCK.lock().expect("cwd lock");
         let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let workspace = crate_dir
             .parent()
             .and_then(Path::parent)
             .expect("workspace");
-        let original = std::env::current_dir().expect("current dir");
-        std::env::set_current_dir(workspace).expect("enter workspace");
-        let selection = LoadSelection {
-            project: Some("tests/fixtures/php-laravel/operations/model".to_owned()),
-        };
-        let model = normalize_model(&selection).expect("fixture loads");
+        // Other unit suites use invocation-relative selectors concurrently.
+        // Load this owned fixture directly without mutating process cwd.
+        let fixture = workspace
+            .join("tests/fixtures/php-laravel/operations/model")
+            .canonicalize()
+            .expect("fixture root");
+        let model = load_validated_root(fixture).expect("fixture loads").model;
         let compilation = crate::ir::compile(&model).expect("fixture compiles");
         let sandbox =
             std::env::temp_dir().join(format!("lekalo-join-wiring-{}", std::process::id()));
@@ -1626,36 +1666,29 @@ mod operations_join_tests {
             "the typed finding code rides the data: {rendered}"
         );
         let _ = std::fs::remove_dir_all(&sandbox);
-        std::env::set_current_dir(original).expect("restore cwd");
     }
 }
 
 #[cfg(test)]
 mod routes_join_tests {
     use super::*;
-    use crate::loader::{normalize_model, LoadSelection};
+    use crate::loader::load_validated_root;
 
     /// The join runs before any adapter exchange: a route record bound
     /// to an unresolvable endpoint refuses the run as the registered
     /// `php-routes.join-invalid` invalid result.
     #[test]
     fn an_unresolvable_endpoint_refuses_the_generate_run() {
-        // The loader path policy only accepts workspace-relative project
-        // selections resolved through the process working directory, so
-        // this suite enters the workspace root under the shared cwd lock
-        // (the operations join suite mutates cwd in this same binary).
-        let _guard = GENERATE_CWD_LOCK.lock().expect("cwd lock");
         let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let workspace = crate_dir
             .parent()
             .and_then(Path::parent)
             .expect("workspace");
-        let original = std::env::current_dir().expect("current dir");
-        std::env::set_current_dir(workspace).expect("enter workspace");
-        let selection = LoadSelection {
-            project: Some("tests/fixtures/php-laravel/routes/model".to_owned()),
-        };
-        let model = normalize_model(&selection).expect("fixture loads");
+        let fixture = workspace
+            .join("tests/fixtures/php-laravel/routes/model")
+            .canonicalize()
+            .expect("fixture root");
+        let model = load_validated_root(fixture).expect("fixture loads").model;
         let compilation = crate::ir::compile(&model).expect("fixture compiles");
         let sandbox =
             std::env::temp_dir().join(format!("lekalo-routes-join-{}", std::process::id()));
@@ -1763,6 +1796,5 @@ mod routes_join_tests {
             "the typed finding code rides the data: {rendered}"
         );
         let _ = std::fs::remove_dir_all(&sandbox);
-        std::env::set_current_dir(original).expect("restore cwd");
     }
 }

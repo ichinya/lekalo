@@ -3,7 +3,7 @@
 // CLI report projection, the closed state-wrapper arithmetic, and the
 // privacy/determinism invariants, validated with the same pinned
 // third-party Draft 2020-12 implementation as the other contract gates.
-// Exact Ajv 8.17.1 is provisioned outside this checkout (CI does the
+// Exact Ajv 8.20.0 is provisioned outside this checkout (CI does the
 // same in the build-test job) and exposed through NODE_PATH.
 //
 // The live CLI probe needs the built binary and is mandatory: when the
@@ -35,11 +35,11 @@ try {
   process.exit(1);
 }
 
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(`${JSON.stringify({
     ok: false,
     reason: "ajv-version",
-    detail: `expected 8.17.1, found ${ajvVersion}`,
+    detail: `expected 8.20.0, found ${ajvVersion}`,
   }, null, 2)}\n`);
   process.exit(1);
 }

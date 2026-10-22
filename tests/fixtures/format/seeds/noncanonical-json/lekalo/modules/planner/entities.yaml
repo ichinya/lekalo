@@ -1,0 +1,5 @@
+{"schema_version":"0.2.16","definitions":[
+  {"id":"planner.task_state",  "kind":"enum" ,   "version":1,
+   "values":[{"value":"backlog","description":"Not started"},{"value":"focused","description":"Currently focused"},{"value":"done","description":"Completed"}]},
+  {"id":"planner.task_id", "kind":"scalar", "base":"uuid", "version":1, "description":"Stable task identifier", "visibility":"project", "portability":"portable"}
+]}

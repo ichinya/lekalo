@@ -1,0 +1,10 @@
+schema_version: "0.2.16"
+definitions:
+  - id: tasks.task_created
+    kind: event
+    version: 1
+    description: "A task was created"
+    payload:
+      - name: task_id
+        type: "tasks.task_id"
+        required: true

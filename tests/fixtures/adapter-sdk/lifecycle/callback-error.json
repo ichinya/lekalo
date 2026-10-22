@@ -1,0 +1,5 @@
+{
+  "adapterMode": "callback-error",
+  "case": "callback-error",
+  "expectedTerminal": "operation-error"
+}

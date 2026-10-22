@@ -1,0 +1,44 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.task_id
+    kind: scalar
+    version: 1
+    description: "Stable task identifier"
+    base: uuid
+    visibility: project
+  - id: planner.timestamp
+    kind: scalar
+    version: 1
+    description: "Calendar timestamp of a planning transition"
+    base: datetime
+  - id: planner.text
+    kind: scalar
+    version: 1
+    description: "Human-readable text"
+    base: string
+  - id: planner.task_state
+    kind: enum
+    version: 1
+    description: "Task lifecycle state"
+    values:
+      - value: backlog
+        description: "Not started"
+      - value: focused
+        description: "Currently focused"
+      - value: done
+        description: "Completed"
+  - id: planner.user_task_planning
+    kind: entity
+    version: 1
+    description: "The planning record of one user task"
+    fields:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: focused_at
+        type: "planner.timestamp"
+      - name: state
+        type: "planner.task_state"
+        required: true
+    identity:
+      - task_id

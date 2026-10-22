@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.search-diagnostics-schema@0.8.0",
+  "title": "Lekalo Search Diagnostic Set",
+  "description": "Closed producer snapshot of one admitted diagnostic set (dev.lekalo.search-diagnostics@0.8.0, wire lekalo/search-diagnostics/v0.8.0). A search input manifest admits this document by kind `diagnostics`; the runtime decoder enforces exactly this closed grammar member for member (required members, no unknown members at any depth, closed severity/disposition vocabularies, per-member bounds, and the metadata count cross-check), and additionally refuses findings whose subject names no real card of the admitted projection and findings that reuse one id with a conflicting rule or subject. Documents are exact UTF-8 JSON with no duplicate keys.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "project",
+    "metadata",
+    "findings"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/search-diagnostics/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.search-diagnostics@0.8.0"
+    },
+    "project": {
+      "$ref": "#/$defs/semanticId",
+      "description": "The project this diagnostic set is scoped to; a foreign project never joins another project's view."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findingCount"],
+      "properties": {
+        "findingCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4096,
+          "description": "Must equal the number of carried findings exactly (a spliced snapshot refuses)."
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    }
+  },
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[a-z][a-z0-9_.]*$"
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "rule",
+        "subject",
+        "severity",
+        "disposition"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "description": "The stable finding identity; one id may carry only one (rule, subject) pair — a disagreeing reuse is an identity conflict refused at admission."
+        },
+        "rule": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "description": "The exact registered diagnostic rule id (at least two dot-separated lowercase segments)."
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[a-z][a-z0-9_.]*$",
+          "description": "The semantic id of the finding's subject; must name a real card of the admitted projection (ghost subjects refuse at admission)."
+        },
+        "severity": {
+          "enum": ["error", "warning", "info"]
+        },
+        "disposition": {
+          "enum": ["active", "waived", "resolved"],
+          "description": "A resolved finding stays visibly stale (excluded by default, retained under --include-stale), never erased."
+        }
+      }
+    }
+  }
+}

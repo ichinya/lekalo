@@ -27,6 +27,23 @@ Normalization validates registry identity, deduplicates deterministically and so
 
 The [minimal example](../README.md#build-and-first-valid-example) expects exit 0/stdout. The example gate also proves rejection of malformed Model, an unknown symbol and a conflicting init; it checks refusal status, stream and preservation rather than accepting any nonzero exit.
 
+## Versioned fix recipes
+
+The additive product-0.8.0 `fix.*` family uses the merged 0.8.0 registry without
+changing historical diagnostic items. [Versioned fixes](fixes.md) owns recipe
+IDs/versions, source fingerprints, risk classes, complete previews and explicit
+`lekalo fix` application. A diagnostic suggestion remains inert advice: it never
+runs a patch or grants an adapter generic write access.
+
+## Stable explanations
+
+[Diagnostic explanations](explain.md) (issue #96) give every registered code a
+stable, offline explanation in the versioned explanation catalog: causes,
+consequences, closed-class fix options linked to the admitted fix recipes,
+examples, related rules and waiver policy. `lekalo explain LEK-HIDDEN-009 --json`
+emits the closed explain-result document; unknown codes refuse as the distinct
+`explain.code-unexplained` outcome.
+
 ## CI report projections
 
 [CI reports](ci-reports.md) owns GitHub annotation, SARIF and JUnit projections and the `0.6.4` report schema. They project the same diagnostics with source custody and output limits. Writing a report does not turn a refused operation into success; empty reports are not evidence of native execution. Provider discovery uses its own [capability contract](provider-contract.md).

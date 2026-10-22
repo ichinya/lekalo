@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Issue #18 release gate: every semantic-diff golden fixture, validated
 // with the same pinned third-party Draft 2020-12 implementation as the
-// other contract gates. Exact Ajv 8.17.1 is provisioned outside this
+// other contract gates. Exact Ajv 8.20.0 is provisioned outside this
 // checkout (CI does the same on Node 18 and 24) and exposed through
 // NODE_PATH / LEKALO_AJV_NODE_PATH.
 //
@@ -11,8 +11,9 @@
 // equality invariant.
 
 import { createRequire } from "node:module";
-import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
@@ -30,11 +31,11 @@ try {
   process.exit(1);
 }
 
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(`${JSON.stringify({
     ok: false,
     reason: "ajv-version",
-    detail: `expected 8.17.1, found ${ajvVersion}`,
+    detail: `expected 8.20.0, found ${ajvVersion}`,
   }, null, 2)}\n`);
   process.exit(1);
 }
@@ -42,14 +43,24 @@ if (ajvVersion !== "8.17.1") {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
-const schema = read("contracts/semantic-diff.schema.v0.2.16.json");
+// The 0.8.0 successor schema validates the regenerated goldens (the
+// frozen 0.2.16 predecessor stays in place byte-for-byte for
+// predecessor consumers; the goldens carry the successor
+// discriminator since the 0.8.0 bump).
+const schema = read("contracts/semantic-diff.schema.v0.8.0.json");
+// The frozen predecessor stays in place byte-for-byte for predecessor
+// consumers; a successor never rewrites it.
+const predecessorSchema = read("contracts/semantic-diff.schema.v0.2.16.json");
+if (predecessorSchema.properties.schemaVersion.const !== "lekalo/semantic-diff/v0.2.16") {
+  fail("predecessor-not-frozen", String(predecessorSchema.properties.schemaVersion.const));
+}
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validate = ajv.compile(schema);
 
-const fail = (reason, detail) => {
+function fail(reason, detail) {
   process.stderr.write(`${JSON.stringify({ ok: false, reason, detail }, null, 2)}\n`);
   process.exit(1);
-};
+}
 
 // The closed vocabularies mirrored from the contract (redundant with the
 // schema enums by intent: a schema edit alone cannot widen these gates).
@@ -93,7 +104,10 @@ const checkDocument = (where_, document) => {
   if (!validate(document)) {
     fail("schema-invalid", { where_, errors: validate.errors });
   }
-  if (document.identity !== "dev.lekalo.semantic-diff@0.2.16") fail("identity-drift", where_);
+  if (document.identity !== "dev.lekalo.semantic-diff@0.8.0") fail("identity-drift", where_);
+  if (document.profiles.some((profile) => profile.profileVersion !== "lekalo/diff-profile/v0.8.0")) {
+    fail("profile-version-drift", where_);
+  }
   if (!CHANGE_ID.test(document.comparisonId)) fail("comparison-id-shape", where_);
   if (document.equal !== (document.changes.length === 0)) fail("equality-invariant", where_);
   if (document.complete !== true) fail("incomplete-golden", where_);
@@ -211,6 +225,50 @@ for (const caseName of cases) {
 const equal = read("tests/fixtures/diff/cases/equal-formatting/expect.json");
 if (!equal.equal || equal.changes.length !== 0 || equal.affectedSeeds.length !== 0) {
   fail("formatting-only-case-not-equal", "equal-formatting");
+}
+
+// Exercise actual successor producers, not only regenerated legacy
+// goldens: a live Model 0.8.0 relation mutation and a legacy comparison
+// both validate against the successor with their own IR identities.
+const binary = ["lekalo", "lekalo.exe"].map((name) => join(root, "target/debug", name))
+  .find((candidate) => existsSync(candidate));
+if (!binary) fail("binary-missing", "cargo build --workspace --locked");
+const liveDiff = (base, candidate) => {
+  const run = spawnSync(binary, ["--no-cache", "--json", "diff", "--base", base, candidate],
+    { cwd: root, encoding: "utf8", timeout: 120000 });
+  if (run.error || run.status !== 0) fail("live-diff-exit", String(run.error ?? run.stderr));
+  return JSON.parse(run.stdout).diff;
+};
+const work = mkdtempSync(join(root, "target/diff-contract-"));
+try {
+  const base = "tests/fixtures/task-external-links/project";
+  const candidate = relative(root, join(work, "candidate")).replaceAll("\\", "/");
+  cpSync(join(root, base), candidate, { recursive: true });
+  const path = join(candidate, "lekalo/modules/tasklinks/entities.yaml");
+  const before = readFileSync(path, "utf8");
+  const after = before.replace(/(id: "?tasklinks\.rel\.task_links[\s\S]*?max: )1/, (_, prefix) => prefix + "2");
+  if (before === after) fail("live-relation-mutation-no-op", path);
+  writeFileSync(path, after);
+  const current = liveDiff(base, candidate);
+  checkDocument("live/model-0.8.0-relation", current);
+  for (const snapshot of [current.base, current.candidate]) {
+    if (snapshot.modelVersion !== "0.8.0" || snapshot.irIdentity !== "dev.lekalo.ir@0.8.0") {
+      fail("live-source-identity", snapshot);
+    }
+  }
+  if (current.equal || !current.changes.some((change) => change.subject.member?.startsWith("relations/"))) {
+    fail("live-relation-fact-missing", current.changes);
+  }
+  const legacy = liveDiff("tests/fixtures/diff/cases/equal-formatting/base",
+    "tests/fixtures/diff/cases/equal-formatting/candidate");
+  checkDocument("live/model-0.2.16", legacy);
+  for (const snapshot of [legacy.base, legacy.candidate]) {
+    if (snapshot.modelVersion !== "0.2.16" || snapshot.irIdentity !== "dev.lekalo.ir@0.2.16") {
+      fail("live-legacy-identity", snapshot);
+    }
+  }
+} finally {
+  rmSync(work, { recursive: true, force: true });
 }
 
 process.stdout.write(`${JSON.stringify({

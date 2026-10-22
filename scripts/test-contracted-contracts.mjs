@@ -3,7 +3,7 @@
 // committed declaration fixtures (conforming plus drift vectors), and
 // the source-level custody invariants of the contracted seam, validated
 // with the same pinned third-party Draft 2020-12 implementation as the
-// other contract gates. Exact Ajv 8.17.1 is provisioned outside this
+// other contract gates. Exact Ajv 8.20.0 is provisioned outside this
 // checkout (CI does the same on Node 18 and 24) and exposed through
 // NODE_PATH / LEKALO_AJV_NODE_PATH.
 //
@@ -32,7 +32,7 @@ try {
   process.exit(1);
 }
 
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(
     `${JSON.stringify({ ok: false, reason: "ajv-version", detail: ajvVersion }, null, 2)}\n`,
   );

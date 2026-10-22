@@ -4,7 +4,7 @@
   "mode": "apply",
   "identity": "dev.lekalo.orchestration-report@0.2.16",
   "project": "planner",
-  "lockDigest": "sha256:262dbb4914837c94effe69e1cbe473acf45681302f2aa746ea55814bd50f4b88",
+  "lockDigest": "sha256:4b3648f3bf2c8bd8622c0d648d903829e02be5dc3e8e39bee989dbe076661f4f",
   "locked": false,
   "inputs": {
     "modelVersion": "0.2.16",
@@ -40,7 +40,7 @@
           "sha256": "sha256:aeaa7a55501582708060baa04c281f987512098c48f52a647a1728543b284bd8"
         }
       ],
-      "manifestDigest": "sha256:286889609031326a9a945e0fac61a5a4c8c7b282dce9b82c3e9572bc809ae760"
+      "manifestDigest": "sha256:1ba1cb4a9935c5560e7a3a73a48ffb36bef7dbade82b37d52688c936fbc94023"
     }
   ],
   "counts": {

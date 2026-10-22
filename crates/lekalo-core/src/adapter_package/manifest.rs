@@ -1010,15 +1010,12 @@ mod committed_exemplar_tests {
             .expect("the committed adapter manifest must parse");
         assert_eq!(document.adapter_id(), "lekalo-target-node-typescript");
         assert_eq!(document.adapter_version().as_str(), "0.4.0");
-        // Issues #115 and #116 share this bundle: the merged tree
-        // carries the Hono framework-provider modules and the Drizzle
-        // evidence extraction with all review fixes, so the committed
-        // artifact bytes (and with them the canonical package digest)
-        // change; the exemplar guard keeps the manifest bound to the
-        // exact committed bytes.
+        // The Drizzle 0.45.4 security update changes the embedded
+        // declaration closure. Keep the exemplar bound to the package
+        // digest independently verified by test-adapter-manifest-golden.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:bb0459dd683b0d5f0763ead0769f87a3006df4a0d17eeaa7dc7ba6a2fbd59275"
+            "sha256:6a2244b188b769920284d78da1c79885caa8835b5d54c948c78ee62877256f6e"
         );
     }
 
@@ -1028,12 +1025,9 @@ mod committed_exemplar_tests {
         let document = super::ManifestDocument::from_bytes(bytes)
             .expect("the committed PHP adapter manifest must parse");
         assert_eq!(document.adapter_id(), "lekalo-target-php-laravel");
-        // Issue #55 bumped the adapter to 0.2.0: the Mago analyzer seam
-        // (receipt decode, strict-profile gates, the embedded toolchain
-        // lock, and the bundled analyzer/strict-profile modules) is a
-        // backward-compatible capability addition to the #54 MVP, so a
-        // minor version increment is the honest identity change.
-        assert_eq!(document.adapter_version().as_str(), "0.2.0");
+        // M8 publishes finite cache-evidence scopes under adapter 0.8.0;
+        // the wire protocol remains independently pinned at 0.6.4.
+        assert_eq!(document.adapter_version().as_str(), "0.8.0");
         // The runtime is the closed php spelling with the 8.3 floor of
         // the issue's requirements, checked against the raw canonical
         // bytes (the wire struct keeps the runtime block opaque).

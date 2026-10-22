@@ -28,7 +28,7 @@
 declare(strict_types=1);
 
 const ADAPTER_ID = 'lekalo-target-php-laravel';
-const ADAPTER_VERSION = '0.2.0';
+const ADAPTER_VERSION = '0.8.0';
 
 /** The bundled module order: dependencies first, kernel last. */
 const BUNDLED_MODULES = [
@@ -155,9 +155,9 @@ $banner = <<<BANNER
  * GENERATED FILE — regenerate with `php adapters/php-laravel/build.php`;
  * verify with `php adapters/php-laravel/build.php --check`. Never edit.
  *
- * Self-contained: PHP built-ins only (json, hash, SPL), no Composer
- * package, no extension beyond always-compiled basics, so the confined
- * core runtime can copy the interpreter plus exactly this script.
+ * Self-contained artifact: no Composer package or application loading.
+ * Static PHP lint uses the standard tokenizer, built in or loaded by its
+ * fixed module name within the interpreter's existing confinement.
  */
 
 declare(strict_types=1);

@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // Issue #13 release gate: the graph wire schema and the pinned canonical
 // golden exports, validated with the same pinned third-party Draft 2020-12
-// implementation as the other contract gates. Exact Ajv 8.17.1 is
+// implementation as the other contract gates. Exact Ajv 8.20.0 is
 // provisioned outside this checkout (CI does the same on Node 18 and 24)
 // and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 
 import { createRequire } from "node:module";
-import { readFileSync, readdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
@@ -25,27 +26,73 @@ try {
   process.exit(1);
 }
 
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(`${JSON.stringify({
     ok: false,
     reason: "ajv-version",
-    detail: `expected 8.17.1, found ${ajvVersion}`,
+    detail: `expected 8.20.0, found ${ajvVersion}`,
   }, null, 2)}\n`);
   process.exit(1);
 }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
-
-const schema = read("contracts/graph.schema.v0.2.16.json");
-const goldenDir = "tests/fixtures/graph/golden";
-
 const ajv = new Ajv2020({ strict: true, allErrors: true });
-const validateGraph = ajv.compile(schema);
-
 const fail = (reason, detail) => {
   process.stderr.write(`${JSON.stringify({ ok: false, reason, detail }, null, 2)}\n`);
   process.exit(1);
+};
+
+// The graph contract is negotiated per source Model version: 0.2.16
+// sources stay on v0.2.16 bytes, 0.8.0 sources (the typed relation
+// successor) compile to the v0.8.0 contract with exactly one extra
+// provenance role.
+const schemas = {
+  "lekalo/graph/v0.2.16": read("contracts/graph.schema.v0.2.16.json"),
+  "lekalo/graph/v0.8.0": read("contracts/graph.schema.v0.8.0.json"),
+};
+const validators = Object.fromEntries(
+  Object.entries(schemas).map(([name, schema]) => [name, ajv.compile(schema)]),
+);
+const successorSchema = read("contracts/graph.schema.v0.8.0.json");
+const baseSchema = read("contracts/graph.schema.v0.2.16.json");
+{
+  // Collect every provenance role enum in a schema by walking it.
+  const roleEnums = (node, found = []) => {
+    if (Array.isArray(node)) {
+      node.forEach((item) => roleEnums(item, found));
+      return found;
+    }
+    if (node && typeof node === "object") {
+      if (Array.isArray(node.enum) && node.enum.includes("derived-from")) {
+        found.push(node.enum);
+      }
+      Object.values(node).forEach((value) => roleEnums(value, found));
+    }
+    return found;
+  };
+  const baseRoles = roleEnums(baseSchema).flat();
+  const successorRoles = roleEnums(successorSchema).flat();
+  if (!baseRoles.length) fail("base-role-enum", "the v0.2.16 role enum must be discoverable");
+  if (baseRoles.includes("entity-relation-target")) {
+    fail("base-schema-extended", "the frozen v0.2.16 graph schema must never gain successor roles");
+  }
+  for (const role of baseRoles) {
+    if (!successorRoles.includes(role)) fail("successor-dropped-role", role);
+  }
+  if (!successorRoles.includes("entity-relation-target")) {
+    fail("successor-missing-role", "entity-relation-target");
+  }
+}
+
+const goldenDir = "tests/fixtures/graph/golden";
+
+// Issue #52 drift closure: every pinned golden must be the live export
+// of exactly one owning fixture project. Adding a golden family without
+// wiring its live byte-comparison is a gate failure, not a silent gap.
+const OWNED_EXPORTS = {
+  "planner.graph.json": "tests/fixtures/graph/planner",
+  "tasklinks.graph.json": "tests/fixtures/task-external-links/project",
 };
 
 const CORE_NODE_KINDS = [
@@ -75,13 +122,18 @@ const canonicalEdgeKey = (edge) => [
 let goldenCount = 0;
 let nodeCount = 0;
 let edgeCount = 0;
+const seenGoldens = new Set();
 for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
   if (!name.endsWith(".json")) continue;
+  seenGoldens.add(name);
   const graph = read(`${goldenDir}/${name}`);
   goldenCount += 1;
 
-  // 1. The golden instance must satisfy the closed wire schema.
-  if (!validateGraph(graph)) fail(`${name}-invalid`, validateGraph.errors);
+  // 1. The golden instance must satisfy its own negotiated closed wire
+  //    schema, and the negotiation must be exact (no version drift).
+  const validate = validators[graph.schemaVersion];
+  if (!validate) fail(`${name}-schema-version`, graph.schemaVersion);
+  else if (!validate(graph)) fail(`${name}-invalid`, validate.errors);
 
   // 2. Counts and identities must be coherent.
   if (graph.metadata.nodeCount !== graph.nodes.length) fail(`${name}-node-count`);
@@ -97,7 +149,14 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
   if (JSON.stringify(nodeKeys) !== JSON.stringify(sortedNodeKeys)) fail(`${name}-node-order`);
 
   const edgeKeys = graph.edges.map(canonicalEdgeKey);
-  const sortedEdgeKeys = [...edgeKeys].sort((a, b) => JSON.stringify(a) < JSON.stringify(b) ? -1 : 1);
+  // Canonical edge order is (from, to, relation rank, occurrence) with
+  // the numeric members compared numerically: a stringified comparison
+  // would rank occurrence 10 before occurrence 9.
+  const compareEdgeKeys = (left, right) =>
+    left[0] < right[0] ? -1 : left[0] > right[0] ? 1 :
+    left[1] < right[1] ? -1 : left[1] > right[1] ? 1 :
+    left[2] - right[2] || left[3] - right[3];
+  const sortedEdgeKeys = [...edgeKeys].sort(compareEdgeKeys);
   if (JSON.stringify(edgeKeys) !== JSON.stringify(sortedEdgeKeys)) fail(`${name}-edge-order`);
 
   for (const node of graph.nodes) {
@@ -183,10 +242,85 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
 
 if (goldenCount === 0) fail("no-goldens");
 
+// Every golden family must declare its owning fixture: an unmapped
+// golden would reintroduce the self-consistency-only gap.
+for (const name of seenGoldens) {
+  if (!OWNED_EXPORTS[name]) fail("golden-unmapped", `${name} has no owning fixture in OWNED_EXPORTS`);
+}
+for (const name of Object.keys(OWNED_EXPORTS)) {
+  if (!seenGoldens.has(name)) fail("golden-missing", `OWNED_EXPORTS pins ${name} but no such golden exists`);
+}
+
+// Live drift closure (issue #52): a byte-pinned golden certifies the
+// fixture that ships beside it. When the built CLI is available, re-export
+// each owning fixture (twice — the export must be byte-deterministic) and
+// byte-compare the canonical rendering of envelope.graph against the
+// pinned bytes, the exact assertion the Rust golden tests make. Without a
+// build the live legs are skipped; `--require-binary` turns a missing
+// binary into a failure so the CI job that builds first cannot skip them.
+const binaryCandidates = [
+  process.env.LEKALO_BIN,
+  join(root, "target/debug/lekalo"),
+  join(root, "target/debug/lekalo.exe"),
+].filter(Boolean);
+const binary = binaryCandidates.find((candidate) => {
+  try {
+    return statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+});
+if (!binary && process.argv.includes("--require-binary")) {
+  fail("binary-missing", "build first (cargo build --workspace --locked) or point LEKALO_BIN at the CLI");
+}
+// serde_json Value renders objects in BTreeMap order (keys sorted
+// recursively) with compact separators; replicate that exactly so the
+// byte comparison matches the Rust assertion byte-for-byte.
+const canonicalJson = (value) => {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const body = Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",");
+    return `{${body}}`;
+  }
+  return JSON.stringify(value);
+};
+let liveExports = 0;
+if (binary) {
+  for (const [name, projectRel] of Object.entries(OWNED_EXPORTS)) {
+    const exportOnce = () => spawnSync(
+      binary,
+      ["--no-cache", "--json", "graph", "export", "--project", "."],
+      { cwd: join(root, projectRel), encoding: "utf8", timeout: 120000, maxBuffer: 32 * 1024 * 1024 },
+    );
+    const first = exportOnce();
+    if (first.error || first.status !== 0) {
+      fail(`${name}-export-failed`, String(first.stderr ?? first.error).slice(0, 400));
+    }
+    const second = exportOnce();
+    if (second.error || second.status !== 0) {
+      fail(`${name}-export-failed`, String(second.stderr ?? second.error).slice(0, 400));
+    }
+    if (second.stdout !== first.stdout) fail(`${name}-export-nondeterministic`, "two exports of the same fixture differ");
+    const envelope = JSON.parse(first.stdout);
+    if (envelope.status !== "valid") fail(`${name}-export-status`, envelope.status);
+    const rendered = canonicalJson(envelope.graph);
+    const pinned = readFileSync(join(root, goldenDir, name), "utf8");
+    if (rendered !== pinned) {
+      fail(`${name}-golden-drift`, `the pinned golden does not match the live export of ${projectRel}: regenerate it by running the export twice (byte-identical) and pinning the canonical (sorted-key compact, no trailing newline) rendering of envelope.graph over ${goldenDir}/${name}`);
+    }
+    liveExports += 1;
+  }
+}
+
 process.stdout.write(`${JSON.stringify({
   ok: true,
   ajv: ajvVersion,
   goldens: goldenCount,
   nodes: nodeCount,
   edges: edgeCount,
+  liveExports,
+  liveExportsSkipped: binary ? 0 : Object.keys(OWNED_EXPORTS).length,
 }, null, 2)}\n`);

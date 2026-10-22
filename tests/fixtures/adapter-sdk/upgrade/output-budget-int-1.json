@@ -1,0 +1,21 @@
+{
+  "accept": true,
+  "limits": {
+    "max_output_bytes": 1,
+    "timeout_ms": 600000
+  },
+  "name": "output-budget-int-1",
+  "operation": "describe",
+  "protocolVersion": "0.3.2",
+  "request": {
+    "operation": "describe",
+    "project_root": ".",
+    "protocol": "lekalo.target/v1",
+    "protocol_version": "0.3.2",
+    "request_id": "req-1dbe982bb6a36fed42595ac5ab52ce0cdfe290d807ea6a620175a10e20106c81",
+    "limits": {
+      "max_output_bytes": 1,
+      "timeout_ms": 600000
+    }
+  }
+}

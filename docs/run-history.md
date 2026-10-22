@@ -193,7 +193,7 @@ validly, and a recorder failure never rewrites the operation outcome.
 
 ## Gates
 
-- `node scripts/test-run-history-contracts.mjs` (Ajv 8.17.1, canonical form,
+- `node scripts/test-run-history-contracts.mjs` (Ajv 8.20.0, canonical form,
   adversarial vectors);
 - `node scripts/test-run-history-cli.mjs` (offline end-to-end over the real
   binary);

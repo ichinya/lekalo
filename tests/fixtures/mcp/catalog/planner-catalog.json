@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "lekalo/mcp-server-config/v0.8.0",
+  "identity": "dev.lekalo.mcp-server-config@0.8.0",
+  "projects": [
+    {
+      "id": "planner",
+      "root": "tests/fixtures/inspect/planner"
+    }
+  ],
+  "groups": [
+    {
+      "id": "planner-review",
+      "projectId": "planner",
+      "modules": [
+        "planner"
+      ]
+    }
+  ],
+  "manifests": [
+    {
+      "id": "baseline",
+      "projectId": "planner",
+      "path": "traces/full.trace.json"
+    }
+  ],
+  "git": {
+    "changedMode": false
+  }
+}

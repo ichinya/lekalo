@@ -8,6 +8,7 @@
 //! echoed token is bounded exactly like the #11 wire requires, and the sink
 //! enforces the fixed per-result diagnostic bound.
 
+use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 
 use crate::diagnostics::normalize::{build, BuildError};
@@ -34,6 +35,9 @@ pub(crate) struct Context<'a> {
     diagnostics: Vec<Diagnostic>,
     /// Definitions whose span-unavailable invariant was already reported.
     missing_spans: BTreeSet<String>,
+    selected: Option<BTreeSet<String>>,
+    visited: RefCell<BTreeSet<String>>,
+    check_recursion: bool,
 }
 
 impl<'a> Context<'a> {
@@ -60,7 +64,43 @@ impl<'a> Context<'a> {
             bases,
             diagnostics: Vec::new(),
             missing_spans: BTreeSet::new(),
+            selected: None,
+            visited: RefCell::new(BTreeSet::new()),
+            check_recursion: true,
         }
+    }
+
+    pub(crate) fn select(&mut self, modules: BTreeSet<String>, check_recursion: bool) {
+        self.selected = Some(modules);
+        self.check_recursion = check_recursion;
+    }
+
+    /// Rule subjects, selected BEFORE execution; resolution still uses
+    /// the complete project. The trace records actual visits, not output
+    /// filtering or inferred cache hits.
+    pub(crate) fn subjects(&self) -> Vec<&'a crate::ir::Definition> {
+        self.project
+            .definitions
+            .iter()
+            .filter(|definition| {
+                self.selected.as_ref().map_or(true, |modules| {
+                    Self::owner(definition.id().as_str())
+                        .is_some_and(|owner| modules.contains(owner))
+                })
+            })
+            .inspect(|definition| {
+                self.visited
+                    .borrow_mut()
+                    .insert(definition.id().as_str().to_owned());
+            })
+            .collect()
+    }
+
+    pub(crate) fn visited(&self) -> BTreeSet<String> {
+        self.visited.borrow().clone()
+    }
+    pub(crate) fn check_recursion(&self) -> bool {
+        self.check_recursion
     }
 
     /// The compiled project under validation.

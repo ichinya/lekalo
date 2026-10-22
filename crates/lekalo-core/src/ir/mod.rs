@@ -38,8 +38,10 @@
 
 pub mod canonical;
 pub mod decode;
+mod default_value;
 pub mod diagnostic;
 pub mod grammar;
+pub(crate) mod semantics;
 pub mod version;
 
 use crate::loader::{ModelVersion, NormalizedModel, SourceMapEntry};
@@ -48,7 +50,7 @@ use diagnostic::IrFailure;
 pub use diagnostic::{
     DUPLICATE_MEMBER, KIND_PLACEMENT, KIND_UNKNOWN, MISSING_FIELD, UNKNOWN_FIELD, VALUE_INVALID,
 };
-pub use version::{FAMILY, IDENTITY, VERSION};
+pub use version::{FAMILY, IDENTITY, SUCCESSOR_IDENTITY, SUCCESSOR_VERSION, VERSION};
 
 /// The maximum `list`/`optional` nesting of a [`TypeRef`], leaf included —
 /// exactly the accepted Model type-expression depth.
@@ -78,6 +80,34 @@ pub struct Compilation {
     pub source_map: SourceMap,
 }
 
+impl CompiledProject {
+    /// Whether a consumer needs the Model 0.8.0 query input contract.
+    pub fn has_query_inputs(&self) -> bool {
+        self.definitions
+            .iter()
+            .any(|d| matches!(d, Definition::Query(q) if !q.input.is_empty()))
+    }
+
+    /// Whether a consumer needs the successor's enum wire-value mapping.
+    pub fn has_enum_wire_values(&self) -> bool {
+        self.definitions.iter().any(
+            |d| matches!(d, Definition::Enum(e) if e.values.iter().any(|v| v.wire_value.is_some())),
+        )
+    }
+
+    /// Whether a legacy consumer would lose declared default semantics.
+    pub fn has_field_defaults(&self) -> bool {
+        self.definitions.iter().any(|definition| match definition {
+            Definition::Entity(d) => d.fields.iter().any(|f| f.default.is_some()),
+            Definition::ValueObject(d) => d.fields.iter().any(|f| f.default.is_some()),
+            Definition::Command(d) => d.input.iter().any(|f| f.default.is_some()),
+            Definition::Query(d) => d.input.iter().any(|f| f.default.is_some()),
+            Definition::Event(d) => d.payload.iter().any(|f| f.default.is_some()),
+            _ => false,
+        })
+    }
+}
+
 /// Compile the loader aggregate into typed IR.
 ///
 /// Any decode violation fails the whole compilation with finalized `ir.*`
@@ -89,7 +119,7 @@ pub fn compile(model: &NormalizedModel) -> Result<Compilation, IrFailure> {
 
 /// The bounded human-readable text surface: `description`, `summary`, and
 /// rename `note` values (1-2000 Unicode scalars).
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Text(String);
 
 impl Text {
@@ -277,7 +307,11 @@ pub struct Field {
     /// Present only as the exact literal `true` in source.
     pub required: bool,
     pub description: Option<Text>,
+    /// Typed JSON default; available only in the Model/IR 0.8.0 successor.
+    pub default: Option<DefaultValue>,
 }
+
+pub use default_value::DefaultValue;
 
 /// The closed type reference: a symbol reference, a list, or a nullable
 /// wrapper, at most [`MAX_TYPE_LEVELS`] deep including the leaf.
@@ -293,6 +327,27 @@ pub enum TypeRef {
 pub struct EnumValue {
     pub value: EnumValueName,
     pub description: Option<Text>,
+    /// Optional JSON encoding; absent means the canonical case name.
+    /// Available only in the Model/IR 0.8.0 successor.
+    pub wire_value: Option<DefaultValue>,
+}
+
+impl EnumValue {
+    /// The effective wire encoding, preserving null and structured literals.
+    pub fn wire_json(&self) -> serde_json::Value {
+        self.wire_value
+            .as_ref()
+            .map(|v| v.as_json().clone())
+            .unwrap_or_else(|| serde_json::Value::String(self.value.as_str().to_owned()))
+    }
+
+    /// Canonical encoding used by semantic identity and duplicate checks.
+    pub fn canonical_wire_json(&self) -> String {
+        self.wire_value
+            .as_ref()
+            .map(DefaultValue::canonical_json)
+            .unwrap_or_else(|| serde_json::to_string(self.value.as_str()).expect("case name"))
+    }
 }
 
 /// The closed scalar base vocabulary.
@@ -408,6 +463,131 @@ pub struct EntityDef {
     pub common: Common,
     pub fields: Vec<Field>,
     pub identity: Vec<FieldName>,
+    /// Typed relation declarations (Model 0.8.0 successor only;
+    /// always empty for 0.2.16 sources, keeping their canonical bytes
+    /// and digests unchanged).
+    pub relations: Vec<RelationDef>,
+    /// Typed secondary-uniqueness declarations (Model 0.8.0 successor
+    /// only; always empty for 0.2.16 sources).
+    pub unique_constraints: Vec<UniqueConstraintDef>,
+}
+
+/// One typed relation declaration owned by the Model/IR: cardinality
+/// (including the exact `max`, `None` being the explicit unbounded
+/// spelling), ownership, and detach/delete semantics between the
+/// declaring entity and its target.
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct RelationDef {
+    /// Stable relation id (a qualified symbol).
+    pub id: SymbolId,
+    /// The referenced entity.
+    pub target: SymbolId,
+    /// Ordered local-side fields.
+    pub local_fields: Vec<FieldName>,
+    /// Ordered target-side fields (same arity as `local_fields`).
+    pub target_fields: Vec<FieldName>,
+    /// Minimum cardinality.
+    pub min: u64,
+    /// Maximum cardinality; `None` is the explicit unbounded spelling.
+    pub max: Option<u64>,
+    /// Which side owns the association.
+    pub ownership: RelationOwnership,
+    /// Detach behavior (history-preserving only).
+    pub on_detach: DetachPolicy,
+    /// Delete behavior (never an external delete).
+    pub on_delete: DeletePolicy,
+    /// Bounded human-readable description.
+    pub description: Option<Text>,
+}
+
+/// The closed relation-ownership enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum RelationOwnership {
+    Local,
+    External,
+    Shared,
+}
+
+impl RelationOwnership {
+    /// The exact source literal.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::External => "external",
+            Self::Shared => "shared",
+        }
+    }
+}
+
+/// The closed detach-policy enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum DetachPolicy {
+    RetainHistory,
+    Forbid,
+}
+
+impl DetachPolicy {
+    /// The exact source literal.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RetainHistory => "retain-history",
+            Self::Forbid => "forbid",
+        }
+    }
+}
+
+/// The closed delete-policy enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum DeletePolicy {
+    Restrict,
+    Detach,
+}
+
+impl DeletePolicy {
+    /// The exact source literal.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Restrict => "restrict",
+            Self::Detach => "detach",
+        }
+    }
+}
+
+/// One typed secondary-uniqueness declaration owned by the Model/IR:
+/// ordered constrained fields, an exact or explicitly pinned
+/// normalization comparison, and a declared scope.
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct UniqueConstraintDef {
+    /// Stable constraint id (a qualified symbol).
+    pub id: SymbolId,
+    /// Ordered constrained fields.
+    pub fields: Vec<FieldName>,
+    /// The comparison rule.
+    pub comparison: ConstraintComparison,
+    /// The pinned normalization reference, required exactly when
+    /// `comparison` is declared-normalization.
+    pub normalization_ref: Option<SymbolId>,
+    /// The declared scope (a bounded token).
+    pub scope: Text,
+    /// Bounded human-readable description.
+    pub description: Option<Text>,
+}
+
+/// The closed constraint-comparison enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub enum ConstraintComparison {
+    ExactText,
+    DeclaredNormalization,
+}
+
+impl ConstraintComparison {
+    /// The exact source literal.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ExactText => "exact-text",
+            Self::DeclaredNormalization => "declared-normalization",
+        }
+    }
 }
 
 /// The `command` definition.
@@ -424,6 +604,7 @@ pub struct CommandDef {
 pub struct QueryDef {
     pub id: SymbolId,
     pub common: Common,
+    pub input: Vec<Field>,
     pub reads: Vec<SymbolId>,
     pub returns: Option<TypeRef>,
 }

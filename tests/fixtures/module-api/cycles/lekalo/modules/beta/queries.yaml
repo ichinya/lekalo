@@ -1,0 +1,10 @@
+schema_version: "0.2.16"
+definitions:
+  - id: beta.reader
+    kind: query
+    version: 1
+    description: "Reads across the cycle"
+    reads:
+      - "alpha.shared"
+    returns:
+      ref: "alpha.shared"

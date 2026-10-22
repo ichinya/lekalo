@@ -275,7 +275,16 @@ fn validate_endpoint(
     })?;
     let (input_fields, is_query) = match operation {
         Definition::Command(command) => (Some(&command.input), false),
-        Definition::Query(_) => (None, true),
+        Definition::Query(query) => {
+            if !query.input.is_empty() {
+                return Err(diagnostic::rule_invalid(
+                    diagnostic::ENDPOINT_UNRESOLVED,
+                    "query-input-contract-unsupported",
+                    Some(subject),
+                ));
+            }
+            (None, true)
+        }
         _ => {
             return Err(diagnostic::rule_invalid(
                 diagnostic::ENDPOINT_UNRESOLVED,

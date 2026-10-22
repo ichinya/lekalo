@@ -1,0 +1,8 @@
+{
+  "expect": "reject:oversize",
+  "kind": "decode-oversize",
+  "maxBytes": 128,
+  "name": "semantic-decode-oversize-multibyte",
+  "note": "The UTF-16 code-unit count is under the cap while the UTF-8 encoded byte length is over it (each Cyrillic char encodes as two bytes); the decoder must measure encoded bytes, not code units — issue #106 review r2 #6/#17.",
+  "text": "{\"примечание\":\"дддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\",\"request_id\":\"req-x\"}"
+}

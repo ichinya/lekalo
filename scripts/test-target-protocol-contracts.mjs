@@ -2,7 +2,7 @@
 /**
  * Issue #27 contract gate: the `lekalo.target/v1` process protocol.
  *
- * Dependency-free except the pinned Ajv 8.17.1 release gate (CI provisions
+ * Dependency-free except the pinned Ajv 8.20.0 release gate (CI provisions
  * it outside the checkout and exposes it through NODE_PATH /
  * LEKALO_AJV_NODE_PATH). The gate:
  *
@@ -30,7 +30,7 @@ try {
     Ajv = require("ajv/dist/2020.js");
   }
 } catch {
-  fail("ajv-missing", "pinned Ajv 8.17.1 must be provided through NODE_PATH/LEKALO_AJV_NODE_PATH");
+  fail("ajv-missing", "pinned Ajv 8.20.0 must be provided through NODE_PATH/LEKALO_AJV_NODE_PATH");
 }
 
 const ajvModule = Ajv.default ?? Ajv;
@@ -42,8 +42,8 @@ const packageJson = (() => {
     return undefined;
   }
 })();
-if (!packageJson || packageJson.version !== "8.17.1") {
-  fail("ajv-version", `expected Ajv 8.17.1, found ${packageJson ? packageJson.version : "none"}`);
+if (!packageJson || packageJson.version !== "8.20.0") {
+  fail("ajv-version", `expected Ajv 8.20.0, found ${packageJson ? packageJson.version : "none"}`);
 }
 
 const ajv = new ajvModule({ strict: true, allErrors: true });
@@ -242,7 +242,7 @@ if (failures.length > 0) {
 process.stdout.write(`${JSON.stringify({
   ok: true,
   gate: "target-protocol",
-  ajv: "8.17.1",
+  ajv: "8.20.0",
   goldens,
   invalidVectors,
   schemaAcceptedContextualVectors,

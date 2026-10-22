@@ -1,0 +1,64 @@
+schema_version: "0.2.16"
+definitions:
+  - id: planner.mark_task_focused
+    kind: effect
+    version: 1
+    description: "Marks the planning record focused"
+    operation: update
+    entity: "planner.user_task_planning"
+  - id: planner.archive_task
+    kind: effect
+    version: 1
+    description: "Archives a planning record"
+    operation: delete
+    entity: "planner.user_task_planning"
+  - id: planner.import_planning
+    kind: effect
+    version: 1
+    description: "Imports planning records in bulk"
+    operation: update
+    entity: "planner.user_task_planning"
+  - id: planner.focus_task
+    kind: command
+    version: 1
+    description: "Focus one user task planning record"
+    derived_from:
+      - "PLANNER-REQ-001"
+    input:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+    effects:
+      - "planner.mark_task_focused"
+  - id: planner.refocus_task
+    kind: command
+    version: 1
+    description: "Refocus one previously focused task"
+    derived_from:
+      - "PLANNER-REQ-001"
+    input:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+    effects:
+      - "planner.mark_task_focused"
+  - id: planner.archive_task_cmd
+    kind: command
+    version: 1
+    description: "Archive one task planning record"
+    input:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+    effects:
+      - "planner.archive_task"
+  - id: planner.import_planning_cmd
+    kind: command
+    version: 1
+    description: "Bulk import planning rows"
+    input:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+    effects:
+      - "planner.import_planning"

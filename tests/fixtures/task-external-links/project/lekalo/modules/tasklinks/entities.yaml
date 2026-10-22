@@ -1,0 +1,342 @@
+schema_version: "0.8.0"
+definitions:
+  - id: tasklinks.link_id
+    kind: scalar
+    version: 1
+    description: "Stable task-link identifier"
+    base: uuid
+    visibility: project
+  - id: tasklinks.installation_id
+    kind: scalar
+    version: 1
+    description: "Installation scope identifier (credential handles never live here)"
+    base: uuid
+    visibility: project
+  - id: tasklinks.provider_id
+    kind: scalar
+    version: 1
+    description: "Provider identifier (public synthetic alias)"
+    base: string
+  - id: tasklinks.object_type
+    kind: scalar
+    version: 1
+    description: "Provider object type"
+    base: string
+  - id: tasklinks.external_id
+    kind: scalar
+    version: 1
+    description: "Exact external identifier text"
+    base: string
+  - id: tasklinks.sync_mode
+    kind: enum
+    version: 1
+    description: "Link synchronization mode"
+    values:
+      - value: disabled
+        description: "No synchronization"
+      - value: inbound
+        description: "Inbound only"
+      - value: outbound
+        description: "Outbound only"
+      - value: bidirectional
+        description: "Both directions"
+  - id: tasklinks.link_state
+    kind: enum
+    version: 1
+    description: "Link lifecycle state; delivery states live on outbox items"
+    values:
+      - value: active
+        description: "Active"
+      - value: paused
+        description: "Paused"
+      - value: conflicted
+        description: "Conflicted"
+      - value: detached
+        description: "Detached with retained history"
+  - id: tasklinks.revision
+    kind: scalar
+    version: 1
+    description: "Opaque provider revision token"
+    base: string
+  - id: tasklinks.outbox_state
+    kind: enum
+    version: 1
+    description: "Durable outbox intent state"
+    values:
+      - value: pending
+        description: "Eligible for claim"
+      - value: leased
+        description: "Claimed under a fencing lease"
+      - value: delivered
+        description: "Delivered and acknowledged"
+      - value: retry_wait
+        description: "Waiting for deterministic backoff"
+      - value: conflicted
+        description: "Stopped by a provider conflict"
+      - value: cancelled
+        description: "Cancelled after revocation or detach"
+      - value: dead_letter
+        description: "Bounded attempts exhausted"
+  - id: tasklinks.primary_request
+    kind: value-object
+    version: 1
+    description: "The request wire schema of the secondary provider contract"
+    fields:
+      - name: payload
+        type: "tasklinks.external_id"
+        required: true
+  - id: tasklinks.primary_response
+    kind: value-object
+    version: 1
+    description: "The response wire schema of the secondary provider contract"
+    fields:
+      - name: payload
+        type: "tasklinks.external_id"
+        required: true
+  - id: tasklinks.primary_error
+    kind: value-object
+    version: 1
+    description: "The error wire schema of the secondary provider contract"
+    fields:
+      - name: payload
+        type: "tasklinks.external_id"
+        required: true
+  - id: tasklinks.secondary_request
+    kind: value-object
+    version: 1
+    description: "The request wire schema of the secondary provider contract"
+    fields:
+      - name: payload
+        type: "tasklinks.external_id"
+        required: true
+  - id: tasklinks.secondary_response
+    kind: value-object
+    version: 1
+    description: "The response wire schema of the secondary provider contract"
+    fields:
+      - name: payload
+        type: "tasklinks.external_id"
+        required: true
+  - id: tasklinks.secondary_error
+    kind: value-object
+    version: 1
+    description: "The error wire schema of the secondary provider contract"
+    fields:
+      - name: payload
+        type: "tasklinks.external_id"
+        required: true
+  - id: tasklinks.resolution_audit
+    kind: entity
+    version: 1
+    description: "One immutable conflict-resolution audit entry; appended atomically with the resolution, never updated or deleted"
+    fields:
+      - name: audit_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: conflict_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: link_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: resolved_revision
+        type: "tasklinks.revision"
+        required: true
+      - name: actor
+        type: "tasklinks.external_id"
+        required: true
+      - name: decision
+        type: "tasklinks.external_id"
+        required: true
+      - name: causation_id
+        type: "tasklinks.external_id"
+        required: true
+      - name: expected_conflict_version
+        type: "tasklinks.revision"
+        required: true
+      - name: expected_link_version
+        type: "tasklinks.revision"
+        required: true
+    identity:
+      - audit_id
+  - id: tasklinks.policy_decision
+    kind: entity
+    version: 1
+    description: "Revision-bound per-link action and field authority committed before fan-out"
+    fields:
+      - name: decision_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: link_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: actor
+        type: "tasklinks.external_id"
+        required: true
+      - name: policy_revision
+        type: "tasklinks.revision"
+        required: true
+      - name: capability_revision
+        type: "tasklinks.revision"
+        required: true
+    identity:
+      - decision_id
+  - id: tasklinks.action_audit
+    kind: entity
+    version: 1
+    description: "Immutable causation and decision audit of one canonical task action"
+    fields:
+      - name: audit_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: causation_id
+        type: "tasklinks.external_id"
+        required: true
+      - name: decision_id
+        type: "tasklinks.link_id"
+        required: true
+    identity:
+      - audit_id
+  - id: tasklinks.task_external_link
+    kind: entity
+    version: 1
+    description: "One external identity bound to one local task; external objects are references, never cascade-owned records"
+    fields:
+      - name: link_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: workspace_id
+        type: "planner.workspace_id"
+        required: true
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: installation_id
+        type: "tasklinks.installation_id"
+        required: true
+      - name: provider_id
+        type: "tasklinks.provider_id"
+        required: true
+      - name: object_type
+        type: "tasklinks.object_type"
+        required: true
+      - name: external_id
+        type: "tasklinks.external_id"
+        required: true
+      - name: sync_mode
+        type: "tasklinks.sync_mode"
+        required: true
+      - name: state
+        type: "tasklinks.link_state"
+        required: true
+      - name: inbound_cursor
+        type: "tasklinks.revision?"
+      - name: outbound_cursor
+        type: "tasklinks.revision?"
+      - name: version
+        type: "tasklinks.revision"
+        required: true
+      - name: detached_revision
+        type: "tasklinks.revision?"
+    identity:
+      - link_id
+    relations:
+      - id: "tasklinks.rel.task_links"
+        target: "planner.task"
+        localFields:
+          - task_id
+        targetFields:
+          - task_id
+        min: 1
+        max: 1
+        ownership: local
+        onDetach: retain-history
+        onDelete: restrict
+        description: "Every link refers to exactly one local Task (link-to-one-Task); the typed pair with planner.task's 0..N side; detach preserves history and the external object"
+    uniqueConstraints:
+      - id: "tasklinks.uq_external_identity"
+        fields:
+          - workspace_id
+          - installation_id
+          - provider_id
+          - object_type
+          - external_id
+        comparison: exact-text
+        scope: "workspace-installation-provider-object-external-id"
+        description: "The exact five-part identity tuple; no prefix index or collation may stand in for it"
+  - id: tasklinks.conflict
+    kind: entity
+    version: 1
+    description: "One unresolved inbound or outbound conflict; sensitive values stay in local classified storage"
+    fields:
+      - name: conflict_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: link_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: base_revision
+        type: "tasklinks.revision"
+        required: true
+      - name: observed_revision
+        type: "tasklinks.revision"
+        required: true
+      - name: state
+        type: "tasklinks.link_state"
+        required: true
+    identity:
+      - conflict_id
+  - id: tasklinks.inbox_receipt
+    kind: entity
+    version: 1
+    description: "One deduplicated attributed inbound event receipt"
+    fields:
+      - name: receipt_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: installation_id
+        type: "tasklinks.installation_id"
+        required: true
+      - name: link_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: event_identity
+        type: "tasklinks.external_id"
+        required: true
+      - name: provider_revision
+        type: "tasklinks.revision"
+        required: true
+    identity:
+      - receipt_id
+  - id: tasklinks.outbox_item
+    kind: entity
+    version: 1
+    description: "One durable outbound intent; the network call never joins its transaction"
+    fields:
+      - name: intent_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: link_id
+        type: "tasklinks.link_id"
+        required: true
+      - name: idempotency_key
+        type: "tasklinks.external_id"
+        required: true
+      - name: state
+        type: "tasklinks.outbox_state"
+        required: true
+    identity:
+      - intent_id
+    relations:
+      - id: "tasklinks.rel.link_outbox"
+        target: "tasklinks.task_external_link"
+        localFields:
+          - link_id
+        targetFields:
+          - link_id
+        min: 0
+        max: null
+        ownership: local
+        onDetach: retain-history
+        onDelete: detach
+        description: "Outbox intents are aggregate children; cancelling never deletes the link"

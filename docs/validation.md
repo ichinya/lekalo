@@ -134,4 +134,4 @@ and human bytes, and the adversarial cases (unknown module scope,
 double-run byte determinism, no-write guarantee) pinned by
 `crates/lekalo-cli/tests/validate_semantic.rs` and the core suite. The
 contract gate is `scripts/test-validation-contracts.mjs` with exact Ajv
-8.17.1.
+8.20.0.

@@ -10,7 +10,7 @@ import {fileURLToPath} from 'node:url';
 import {AUTHORIZING_EVIDENCE_CONTRACT_REF, validateDecisionInput, loadTrustedContext, authorizationSubjectDigest} from './check-privacy.mjs';
 import {refreshEvidenceBindings, AUTHORIZATION_SUBJECT_PROFILE} from './privacy-test-helpers.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..'),require=createRequire(import.meta.url);
-assert.equal(require('ajv/package.json').version,'8.17.1');
+assert.equal(require('ajv/package.json').version,'8.20.0');
 const Ajv2020=require('ajv/dist/2020').default;
 // #119's frozen scalar value-state explicitly uses JSON Schema union types.
 const ajv=new Ajv2020({strict:true,allErrors:true,allowUnionTypes:true});

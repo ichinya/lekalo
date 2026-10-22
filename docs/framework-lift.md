@@ -124,7 +124,7 @@ facts. These measurements must be collected by the explicit executor and backed
 by the versioned `measurementSources` references. Result rows retain arm digests;
 importers resolve those arm documents to obtain the sources, assertions and events.
 
-Run `node scripts/test-framework-lift-contracts.mjs` with exact Ajv 8.17.1 on
+Run `node scripts/test-framework-lift-contracts.mjs` with exact Ajv 8.20.0 on
 `NODE_PATH` and a locked built CLI. CI runs this live gate after cargo build for
 each family. It checks schema/Rust closure, independent arithmetic expectations,
 baseline mutation, source provenance, stale receipts, arm contamination, provider

@@ -111,6 +111,24 @@ fn lock_with_adapter(root: &Path) {
     assert!(stdout(&output).contains("adapters 1"));
 }
 
+#[test]
+fn an_invalid_project_error_owner_refuses_generation_before_evidence_writes() {
+    with_project(|root| {
+        lock_with_adapter(root);
+        let source = root.join("lekalo/error-registry.json");
+        std::fs::write(&source, b"{}").unwrap();
+        let evidence = root.join(lekalo_core::orchestration::IR_EVIDENCE_DIR);
+        assert!(!evidence.exists());
+        let refused = generate(root, true, true);
+        assert_eq!(exit_code(&refused), 1, "{}", stdout(&refused));
+        assert!(String::from_utf8(refused.stderr.clone())
+            .unwrap()
+            .contains("error.registry-invalid"));
+        assert!(!evidence.exists());
+        assert_eq!(std::fs::read(source).unwrap(), b"{}");
+    });
+}
+
 fn generate(root: &Path, dry_run: bool, json: bool) -> Output {
     let mut head: Vec<&str> = Vec::new();
     if json {
@@ -149,7 +167,13 @@ fn the_full_sequence_matches_the_golden_receipts() {
     with_project(|root| {
         lock_with_adapter(root);
         let dry = generate(root, true, true);
-        assert_eq!(exit_code(&dry), 0, "stdout={}", stdout(&dry));
+        assert_eq!(
+            exit_code(&dry),
+            0,
+            "stdout={} stderr={}",
+            stdout(&dry),
+            String::from_utf8_lossy(&dry.stderr)
+        );
         let apply = generate(root, false, true);
         assert_eq!(exit_code(&apply), 0, "stdout={}", stdout(&apply));
         let verify = verify(root);
@@ -444,7 +468,10 @@ fn trace_collect_exports_and_queries_the_scenario_gate_manifest() {
 }
 
 /// Walk every file under `root` into a sorted (path, bytes) vector: the
-/// rollback evidence of the hostile-write probes.
+/// rollback evidence of the hostile-write probes. The shared mutation
+/// lock leaf (`.lekalo/cache/writer.lock`) is runtime custody with
+/// intentional persistence (it is never unlinked), so it is excluded —
+/// the probe answers on the project's model/source/generated state.
 fn project_fingerprint(root: &Path) -> Vec<(String, Vec<u8>)> {
     fn walk(dir: &Path, out: &mut Vec<(String, Vec<u8>)>) {
         for entry in std::fs::read_dir(dir).expect("read dir") {
@@ -452,7 +479,7 @@ fn project_fingerprint(root: &Path) -> Vec<(String, Vec<u8>)> {
             let path = entry.path();
             if path.is_dir() {
                 walk(&path, out);
-            } else {
+            } else if !path.ends_with(Path::new(".lekalo").join("cache").join("writer.lock")) {
                 let bytes = std::fs::read(&path).expect("read file");
                 out.push((path.to_string_lossy().to_string(), bytes));
             }
@@ -886,7 +913,13 @@ fn a_php_types_generation_applies_through_the_pipeline_and_records_the_sidecar()
             &["--json", "generate", "--target", "php-laravel", "--dry-run"],
             php_adapter,
         );
-        assert_eq!(exit_code(&dry), 0, "stdout={}", stdout(&dry));
+        assert_eq!(
+            exit_code(&dry),
+            0,
+            "stdout={} stderr={}",
+            stdout(&dry),
+            String::from_utf8_lossy(&dry.stderr)
+        );
         let receipt: serde_json::Value = serde_json::from_str(&stdout(&dry)).expect("json");
         let writes = receipt["targets"][0]["writes"]
             .as_array()

@@ -303,7 +303,7 @@ The committed planner fixture (`tests/fixtures/requirements/planner`)
 covers the fresh gate, the report and trace goldens
 (`tests/fixtures/requirements/golden`, with pinned `sha256:` sidecars), and
 the invalid vector matrix; `scripts/test-requirements-contracts.mjs`
-re-validates everything under exact Ajv 8.17.1 on Node 18 and 24, and the
+re-validates everything under exact Ajv 8.20.0 on Node 18 and 24, and the
 Rust suite proves resolution semantics, archive symmetry, rename and
 removal impact, the conflict gate, and the no-write boundary.
 

@@ -1,0 +1,321 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/explain-catalog.schema.v0.8.0.json",
+  "title": "lekalo/explain-catalog/v0.8.0",
+  "description": "Closed schema of the embedded diagnostic-explanation catalog (issue #96). The catalog carries one stable per-code entry for every diagnostic in the closed 0.8.0 union registry: what the rule checks, why it matters, common root causes, fix options with closed risk classes and executable recipe links, before/after examples, related codes, severity/profile behavior, target notes, versioned docs links and waiver policy. Explanations are versioned together with the rule semantics and resolve offline; entry order is canonical diagnostic-code byte order.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "catalogVersion",
+    "registryIdentity",
+    "registryDigest",
+    "closed",
+    "entries"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/explain-catalog/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.explain-catalog@0.8.0"
+    },
+    "catalogVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "registryIdentity": {
+      "type": "string",
+      "const": "dev.lekalo.diagnostic-registry@0.8.0"
+    },
+    "registryDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "closed": {
+      "const": true
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    }
+  },
+  "unevaluatedProperties": false,
+  "$defs": {
+    "diagnosticCode": {
+      "type": "string",
+      "pattern": "^LEK-[A-Z][A-Z0-9]{1,11}-[0-9]{3}$"
+    },
+    "ruleId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+      "maxLength": 128
+    },
+    "category": {
+      "enum": [
+        "model",
+        "semantic",
+        "compatibility",
+        "adapter",
+        "infrastructure",
+        "security"
+      ]
+    },
+    "severity": {
+      "enum": [
+        "info",
+        "warning",
+        "error"
+      ]
+    },
+    "status": {
+      "enum": [
+        "valid",
+        "invalid",
+        "denied",
+        "unsupported",
+        "unavailable",
+        "unsupported-version"
+      ]
+    },
+    "fixClass": {
+      "description": "The closed risk-class vocabulary, mirroring the versioned fix-recipe classes plus manual-only: no severity or adapter assertion can re-class a fix.",
+      "enum": [
+        "safe",
+        "unsafe",
+        "breaking",
+        "manual-only"
+      ]
+    },
+    "prose": {
+      "type": "string",
+      "minLength": 1
+    },
+    "example": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "before",
+        "after"
+      ],
+      "properties": {
+        "before": {
+          "$ref": "#/$defs/prose"
+        },
+        "after": {
+          "$ref": "#/$defs/prose"
+        }
+      }
+    },
+    "fixOption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "description"
+      ],
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/fixClass"
+        },
+        "recipeId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "description": {
+          "$ref": "#/$defs/prose"
+        }
+      }
+    },
+    "targetNote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "note"
+      ],
+      "properties": {
+        "scope": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 63
+        },
+        "note": {
+          "$ref": "#/$defs/prose"
+        }
+      }
+    },
+    "docsLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "url"
+      ],
+      "properties": {
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        }
+      }
+    },
+    "severityProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defaultSeverity",
+        "severities",
+        "allowedStatuses",
+        "blocking",
+        "waiverPolicy"
+      ],
+      "properties": {
+        "defaultSeverity": {
+          "$ref": "#/$defs/severity"
+        },
+        "severities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/severity"
+          }
+        },
+        "allowedStatuses": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/status"
+          }
+        },
+        "blocking": {
+          "type": "boolean"
+        },
+        "waiverPolicy": {
+          "$ref": "#/$defs/prose"
+        }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "ruleId",
+        "title",
+        "category",
+        "checks",
+        "rationale",
+        "rootCauses",
+        "fixOptions",
+        "executableRecipeId",
+        "examples",
+        "relatedCodes",
+        "severityProfile",
+        "targetNotes",
+        "docsLinks"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/diagnosticCode"
+        },
+        "ruleId": {
+          "$ref": "#/$defs/ruleId"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "category": {
+          "$ref": "#/$defs/category"
+        },
+        "checks": {
+          "$ref": "#/$defs/prose"
+        },
+        "rationale": {
+          "$ref": "#/$defs/prose"
+        },
+        "rootCauses": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/prose"
+          }
+        },
+        "fixOptions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/fixOption"
+          }
+        },
+        "executableRecipeId": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+              "maxLength": 128
+            }
+          ]
+        },
+        "examples": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/example"
+          }
+        },
+        "relatedCodes": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/diagnosticCode"
+          }
+        },
+        "severityProfile": {
+          "$ref": "#/$defs/severityProfile"
+        },
+        "targetNotes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/targetNote"
+          }
+        },
+        "docsLinks": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/docsLink"
+          }
+        }
+      }
+    }
+  }
+}

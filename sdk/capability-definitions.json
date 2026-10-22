@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "lekalo/target-capabilities/v0.6.4",
+  "identity": "dev.lekalo.target-capabilities@0.6.4",
+  "description": "SDK generation export (issue #106) of the reviewed embedded capability-definition table (crates/lekalo-core/src/target_protocol/capability.rs). The export is a generated input for SDK describe helpers, never a second registry: a real new rule or capability requires its owner and a reviewed successor, and this export is regenerated and re-pinned only from that accepted owner. entriesDigest is the SHA-256 over the canonical JSON bytes (sorted keys, compact, no trailing LF) of the entries array.",
+  "entriesDigest": "sha256:4d3b4af2a154c23d8f9f388ff44e980f5840b965586c1a9a8b9c808dc669fa5b",
+  "entries": [
+    {
+      "id": "generate.client-sdk",
+      "definitionVersion": "0.4.0",
+      "domain": "generate"
+    },
+    {
+      "id": "generate.openapi",
+      "definitionVersion": "0.3.1",
+      "domain": "generate"
+    },
+    {
+      "id": "generate.operations",
+      "definitionVersion": "0.4.0",
+      "domain": "generate"
+    },
+    {
+      "id": "generate.routes",
+      "definitionVersion": "0.4.0",
+      "domain": "generate"
+    },
+    {
+      "id": "generate.storage-ddl",
+      "definitionVersion": "0.4.0",
+      "domain": "generate"
+    },
+    {
+      "id": "generate.types",
+      "definitionVersion": "0.4.0",
+      "domain": "generate"
+    },
+    {
+      "id": "generate.transport-http",
+      "definitionVersion": "0.4.0",
+      "domain": "generate"
+    },
+    {
+      "id": "generate.ui",
+      "definitionVersion": "0.3.1",
+      "domain": "generate"
+    },
+    {
+      "id": "generate.zod",
+      "definitionVersion": "0.3.1",
+      "domain": "generate"
+    },
+    {
+      "id": "lint.ai-readability",
+      "definitionVersion": "0.6.4",
+      "domain": "lint"
+    },
+    {
+      "id": "plan.native-gates",
+      "definitionVersion": "0.3.2",
+      "domain": "plan"
+    },
+    {
+      "id": "preserve.classification",
+      "definitionVersion": "0.4.0",
+      "domain": "preserve"
+    },
+    {
+      "id": "scan.schema",
+      "definitionVersion": "0.4.0",
+      "domain": "scan"
+    },
+    {
+      "id": "scan.storage-schema",
+      "definitionVersion": "0.4.0",
+      "domain": "scan"
+    },
+    {
+      "id": "scan.symbols",
+      "definitionVersion": "0.3.1",
+      "domain": "scan"
+    },
+    {
+      "id": "verify.operations",
+      "definitionVersion": "0.4.0",
+      "domain": "verify"
+    },
+    {
+      "id": "verify.routes",
+      "definitionVersion": "0.4.0",
+      "domain": "verify"
+    },
+    {
+      "id": "verify.schema-projection",
+      "definitionVersion": "0.4.0",
+      "domain": "verify"
+    },
+    {
+      "id": "verify.scenarios",
+      "definitionVersion": "0.3.1",
+      "domain": "verify"
+    },
+    {
+      "id": "verify.transport-http",
+      "definitionVersion": "0.4.0",
+      "domain": "verify"
+    }
+  ]
+}

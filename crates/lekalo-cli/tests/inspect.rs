@@ -68,6 +68,10 @@ fn workspace_path() -> PathBuf {
 
 /// `lekalo inspect <id>` answers on the valid envelope with the pinned
 /// golden bytes: one call gives enough context to change the symbol.
+/// The pinned goldens are the FROZEN 0.2.16 envelopes; the live output
+/// carries the 0.8.0 successor discriminator (the negotiated contract
+/// identity), so the comparison pins every byte except those two
+/// members, which are asserted explicitly against the successor.
 #[test]
 fn inspect_matches_the_pinned_golden_envelopes() {
     let project = fixture_path();
@@ -87,7 +91,23 @@ fn inspect_matches_the_pinned_golden_envelopes() {
                 .join(format!("{symbol}.json")),
         )
         .expect("golden envelope");
-        assert_eq!(stdout_text(&output), golden, "{symbol}: golden drift");
+        let document: serde_json::Value =
+            serde_json::from_str(stdout_text(&output).trim()).expect("live envelope");
+        let mut pinned: serde_json::Value =
+            serde_json::from_str(golden.trim()).expect("golden envelope");
+        assert_eq!(
+            document["inspect"]["schemaVersion"], "lekalo/inspect/v0.8.0",
+            "{symbol}: the successor discriminator"
+        );
+        assert_eq!(
+            document["inspect"]["identity"], "dev.lekalo.inspect@0.8.0",
+            "{symbol}: the successor identity"
+        );
+        // The negotiated members are the only drift: pin them to the
+        // successor on both sides and require everything else equal.
+        pinned["inspect"]["schemaVersion"] = serde_json::json!("lekalo/inspect/v0.8.0");
+        pinned["inspect"]["identity"] = serde_json::json!("dev.lekalo.inspect@0.8.0");
+        assert_eq!(document, pinned, "{symbol}: golden drift");
     }
 }
 
@@ -290,17 +310,17 @@ fn snapshot(root: &Path) -> Vec<(String, u64)> {
     entries
 }
 
-/// Version custody: the binary reports the prospective 0.6.5.
+/// Version custody: the binary reports the prospective 0.8.0.
 #[test]
 fn version_probe_reports_the_prospective_release() {
     let project = fixture_path();
     let human = lekalo_in(&project, &["--version"]);
     assert_eq!(exit_code(&human), 0);
-    assert_eq!(stdout_text(&human).trim(), "lekalo 0.6.5");
+    assert_eq!(stdout_text(&human).trim(), "lekalo 0.8.0");
     let json = lekalo_in(&project, &["--json", "--version"]);
     assert_eq!(exit_code(&json), 0);
     assert_eq!(
         stdout_text(&json).trim_end(),
-        "{\n  \"status\": \"valid\",\n  \"version\": \"0.6.5\"\n}"
+        "{\n  \"status\": \"valid\",\n  \"version\": \"0.8.0\"\n}"
     );
 }

@@ -1,0 +1,5 @@
+schema_version: "0.2.16"
+definitions:
+  - id: watch_fixture
+    kind: project
+    version: 1

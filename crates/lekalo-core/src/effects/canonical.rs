@@ -105,6 +105,9 @@ fn resource_bytes(resource: &super::identity::ResourceId) -> String {
 
 /// The `effects show` payload bytes (the envelope wrapper stays with the
 /// CLI): the operation card plus its edges and explicit completeness.
+/// The typed transaction/partial-failure facts of the operation's
+/// detected evidence ride as their own sections — the per-edge wire of
+/// the frozen graph-export contract never changes shape.
 pub fn show_payload_bytes(
     graph: &EffectGraph,
     operation: &super::identity::OperationId,
@@ -122,12 +125,128 @@ pub fn show_payload_bytes(
         first = false;
         json.push_str(&edge_bytes(edge));
     }
-    json.push_str(&format!(
-        "],\"identity\":{},\"operation\":{}}}",
-        quote(super::version::IDENTITY),
-        quote(operation.as_str())
-    ));
+    json.push_str("],\"identity\":");
+    json.push_str(&quote(super::version::IDENTITY));
+    json.push_str(",\"operation\":");
+    json.push_str(&quote(operation.as_str()));
+    // The typed partial-failure traces this operation's detected
+    // evidence carried: per-recipient results and failed-only retry.
+    json.push_str(",\"partialFailures\":[");
+    let mut first = true;
+    for record in graph
+        .partial_failures()
+        .iter()
+        .filter(|record| record.operation == operation.semantic_id())
+    {
+        if !first {
+            json.push(',');
+        }
+        first = false;
+        json.push_str(&partial_failure_bytes(
+            record,
+            graph.execution_digest.is_some(),
+        ));
+    }
+    // The typed local-atomic transactions declared for this
+    // operation's grouped writes: network calls are never members.
+    json.push_str("],\"transactions\":[");
+    let mut first = true;
+    for transaction in graph.transactions().iter().filter(|transaction| {
+        transaction
+            .members
+            .iter()
+            .any(|member| member.operation == operation.semantic_id())
+    }) {
+        if !first {
+            json.push(',');
+        }
+        first = false;
+        json.push_str(&transaction_bytes(
+            transaction,
+            graph.execution_digest.is_some(),
+        ));
+    }
+    json.push_str("]}");
     Ok(json)
+}
+
+/// The canonical bytes of one typed partial-failure record.
+fn partial_failure_bytes(record: &super::provenance::PartialFailure, executed: bool) -> String {
+    let mut json = format!(
+        "{{\"basis\":{},\"caseRef\":",
+        quote(if executed {
+            "owner-admitted-execution"
+        } else {
+            "envelope-declaration"
+        })
+    );
+    json.push_str(&quote(&record.case_ref));
+    json.push_str(",\"operation\":");
+    json.push_str(&quote(&record.operation));
+    json.push_str(",\"recipients\":[");
+    let mut first = true;
+    for recipient in &record.recipients {
+        if !first {
+            json.push(',');
+        }
+        first = false;
+        json.push_str("{\"errorClass\":");
+        json.push_str(&match &recipient.error_class {
+            Some(class) => quote(class),
+            None => "null".to_owned(),
+        });
+        json.push_str(",\"provider\":");
+        json.push_str(&quote(&recipient.provider));
+        json.push_str(",\"receiptDigest\":");
+        json.push_str(&match &recipient.receipt_digest {
+            Some(digest) => quote(digest),
+            None => "null".to_owned(),
+        });
+        json.push_str(",\"result\":");
+        json.push_str(&quote(recipient.result.key()));
+        json.push('}');
+    }
+    json.push_str("],\"retryEligible\":[");
+    let mut first = true;
+    for provider in &record.retry_eligible {
+        if !first {
+            json.push(',');
+        }
+        first = false;
+        json.push_str(&quote(provider));
+    }
+    json.push_str("]}");
+    json
+}
+
+/// The canonical bytes of one declared local-atomic transaction.
+fn transaction_bytes(transaction: &super::provenance::LocalTransaction, executed: bool) -> String {
+    let mut json = format!(
+        "{{\"basis\":{},\"groupId\":",
+        quote(if executed {
+            "owner-admitted-execution"
+        } else {
+            "envelope-declaration"
+        })
+    );
+    json.push_str(&quote(transaction.group.as_str()));
+    json.push_str(",\"members\":[");
+    let mut first = true;
+    for member in &transaction.members {
+        if !first {
+            json.push(',');
+        }
+        first = false;
+        json.push_str("{\"kind\":");
+        json.push_str(&quote(member.kind.key()));
+        json.push_str(",\"operation\":");
+        json.push_str(&quote(&member.operation));
+        json.push_str(",\"subject\":");
+        json.push_str(&quote(&member.subject));
+        json.push('}');
+    }
+    json.push_str("]}");
+    json
 }
 
 /// The `effects writers` payload bytes: the reverse-writer edges for one

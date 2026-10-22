@@ -23,7 +23,7 @@ pub(super) fn record_launch() {
     LAUNCHES.with(|count| count.set(count.get() + 1));
 }
 #[cfg(test)]
-pub(super) fn launches() -> usize {
+pub(crate) fn launches() -> usize {
     LAUNCHES.with(std::cell::Cell::get)
 }
 
@@ -73,6 +73,10 @@ pub enum TransportFailure {
     Cancelled,
     /// A response stream exceeded its cap; the child was killed.
     OutputLimit { stream: Stream },
+    /// Resident-memory threshold exceeded.
+    ResourceLimit,
+    /// The resident-memory monitor could not establish a sample.
+    ResourceMonitorUnavailable,
 }
 
 impl TransportFailure {
@@ -84,6 +88,8 @@ impl TransportFailure {
             Self::Timeout => "deadline",
             Self::Cancelled => "caller",
             Self::OutputLimit { .. } => "output-limit",
+            Self::ResourceLimit => "resident-memory-limit",
+            Self::ResourceMonitorUnavailable => "resident-monitor-unavailable",
         }
     }
 }
@@ -143,10 +149,11 @@ pub fn run(
         cancel,
         false,
         env,
+        false,
     )
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 pub(super) fn run_private(
     command: &AdapterCommand,
     request: &[u8],
@@ -155,7 +162,25 @@ pub(super) fn run_private(
     cancel: Option<&AtomicBool>,
     env: &[(String, String)],
 ) -> Result<TransportSuccess, TransportFailure> {
-    run_impl(command, request, limits, cwd, false, cancel, true, env)
+    run_impl(
+        command, request, limits, cwd, false, cancel, true, env, false,
+    )
+}
+
+#[cfg(target_os = "macos")]
+#[allow(clippy::too_many_arguments)]
+pub(super) fn run_private_macos(
+    command: &AdapterCommand,
+    request: &[u8],
+    limits: &TransportLimits,
+    cwd: &Path,
+    cancel: Option<&AtomicBool>,
+    env: &[(String, String)],
+    bounded: bool,
+) -> Result<TransportSuccess, TransportFailure> {
+    run_impl(
+        command, request, limits, cwd, false, cancel, true, env, bounded,
+    )
 }
 
 fn run_impl(
@@ -167,6 +192,7 @@ fn run_impl(
     cancel: Option<&AtomicBool>,
     clear_env: bool,
     env: &[(String, String)],
+    bounded_resident: bool,
 ) -> Result<TransportSuccess, TransportFailure> {
     #![allow(clippy::too_many_arguments)]
     if request.len() > limits.max_request_bytes {
@@ -208,7 +234,25 @@ fn run_impl(
     record_launch();
     let mut child = process.spawn().map_err(|_| TransportFailure::Spawn)?;
 
-    let result = pump(&mut child, request, limits, cancel);
+    #[cfg(target_os = "macos")]
+    let result = if bounded_resident {
+        let driver = super::memory::MacResident(child.id());
+        let mut monitored = super::memory::Monitored {
+            process: child,
+            driver,
+            limit: super::confinement::SANDBOX_MEMORY_LIMIT_BYTES,
+        };
+        let result = pump(&mut monitored, request, limits, cancel);
+        child = monitored.process;
+        result
+    } else {
+        pump(&mut child, request, limits, cancel)
+    };
+    #[cfg(not(target_os = "macos"))]
+    let result = {
+        let _ = bounded_resident;
+        pump(&mut child, request, limits, cancel)
+    };
     terminate(&mut child);
     let _ = child.wait();
     drop(temp_file);
@@ -247,12 +291,25 @@ impl Process for std::process::Child {
     }
 }
 
+#[cfg(all(test, any(windows, target_os = "linux", target_os = "macos")))]
+thread_local! {
+    static PUMP_START: std::cell::RefCell<Option<Box<dyn FnOnce()>>> = const { std::cell::RefCell::new(None) };
+}
+#[cfg(all(test, any(windows, target_os = "linux", target_os = "macos")))]
+pub(crate) fn on_next_pump_start(callback: impl FnOnce() + 'static) {
+    PUMP_START.with(|slot| *slot.borrow_mut() = Some(Box::new(callback)));
+}
+
 pub(super) fn pump(
     child: &mut impl Process,
     request: &[u8],
     limits: &TransportLimits,
     cancel: Option<&AtomicBool>,
 ) -> Result<TransportSuccess, TransportFailure> {
+    #[cfg(all(test, any(windows, target_os = "linux", target_os = "macos")))]
+    if let Some(callback) = PUMP_START.with(|slot| slot.borrow_mut().take()) {
+        callback();
+    }
     let mut stdin = child.stdin().ok_or(TransportFailure::Spawn)?;
     let stdout = child.stdout().ok_or(TransportFailure::Spawn)?;
     let stderr = child.stderr().ok_or(TransportFailure::Spawn)?;
@@ -340,7 +397,19 @@ pub(super) fn pump(
             break;
         }
         if status.is_none() {
-            status = child.poll().map_err(|_| TransportFailure::Spawn)?;
+            match child.poll() {
+                Ok(observed) => status = observed,
+                Err(error) => {
+                    refusal = if error.kind() == std::io::ErrorKind::OutOfMemory {
+                        TransportFailure::ResourceLimit
+                    } else if resident_monitor_unavailable(&error) {
+                        TransportFailure::ResourceMonitorUnavailable
+                    } else {
+                        TransportFailure::Spawn
+                    };
+                    break;
+                }
+            }
         }
         if let (Some(status), Some(stdin), Some(stdout_result), Some(stderr_result)) = (
             status.as_ref(),
@@ -385,6 +454,20 @@ pub(super) fn pump(
         let _ = stderr_handle.join();
     }
     Err(refusal)
+}
+
+fn resident_monitor_unavailable(error: &std::io::Error) -> bool {
+    #[cfg(any(target_os = "macos", test))]
+    {
+        error
+            .get_ref()
+            .is_some_and(|error| error.is::<super::memory::MonitorUnavailable>())
+    }
+    #[cfg(not(any(target_os = "macos", test)))]
+    {
+        let _ = error;
+        false
+    }
 }
 
 /// Read one stream to EOF or the cap, reporting whether the cap was hit.

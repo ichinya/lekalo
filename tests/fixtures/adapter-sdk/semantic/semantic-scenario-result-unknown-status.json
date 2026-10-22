@@ -1,0 +1,9 @@
+{
+  "expect": "reject",
+  "kind": "scenario-result",
+  "name": "semantic-scenario-result-unknown-status",
+  "result": {
+    "findings": [],
+    "status": "green"
+  }
+}

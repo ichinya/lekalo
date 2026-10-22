@@ -124,6 +124,26 @@ fn malformed_invocations_are_stable_usage_errors_and_never_exit_two() {
 }
 
 #[test]
+fn watch_json_refusal_has_stream_guidance_before_project_work() {
+    for args in [
+        vec!["--json", "watch"],
+        vec!["watch", "--json"],
+        vec!["watch", "--json-lines", "--json"],
+    ] {
+        let output = lekalo(&args);
+        assert_exit(&output, 1);
+        assert!(output.stdout.is_empty());
+        assert_json_document(&output.stderr);
+        let refusal: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(refusal["reasonCodes"], serde_json::json!(["cli.usage"]));
+        assert!(refusal["diagnostics"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Use --json-lines"));
+    }
+}
+
+#[test]
 fn escaped_json_literals_do_not_select_json_output() {
     let inspect = lekalo(&["inspect", "--", "--json"]);
     // The escaped literal becomes the inspect selector; it violates the
@@ -335,18 +355,56 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
         .iter()
         .find(|package| package["name"] == "lekalo-cli")
         .expect("CLI package");
+    // Like the core list above, the cfg-gated target-scoped entries
+    // (the Windows `windows-sys` confinement/identity seam) carry a
+    // target and are excluded here — the boundary assertion covers the
+    // platform-independent normal dependency set.
     let mut cli_normal_dependencies = cli["dependencies"]
         .as_array()
         .expect("CLI dependencies")
         .iter()
-        .filter(|dependency| dependency["kind"].is_null())
+        .filter(|dependency| dependency["kind"].is_null() && dependency["target"].is_null())
         .map(|dependency| dependency["name"].as_str().expect("dependency name"))
         .collect::<Vec<_>>();
     cli_normal_dependencies.sort_unstable();
+    // `rusqlite` is the one deliberate heavyweight addition: native
+    // qualification reads the battery-written durable rows back
+    // through real SQLite (executed custody, never file-format
+    // custody), so the adapter owns the same engine the core battery
+    // executes on. `notify` + `tempfile` are the issue #95 watch
+    // additions (cross-platform event backend and hermetic fixture
+    // trees for the read-only dev loop); `serde` is the issue #33 MCP
+    // addition noted inline below.
     assert_eq!(
         cli_normal_dependencies,
-        ["clap", "lekalo-core", "serde_json"]
+        [
+            "clap",
+            "lekalo-core",
+            "notify",
+            // `rusqlite` is listed above with its custody rationale.
+            // Issue #33 reuses the workspace serde derive for the trusted
+            // MCP server-config wire documents and the envelope views; the
+            // version is pinned by the same workspace entry lekalo-core
+            // already depends on.
+            "rusqlite",
+            "serde",
+            "serde_json",
+            "tempfile"
+        ]
     );
+    // The only target-scoped dependencies are the platform process-
+    // control surfaces: `rustix` (unix, issue #94 formatting custody on
+    // the M8 line) and `windows-sys` (Windows, the issue #33 MCP
+    // single-owner link-count read through GetFileInformationByHandle);
+    // nothing else may leak past the two-crate boundary.
+    let cli_target_dependencies = cli["dependencies"]
+        .as_array()
+        .expect("CLI dependencies")
+        .iter()
+        .filter(|dependency| dependency["kind"].is_null() && !dependency["target"].is_null())
+        .map(|dependency| dependency["name"].as_str().expect("dependency name"))
+        .collect::<Vec<_>>();
+    assert_eq!(cli_target_dependencies, ["rustix", "windows-sys"]);
     assert!(cli["targets"]
         .as_array()
         .expect("CLI targets")
@@ -360,7 +418,7 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
 
     let root_manifest =
         std::fs::read_to_string(workspace.join("Cargo.toml")).expect("read workspace Cargo.toml");
-    assert_eq!(root_manifest.matches("version = \"0.6.5\"").count(), 1);
+    assert_eq!(root_manifest.matches("version = \"0.8.0\"").count(), 1);
     for member in [
         "crates/lekalo-core/Cargo.toml",
         "crates/lekalo-cli/Cargo.toml",

@@ -1,0 +1,28 @@
+# Entities: deliberately unsorted definitions and keys.
+schema_version: '0.2.16'
+definitions:
+  # A later semantic id placed first on purpose.
+  - id: planner.zz_state
+    version: 1
+    kind: scalar
+    base: string
+    description: Free-form state note
+
+  - id: planner.task_id
+    portability: portable
+    kind: scalar
+    base: uuid
+    version: 1
+    visibility: project
+    description: Stable task identifier
+  - id: planner.task_state
+    kind: enum
+    version: 1
+    description: Task lifecycle state
+    values:
+      - value: backlog
+        description: Not started
+      - value: focused
+        description: Currently focused
+      - value: done
+        description: Completed

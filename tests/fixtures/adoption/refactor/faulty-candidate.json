@@ -1,0 +1,23 @@
+{
+  "schema_version": "lekalo/adoption-patch/v0.8.0",
+  "identity": "dev.lekalo.adoption-patch@0.8.0",
+  "patch": "sha256:fb4d12b0c5748a966e4504a5c047b2960587121230c0daa32f607f138f6f802b",
+  "origin": {
+    "kind": "supplied-reviewed",
+    "identity": "issue-136-faulty-candidate-negative"
+  },
+  "scope": {
+    "symbol": "taskboard.complete_task",
+    "target": "node-typescript",
+    "profile": "default"
+  },
+  "files": [
+    {
+      "path": "src/tasks.mjs",
+      "action": "replace",
+      "before": "sha256:c4d6f08c6de053ab779d969eae99e46f2f13a031a6f8b813008595e9e8087870",
+      "after": "sha256:861d98e54ab04c2d31f13818400ffd7e987c052aeedd8c6e37074df892d76dce",
+      "content": "// Deliberately faulty candidate (issue #136 negative fixture).\nimport { MAX_TASKS } from \"./limits.mjs\";\n\nexport function registerTask(tasks, task) {\n  if (tasks.size >= MAX_TASKS) {\n    throw new RangeError(\"task-limit\");\n  }\n  tasks.set(task.id, task);\n  return tasks;\n}\n\nexport function completeTask(tasks, id) {\n  if (typeof id !== \"string\" || id.length === 0) {\n    throw new TypeError(\"invalid-task-id\");\n  }\n  if (!tasks.has(id)) {\n    throw new RangeError(\"unknown-task:\" + id);\n  }\n  const task = tasks.get(id);\n  task.state = \"done\";\n  return task;\n}\n"
+    }
+  ]
+}

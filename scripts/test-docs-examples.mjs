@@ -115,7 +115,7 @@ if(args[0] === "--static") {
 // A missing built binary or exact schema validator is a refusal, never a skip.
 const bin = binary();
 const require = createRequire(import.meta.url);
-assert.equal(require("ajv/package.json").version,"8.17.1","provision exact Ajv 8.17.1 via NODE_PATH");
+assert.equal(require("ajv/package.json").version,"8.20.0","provision exact Ajv 8.20.0 via NODE_PATH");
 const Ajv = require("ajv/dist/2020.js").default;
 const ajv = new Ajv({strict:false,allErrors:true});
 const schemaCache = new Map();
@@ -148,7 +148,7 @@ function inventory(base, logicalBase=relative(ROOT,base).replaceAll("\\","/")) {
   walk(base);
   return result;
 }
-const INPUTS=["scripts","adapters","contracts","tests/fixtures","docs","README.md","Cargo.toml","Cargo.lock","crates"];
+const INPUTS=["scripts","adapters","contracts","tests/fixtures","docs","README.md","Cargo.toml","Cargo.lock","crates",".gitattributes"];
 const sourceBefore = INPUTS.map(path=>statSync(safePath(path)).isDirectory()?inventory(safePath(path)):sha(readFileSync(safePath(path))));
 const root=realpathSync.native(mkdtempSync(join(tmpdir(),"lekalo-docs-105-")));
 const owned = path => assert.ok(resolve(path).startsWith(root+sep),"temporary path escapes owned replay root");
@@ -168,7 +168,23 @@ function repositoryCopy() {
   if(repository) return repository;
   repository=join(root,"repository"); mkdirSync(repository);
   for(const path of INPUTS) copy(safePath(path),join(repository,path));
+  // Provenance checks Git's real clean-filter custody (including the
+  // tracked binary fixtures). A filesystem copy has no index; create a
+  // private local one with the copied attributes, never borrow the user's
+  // repository or silently skip the binary-filter regression.
+  for(const argv of [["init","-q"],["-c","core.autocrlf=false","add","--",".gitattributes","tests/fixtures"]]) {
+    const git=spawnSync("git",argv,{cwd:repository,encoding:"utf8"});
+    assert.equal(git.status,0,"private provenance replay index unavailable");
+  }
   const copiedBin=join(repository,"target/debug",basename(bin)); mkdirSync(dirname(copiedBin),{recursive:true}); cpSync(bin,copiedBin);
+  // The M8 provenance gate verifies binary fixtures through Git's actual
+  // clean filter. Give the disposable replay its own index and the exact
+  // copied attributes; never consult or modify the source checkout's Git
+  // metadata, and never skip the binary-custody leg in a source copy.
+  for(const argv of [["init","--quiet"],["-c","core.autocrlf=false","add","--force","--",".gitattributes","tests/fixtures"]]) {
+    const indexed=spawnSync("git",argv,{cwd:repository,env:childEnv,encoding:"utf8"});
+    assert.equal(indexed.status,0,"disposable fixture custody index unavailable");
+  }
   if(lane==="planner") {
     const vendor=safePath("tests/fixtures/php-laravel/planner/vendor");
     assert.ok(existsSync(join(vendor,"autoload.php")),"planner-vendor-missing: explicit composer install from lock required");
@@ -272,7 +288,7 @@ function check(kind,output,cwd) {
     schema("validation-report.schema.v0.6.4.json",value);
     assert.equal(value.validation.profile,"strict"); assert.equal(value.validation.counts.error,0);
   } else if(kind==="inspect") {
-    schema("inspect.schema.v0.2.16.json",value.inspect);
+    schema("inspect.schema.v0.8.0.json",value.inspect);
     assert.equal(value.inspect.selector.resolvedId,"planner.focus_task");
     assert.equal(value.inspect.symbol.kind,"command");
   } else if(kind==="impact") {

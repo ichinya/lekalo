@@ -225,6 +225,19 @@ impl RequirementsAttachment {
     /// conflicted while the report itself stays the deliverable.
     pub fn resolve(&self, selection: &LoadSelection) -> Result<Resolution, DomainResult> {
         let root = crate::loader::root_for_selection(selection)?;
+        self.resolve_at(selection, &root)
+    }
+
+    /// The same resolution at an already-resolved project root: the
+    /// pilot shell resolves the effective project once (explicit
+    /// selector, `LEKALO_PROJECT`, or cwd discovery) and hands the
+    /// root here, so an absolute path never re-runs the invocation-
+    /// relative selector grammar.
+    pub fn resolve_at(
+        &self,
+        selection: &LoadSelection,
+        root: &std::path::Path,
+    ) -> Result<Resolution, DomainResult> {
         let model_json = match crate::loader::run(selection, false) {
             DomainResult::Valid {
                 payload: crate::result::SuccessPayload::Model { json, .. },
@@ -294,7 +307,7 @@ impl RequirementsAttachment {
 
         // Load every declared provider snapshot through the confined
         // read-only capability.
-        let fs = crate::project_fs::Fs::open(&root).map_err(|_| {
+        let fs = crate::project_fs::Fs::open(root).map_err(|_| {
             DomainResult::invalid(diagnostic::provider_invalid("root-unreadable", None))
         })?;
         let referenced: std::collections::BTreeSet<&str> = self

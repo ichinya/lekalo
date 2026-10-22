@@ -13,10 +13,10 @@ const binary = join(root, 'target/debug', process.platform === 'win32' ? 'lekalo
 // Product-qualified successor snapshots preserve the original exact goldens.
 // Lock productVersion changes artifact/trace/condition pins, not this wire family.
 const product = readFileSync(join(root,'Cargo.toml'),'utf8').match(/\[workspace.package\][\s\S]*?version = "([^"]+)"/)?.[1];
-assert.ok(['0.6.4','0.6.5'].includes(product),'explicit product golden admission');
+assert.ok(['0.6.4','0.6.5','0.8.0'].includes(product),'explicit product golden admission');
 const productPinnedGoldens = new Set(['report','report-waived','waivers','comparison','comparison-incomparable']);
 const require = createRequire((process.env.LEKALO_AJV_NODE_PATH || dirname(fileURLToPath(import.meta.url))) + '/');
-assert.equal(require('ajv/package.json').version, '8.17.1', 'exact Ajv gate dependency');
+assert.equal(require('ajv/package.json').version, '8.20.0', 'exact Ajv gate dependency');
 const Ajv2020 = require('ajv/dist/2020').default;
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validators = new Map();
@@ -42,7 +42,7 @@ export function run(project,args,expected='valid') {
   assert.ifError(child.error);
   const text=child.stdout.trim()||child.stderr.trim();
   let envelope;try { envelope=JSON.parse(text); } catch { throw new Error(`CLI output (${child.status}): ${text.slice(0,1000)}`); }
-  if(expected) assert.equal(envelope.status,expected,text.slice(0,1000));
+  if(expected) assert.equal(envelope.status,expected,`scanTarget=${args.includes('--scan-target')?args[args.indexOf('--scan-target')+1]:'none'} ${text.slice(0,1000)}`);
   assert.equal(child.status,({valid:0,invalid:1,'unsupported-version':5,denied:3})[expected??envelope.status],`exit: ${text.slice(0,500)}`);
   return {envelope,report:envelope.report??envelope.payload?.report,code:child.status};
 }
@@ -96,9 +96,12 @@ export function attachments(env) {
 export function golden(name,value,update) {
   const family=['report','evidence','config','waivers','comparison'].find(f=>name===f||name.startsWith(f+'-'));
   const legacyPath=family?join(root,'tests/fixtures',`ai-lint-${family}`,'golden',name+'.json'):join(fixture,'golden',name+'.json');
-  const qualified=product==='0.6.5' && productPinnedGoldens.has(name);
-  const path=qualified?legacyPath.replace(/\.json$/,'.product-0.6.5.json'):legacyPath;
-  if(qualified) schema(family,JSON.parse(readFileSync(legacyPath,'utf8')));
+  // M8 upgrades the PHP producer and the Node declaration closure while
+  // the evidence wire stays frozen. Preserve both predecessor receipts.
+  const m8Adapter=product==='0.8.0'&&['adapter-php-laravel','adapter-node-typescript'].includes(name);
+  const qualified=m8Adapter||(productPinnedGoldens.has(name)&&(product==='0.6.5'||product==='0.8.0'));
+  const path=qualified?legacyPath.replace(/\.json$/,`.product-${product}.json`):legacyPath;
+  if(qualified) schema(m8Adapter?'evidence':family,JSON.parse(readFileSync(legacyPath,'utf8')));
   if(update) {mkdirSync(dirname(path),{recursive:true});writeFileSync(path,canonical(value)+'\n');}
   else assert.equal(readFileSync(path,'utf8'),canonical(value)+'\n',`golden drift: ${name}`);
 }

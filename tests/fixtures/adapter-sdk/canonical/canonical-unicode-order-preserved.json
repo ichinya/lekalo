@@ -1,0 +1,11 @@
+{
+  "canonical": "[\"а\",\"б\",\"в\",\"😀\",\"क\"]",
+  "name": "canonical-unicode-order-preserved",
+  "value": [
+    "а",
+    "б",
+    "в",
+    "😀",
+    "क"
+  ]
+}

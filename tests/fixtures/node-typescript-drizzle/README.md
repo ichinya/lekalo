@@ -3,7 +3,7 @@
 Synthetic, offline Drizzle ORM consumer projects. Nothing here connects
 to a database, executes migrations, or requires `node_modules`: the
 scanner resolves the pinned upstream declarations embedded in the
-shipped adapter bundle (`drizzle-orm@0.44.7`).
+shipped adapter bundle (`drizzle-orm@0.45.4`).
 
 ## Layout
 

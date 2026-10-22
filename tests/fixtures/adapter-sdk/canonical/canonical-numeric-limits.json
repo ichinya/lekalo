@@ -1,0 +1,9 @@
+{
+  "canonical": "{\"big\":9007199254740991,\"cap\":1073741824,\"zero\":0}",
+  "name": "canonical-numeric-limits",
+  "value": {
+    "big": 9007199254740991,
+    "cap": 1073741824,
+    "zero": 0
+  }
+}

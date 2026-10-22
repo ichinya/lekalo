@@ -2,7 +2,7 @@
 // Golden-suite catalog gate (issue #90).
 //
 // Validates the suite-v1 catalog and every case descriptor against the
-// closed schemas with the pinned Ajv 8.17.1 (same provisioning as the
+// closed schemas with the pinned Ajv 8.20.0 (same provisioning as the
 // other contract gates), then enforces the invariants JSON Schema
 // cannot express: unique sorted case ids, path safety, closed runner
 // and recipe registries, existing inputs/expected outputs, checksum
@@ -26,12 +26,12 @@ try {
     Ajv2020 = require(join(fallback, "dist/2020.js")).default;
     ajvVersion = JSON.parse(readFileSync(join(fallback, "package.json"), "utf8")).version;
   } catch (error) {
-    process.stderr.write(`ajv-8.17.1-unavailable: ${error?.message ?? error}\n`);
+    process.stderr.write(`ajv-8.20.0-unavailable: ${error?.message ?? error}\n`);
     process.exit(1);
   }
 }
 
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(`ajv-version-mismatch: ${ajvVersion}\n`);
   process.exit(1);
 }

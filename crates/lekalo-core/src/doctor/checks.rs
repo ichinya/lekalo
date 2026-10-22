@@ -620,7 +620,10 @@ pub(crate) fn adapters_inventory(facts: &LockFacts, targets_declared: bool) -> C
 /// whose trust requires attention. The check reads the local
 /// revocation store and the store inventory; no lock means nothing to
 /// report (unknown).
-pub(crate) fn adapters_trust(root_path: Option<&std::path::Path>) -> Check {
+pub(crate) fn adapters_trust(
+    root_path: Option<&std::path::Path>,
+    admitted: Option<&super::TrustInputs>,
+) -> Check {
     let base = |state, reason, next, ids: Vec<String>| Check {
         id: "adapters.trust",
         state,
@@ -638,7 +641,16 @@ pub(crate) fn adapters_trust(root_path: Option<&std::path::Path>) -> Check {
             Vec::new(),
         );
     };
-    let store = match crate::adapter_package::trust::RevocationStore::load(root) {
+    use crate::adapter_package::{trust::RevocationStore, Inventory};
+    let store = match admitted.map_or_else(
+        || RevocationStore::load(root),
+        |inputs| {
+            inputs.revocations.as_deref().map_or_else(
+                || Ok(RevocationStore::default()),
+                RevocationStore::from_bytes,
+            )
+        },
+    ) {
         Ok(store) => store,
         Err(_) => {
             return base(
@@ -649,7 +661,15 @@ pub(crate) fn adapters_trust(root_path: Option<&std::path::Path>) -> Check {
             );
         }
     };
-    let inventory = match crate::adapter_package::Inventory::load(root) {
+    let inventory = match admitted.map_or_else(
+        || Inventory::load(root),
+        |inputs| {
+            inputs
+                .inventory
+                .as_deref()
+                .map_or_else(|| Ok(Inventory::default()), Inventory::from_bytes)
+        },
+    ) {
         Ok(inventory) => inventory,
         Err(_) => {
             return base(
@@ -1098,6 +1118,7 @@ pub(crate) struct PanelContext<'a> {
     pub facts: &'a LockFacts,
     pub git: &'a GitFacts,
     pub traces: &'a [TraceManifestEvidence],
+    pub trust_inputs: Option<&'a super::TrustInputs>,
     pub targets_declared: bool,
     pub kind: super::model::ReportKind,
     pub phase: Option<Phase>,
@@ -1241,7 +1262,7 @@ pub(crate) fn panel(ctx: &PanelContext) -> Vec<Check> {
     lock.required = required("lock.freshness");
     let mut adapters = adapters_inventory(facts, targets_declared);
     adapters.required = required("adapters.inventory");
-    let mut adapter_trust = adapters_trust(Some(root_path));
+    let mut adapter_trust = adapters_trust(Some(root_path), ctx.trust_inputs);
     adapter_trust.required = required("adapters.trust");
     let mut capabilities = capabilities_profiles(facts, targets_declared);
     capabilities.required = required("capabilities.profiles");

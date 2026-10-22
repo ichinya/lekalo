@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Issue #16 release gate: the impact wire schema and the pinned canonical
 // golden export, validated with the same pinned third-party Draft 2020-12
-// implementation as the other contract gates. Exact Ajv 8.17.1 is
+// implementation as the other contract gates. Exact Ajv 8.20.0 is
 // provisioned outside this checkout (CI does the same on Node 18 and 24)
 // and exposed through NODE_PATH / LEKALO_AJV_NODE_PATH.
 
@@ -22,13 +22,13 @@ try {
   Ajv2020 = undefined;
 }
 
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(
     `${JSON.stringify(
       {
         ok: false,
         reason: "ajv-version",
-        detail: `expected 8.17.1, found ${ajvVersion}`,
+        detail: `expected 8.20.0, found ${ajvVersion}`,
       },
       null,
       2,
@@ -225,12 +225,26 @@ for (const name of readdirSync(resolve(root, goldenDir)).sort()) {
 
 if (goldenCount === 0) fail("no-goldens");
 
+// The source-bound successor keeps the algorithm and closes its exact
+// Model/identity pins without editing any predecessor schema or golden.
+const successorSchema=read("contracts/impact.schema.v0.8.0.json");
+const validateSuccessor=ajv.compile(successorSchema);
+const successor=read("tests/fixtures/watch/golden/successor-result.json").impact;
+if(!validateSuccessor(successor))fail("successor-golden-invalid",validateSuccessor.errors);
+if(successor.algorithm!=="dev.lekalo.impact.algorithm@0.2.16")fail("successor-algorithm-drift");
+if(validateImpact(successor))fail("successor-accepted-as-predecessor");
+for(const [key,value] of [["modelVersion","0.2.16"],["modelVersion","0.8.1"],["identity","dev.lekalo.impact@0.2.16"],["schemaVersion","lekalo/impact/v0.2.16"]]){
+ if(validateSuccessor({...successor,[key]:value}))fail("successor-stale-pin",key);
+}
+
 process.stdout.write(
   `${JSON.stringify(
     {
       ok: true,
       ajv: ajvVersion,
       goldens: goldenCount,
+      successorGoldens: 1,
+      successorRefusals: 4,
       items: itemCount,
     },
     null,

@@ -2,7 +2,7 @@
 
 Status: **Implemented** MySQL fixture/runtime tests; the observed contributor harness is **Experimental** because its public scan-wire path can refuse. Owner: Node evidence fixture maintainers. [#118](https://github.com/ichinya/lekalo/issues/118), [#115](https://github.com/ichinya/lekalo/issues/115), [#116](https://github.com/ichinya/lekalo/issues/116).
 
-The `brownfield-consumer` is the NEW synthetic [brownfield-mysql fixture](../tests/fixtures/pilot/brownfield-mysql/README.md). It uses Hono `4.13.12`, Drizzle `0.44.7`, mysql2 `3.24.5`, a `mysqlTable` schema and a real runtime persistence entrypoint. Every package/name/record is fictional. The existing `brownfield-ts` fixture uses SQLite and is not this tutorial.
+The `brownfield-consumer` is the NEW synthetic [brownfield-mysql fixture](../tests/fixtures/pilot/brownfield-mysql/README.md). It uses Hono `4.13.12`, Drizzle `0.45.4`, mysql2 `3.24.5`, a `mysqlTable` schema and a real runtime persistence entrypoint. Every package/name/record is fictional. The existing `brownfield-ts` fixture uses SQLite and is not this tutorial.
 
 ## Native setup and offline HTTP checks
 

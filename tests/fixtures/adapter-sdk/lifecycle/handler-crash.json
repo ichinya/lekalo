@@ -1,0 +1,8 @@
+{
+  "adapterMode": "handler-crash",
+  "case": "handler-crash",
+  "expectedTerminal": "process-failure",
+  "expectedByLane": {
+    "typescript": "operation-error"
+  }
+}

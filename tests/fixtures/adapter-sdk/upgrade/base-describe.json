@@ -1,0 +1,13 @@
+{
+  "accept": true,
+  "name": "base-describe",
+  "operation": "describe",
+  "protocolVersion": "0.3.2",
+  "request": {
+    "operation": "describe",
+    "project_root": ".",
+    "protocol": "lekalo.target/v1",
+    "protocol_version": "0.3.2",
+    "request_id": "req-ad5ca05d50e0ee6c5e4518d781cd7010df9b81b56359504c3f8c60bcf1c31573"
+  }
+}

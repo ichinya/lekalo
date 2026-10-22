@@ -14,7 +14,7 @@
 
 use crate::effects::{EffectKind, OperationId, ResourceId, ResourceKind, SubjectSelector};
 use crate::graph::EdgeFilter;
-use crate::ir::{CompiledProject, Definition, DefinitionKind, EntityDef, Field, TypeRef};
+use crate::ir::{CompiledProject, Definition, DefinitionKind, Field, TypeRef};
 
 use super::limits::InspectLimits;
 use super::result::{
@@ -66,7 +66,7 @@ pub(crate) fn project(
     };
 
     let contract = contract_section(definition, &limits);
-    let invariants = invariants_section(definition);
+    let invariants = invariants_section(definition, &limits);
     let policies = policies_section(project_ir, definition.id().as_str());
     let effects_section = effects_section(effects, definition, &limits);
     let dependencies = relations_section(graph, node.id(), &limits, true);
@@ -166,7 +166,11 @@ fn project_header(project: &CompiledProject) -> Option<ProjectHeader> {
     Some(ProjectHeader {
         id,
         model_ref: format!("dev.lekalo.model@{}", project.model_version.as_str()),
-        ir_identity: crate::ir::IDENTITY.to_owned(),
+        // The IR identity is derived from the exact compilation, never a
+        // constant: 0.8.0 sources compile to dev.lekalo.ir@0.8.0, so the
+        // published identity and the pinned digest always describe the
+        // same document.
+        ir_identity: crate::ir::version::identity_for(project.model_version).to_owned(),
         ir_digest: super::sections::ir_digest(project),
     })
 }
@@ -227,6 +231,13 @@ fn contract_section(definition: &Definition, limits: &InspectLimits) -> Contract
                 .get(limits.section_items)
                 .map(|field| field.name.as_str().to_owned()),
         ),
+        Definition::Query(query) => (
+            query.input.len(),
+            query
+                .input
+                .get(limits.section_items)
+                .map(|field| field.name.as_str().to_owned()),
+        ),
         Definition::Event(event) => (
             event.payload.len(),
             event
@@ -265,6 +276,7 @@ fn contract_section(definition: &Definition, limits: &InspectLimits) -> Contract
             input: fields_projection(&command.input, limits),
         },
         Definition::Query(query) => ContractBody::Query {
+            input: fields_projection(&query.input, limits),
             reads: query
                 .reads
                 .iter()
@@ -359,31 +371,83 @@ fn array_bounds(total: usize, limits: &InspectLimits, frontier: Option<String>) 
     })
 }
 
-/// The invariants section: the entity identity membership is the one
-/// invariant the accepted Model can declare; everything else is empty.
-fn invariants_section(definition: &Definition) -> ItemsSection {
-    let identity: Option<&Vec<crate::ir::FieldName>> = match definition {
-        Definition::Entity(EntityDef { identity, .. }) => Some(identity),
+/// The invariants section: the primary identity membership, plus — for
+/// Model 0.8.0 sources — every typed relation cardinality and
+/// secondary-uniqueness constraint the inspected entity DECLARES.
+/// These are the contract facts of the symbol, not derivations: a
+/// consumer reading the section sees the same closed declarations the
+/// Model/IR carry.
+fn invariants_section(definition: &Definition, limits: &InspectLimits) -> ItemsSection {
+    let entity = match definition {
+        Definition::Entity(entity) => Some(entity),
         _ => None,
     };
-    match identity {
-        Some(fields) if !fields.is_empty() => ItemsSection {
-            state: SectionState::Available,
-            complete: true,
-            bounds: None,
-            summary: None,
-            items: vec![Item::Invariant(InvariantItem {
-                fields: fields.iter().map(|name| name.as_str().to_owned()).collect(),
-            })],
-        },
-        _ => ItemsSection {
-            state: SectionState::Empty,
-            complete: true,
-            bounds: None,
-            summary: None,
-            items: Vec::new(),
-        },
+    let mut items: Vec<Item> = Vec::new();
+    if let Some(entity) = entity {
+        if !entity.identity.is_empty() {
+            items.push(Item::Invariant(InvariantItem::Identity {
+                fields: entity
+                    .identity
+                    .iter()
+                    .map(|name| name.as_str().to_owned())
+                    .collect(),
+            }));
+        }
+        let mut relations = entity.relations.clone();
+        relations.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+        for relation in &relations {
+            items.push(Item::Invariant(InvariantItem::Relation {
+                relation: relation.id.as_str().to_owned(),
+                target: relation.target.as_str().to_owned(),
+                local_fields: relation
+                    .local_fields
+                    .iter()
+                    .map(|name| name.as_str().to_owned())
+                    .collect(),
+                target_fields: relation
+                    .target_fields
+                    .iter()
+                    .map(|name| name.as_str().to_owned())
+                    .collect(),
+                min: relation.min,
+                max: relation.max,
+                ownership: relation.ownership.as_str(),
+                on_detach: relation.on_detach.as_str(),
+                on_delete: relation.on_delete.as_str(),
+            }));
+        }
+        let mut constraints = entity.unique_constraints.clone();
+        constraints.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+        for constraint in &constraints {
+            items.push(Item::Invariant(InvariantItem::UniqueConstraint {
+                constraint: constraint.id.as_str().to_owned(),
+                fields: constraint
+                    .fields
+                    .iter()
+                    .map(|name| name.as_str().to_owned())
+                    .collect(),
+                scope: constraint.scope.as_str().to_owned(),
+                comparison: constraint.comparison.as_str(),
+                normalization_ref: constraint
+                    .normalization_ref
+                    .as_ref()
+                    .map(|id| id.as_str().to_owned()),
+            }));
+        }
     }
+    let frontier = items.get(limits.section_items).map(|item| match item {
+        Item::Invariant(InvariantItem::Relation { relation, .. }) => relation.clone(),
+        Item::Invariant(InvariantItem::UniqueConstraint { constraint, .. }) => constraint.clone(),
+        _ => definition.id().as_str().to_owned(),
+    });
+    let bounds = array_bounds(items.len(), limits, frontier);
+    let mut section = finish_items(items.into_iter().take(limits.section_items).collect());
+    if bounds.is_some() {
+        section.state = SectionState::Truncated;
+        section.complete = false;
+        section.bounds = bounds;
+    }
+    section
 }
 
 /// The policies section: every policy whose `applies_to` names the

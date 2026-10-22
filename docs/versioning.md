@@ -1,6 +1,6 @@
 # Версии контрактов и миграции
 
-Текущая версия продукта — `0.6.5`, заданная в
+Текущая версия продукта — `0.8.0`, заданная в
 `workspace.package.version` в `Cargo.toml`. Контракты сохраняют собственные
 принятые версии: выпуск продукта не меняет байты и версии неизменённых
 контрактов. Старые схемы, переходы между ними и история миграций storage
@@ -55,3 +55,42 @@ carries; those pins never drift with a product release.
 точной записью в реестре, а не попаданием в числовой диапазон.
 
 Issue #76 publishes AI lint report/evidence/config/waivers/comparison, registry, validation profile/report, provider and package-manifest successors at `0.6.4`. The frozen `0.3.2` protocol remains the ordinary lock/bootstrap contract; the additive `0.6.4` lint seam is negotiated only after an adapter explicitly advertises it. A base describe response keeps the frozen operation vocabulary, and the upgraded describe publishes lint. Existing Model/IR/effect/observed/trace/transition/lock and context-budget wire contracts keep their accepted versions.
+
+Issue #73 publishes the semantic change family at the product version of its
+implementation commit: `lekalo/change-{request,catalog,policy,plan,receipt,history}`
+carry `0.8.0`, the change catalog data document pins its own `0.8.0` identity,
+and the diagnostic registry takes the additive union successor `0.8.0`
+(the merged milestone union — every `0.6.5` entry plus the closed
+`format.*` (issue #94), `adoption.*` (issue #136), `portability.*`
+(issue #19), `worklog-changelog.*` (issue #51), and `managed.*`
+(issue #41) families — plus the twelve `change.*` rules
+`LEK-CHANGE-001..012` and the denied-allowed shared-writer busy rule
+`adoption.writer-locked` (`LEK-ADOPT-010`, issue #73 r8) (583 entries);
+predecessor producers keep their exact pins, and registry selection is a
+three-step chain 0.6.4 → 0.6.5 → 0.8.0, never a version-string replacement).
+The canonical change history sidecar `lekalo/change-history.json` is admitted
+as an optional canonical root entry, and `.lekalo/cache/change/<transaction-id>/`
+holds the journal and recovery material under the existing cache home while
+the governed runtime file `.lekalo/pending-transactions.json` durably pins
+every pending transaction's provenance outside the cache home. The
+accepted Model stays `0.2.16`: declared field defaults and wire values decode
+in the closed request surface and refuse with the registered unsupported
+outcome until a reviewed Model successor lands, and unchanged contracts keep
+their exact accepted versions.
+Issue #95 publishes the additive `target-protocol.schema.v0.8.0.json` watch selection seam: only an upgraded describe with explicit `watch.selection: true`, nonempty exact `watch.model_versions` and matching `ir_versions` receives snapshot-bound module/global `watch_request` members and returns their digest in evidence. The request pins the source Model/IR versions and exact IR digest; stale, mixed, unknown or undeclared pins refuse before scan/validate launch. Protocol 0.3.2 remains the ordinary bootstrap version; its bytes and the 0.6.4 lint schema are unchanged. The 0.8.0 version registry adds this negotiable seam without changing the bootstrap current. Watch event/result 0.8.0 admits exact Model/IR/graph pairs 0.2.16 and 0.8.0, retaining executed/reused partition provenance. The new `impact.schema.v0.8.0.json` binds successor Model 0.8.0 while keeping the impact algorithm identity 0.2.16; predecessor Model inputs retain byte-identical impact serialization. Lock Model schema and IR identity digests, and artifact-check input versions, follow the captured source pair. A protocol upgrade alone never implies successor support. Native macOS runtime evidence remains a declared environmental boundary in [target protocol](target-protocol.md#issue-95-delivery-evidence-boundary), pinned separately from schema/compile acceptance.
+
+Issue #41 adds the managed ownership family group — `managed-ownership`, `managed-coverage`, `managed-generation-plan`, `managed-generation-record`, `managed-transaction`, `managed-rollback-plan` and `managed-equivalence` — at the product version `0.8.0`, together with the `diagnostic-registry` union successor `0.8.0`: the exact 522-entry `0.6.5` predecessor plus the closed `managed.*` family `LEK-MGD-001..012`. The embedded ordinary registry `0.6.4` and the opt-in `0.6.5` successor keep their exact bytes, and predecessor producer pins are unchanged; managed producers pin the union successor through the same closed entry grammar, and wire diagnostics remain `lekalo/diagnostic/v0.2.16`. Frozen families whose bytes this issue does not change — including `lock`, `target-protocol`, `artifact-manifest`, the orchestration receipts and the validation profiles — keep their accepted versions; a managed integration that actually changes one of them publishes its successor in the implementing commit per the rule above.
+
+Issue #93 adds the semantic search family: the four wire contracts
+`dev.lekalo.search-query@0.8.0`, `dev.lekalo.search-result@0.8.0`,
+`dev.lekalo.search-index@0.8.0`, and `dev.lekalo.search-inputs@0.8.0`
+(wire discriminators `lekalo/search-*/v0.8.0`), plus the diagnostic
+registry union successor `dev.lekalo.diagnostic-registry@0.8.0` with
+the eight `search.*` rules LEK-SRCH-001..008. Like every search
+artifact they take the product version of the implementing commit per
+the rule above; unchanged contracts keep their exact accepted
+identities and bytes, and predecessor diagnostic registries stay
+embedded exactly as accepted (producers keep their pins). The index
+store lives under the governed cache custody
+(`.lekalo/cache/search/**` of the accepted `lekalo.cache` authority
+kind); no authority boundary changes for search.

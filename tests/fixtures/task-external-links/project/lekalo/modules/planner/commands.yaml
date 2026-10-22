@@ -1,0 +1,44 @@
+schema_version: "0.8.0"
+definitions:
+  - id: planner.effect.create_task
+    kind: effect
+    version: 1
+    description: "Local task creation"
+    operation: create
+    entity: "planner.task"
+  - id: planner.effect.update_task
+    kind: effect
+    version: 1
+    description: "Canonical local task update"
+    operation: update
+    entity: "planner.task"
+  - id: planner.create_task
+    kind: command
+    version: 1
+    description: "Create one local task"
+    input:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: workspace_id
+        type: "planner.workspace_id"
+        required: true
+      - name: title
+        type: "planner.text"
+        required: true
+    effects:
+      - "planner.effect.create_task"
+  - id: planner.update_task
+    kind: command
+    version: 1
+    description: "Apply one canonical task update"
+    input:
+      - name: task_id
+        type: "planner.task_id"
+        required: true
+      - name: state
+        type: "planner.task_state?"
+      - name: title
+        type: "planner.text?"
+    effects:
+      - "planner.effect.update_task"

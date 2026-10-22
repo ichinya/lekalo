@@ -1,0 +1,5 @@
+{
+  "adapterMode": "cooperative",
+  "case": "fresh-handshake-recovery",
+  "expectedTerminal": "ok"
+}

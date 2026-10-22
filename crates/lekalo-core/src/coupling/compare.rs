@@ -203,8 +203,8 @@ pub fn validate(r: &Report) -> Result<(), DiagnosticSet> {
             &s.impact.supporting_symbols,
             &s.impact.unclassified_symbols,
         ];
-        let all: BTreeSet<_> = s.impact.ids().collect();
-        let owned: BTreeSet<_> = all.iter().map(|id| (*id).clone()).collect();
+        let all: BTreeSet<_> = s.impact.ids().map(String::as_str).collect();
+        let owned: BTreeSet<_> = all.iter().map(|id| (*id).to_owned()).collect();
         if projection.partition(&owned) != s.impact {
             return Err(bad());
         }
@@ -447,7 +447,7 @@ pub fn validate(r: &Report) -> Result<(), DiagnosticSet> {
         if partitions.iter().any(|p| !sorted(p))
             || all.len() != partitions.iter().map(|p| p.len()).sum::<usize>()
             || s.measurement_basis != "aggregate-declared"
-                && !all.contains(&s.subject.split('#').next().unwrap_or_default().to_owned())
+                && !all.contains(s.subject.split('#').next().unwrap_or_default())
             || s.metrics.len() != wire::METRICS.len()
             || wire::METRICS.iter().any(|m| !s.metrics.contains_key(*m))
         {
@@ -475,7 +475,7 @@ pub fn validate(r: &Report) -> Result<(), DiagnosticSet> {
                 return Err(bad());
             }
         }
-        if s.possible.iter().any(|v| all.contains(v))
+        if s.possible.iter().any(|v| all.contains(v.as_str()))
             || s.lower_bounds
                 .keys()
                 .any(|m| !wire::METRICS.contains(&m.as_str()))

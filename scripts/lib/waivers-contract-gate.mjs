@@ -6,7 +6,7 @@ import {join,dirname} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {root,environment,allEvidence,canonical,hash,digest,known,unknown} from './ai-lint-contract-gate.mjs';
 const require=createRequire((process.env.LEKALO_AJV_NODE_PATH||dirname(import.meta.url))+'/');
-assert.equal(require('ajv/package.json').version,'8.17.1');
+assert.equal(require('ajv/package.json').version,'8.20.0');
 const Ajv=require('ajv/dist/2020').default,ajv=new Ajv({strict:true,allErrors:true});
 const validators=new Map(['ai-lint-waivers','waiver-input','waiver-audit'].map(f=>[f,ajv.compile(JSON.parse(readFileSync(join(root,`contracts/${f}.schema.v0.6.5.json`))))]));
 const binary=join(root,'target/debug',process.platform==='win32'?'lekalo.exe':'lekalo');
@@ -275,6 +275,6 @@ export function gate(family){
   const linked=join(env.project,'hardlink.json');linkSync(join(env.project,'lekalo.waivers.json'),linked);cli(env,['waivers','list'],1);unlinkSync(linked);
   // Lock proof is a source-run prerequisite, not an implicit waiver pin in v0.3.2.
   cli(env,['lock']);const lock=digest(readFileSync(join(env.project,'lekalo.lock'),'utf8').trimEnd());const lockedFacts={...facts,lockRef:known(lock)};file(env,'lekalo.waivers.json',waivers);file(env,'facts.json',lockedFacts);const locked=cli(env,['waivers','audit',...common,'--locked']).audit;assert.equal(locked.lockRef.value,lock);lockedFacts.lockRef=known(digest('other-lock'));file(env,'facts.json',lockedFacts);cli(env,['waivers','audit',...common,'--locked'],1);
-  console.log(JSON.stringify({ok:true,family,version:'0.6.5',ajv:'8.17.1',live:true,audits:assertions,nativePinControls,producerDomainControls,modelShapeControls}));
+  console.log(JSON.stringify({ok:true,family,version:'0.6.5',ajv:'8.20.0',live:true,audits:assertions,nativePinControls,producerDomainControls,modelShapeControls}));
  }finally{env.close();}
 }

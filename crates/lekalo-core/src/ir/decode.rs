@@ -23,12 +23,13 @@ use super::grammar::{
     is_target_name,
 };
 use super::{
-    CommandDef, Common, Compilation, CompiledProject, Decision, Definition, EffectDef,
-    EffectOperation, EndpointDef, EndpointPath, EntityDef, EnumDef, EnumValue, EnumValueName,
-    EventDef, Field, FieldName, HttpMethod, IdRegistry, Module, ModuleId, PolicyDef, Portability,
-    Project, ProjectId, QueryDef, RenameHistoryEntry, RequirementId, ScalarBase, ScalarDef,
-    ScenarioDef, SourceMap, SymbolId, TargetBindingDef, TargetName, Text, Tombstone, TypeRef,
-    ValueObjectDef, Visibility, MAX_TYPE_LEVELS,
+    CommandDef, Common, Compilation, CompiledProject, ConstraintComparison, Decision, Definition,
+    DeletePolicy, DetachPolicy, EffectDef, EffectOperation, EndpointDef, EndpointPath, EntityDef,
+    EnumDef, EnumValue, EnumValueName, EventDef, Field, FieldName, HttpMethod, IdRegistry, Module,
+    ModuleId, PolicyDef, Portability, Project, ProjectId, QueryDef, RelationDef, RelationOwnership,
+    RenameHistoryEntry, RequirementId, ScalarBase, ScalarDef, ScenarioDef, SourceMap, SymbolId,
+    TargetBindingDef, TargetName, Text, Tombstone, TypeRef, UniqueConstraintDef, ValueObjectDef,
+    Visibility, MAX_TYPE_LEVELS,
 };
 use crate::loader::error::{Diagnostic, Span};
 use crate::loader::frontends::{MapEntry, Node, Scalar, Value};
@@ -38,6 +39,10 @@ use crate::loader::{
 
 /// The maximum Unicode scalars of one bounded human-readable text value.
 const MAX_TEXT_CHARS: usize = 2000;
+
+/// The exact inclusive upper bound of every declared cardinality member:
+/// the published Model schema's `maximum`, mirrored by the decoder.
+const MAX_CARDINALITY: u64 = 1_000_000;
 
 /// Decode one whole model; any diagnostic fails the entire compilation.
 pub(super) fn compile(model: &NormalizedModel) -> Result<Compilation, IrFailure> {
@@ -92,7 +97,7 @@ pub(super) fn compile(model: &NormalizedModel) -> Result<Compilation, IrFailure>
             .cmp(right.id().as_str().as_bytes())
     });
 
-    Ok(Compilation {
+    let compilation = Compilation {
         project: CompiledProject {
             model_version: model.model_version,
             project,
@@ -100,7 +105,17 @@ pub(super) fn compile(model: &NormalizedModel) -> Result<Compilation, IrFailure>
             definitions,
         },
         source_map: SourceMap::new(cx.entries),
-    })
+    };
+    // Semantic ownership: typed relations and secondary uniqueness are
+    // validated by their semantic owners once every definition exists,
+    // so a ghost target/field/normalization fails the whole compilation
+    // instead of silently shaping generated output.
+    let mut diagnostics = super::semantics::validate(&compilation);
+    if !diagnostics.is_empty() {
+        cx.diagnostics.append(&mut diagnostics);
+        return Err(IrFailure::new(cx.diagnostics));
+    }
+    Ok(compilation)
 }
 
 /// The document home of one definition, derived from its logical path.
@@ -156,7 +171,14 @@ fn pointer_token(token: &str) -> String {
 }
 
 /// Keys whose source-map entry is recorded by their dedicated value decoder.
-const VALUE_DECODED_KEYS: &[&str] = &["type", "returns", "entity", "invokes"];
+const VALUE_DECODED_KEYS: &[&str] = &[
+    "type",
+    "returns",
+    "entity",
+    "invokes",
+    "default",
+    "wire_value",
+];
 
 /// Decode state threaded through every decoder.
 struct Context {
@@ -296,6 +318,27 @@ impl Context {
     }
 
     /// Decode a positive integer value.
+    /// One non-negative cardinality value (0 allowed: relations may
+    /// declare optional or unbounded targets). The upper bound matches
+    /// the published Model schema's cardinality `maximum` exactly.
+    fn cardinality_integer(&mut self, node: &Node, detail: &'static str) -> Option<u64> {
+        match &node.value {
+            Value::Scalar(Scalar::Int(value))
+                if *value >= 0 && *value <= i128::from(MAX_CARDINALITY) =>
+            {
+                Some(*value as u64)
+            }
+            _ => {
+                self.push(
+                    VALUE_INVALID,
+                    node.span,
+                    serde_json::json!({ "detail": detail }),
+                );
+                None
+            }
+        }
+    }
+
     fn positive_integer(&mut self, node: &Node, detail: &'static str) -> Option<u64> {
         match &node.value {
             Value::Scalar(Scalar::Int(value)) if *value >= 1 => match u64::try_from(*value) {
@@ -931,11 +974,16 @@ fn decode_fields(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<Fie
         }
     };
     let mut fields = Vec::with_capacity(items.len());
+    let mut names = std::collections::BTreeSet::new();
     let mut ok = true;
     for (position, item) in items.iter().enumerate() {
         let base = format!("{pointer}/{position}");
         cx.record(&base, item.span, None);
-        let Some(found) = cx.scan(item, &base, &["name", "type", "required", "description"]) else {
+        let allowed: &[&str] = match cx.version {
+            ModelVersion::Current => &["name", "type", "required", "description"],
+            ModelVersion::Successor => &["name", "type", "required", "description", "default"],
+        };
+        let Some(found) = cx.scan(item, &base, allowed) else {
             ok = false;
             continue;
         };
@@ -969,6 +1017,15 @@ fn decode_fields(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<Fie
             ok = false;
             continue;
         }
+        if !names.insert(name.clone()) {
+            cx.push(
+                DUPLICATE_MEMBER,
+                item.span,
+                serde_json::json!({"field":"name", "value":bounded_field_echo(&name)}),
+            );
+            ok = false;
+            continue;
+        }
         let Some(field_type) = decode_type(&type_node.value, &format!("{base}/type"), cx, 0) else {
             ok = false;
             continue;
@@ -985,11 +1042,28 @@ fn decode_fields(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<Fie
             Some(entry) => Some(cx.text(&entry.value, "description-type")?),
             None => None,
         };
+        let default = match cx.find(&found, "default") {
+            Some(entry) => {
+                cx.record(&format!("{base}/default"), entry.value.span, None);
+                let Some(value) = super::DefaultValue::from_node(&entry.value) else {
+                    cx.push(
+                        VALUE_INVALID,
+                        entry.value.span,
+                        serde_json::json!({"detail": "field-default-literal"}),
+                    );
+                    ok = false;
+                    continue;
+                };
+                Some(value)
+            }
+            None => None,
+        };
         fields.push(Field {
             name: FieldName(name),
             r#type: field_type,
             required,
             description,
+            default,
         });
     }
     if ok {
@@ -997,6 +1071,433 @@ fn decode_fields(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<Fie
     } else {
         None
     }
+}
+
+/// The relation-id grammar: two to four dot-separated `segment` parts
+/// (relation ids are members, not symbol definitions, so they may
+/// carry one more segment than definition ids).
+fn is_relation_id(text: &str) -> bool {
+    let parts: Vec<&str> = text.split('.').collect();
+    (2..=4).contains(&parts.len()) && parts.iter().all(|part| is_segment(part))
+}
+
+/// One decoded relation/constraint member entry cloned out of the
+/// parsed tree, so borrow conflicts cannot reach the caller.
+struct MemberEntry {
+    value: Node,
+}
+
+impl MemberEntry {
+    fn node(&self) -> &Node {
+        &self.value
+    }
+}
+
+/// One required member of a relation/constraint declaration: a missing
+/// one is a source-bound `missing-field` diagnostic, never a silent
+/// `None`. A silent drop would remove the whole owning definition from
+/// the compilation as unremarked semantic data loss.
+fn required_member<'a>(
+    members: &'a std::collections::BTreeMap<&'a str, MemberEntry>,
+    key: &str,
+    owner: &Node,
+    cx: &mut Context,
+) -> Option<&'a MemberEntry> {
+    match members.get(key) {
+        Some(entry) => Some(entry),
+        None => {
+            cx.push(
+                MISSING_FIELD,
+                owner.span,
+                serde_json::json!({ "field": key }),
+            );
+            None
+        }
+    }
+}
+
+fn relation_members<'a>(
+    node: &'a Node,
+    keys: &[&str],
+    cx: &mut Context,
+) -> Option<std::collections::BTreeMap<&'a str, MemberEntry>> {
+    let entries = match &node.value {
+        Value::Map(items) => items,
+        _ => {
+            cx.push(
+                VALUE_INVALID,
+                node.span,
+                serde_json::json!({ "detail": "not-a-mapping" }),
+            );
+            return None;
+        }
+    };
+    let mut seen: std::collections::BTreeMap<&str, MemberEntry> = std::collections::BTreeMap::new();
+    for entry in entries {
+        if !keys.contains(&entry.key.as_str()) {
+            cx.push(
+                UNKNOWN_FIELD,
+                entry.key_span,
+                serde_json::json!({ "field": bounded_field_echo(&entry.key) }),
+            );
+            continue;
+        }
+        if seen
+            .insert(
+                entry.key.as_str(),
+                MemberEntry {
+                    value: entry.value.clone(),
+                },
+            )
+            .is_some()
+        {
+            cx.push(
+                DUPLICATE_MEMBER,
+                entry.key_span,
+                serde_json::json!({ "field": bounded_field_echo(&entry.key) }),
+            );
+            return None;
+        }
+    }
+    Some(seen)
+}
+
+/// Decode one typed relation declaration (Model 0.8.0 successor).
+fn decode_relation(node: &Node, pointer: &str, cx: &mut Context) -> Option<RelationDef> {
+    cx.record(pointer, node.span, None);
+    let keys = [
+        "id",
+        "target",
+        "localFields",
+        "targetFields",
+        "min",
+        "max",
+        "ownership",
+        "onDetach",
+        "onDelete",
+        "description",
+    ];
+    let members = relation_members(node, &keys, cx)?;
+    let id_node = required_member(&members, "id", node, cx)?.node();
+    let id_text = cx.string(id_node, "relation-id")?;
+    if !is_relation_id(&id_text) {
+        cx.push(
+            VALUE_INVALID,
+            id_node.span,
+            serde_json::json!({
+                "detail": "relation-id-syntax",
+                "value": bounded_field_echo(&id_text),
+            }),
+        );
+        return None;
+    }
+    let target = decode_reference(
+        required_member(&members, "target", node, cx)?.node(),
+        &format!("{pointer}/target"),
+        cx,
+    )?;
+    let local_node = required_member(&members, "localFields", node, cx)?.node();
+    let local_fields = field_array(local_node, &format!("{pointer}/localFields"), cx)?;
+    let target_fields_node = required_member(&members, "targetFields", node, cx)?.node();
+    let target_fields = field_array(target_fields_node, &format!("{pointer}/targetFields"), cx)?;
+    if local_fields.len() != target_fields.len() {
+        cx.push(
+            VALUE_INVALID,
+            target_fields_node.span,
+            serde_json::json!({ "detail": "relation-arity" }),
+        );
+        return None;
+    }
+    let min_node = required_member(&members, "min", node, cx)?.node();
+    let min = cx.cardinality_integer(min_node, "relation-min")?;
+    let max = match members.get("max") {
+        None => {
+            cx.push(
+                MISSING_FIELD,
+                node.span,
+                serde_json::json!({ "field": "max" }),
+            );
+            return None;
+        }
+        Some(entry) => match &entry.value.value {
+            Value::Scalar(Scalar::Null) => None,
+            _ => Some(cx.cardinality_integer(entry.node(), "relation-max")?),
+        },
+    };
+    if let Some(max) = max {
+        if max < min {
+            cx.push(
+                VALUE_INVALID,
+                members
+                    .get("max")
+                    .map(|entry| entry.node().span)
+                    .unwrap_or(node.span),
+                serde_json::json!({ "detail": "relation-cardinality" }),
+            );
+            return None;
+        }
+    }
+    let ownership_node = required_member(&members, "ownership", node, cx)?.node();
+    let ownership = cx.literal(
+        ownership_node,
+        "ownership-unknown",
+        [
+            ("local", RelationOwnership::Local),
+            ("external", RelationOwnership::External),
+            ("shared", RelationOwnership::Shared),
+        ],
+    )?;
+    let on_detach_node = required_member(&members, "onDetach", node, cx)?.node();
+    let on_detach = cx.literal(
+        on_detach_node,
+        "on-detach-unknown",
+        [
+            ("retain-history", DetachPolicy::RetainHistory),
+            ("forbid", DetachPolicy::Forbid),
+        ],
+    )?;
+    let on_delete_node = required_member(&members, "onDelete", node, cx)?.node();
+    let on_delete = cx.literal(
+        on_delete_node,
+        "on-delete-unknown",
+        [
+            ("restrict", DeletePolicy::Restrict),
+            ("detach", DeletePolicy::Detach),
+        ],
+    )?;
+    let description = match members.get("description") {
+        None => None,
+        Some(entry) => Some(cx.text(entry.node(), "relation-description")?),
+    };
+    Some(RelationDef {
+        id: SymbolId(id_text),
+        target,
+        local_fields,
+        target_fields,
+        min,
+        max,
+        ownership,
+        on_detach,
+        on_delete,
+        description,
+    })
+}
+
+fn field_array(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<FieldName>> {
+    let names = cx.string_array(
+        node,
+        pointer,
+        "field-array",
+        |_context, text| is_field_name(text),
+        true,
+        "fields",
+    )?;
+    // The published schema caps every relation/constraint field list at
+    // eight members; the decoder mirrors the bound exactly.
+    if names.len() > 8 {
+        cx.push(
+            VALUE_INVALID,
+            node.span,
+            serde_json::json!({ "detail": "relation-fields-count" }),
+        );
+        return None;
+    }
+    if names.is_empty() {
+        cx.push(
+            VALUE_INVALID,
+            node.span,
+            serde_json::json!({ "detail": "relation-fields-empty" }),
+        );
+        return None;
+    }
+    Some(names.into_iter().map(FieldName).collect())
+}
+
+/// Decode the typed relation list of one entity (sorted by id, no
+/// duplicates).
+fn decode_relations(node: &Node, pointer: &str, cx: &mut Context) -> Option<Vec<RelationDef>> {
+    let items = match &node.value {
+        Value::Seq(items) => items,
+        _ => {
+            cx.push(
+                VALUE_INVALID,
+                node.span,
+                serde_json::json!({ "detail": "not-a-sequence" }),
+            );
+            return None;
+        }
+    };
+    if items.len() > 64 {
+        cx.push(
+            VALUE_INVALID,
+            node.span,
+            serde_json::json!({ "detail": "relations-count" }),
+        );
+        return None;
+    }
+    let mut parsed = Vec::with_capacity(items.len());
+    for item in items {
+        parsed.push(decode_relation(item, pointer, cx)?);
+    }
+    parsed.sort_by(|left, right| left.id.cmp(&right.id));
+    if parsed.windows(2).any(|window| window[0].id == window[1].id) {
+        cx.push(
+            VALUE_INVALID,
+            node.span,
+            serde_json::json!({ "detail": "duplicate-relation-id" }),
+        );
+        return None;
+    }
+    Some(parsed)
+}
+
+/// Decode one typed secondary-uniqueness declaration (Model 0.8.0
+/// successor).
+fn decode_unique_constraint(
+    node: &Node,
+    pointer: &str,
+    cx: &mut Context,
+) -> Option<UniqueConstraintDef> {
+    cx.record(pointer, node.span, None);
+    let keys = [
+        "id",
+        "fields",
+        "comparison",
+        "normalizationRef",
+        "scope",
+        "description",
+    ];
+    let members = relation_members(node, &keys, cx)?;
+    let id_node = required_member(&members, "id", node, cx)?.node();
+    let id_text = cx.string(id_node, "constraint-id")?;
+    if !is_relation_id(&id_text) {
+        cx.push(
+            VALUE_INVALID,
+            id_node.span,
+            serde_json::json!({
+                "detail": "constraint-id-syntax",
+                "value": bounded_field_echo(&id_text),
+            }),
+        );
+        return None;
+    }
+    let fields = field_array(
+        required_member(&members, "fields", node, cx)?.node(),
+        &format!("{pointer}/fields"),
+        cx,
+    )?;
+    let comparison_node = required_member(&members, "comparison", node, cx)?.node();
+    let comparison = cx.literal(
+        comparison_node,
+        "comparison-unknown",
+        [
+            ("exact-text", ConstraintComparison::ExactText),
+            (
+                "declared-normalization",
+                ConstraintComparison::DeclaredNormalization,
+            ),
+        ],
+    )?;
+    let normalization_ref = match members.get("normalizationRef") {
+        None => None,
+        Some(entry) => match &entry.value.value {
+            // The closed schema has no nullable member anywhere: an
+            // explicit `null` is schema-invalid in every position, so
+            // the decoder refuses it instead of silently conflating
+            // "absent" (the only omission spelling) with "null".
+            Value::Scalar(Scalar::Null) => {
+                cx.push(
+                    VALUE_INVALID,
+                    entry.node().span,
+                    serde_json::json!({ "detail": "constraint-normalization-null" }),
+                );
+                return None;
+            }
+            _ => Some(decode_reference(
+                entry.node(),
+                &format!("{pointer}/normalizationRef"),
+                cx,
+            )?),
+        },
+    };
+    if (comparison == ConstraintComparison::DeclaredNormalization) != normalization_ref.is_some() {
+        cx.push(
+            VALUE_INVALID,
+            members
+                .get("comparison")
+                .map(|entry| entry.node().span)
+                .unwrap_or(node.span),
+            serde_json::json!({ "detail": "constraint-normalization" }),
+        );
+        return None;
+    }
+    let scope_node = required_member(&members, "scope", node, cx)?.node();
+    let scope_text = cx.string(scope_node, "constraint-scope")?;
+    // JSON Schema string lengths count characters, never bytes, so
+    // the runtime bound mirrors `maxLength` exactly: a 128-scalar
+    // non-ASCII scope is schema-valid and must load too.
+    if scope_text.is_empty() || scope_text.chars().count() > 128 {
+        cx.push(
+            VALUE_INVALID,
+            scope_node.span,
+            serde_json::json!({ "detail": "constraint-scope-bound" }),
+        );
+        return None;
+    }
+    let description = match members.get("description") {
+        None => None,
+        Some(entry) => Some(cx.text(entry.node(), "constraint-description")?),
+    };
+    Some(UniqueConstraintDef {
+        id: SymbolId(id_text),
+        fields,
+        comparison,
+        normalization_ref,
+        scope: Text(scope_text),
+        description,
+    })
+}
+
+/// Decode the typed secondary-uniqueness list of one entity (sorted by
+/// id, no duplicates).
+fn decode_unique_constraints(
+    node: &Node,
+    pointer: &str,
+    cx: &mut Context,
+) -> Option<Vec<UniqueConstraintDef>> {
+    let items = match &node.value {
+        Value::Seq(items) => items,
+        _ => {
+            cx.push(
+                VALUE_INVALID,
+                node.span,
+                serde_json::json!({ "detail": "not-a-sequence" }),
+            );
+            return None;
+        }
+    };
+    if items.len() > 16 {
+        cx.push(
+            VALUE_INVALID,
+            node.span,
+            serde_json::json!({ "detail": "constraints-count" }),
+        );
+        return None;
+    }
+    let mut parsed = Vec::with_capacity(items.len());
+    for item in items {
+        parsed.push(decode_unique_constraint(item, pointer, cx)?);
+    }
+    parsed.sort_by(|left, right| left.id.cmp(&right.id));
+    if parsed.windows(2).any(|window| window[0].id == window[1].id) {
+        cx.push(
+            VALUE_INVALID,
+            node.span,
+            serde_json::json!({ "detail": "duplicate-constraint-id" }),
+        );
+        return None;
+    }
+    Some(parsed)
 }
 
 /// Decode a reference array (`effects`, `reads`, `applies_to`, `emits`,
@@ -1137,8 +1638,12 @@ fn decode_symbol(
         "scalar" => &["base"],
         "enum" => &["values"],
         "value-object" => &["fields"],
+        "entity" if cx.version.relations_supported() => {
+            &["fields", "identity", "relations", "uniqueConstraints"]
+        }
         "entity" => &["fields", "identity"],
         "command" => &["input", "effects"],
+        "query" if cx.version == ModelVersion::Successor => &["input", "reads", "returns"],
         "query" => &["reads", "returns"],
         "policy" => &["applies_to", "decision"],
         "event" => &["payload"],
@@ -1148,7 +1653,12 @@ fn decode_symbol(
         "target-binding" => &["target"],
         _ => unreachable!("closed kind set"),
     };
-    let keys = common_keys(extra, cx.version);
+    let mut keys = common_keys(extra, cx.version);
+    if cx.version == ModelVersion::Successor {
+        // The successor allows symbol rename claims, while project and
+        // module containers remain immutable (their decoders do not add it).
+        keys.push("renamed_from");
+    }
     let found = cx.scan(&definition.node, pointer, &keys)?;
     let id = decode_id(cx.require(&found, "id")?, cx, false, false)?;
     let common = decode_common(&found, pointer, cx)?;
@@ -1215,11 +1725,27 @@ fn decode_symbol(
                 );
                 return None;
             }
+            // Typed relations and secondary uniqueness are the Model
+            // 0.8.0 successor's constructs: the key gate above already
+            // refused them under 0.2.16 (no alias), so they decode only
+            // when the source declared the successor.
+            let relations = match cx.find(&found, "relations") {
+                Some(entry) => decode_relations(&entry.value, &child("relations"), cx)?,
+                None => Vec::new(),
+            };
+            let unique_constraints = match cx.find(&found, "uniqueConstraints") {
+                Some(entry) => {
+                    decode_unique_constraints(&entry.value, &child("uniqueConstraints"), cx)?
+                }
+                None => Vec::new(),
+            };
             Some(Definition::Entity(EntityDef {
                 id: SymbolId(id),
                 common,
                 fields,
                 identity: identity.into_iter().map(FieldName).collect(),
+                relations,
+                unique_constraints,
             }))
         }
         "command" => {
@@ -1241,6 +1767,10 @@ fn decode_symbol(
             }))
         }
         "query" => {
+            let input = match cx.find(&found, "input") {
+                Some(entry) => decode_fields(&entry.value, &child("input"), cx)?,
+                None => Vec::new(),
+            };
             let reads = decode_references(
                 &cx.require(&found, "reads")?.value,
                 &child("reads"),
@@ -1255,6 +1785,7 @@ fn decode_symbol(
             Some(Definition::Query(QueryDef {
                 id: SymbolId(id),
                 common,
+                input,
                 reads,
                 returns,
             }))
@@ -1408,7 +1939,11 @@ fn decode_enum_values(node: &Node, pointer: &str, cx: &mut Context) -> Option<Ve
     for (position, item) in items.iter().enumerate() {
         let base = format!("{pointer}/{position}");
         cx.record(&base, item.span, None);
-        let Some(found) = cx.scan(item, &base, &["value", "description"]) else {
+        let allowed: &[&str] = match cx.version {
+            ModelVersion::Current => &["value", "description"],
+            ModelVersion::Successor => &["value", "description", "wire_value"],
+        };
+        let Some(found) = cx.scan(item, &base, allowed) else {
             ok = false;
             continue;
         };
@@ -1433,9 +1968,26 @@ fn decode_enum_values(node: &Node, pointer: &str, cx: &mut Context) -> Option<Ve
             Some(entry) => Some(cx.text(&entry.value, "description-type")?),
             None => None,
         };
+        let wire_value = match cx.find(&found, "wire_value") {
+            None => None,
+            Some(entry) => {
+                cx.record(&format!("{base}/wire_value"), entry.value.span, None);
+                let Some(value) = super::DefaultValue::from_node(&entry.value) else {
+                    cx.push(
+                        VALUE_INVALID,
+                        entry.value.span,
+                        serde_json::json!({"detail":"enum-wire-literal"}),
+                    );
+                    ok = false;
+                    continue;
+                };
+                Some(value)
+            }
+        };
         values.push(EnumValue {
             value: EnumValueName(value),
             description,
+            wire_value,
         });
     }
     if ok {

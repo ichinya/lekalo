@@ -25,6 +25,7 @@ pub mod mapping;
 pub mod normalize;
 pub mod registry;
 pub mod result;
+pub mod source;
 pub mod types;
 pub mod version;
 
@@ -287,7 +288,14 @@ pub fn validate(registry: &ErrorRegistry, project: &CompiledProject) -> Diagnost
             continue;
         };
         match (binding.kind(), definition) {
-            (OperationKind::Command, crate::ir::Definition::Command(_)) => {}
+            (OperationKind::Command, crate::ir::Definition::Command(_)) => {
+                if !matches!(binding.output(), OutputType::Unit) {
+                    findings.extend(diagnostic::finding(
+                        diagnostic::BINDING_INVALID,
+                        data_two("output-mismatch", binding.operation().as_str()),
+                    ));
+                }
+            }
             (OperationKind::Query, crate::ir::Definition::Query(query)) => {
                 match (binding.output(), &query.returns) {
                     (OutputType::Unit, None) => {}

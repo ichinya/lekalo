@@ -2,6 +2,6 @@
   "name": "lekalo-drizzle-fixture-postgres",
   "private": true,
   "dependencies": {
-    "drizzle-orm": "0.44.7"
+    "drizzle-orm": "0.45.4"
   }
 }

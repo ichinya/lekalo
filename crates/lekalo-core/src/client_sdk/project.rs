@@ -101,6 +101,27 @@ pub fn project(
         )
     })?;
     let project = context.project;
+    if project.has_query_inputs() {
+        return Err(diagnostic::rule_invalid(
+            diagnostic::MAPPING_UNSUPPORTED,
+            "query-input-contract-unsupported",
+            None,
+        ));
+    }
+    if project.has_enum_wire_values() {
+        return Err(diagnostic::rule_invalid(
+            diagnostic::MAPPING_UNSUPPORTED,
+            "enum-wire-contract-unsupported",
+            None,
+        ));
+    }
+    if project.has_field_defaults() {
+        return Err(diagnostic::rule_invalid(
+            diagnostic::MAPPING_UNSUPPORTED,
+            "field-default-contract-unsupported",
+            None,
+        ));
+    }
 
     // Custody: the projection binds the exact project.
     let project_id = document.project_id().clone();

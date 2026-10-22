@@ -109,6 +109,50 @@ fn metadata_is_link(metadata: &std::fs::Metadata) -> bool {
     }
 }
 
+/// Whether one path's raw metadata identifies a link (symlink or
+/// Windows reparse point): the shared physical-custody predicate for
+/// shells that read governed trees outside the loader itself.
+pub fn metadata_is_physical_link(metadata: &std::fs::Metadata) -> bool {
+    metadata.file_type().is_symlink() || metadata_is_link(metadata)
+}
+
+/// The hard-link count of one file, for physical-custody checks: a
+/// second link means the bytes live outside the governed tree as
+/// well. Windows has no stable link count in std, so the file is
+/// opened and `nNumberOfLinks` is read through
+/// `GetFileInformationByHandle` (the accepted run-history pattern):
+/// a count that cannot be read is `None` — the check is verifiable
+/// or the caller refuses, never assumes. Unix reads `nlink`.
+pub fn windows_link_count(path: &std::path::Path) -> Option<u32> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+        };
+        let file = std::fs::File::open(path).ok()?;
+        let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+        let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) };
+        if ok == 0 {
+            return None;
+        }
+        Some(info.nNumberOfLinks)
+    }
+    #[cfg(unix)]
+    {
+        let _ = path;
+        None
+    }
+}
+
+/// The Unix hard-link count of one file (`nlink`), the physical-custody
+/// counterpart of [`windows_link_count`].
+#[cfg(unix)]
+pub fn unix_link_count(metadata: &std::fs::Metadata) -> Option<u32> {
+    use std::os::unix::fs::MetadataExt;
+    Some(metadata.nlink() as u32)
+}
+
 /// Ports `checkPathGrammar`: the closed project-relative path grammar.
 ///
 /// Returns the first stable `structure.*` violation code, or `None` when the
@@ -147,6 +191,38 @@ pub fn path_violation(path: &str) -> Option<&'static str> {
         }
         if !segment_is_portable(segment) {
             return Some("structure.path-segment");
+        }
+    }
+    None
+}
+
+/// The closed `artifactRef` grammar of the portability contracts
+/// (`portability-evidence/v0.8.0` and `portability-targets/v0.8.0`):
+/// a bounded project-relative reference whose every segment starts and
+/// ends with `[a-z0-9]`, carries only `[a-z0-9._-]`, spans at most 64
+/// characters, and is never a DOS-device stem (device name with any
+/// extension). This mirrors the published Draft 2020-12 pattern exactly
+/// — decoder/schema parity in both directions — and it is strictly
+/// narrower than [`path_violation`], which stays the grammar of the
+/// filesystem layer regardless: every reference this grammar admits is
+/// also a portable project path, so the confined reads never loosen.
+pub fn artifact_ref_violation(reference: &str) -> Option<&'static str> {
+    if reference.is_empty() || reference.len() > 256 {
+        return Some("structure.artifact-ref-length");
+    }
+    let alnum = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
+    let portable = |c: char| alnum(c) || matches!(c, '.' | '_' | '-');
+    for segment in reference.split('/') {
+        if segment.is_empty() || segment.len() > 64 {
+            return Some("structure.artifact-ref-length");
+        }
+        if is_dos_device(segment) {
+            return Some("structure.artifact-ref-device");
+        }
+        let first = segment.chars().next().expect("non-empty segment");
+        let last = segment.chars().next_back().expect("non-empty segment");
+        if !alnum(first) || !alnum(last) || !segment.chars().all(portable) {
+            return Some("structure.artifact-ref-segment");
         }
     }
     None
@@ -396,6 +472,14 @@ mod imp {
             if !FileType::from_raw_mode(before.st_mode).is_file() {
                 return Err(FsErrorKind::Io);
             }
+            // A multi-link inode is a hardlink alias (issue #33 r4 F3,
+            // issue #19 r3 F14): a second name for the same bytes —
+            // possibly outside the validated root — is not single-owner
+            // in-root content, so the seam fails closed on a link count
+            // above one, before and after the open.
+            if before.st_nlink != 1 {
+                return Err(FsErrorKind::Io);
+            }
             let file = openat(
                 &dir,
                 name,
@@ -404,10 +488,12 @@ mod imp {
             )
             .map_err(error_of)?;
             let after = rustix::fs::fstat(&file).map_err(error_of)?;
-            // Close the preflight/read window: same device, inode, and type.
+            // Close the preflight/read window: same device, inode, type,
+            // and single-owner link count.
             if after.st_dev != before.st_dev
                 || after.st_ino != before.st_ino
                 || !FileType::from_raw_mode(after.st_mode).is_file()
+                || after.st_nlink != 1
             {
                 return Err(FsErrorKind::Io);
             }
@@ -457,6 +543,42 @@ mod imp {
         } else {
             FsErrorKind::Io
         }
+    }
+
+    /// Whether the opened handle's own metadata reports a single-owner
+    /// link count (`BY_HANDLE_FILE_INFORMATION.nNumberOfLinks`, issue #33
+    /// r4 F3). `false` when the volume cannot answer: the caller fails
+    /// closed rather than answering "single owner" by omission.
+    fn single_owner_windows(file: &fs::File) -> bool {
+        use std::os::windows::io::AsRawHandle;
+        let mut information = windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION {
+            dwFileAttributes: 0,
+            ftCreationTime: windows_sys::Win32::Foundation::FILETIME {
+                dwLowDateTime: 0,
+                dwHighDateTime: 0,
+            },
+            ftLastAccessTime: windows_sys::Win32::Foundation::FILETIME {
+                dwLowDateTime: 0,
+                dwHighDateTime: 0,
+            },
+            ftLastWriteTime: windows_sys::Win32::Foundation::FILETIME {
+                dwLowDateTime: 0,
+                dwHighDateTime: 0,
+            },
+            dwVolumeSerialNumber: 0,
+            nFileSizeHigh: 0,
+            nFileSizeLow: 0,
+            nNumberOfLinks: 0,
+            nFileIndexHigh: 0,
+            nFileIndexLow: 0,
+        };
+        let ok = unsafe {
+            windows_sys::Win32::Storage::FileSystem::GetFileInformationByHandle(
+                file.as_raw_handle(),
+                &mut information,
+            )
+        };
+        ok != 0 && information.nNumberOfLinks == 1
     }
 
     impl FsInner {
@@ -547,8 +669,18 @@ mod imp {
             let file = fs::File::open(&component_path).map_err(|error| error_of(&error))?;
             let after = file.metadata().map_err(|error| error_of(&error))?;
             // Close the preflight/read window as far as the platform permits:
-            // same reparse-free regular-file classification and same length.
-            if classify(&after) != EntryType::File || after.len() != before.len() {
+            // same reparse-free regular-file classification, same length,
+            // and a single-owner link count — a hardlink alias carries the
+            // shared count on the opened handle's own metadata (issue #33
+            // r4 F3, through the same windows-sys seam the CLI read seam
+            // uses; std's number_of_links is still unstable), so an
+            // in-root second name for out-of-root bytes refuses exactly
+            // like a multi-link Unix inode. A volume that cannot answer
+            // the query fails closed.
+            if classify(&after) != EntryType::File
+                || after.len() != before.len()
+                || !single_owner_windows(&file)
+            {
                 return Err(FsErrorKind::Io);
             }
             let mut buffer = Vec::new();
@@ -575,6 +707,24 @@ pub struct Fs {
 pub type FsResult<T> = Result<T, FsErrorKind>;
 
 impl Fs {
+    /// Read one full logical file path (for example `lekalo/project.yaml`)
+    /// with the same no-follow, link- and hardlink-refusing discipline as
+    /// [`Fs::read_file_opt`] (r8, devin F3 + omp F5/F6 residual: the
+    /// ledger, pin, and postcondition reads of the change family route
+    /// through here, so no serde-decoded or journaled path can ever make
+    /// the reader follow a link out of the root). `Err(NotFound)` when
+    /// the file does not exist; any other failure is fail-closed `Io`.
+    pub fn read_logical(&self, logical: &str, max: usize) -> Result<Option<Vec<u8>>, FsErrorKind> {
+        if crate::project_fs::path_violation(logical).is_some() {
+            return Err(FsErrorKind::Io);
+        }
+        let (directory, name) = match logical.rsplit_once('/') {
+            Some((directory, name)) => (directory, name),
+            None => ("", logical),
+        };
+        self.read_file_opt(directory, name, max)
+    }
+
     /// Reject every component of an absolute path that is a symlink, Windows
     /// reparse point, or (on Windows) an 8.3/case alias of a longer name.
     ///
@@ -697,7 +847,7 @@ impl Fs {
 }
 
 /// The closed set of canonical `lekalo/` root entries.
-const CANONICAL_ROOT_ENTRIES: [&str; 13] = [
+pub(crate) const CANONICAL_ROOT_ENTRIES: [&str; 16] = [
     "project.yaml",
     "modules",
     "targets",
@@ -714,6 +864,14 @@ const CANONICAL_ROOT_ENTRIES: [&str; 13] = [
     // Issue #72: the conventional query-model home the client-SDK
     // evidence derivation binds (optional).
     "query-model.yaml",
+    // Issue #73: the canonical change audit history sidecar (optional).
+    // The change service owns it; the loader never decodes it as model
+    // input (docs/canonical-structure.md).
+    "change-history.json",
+    // Issue #73: the project-owned #62 registry; not Model input.
+    "error-registry.json",
+    // Issue #73: optional policy in the existing #41 owner format.
+    "ownership.json",
     // Issue #58: the PHP type-generation input home (optional).
     "types",
     // Issue #59: the PHP operations-generation input home (optional).
@@ -734,6 +892,12 @@ const RUNTIME_ENTRIES: [&str; 6] = [
     "privacy",
     "adapters",
 ];
+
+/// The closed runtime top-level FILES under `.lekalo/`: the durable
+/// change provenance registry (issue #73) anchors transaction journals
+/// OUTSIDE the transaction cache home, so a journal planted into
+/// `.lekalo/cache` alone can never mint recovery authority.
+const RUNTIME_FILES: [&str; 2] = ["pending-transactions.json", "change-history-pin.json"];
 
 /// The closed children of `.lekalo/adapters/` — the custody tree the
 /// adapter package model owns (docs/canonical-structure.md).
@@ -766,6 +930,10 @@ fn runtime_placement_failure(entry_type: EntryType, logical: &str) -> Option<Sca
     let runtime = logical.strip_prefix(".lekalo/")?;
     let segments: Vec<&str> = runtime.split('/').collect();
     let top = segments[0];
+    if segments.len() == 1 && RUNTIME_FILES.contains(&top) {
+        return (entry_type != EntryType::File)
+            .then(|| StructureReason::new("structure.runtime-unexpected-entry").at(logical));
+    }
     if !RUNTIME_ENTRIES.contains(&top) {
         return Some(StructureReason::new("structure.runtime-unexpected-entry").at(logical));
     }
@@ -825,6 +993,23 @@ fn runtime_placement_failure(entry_type: EntryType, logical: &str) -> Option<Sca
     None
 }
 
+/// The runtime-artifact name policy of the cache owner's subtree
+/// (`.lekalo/cache/**`): the full closed source grammar minus the
+/// source-document case rule. SQLite WAL teardown can leave transient
+/// platform-spelled sidecars beside the governed database (e.g.
+/// `CACHE.SQLITE-SHM.tmp` on Windows case-insensitive filesystems);
+/// those names are runtime artifacts, never source documents, so the
+/// case rule must not brick every project-loading command while they
+/// exist. Every other hostile spelling — traversal, escapes, devices,
+/// short names, nonportable characters — still refuses on sight
+/// (issue #93 r5).
+fn runtime_cache_violation(path: &str) -> Option<&'static str> {
+    // Normalize ASCII case only for validation, not filesystem access.
+    // Merely swallowing path-case would skip later portability checks
+    // on an uppercase name that also contains hostile characters.
+    path_violation(&path.to_ascii_lowercase())
+}
+
 /// Ports `scanGovernedTree`: fail-closed, sorted, bounded directory scan.
 fn scan_governed_tree(
     fs: &Fs,
@@ -854,7 +1039,16 @@ fn scan_governed_tree(
         if entry_type != EntryType::File && entry_type != EntryType::Directory {
             return Some(StructureReason::new("structure.path-special").at(&logical));
         }
-        if let Some(code) = path_violation(&name) {
+        // The cache owner's subtree is policed under the runtime-artifact
+        // name policy; every other subtree keeps the full source grammar.
+        let in_runtime_cache =
+            dir_logical == ".lekalo/cache" || dir_logical.starts_with(".lekalo/cache/");
+        let violation = if in_runtime_cache {
+            runtime_cache_violation(&name)
+        } else {
+            path_violation(&name)
+        };
+        if let Some(code) = violation {
             return Some(StructureReason::new(code).at(&logical));
         }
         if let Some(failure) = visit(entry_type, &name, &logical) {
@@ -970,7 +1164,10 @@ impl Fs {
             }
             if matches!(
                 name.as_str(),
-                "classification.json" | "classification-policy.json"
+                "classification.json"
+                    | "classification-policy.json"
+                    | "error-registry.json"
+                    | "ownership.json"
             ) && entry_type != EntryType::File
             {
                 return Err(
@@ -1167,6 +1364,17 @@ mod tests {
     #[test]
     fn runtime_placement_mirrors_the_checker_containers() {
         assert!(runtime_placement_failure(EntryType::Directory, ".lekalo/import/notes").is_none());
+        // The change provenance registry: exactly a file at the top level.
+        assert!(
+            runtime_placement_failure(EntryType::File, ".lekalo/pending-transactions.json")
+                .is_none()
+        );
+        assert!(runtime_placement_failure(
+            EntryType::Directory,
+            ".lekalo/pending-transactions.json"
+        )
+        .is_some());
+        assert!(runtime_placement_failure(EntryType::File, ".lekalo/pending-other.json").is_some());
         assert!(
             runtime_placement_failure(EntryType::Directory, ".lekalo/consumer/model").is_none()
         );
@@ -1331,6 +1539,92 @@ mod grammar_tests {
         assert!(!is_dos_device("console"));
     }
 
+    /// Regression (fix round 5, findings 3/4): the `artifactRef`
+    /// grammar mirrors the published contract pattern exactly — every
+    /// segment starts and ends `[a-z0-9]` and is never a DOS-device
+    /// stem — and storage-profile references additionally respect the
+    /// 252-character emit-composition bound.
+    #[test]
+    fn artifact_ref_grammar_mirrors_the_published_pattern_exactly() {
+        // Admitted: exactly the schema-pattern space.
+        for reference in [
+            "reports/receipts/focus-flow.json",
+            "reports/implementation.json",
+            "config/profiles/node.json",
+            "a.b/c_d-e.f9",
+            "a..b",
+            "x",
+            "reports/lpt9z/r.json",
+            "reports/con1/r.json",
+            "reports/com12/r.json",
+        ] {
+            assert_eq!(artifact_ref_violation(reference), None, "{reference}");
+        }
+        // Refused: schema-invalid spellings the closed project path
+        // grammar alone used to admit (decoder/schema parity gap).
+        for reference in [
+            "reports/x-/r.json",
+            "reports/x_/r.json",
+            "-x/r.json",
+            "x./r.json",
+            "a//b",
+            "a/b/",
+            "",
+        ] {
+            assert!(
+                artifact_ref_violation(reference).is_some(),
+                "{reference} must refuse"
+            );
+        }
+        // Refused: DOS-device stems the published pattern now also
+        // excludes (both directions of the parity boundary).
+        for reference in [
+            "reports/nul/r.json",
+            "reports/con.json",
+            "reports/com1.d/r.json",
+            "reports/prn",
+            "reports/aux.x.y",
+            "reports/conin$/r.json",
+        ] {
+            assert_eq!(
+                artifact_ref_violation(reference),
+                Some("structure.artifact-ref-device"),
+                "{reference} must refuse as a device stem"
+            );
+        }
+        // The published bounds: 64 characters per segment, 256 total.
+        // The published bounds: 64 characters per segment, 256 total.
+        assert_eq!(artifact_ref_violation(&"a".repeat(64)), None);
+        assert_eq!(
+            artifact_ref_violation(&"a".repeat(65)),
+            Some("structure.artifact-ref-length")
+        );
+        let at_bound = format!(
+            "{}/{}/{}/{}",
+            "a".repeat(64),
+            "b".repeat(64),
+            "c".repeat(64),
+            "d".repeat(61)
+        );
+        assert_eq!(at_bound.len(), 256);
+        assert_eq!(artifact_ref_violation(&at_bound), None);
+        let over_bound = format!("{at_bound}x");
+        assert_eq!(
+            artifact_ref_violation(&over_bound),
+            Some("structure.artifact-ref-length")
+        );
+        // Every admitted reference stays a portable project path: the
+        // artifact grammar is strictly narrower than the filesystem
+        // grammar, which never loosens.
+        for reference in [
+            "reports/receipts/focus-flow.json",
+            "a.b/c_d-e.f9",
+            "reports/com12/r.json",
+        ] {
+            assert_eq!(path_violation(reference), None, "{reference}");
+        }
+    }
+
     #[test]
     fn drive_and_scheme_detection_matches_the_checker() {
         assert!(starts_with_drive_or_scheme("C:\\x"));
@@ -1339,5 +1633,82 @@ mod grammar_tests {
         assert!(starts_with_drive_or_scheme("a+b:"));
         assert!(!starts_with_drive_or_scheme("planner"));
         assert!(!starts_with_drive_or_scheme("a/b"));
+    }
+
+    #[test]
+    fn wal_open_close_and_transient_sidecars_revalidate() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().canonicalize().expect("canonical root");
+        #[cfg(windows)]
+        let root = {
+            let text = root.to_string_lossy();
+            std::path::PathBuf::from(text.strip_prefix(r"\\?\").unwrap_or(&text))
+        };
+        std::fs::create_dir_all(root.join("lekalo")).expect("model home");
+        std::fs::write(root.join("lekalo/project.yaml"), "project: wal-probe\n").expect("marker");
+        std::fs::create_dir_all(root.join(".lekalo/cache")).expect("cache home");
+        let connection = rusqlite::Connection::open(root.join(".lekalo/cache/cache.sqlite"))
+            .expect("open WAL database");
+        connection
+            .execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE probe (id INTEGER);")
+            .expect("enable WAL and create table");
+        assert!(matches!(
+            Fs::validate_project(&root),
+            StructureOutcome::Valid(_)
+        ));
+        drop(connection);
+        std::fs::write(root.join(".lekalo/cache/CACHE.SQLITE-SHM.tmp"), b"teardown")
+            .expect("Windows teardown spelling");
+        assert!(matches!(
+            Fs::validate_project(&root),
+            StructureOutcome::Valid(_)
+        ));
+        std::fs::write(root.join("lekalo/Upper.yaml"), b"not runtime").expect("source control");
+        assert!(!matches!(
+            Fs::validate_project(&root),
+            StructureOutcome::Valid(_)
+        ));
+    }
+
+    #[test]
+    fn runtime_cache_names_tolerate_platform_spellings_but_refuse_hostile_ones() {
+        // The Windows WAL-teardown transient spelling (uppercase sidecar
+        // with a `.tmp` tail) is a runtime artifact, never a source
+        // document: the cache owner's subtree admits it.
+        assert_eq!(runtime_cache_violation("CACHE.SQLITE-SHM.tmp"), None);
+        assert_eq!(runtime_cache_violation("cache.sqlite-wal"), None);
+        assert_eq!(runtime_cache_violation("current.json"), None);
+        assert_eq!(
+            runtime_cache_violation("CACHE*.tmp"),
+            Some("structure.path-segment")
+        );
+        assert_eq!(
+            runtime_cache_violation("Cache/../secret"),
+            Some("structure.path-traversal")
+        );
+        // The case exemption is the ONLY relaxation: every hostile
+        // spelling still refuses under the cache subtree.
+        assert_eq!(
+            runtime_cache_violation("cache-sqlite/../../secrets"),
+            Some("structure.path-traversal")
+        );
+        assert_eq!(
+            runtime_cache_violation("con.sqlite"),
+            Some("structure.path-device")
+        );
+        assert_eq!(
+            runtime_cache_violation("cache%2fsqlite"),
+            Some("structure.path-escape")
+        );
+        assert_eq!(
+            runtime_cache_violation("cache~1.wal"),
+            Some("structure.path-short-name")
+        );
+        // The source grammar itself never relaxed: uppercase still
+        // refuses outside the cache owner's subtree.
+        assert_eq!(
+            path_violation("CACHE.SQLITE-SHM.tmp"),
+            Some("structure.path-case")
+        );
     }
 }

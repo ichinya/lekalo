@@ -24,7 +24,7 @@ pub mod normalize;
 pub mod project_docs;
 pub mod source;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::result::{DomainResult, Status};
 use canonical::Canonical;
@@ -123,6 +123,7 @@ pub struct NormalizedModel {
 }
 
 /// One loaded source document plus its exact original bytes.
+#[derive(Clone)]
 pub(crate) struct LoadedDocument {
     pub document: Document,
     pub bytes: Vec<u8>,
@@ -160,10 +161,36 @@ pub(crate) fn decode_document_bytes(
     decode(path, kind, &parsed)
 }
 
-/// Run phases 1-8 to completion and return the normalized aggregate, or the
+/// Terminal outcome of a loader phase: the normalized aggregate, or the
 /// terminal failure. No rendering happens here; `run` owns the envelope.
 pub fn normalize_model(selection: &LoadSelection) -> Result<NormalizedModel, DomainResult> {
     load_with_snapshot(selection).map(|loaded| loaded.model)
+}
+
+/// Load an already-resolved internal root through all accepted
+/// structure/encoding/version/normalization gates. This is for private
+/// captured roots; CLI selectors still use the invocation-relative
+/// policy and must not be translated to this seam before selection.
+pub fn normalize_captured_root(root: &Path) -> Result<NormalizedModel, DomainResult> {
+    load_validated_root(root.to_owned()).map(|loaded| loaded.model)
+}
+
+/// The validated absolute project root of one selection (the public seam
+/// for project-bound attachment reads through the classified filesystem
+/// boundary; issue #113 r3).
+pub fn project_root(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
+    root_for_selection(selection)
+}
+
+/// Public phase-1 seam: resolve the selection to the absolute,
+/// alias-free project root without reading model documents. Commands
+/// that read project-relative artifacts after loading must bind those
+/// reads to this exact root — never to the raw invocation-relative
+/// selector, which resolves differently from another working directory.
+/// (The migration service keeps the `pub(crate)` spelling for its
+/// crash-recovery use.)
+pub fn resolve_selection_root(selection: &LoadSelection) -> Result<PathBuf, DomainResult> {
+    root_for_selection(selection)
 }
 
 /// Phase 1 only: resolve the selection to an absolute project root
@@ -202,51 +229,95 @@ pub(crate) fn root_for_selection(selection: &LoadSelection) -> Result<PathBuf, D
 /// `normalize_model` plus the pinned snapshot the issue #9 migration
 /// planner consumes; the read path is byte-identical.
 pub(crate) fn load_with_snapshot(selection: &LoadSelection) -> Result<ProjectLoad, DomainResult> {
-    let failure =
-        |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
-
-    // Phase 1: selection/discovery.
-    let root: PathBuf = match &selection.project {
-        Some(selector) => {
-            if let Some(code) = crate::project_fs::selection_violation(selector) {
-                return failure(Status::Invalid, vec![Diagnostic::new(code)]);
-            }
-            match crate::project_fs::Fs::check_selection(
-                selector,
-                "structure.project-not-directory",
-            ) {
-                Ok(path) => path,
-                Err(outcome) => return Err(structure_failure(outcome)),
-            }
-        }
-        None => {
-            let cwd = match std::env::current_dir() {
-                Ok(cwd) => cwd,
-                Err(_) => {
-                    return failure(
-                        Status::Invalid,
-                        vec![Diagnostic::new("structure.root-unreadable")],
-                    )
-                }
-            };
-            match crate::project_fs::Fs::find_root(&cwd) {
-                Ok(Some(path)) => path,
-                Ok(None) => {
-                    return failure(
-                        Status::Invalid,
-                        vec![Diagnostic::new("structure.root-not-found")],
-                    )
-                }
-                Err(outcome) => return Err(structure_failure(outcome)),
-            }
-        }
-    };
+    let root = resolve_selection_root(selection)?;
     load_validated_root(root)
+}
+
+/// [`load_with_snapshot`] with one document's bytes overlaid before any
+/// parsing (finding r4 9): the editor's unsaved buffer is the authority
+/// for exactly its declared document, so a malformed saved copy must
+/// not fail the load before the buffer is formed. Every other document
+/// is still read, parsed, and validated; every filesystem, structure,
+/// and version boundary stays armed. The overlay only substitutes bytes
+/// for a path the confined inventory actually enumerates.
+pub(crate) fn load_with_snapshot_and_overlay(
+    selection: &LoadSelection,
+    overlay_path: &str,
+    overlay_bytes: &[u8],
+) -> Result<ProjectLoad, DomainResult> {
+    let root = resolve_selection_root(selection)?;
+    load_validated_root_opt_with_overlay(root, false, Some((overlay_path, overlay_bytes)))
 }
 
 /// Load an already-selected absolute root through phases 2-8 (the migration
 /// post-apply verification reuses the exact read path this way).
 pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainResult> {
+    load_validated_root_opt(root, false)
+}
+
+/// [`load_validated_root`] with the formatter recovery gate made
+/// journal-neutral: only the formatter's own post-restore semantic
+/// oracle may pass `true`, after it has already restored every pinned
+/// preimage and before it clears the journal (finding r4 5). The
+/// migration gate (2b) and every other phase stay armed; the option
+/// never widens any read — it only defers the one gate the recovering
+/// owner has already satisfied by construction.
+pub(crate) fn load_validated_root_opt(
+    root: PathBuf,
+    ignore_format_journal: bool,
+) -> Result<ProjectLoad, DomainResult> {
+    load_validated_root_opt_with_overlay(root, ignore_format_journal, None)
+}
+
+/// [`load_validated_root_opt`] with one document's bytes substituted
+/// before any parsing (finding r4 9). `document_overlay` names a path of
+/// the confined inventory; its bytes replace the saved copy for the read
+/// so a malformed saved document cannot fail the load before the editor
+/// buffer is formed. Existence semantics stay: a required document
+/// missing on disk is still an error even when overlaid.
+pub(crate) fn load_validated_root_opt_with_overlay(
+    root: PathBuf,
+    ignore_format_journal: bool,
+    document_overlay: Option<(&str, &[u8])>,
+) -> Result<ProjectLoad, DomainResult> {
+    load_validated_root_reusing(root, ignore_format_journal, document_overlay, None)
+}
+
+/// Read-only incremental frontend seam. Reuse is supplied only by an
+/// in-memory owner that checks exact bytes/path/kind against a previously
+/// accepted decode; all structure, limits, version and aggregate gates
+/// below still execute, and deleted/renamed inputs are re-enumerated.
+pub(crate) type DocumentReuse<'a> = dyn FnMut(&str, DocKind, &[u8]) -> Option<Document> + 'a;
+pub(crate) fn load_validated_root_reusing(
+    root: PathBuf,
+    ignore_format_journal: bool,
+    document_overlay: Option<(&str, &[u8])>,
+    reuse: Option<&mut DocumentReuse<'_>>,
+) -> Result<ProjectLoad, DomainResult> {
+    load_validated_root_inner(root, ignore_format_journal, document_overlay, reuse, None)
+}
+
+/// Journal-neutral validation requires a live service-created transaction,
+/// never a caller-controlled boolean or transaction id.
+pub(crate) fn load_in_change_transaction(
+    transaction: &crate::change::transaction::Transaction,
+) -> Result<ProjectLoad, DomainResult> {
+    load_validated_root_inner(
+        transaction.root().to_path_buf(),
+        false,
+        None,
+        None,
+        Some(transaction.id()),
+    )
+}
+
+fn load_validated_root_inner(
+    root: PathBuf,
+    ignore_format_journal: bool,
+    document_overlay: Option<(&str, &[u8])>,
+    mut reuse: Option<&mut DocumentReuse<'_>>,
+    own_change: Option<&str>,
+) -> Result<ProjectLoad, DomainResult> {
     let failure =
         |status, diagnostics: Vec<Diagnostic>| Err(diagnostic::failure(status, diagnostics));
 
@@ -278,9 +349,48 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
 
     // Phase 2b (issue #9): fail closed while a migration journal or runtime
     // migration lock exists; readers never observe a half-migrated project.
+    // Issue #73 extends the same barrier to interrupted change transactions
+    // under `.lekalo/cache/change`.
     if let Some(code) = crate::versioning::migration_recovery_code(&fs) {
         return failure(Status::Invalid, vec![Diagnostic::new(code)]);
     }
+    if let Some(code) = crate::change::recovery_barrier_code(&fs) {
+        // The change rule is admitted for the denied class: the barrier
+        // outcome is denied (exit 3) instead of invalid.
+        let own_only = own_change.is_some_and(|id| {
+            crate::change::transaction::pending_transactions(&root) == [id.to_owned()]
+        });
+        if !own_only {
+            return failure(Status::Denied, vec![Diagnostic::new(code)]);
+        }
+    }
+
+    // Phase 2c (issue #94): the same fail-closed rule for an interrupted
+    // formatter transaction; readers refuse, only an explicit mutating
+    // format recovers. The recovering owner's own post-restore oracle
+    // (finding r4 5) is journal-neutral by construction: it runs after
+    // every pinned preimage has been restored, while the journal that
+    // authorizes the restore is still in place.
+    if let Some(code) = crate::format::transaction::recovery_code(&fs) {
+        if !ignore_format_journal {
+            return failure(Status::Invalid, vec![Diagnostic::new(code)]);
+        }
+    }
+
+    // NOTE (issue #73 r8, devin F1/F3 + omp F3): an interrupted adoption
+    // installation deliberately does NOT gate this reader path. The
+    // adoption journals are registered in the SHARED-WRITER sibling
+    // barrier (project_writer.rs) with a precise stranded predicate —
+    // every non-adoption mutating writer refuses until an explicit
+    // adoption recovery resolves the journal — while Model readers stay
+    // open by contract: adoption's compare-and-swap writes are per-file
+    // atomic renames (an interrupted apply leaves each file internally
+    // consistent, never a half-written document), and the family's own
+    // self-heal contract (pinned by test-adoption-refactor.mjs) requires
+    // its mutating entries — including re-apply and the root-resolved
+    // recovery surfaces — to stay reachable while a journal is stranded;
+    // a reader barrier here would strand the resolver behind the very
+    // state it exists to resolve.
 
     // Phase 3: capability-safe enumeration and reads.
     let mut sources: Vec<(String, DocKind)> =
@@ -310,8 +420,19 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
             .map(|(parent, _)| parent)
             .unwrap_or_default();
         let name = logical.rsplit('/').next().unwrap_or_default();
+        // The editor overlay (finding r4 9): the declared document's
+        // buffer replaces the saved bytes before any parse, so a
+        // malformed saved copy cannot block the load. Existence
+        // semantics stay: a required document missing on disk is an
+        // error even when overlaid; an optional kind document absent on
+        // disk is supplied by the overlay instead of being skipped.
+        let overlaid = matches!(document_overlay, Some((path, _)) if path == logical);
         match fs.read_file_opt(parent, name, MAX_DOCUMENT_BYTES) {
             Ok(Some(bytes)) => {
+                let bytes = match document_overlay {
+                    Some((_, overlay_bytes)) if overlaid => overlay_bytes.to_vec(),
+                    _ => bytes,
+                };
                 total_bytes += bytes.len();
                 if let Err(diagnostic) = check_total_limit(total_bytes) {
                     diagnostics.push(diagnostic.with_path(logical.clone()));
@@ -326,8 +447,18 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
                     bytes,
                 });
             }
-            // Absence is legal only for the seven optional kind files.
-            Ok(None) if *kind == DocKind::Symbol => {}
+            // Absence is legal only for the seven optional kind files —
+            // and for the overlaid document, whose buffer supplies it.
+            Ok(None) if *kind == DocKind::Symbol => {
+                if let Some((_, overlay_bytes)) = document_overlay {
+                    if overlaid {
+                        read_sources.push(Source {
+                            logical_path: logical.clone(),
+                            bytes: overlay_bytes.to_vec(),
+                        });
+                    }
+                }
+            }
             Ok(None) => {
                 diagnostics.push(
                     Diagnostic::new("loader.io")
@@ -357,9 +488,20 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
     }
 
     // Phase 3b: encoding gate, then Phase 4: parsing.
-    let mut parsed_documents: Vec<(Document, frontends::Parsed)> = Vec::new();
+    let mut parsed_documents: Vec<Document> = Vec::new();
     let mut parse_diagnostics: Vec<Diagnostic> = Vec::new();
     for source in &read_sources {
+        let kind = sources
+            .iter()
+            .find(|(logical, _)| *logical == source.logical_path)
+            .map(|(_, kind)| *kind)
+            .unwrap_or(DocKind::Symbol);
+        if let Some(reuse) = reuse.as_deref_mut() {
+            if let Some(document) = reuse(&source.logical_path, kind, &source.bytes) {
+                parsed_documents.push(document);
+                continue;
+            }
+        }
         let text = match Source::validate_encoding(&source.logical_path, &source.bytes) {
             Ok(text) => text,
             Err(diagnostic) => {
@@ -369,17 +511,10 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
         };
         let index = LineIndex::new(&text);
         match frontends::parse_document(&text, &index) {
-            Ok(parsed) => {
-                let kind = sources
-                    .iter()
-                    .find(|(logical, _)| *logical == source.logical_path)
-                    .map(|(_, kind)| *kind)
-                    .unwrap_or(DocKind::Symbol);
-                match decode(&source.logical_path, kind, &parsed) {
-                    Ok(document) => parsed_documents.push((document, parsed)),
-                    Err(errors) => parse_diagnostics.extend(errors),
-                }
-            }
+            Ok(parsed) => match decode(&source.logical_path, kind, &parsed) {
+                Ok(document) => parsed_documents.push(document),
+                Err(errors) => parse_diagnostics.extend(errors),
+            },
             Err(mut errors) => {
                 for diagnostic in errors.iter_mut() {
                     if diagnostic.path.is_none() {
@@ -397,7 +532,7 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
     // Phase 5/6: version gate across all documents.
     let mut unsupported: Vec<(String, String)> = Vec::new();
     let mut versions: Vec<(String, String)> = Vec::new();
-    for (document, _) in &parsed_documents {
+    for document in &parsed_documents {
         if ModelVersion::parse_exact(&document.version).is_none() {
             unsupported.push((document.path.clone(), document.version.clone()));
         }
@@ -452,7 +587,7 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
     // migration planner before the aggregate consumes them.
     let snapshot: Vec<LoadedDocument> = parsed_documents
         .iter()
-        .map(|(document, _)| LoadedDocument {
+        .map(|document| LoadedDocument {
             document: document.clone(),
             bytes: read_sources
                 .iter()
@@ -461,13 +596,7 @@ pub(crate) fn load_validated_root(root: PathBuf) -> Result<ProjectLoad, DomainRe
                 .unwrap_or_default(),
         })
         .collect();
-    let model = build_normalized_model(
-        model_version,
-        parsed_documents
-            .into_iter()
-            .map(|(document, _)| document)
-            .collect(),
-    )?;
+    let model = build_normalized_model(model_version, parsed_documents)?;
     Ok(ProjectLoad {
         model,
         root,
@@ -857,6 +986,21 @@ fn render_load_output(model: &NormalizedModel, spans_requested: bool) -> DomainR
     );
 
     DomainResult::model(json, human)
+}
+
+/// The exact load-envelope success payload of one normalized aggregate
+/// without a source map — byte-identical to what `run` renders into its
+/// success envelope for a spans-free load. Authority derivations consume
+/// this so a single-snapshot derivation (r6, codex F11 / devin F8: one
+/// filesystem read produces the Model payload, the typed Model, and the
+/// source pins) pins the exact same digest the two-read derivation did.
+pub fn model_envelope_payload(model: &NormalizedModel) -> String {
+    let mut json = String::from("{\"status\":\"valid\",\"modelVersion\":");
+    json.push_str(&Canonical::Str(model.model_version.as_str().to_owned()).to_json());
+    json.push_str(",\"model\":");
+    json.push_str(&canonical_model_bytes(model));
+    json.push('}');
+    json
 }
 
 /// The exact canonical Model bytes of one normalized aggregate: compact

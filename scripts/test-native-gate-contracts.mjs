@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Issue #48 native gate contract gate: the four closed native contract
- * schemas validated with the pinned Ajv 8.17.1 release (provisioned
+ * schemas validated with the pinned Ajv 8.20.0 release (provisioned
  * outside the checkout through NODE_PATH / LEKALO_AJV_NODE_PATH), plus
  * plan-digest golden vectors shared with the Rust core.
  *
@@ -25,7 +25,7 @@ try {
     Ajv = require("ajv/dist/2020.js");
   }
 } catch {
-  fail("ajv-missing", "pinned Ajv 8.17.1 must be provided through NODE_PATH/LEKALO_AJV_NODE_PATH");
+  fail("ajv-missing", "pinned Ajv 8.20.0 must be provided through NODE_PATH/LEKALO_AJV_NODE_PATH");
 }
 const ajvModule = Ajv.default ?? Ajv;
 const ajv = new ajvModule({ strict: true, allErrors: true });
@@ -97,7 +97,7 @@ if (canonicalJsonText(reordered) !== canonicalJsonText(digestVector.plan)) {
 process.stdout.write(`${JSON.stringify({
   ok: true,
   gate: "native-gate-contracts",
-  ajv: "8.17.1",
+  ajv: "8.20.0",
   schemas: Object.keys(schemas),
   positive,
   negative,

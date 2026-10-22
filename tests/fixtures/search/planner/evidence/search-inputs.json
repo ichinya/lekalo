@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "lekalo/search-inputs/v0.8.0",
+  "identity": "dev.lekalo.search-inputs@0.8.0",
+  "projectId": "planner",
+  "inputs": [
+    {
+      "kind": "diagnostics",
+      "path": "evidence/diagnostics.json",
+      "identity": "dev.lekalo.search-diagnostics@0.8.0"
+    },
+    {
+      "kind": "effects",
+      "path": "evidence/effects.detected.json",
+      "identity": "dev.lekalo.effects@0.2.16"
+    },
+    {
+      "kind": "error-contract",
+      "path": "evidence/error-registry.json",
+      "identity": "dev.lekalo.error-registry@0.2.16"
+    },
+    {
+      "kind": "observed-index",
+      "path": "evidence/observed.index.json",
+      "identity": "dev.lekalo.observed-index@0.2.16"
+    },
+    {
+      "kind": "ownership-profile",
+      "path": "evidence/ownership-profile.json",
+      "identity": "dev.lekalo.search-ownership-profile@0.8.0"
+    },
+    {
+      "kind": "requirements",
+      "path": "evidence/requirements.attachment.json",
+      "identity": "dev.lekalo.requirements@0.2.16"
+    },
+    {
+      "kind": "trace",
+      "path": "evidence/trace.aifhub.json",
+      "identity": "dev.lekalo.trace-manifest@0.2.16"
+    },
+    {
+      "kind": "trace",
+      "path": "evidence/trace.openspec.json",
+      "identity": "dev.lekalo.trace-manifest@0.2.16"
+    },
+    {
+      "kind": "waivers",
+      "path": "evidence/waivers.json",
+      "identity": "dev.lekalo.ai-lint-waivers@0.6.5"
+    }
+  ]
+}

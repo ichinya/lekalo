@@ -115,6 +115,9 @@ pub fn analyze(
 ) -> Result<Report, DiagnosticSet> {
     profile.validate()?;
     let project = &compilation.project;
+    if project.has_query_inputs() {
+        return Err(diagnostic::invalid("query-input-contract-unsupported"));
+    }
     let graph = crate::graph::build(project)?;
     let effects = crate::effects::build(project)?;
     let p = projection::Projection::new(project, &graph);

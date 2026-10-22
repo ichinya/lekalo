@@ -1,0 +1,255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.mcp-capabilities@0.8.0",
+  "title": "Lekalo MCP capabilities manifest",
+  "description": "Issue #33 deterministic, embedded capability manifest of the read-only Lekalo MCP server. Emitted by `lekalo mcp describe --json` without reading a project or starting a server.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/mcp-capabilities/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.mcp-capabilities@0.8.0"
+    },
+    "protocol": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "const": "mcp"
+        },
+        "transport": {
+          "const": "stdio"
+        },
+        "profile": {
+          "const": "2025-11-25"
+        },
+        "frameDelimiter": {
+          "const": "lf"
+        }
+      },
+      "required": [
+        "name",
+        "transport",
+        "profile",
+        "frameDelimiter"
+      ],
+      "additionalProperties": false
+    },
+    "server": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "const": "lekalo"
+        },
+        "readOnly": {
+          "const": true
+        }
+      },
+      "required": [
+        "name",
+        "readOnly"
+      ],
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "frameBytes": {
+          "const": 262144
+        },
+        "maxResponseBytes": {
+          "const": 1048576
+        },
+        "maxResponseBytesCeiling": {
+          "const": 4194304
+        },
+        "timeoutMs": {
+          "const": 30000
+        },
+        "timeoutMsCeiling": {
+          "const": 120000
+        },
+        "concurrentCalls": {
+          "const": 4
+        },
+        "queuedRequests": {
+          "const": 16
+        },
+        "semanticRoots": {
+          "const": 128
+        },
+        "pageSize": {
+          "const": 100
+        },
+        "pageSizeCeiling": {
+          "const": 500
+        },
+        "watchedIdentities": {
+          "const": 256
+        },
+        "nestingDepth": {
+          "const": 64
+        }
+      },
+      "required": [
+        "frameBytes",
+        "maxResponseBytes",
+        "maxResponseBytesCeiling",
+        "timeoutMs",
+        "timeoutMsCeiling",
+        "concurrentCalls",
+        "queuedRequests",
+        "semanticRoots",
+        "pageSize",
+        "pageSizeCeiling",
+        "watchedIdentities",
+        "nestingDepth"
+      ],
+      "additionalProperties": false
+    },
+    "tools": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^lekalo_[a-z_]{1,32}$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "input": {
+            "type": "object",
+            "properties": {
+              "identity": {
+                "type": "string",
+                "pattern": "^dev\\.lekalo\\.mcp-tool-[a-z-]+-input@0\\.8\\.0$"
+              },
+              "discriminator": {
+                "type": "string",
+                "pattern": "^lekalo/mcp-tool-[a-z-]+-input/v0\\.8\\.0$"
+              }
+            },
+            "required": [
+              "identity",
+              "discriminator"
+            ],
+            "additionalProperties": false
+          },
+          "output": {
+            "type": "object",
+            "properties": {
+              "identity": {
+                "type": "string",
+                "pattern": "^dev\\.lekalo\\.mcp-tool-[a-z-]+-output@0\\.8\\.0$"
+              },
+              "discriminator": {
+                "type": "string",
+                "pattern": "^lekalo/mcp-tool-[a-z-]+-output/v0\\.8\\.0$"
+              }
+            },
+            "required": [
+              "identity",
+              "discriminator"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "input",
+          "output"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "resources": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "project-summary",
+              "module-list",
+              "symbol-metadata",
+              "target-status",
+              "diagnostics"
+            ]
+          },
+          "uriTemplate": {
+            "type": "string",
+            "pattern": "^lekalo://\\{projectId\\}/[a-z{}A-Z/-]+$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "kind",
+          "uriTemplate",
+          "description"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "pins": {
+      "type": "object",
+      "properties": {
+        "diagnostic": {
+          "const": "lekalo/diagnostic/v0.2.16"
+        },
+        "diagnosticRegistry": {
+          "const": "dev.lekalo.diagnostic-registry@0.8.0"
+        },
+        "serverConfig": {
+          "const": "dev.lekalo.mcp-server-config@0.8.0"
+        },
+        "graphQuery": {
+          "const": "dev.lekalo.mcp-graph-query@0.8.0"
+        }
+      },
+      "required": [
+        "diagnostic",
+        "diagnosticRegistry",
+        "serverConfig",
+        "graphQuery"
+      ],
+      "additionalProperties": false
+    },
+    "diagnosticCodes": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^LEK-MCP-0(0[1-9]|1[01])$"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "protocol",
+    "server",
+    "limits",
+    "tools",
+    "resources",
+    "pins",
+    "diagnosticCodes"
+  ],
+  "additionalProperties": false
+}

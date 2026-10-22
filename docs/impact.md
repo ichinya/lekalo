@@ -14,6 +14,15 @@ The contract version is independent of the product release, of the
 Model/IR/graph/effect versions, and of the diagnostic registry
 ([ADR-0017](adr/0017-impact.md)).
 
+Successor Model `0.8.0` inputs select the exact
+[`lekalo/impact/v0.8.0` contract](../contracts/impact.schema.v0.8.0.json),
+identity `dev.lekalo.impact@0.8.0`, with `modelVersion: "0.8.0"` and the
+unchanged algorithm identity `dev.lekalo.impact.algorithm@0.2.16`.
+Predecessor inputs retain their `0.2.16` serialization and schema; no implicit
+upgrade, downgrade or alias is allowed. Watch pins the same source-bound
+payload, compares it against a clean command over the identical base/candidate
+pair, and embeds both closed contracts with Model/IR/graph pin consistency.
+
 ## Commands
 
 ```text
@@ -72,7 +81,7 @@ order and set-like arrays sorted by unsigned UTF-8 of their typed keys.
 The digest is the SHA-256 of the canonical bytes with the digest field
 empty; the CLI appends exactly one LF. Equivalent inputs produce
 byte-identical output on every platform, and the pinned golden export is
-gate-checked with exact Ajv 8.17.1 on Node 18 and 24
+gate-checked with exact Ajv 8.20.0 on Node 18 and 24
 (`scripts/test-impact-contracts.mjs`).
 
 ## The typed Git handoff

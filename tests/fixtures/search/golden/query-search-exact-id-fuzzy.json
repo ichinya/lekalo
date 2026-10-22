@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "lekalo/search-query/v0.8.0",
+  "identity": "dev.lekalo.search-query@0.8.0",
+  "recipe": "semantic-search/1",
+  "mode": "search",
+  "fuzzy": true,
+  "query": "planner.focus_task",
+  "limit": 20,
+  "filters": {}
+}

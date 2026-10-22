@@ -214,6 +214,27 @@ pub fn plan(
     selection: &BudgetSelection,
     compilation: &Compilation,
 ) -> Result<BudgetReport, DiagnosticSet> {
+    plan_inner(request, selection, compilation, None)
+}
+
+/// Plan against an explicit, Model-validated error registry without reading
+/// the filesystem. Applicable error facts remain a declared confidence gap.
+pub fn plan_with_registry(
+    request: &BudgetRequest,
+    selection: &BudgetSelection,
+    compilation: &Compilation,
+    registry: &crate::error_contract::ErrorRegistry,
+) -> Result<BudgetReport, DiagnosticSet> {
+    crate::error_contract::source::validate(registry, &compilation.project)?;
+    plan_inner(request, selection, compilation, Some(registry))
+}
+
+fn plan_inner(
+    request: &BudgetRequest,
+    selection: &BudgetSelection,
+    compilation: &Compilation,
+    registry: Option<&crate::error_contract::ErrorRegistry>,
+) -> Result<BudgetReport, DiagnosticSet> {
     // The effective source recipe is the caller's explicit selection or
     // the profile's declared one, never a mixture (codex 6): when the
     // caller selects mapped-files over a none-recipe profile, the
@@ -227,7 +248,7 @@ pub fn plan(
     let project = &compilation.project;
     let graph = graph_build(project)?;
     let effects = crate::effects::build(project)?;
-    let context = facts::FactContext::new(project);
+    let context = facts::FactContext::with_registry(project, registry);
 
     // Resolve the subject set per scope.
     let subjects: Vec<(&NodeId, Option<String>)> = match &request.scope {

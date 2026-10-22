@@ -1,0 +1,1067 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.mcp-tool-graph-output@0.8.0",
+  "title": "Lekalo MCP tool output: graph",
+  "description": "Issue #33 closed result envelope of the graph tool. status \"valid\" carries the preserved core receipt in \"result\"; every other status carries the typed \"failure\" branch and never a fabricated payload. The status/result|failure coherence is the published conditional; embedded core payloads are the exact bundled upstream definitions.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/mcp-tool-graph-output/v0.8.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.mcp-tool-graph-output@0.8.0"
+    },
+    "tool": {
+      "const": "lekalo_graph"
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "projectId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,62}$"
+        },
+        "groupId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z][a-z0-9-]{0,62}$"
+        }
+      },
+      "required": [
+        "projectId",
+        "groupId"
+      ],
+      "additionalProperties": false
+    },
+    "snapshotRef": {
+      "type": "string",
+      "pattern": "^sha256-[0-9a-f]{64}$"
+    },
+    "status": {
+      "enum": [
+        "valid",
+        "invalid",
+        "denied",
+        "unsupported",
+        "unavailable",
+        "unsupported-version"
+      ]
+    },
+    "contractPins": {
+      "type": "object",
+      "properties": {
+        "diagnostic": {
+          "const": "0.2.16"
+        },
+        "diagnosticRegistry": {
+          "const": "0.8.0"
+        },
+        "protocolProfile": {
+          "const": "2025-11-25"
+        },
+        "graph": {
+          "const": "0.2.16"
+        }
+      },
+      "required": [
+        "diagnostic",
+        "diagnosticRegistry",
+        "protocolProfile",
+        "graph"
+      ],
+      "additionalProperties": false
+    },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/diagnosticItem"
+      },
+      "description": "Wire diagnostic items (lekalo/diagnostic/v0.2.16) resolved against dev.lekalo.diagnostic-registry@0.8.0; every item is the closed published projection bundled under $defs.diagnosticItem."
+    },
+    "result": {
+      "type": "object",
+      "description": "Mode-tagged receipt: show/callers/path carry the frozen core query payload unchanged; export carries the canonical whole-graph document (lekalo/graph/v0.2.16), the exact bundled upstream document. Mode/branch coherence is semantic.",
+      "properties": {
+        "mode": {
+          "enum": [
+            "show",
+            "callers",
+            "path",
+            "export"
+          ]
+        },
+        "query": {
+          "$ref": "#/$defs/graphQuery"
+        },
+        "export": {
+          "$ref": "#/$defs/graph.Root"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "additionalProperties": false
+    },
+    "failure": {
+      "type": "object",
+      "properties": {
+        "failureClass": {
+          "enum": [
+            "invalid-input",
+            "scope-denied",
+            "sensitive-output",
+            "request-limit",
+            "output-limit",
+            "timeout",
+            "cancelled",
+            "contract-unsupported",
+            "snapshot-stale",
+            "backend-unavailable",
+            "result-invalid",
+            "domain-invalid",
+            "domain-denied",
+            "domain-unavailable",
+            "domain-unsupported",
+            "domain-unsupported-version"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "failureClass"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "tool",
+    "scope",
+    "snapshotRef",
+    "status",
+    "contractPins",
+    "diagnostics"
+  ],
+  "additionalProperties": false,
+  "if": {
+    "properties": {
+      "status": {
+        "const": "valid"
+      }
+    },
+    "required": [
+      "status"
+    ]
+  },
+  "then": {
+    "properties": {
+      "result": {
+        "$ref": "#/$defs/_anchor"
+      },
+      "failure": {
+        "not": {}
+      }
+    },
+    "required": [
+      "result"
+    ]
+  },
+  "else": {
+    "properties": {
+      "failure": {
+        "$ref": "#/$defs/_anchor"
+      },
+      "result": {
+        "not": {}
+      }
+    },
+    "required": [
+      "failure"
+    ]
+  },
+  "$defs": {
+    "_anchor": {},
+    "validation.counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "error",
+        "warning",
+        "info"
+      ],
+      "properties": {
+        "error": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "warning": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "info": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "validation.report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "profileVersion",
+        "registryVersion",
+        "rulesEnabled",
+        "counts"
+      ],
+      "properties": {
+        "profile": {
+          "description": "The closed built-in profile id that ran (`default` or `strict`).",
+          "type": "string",
+          "enum": [
+            "default",
+            "strict"
+          ]
+        },
+        "profileVersion": {
+          "description": "The exact profile document version that ran.",
+          "const": "0.6.4"
+        },
+        "registryVersion": {
+          "description": "The exact diagnostic registry version the findings resolve against.",
+          "const": "0.6.4"
+        },
+        "moduleScope": {
+          "description": "Present only for a `--module`-scoped run; the module semantic id scope.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "rulesEnabled": {
+          "description": "The number of rules the profile enabled.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "counts": {
+          "$ref": "#/$defs/validation.counts"
+        }
+      }
+    },
+    "validation.diagnostic": {
+      "ruleId": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+        "maxLength": 128
+      },
+      "diagnosticCode": {
+        "type": "string",
+        "pattern": "^LEK-[A-Z][A-Z0-9]{1,11}-[0-9]{3}$"
+      },
+      "symbolId": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,2}$",
+        "maxLength": 256
+      },
+      "boundedText": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "logicalPath": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9._-]+)*$",
+        "maxLength": 1024,
+        "not": {
+          "pattern": "(^|/)\\.\\.?(/|$)"
+        }
+      },
+      "position": {
+        "type": "object",
+        "properties": {
+          "byte": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "column": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "byte",
+          "line",
+          "column"
+        ],
+        "additionalProperties": false
+      },
+      "range": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "$ref": "#/$defs/validation.diagnostic/position"
+          },
+          "end": {
+            "$ref": "#/$defs/validation.diagnostic/position"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "additionalProperties": false
+      },
+      "source": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/validation.diagnostic/logicalPath"
+          },
+          "range": {
+            "$ref": "#/$defs/validation.diagnostic/range"
+          }
+        },
+        "additionalProperties": false,
+        "minProperties": 1
+      },
+      "dataObject": {
+        "type": "object",
+        "maxProperties": 16,
+        "propertyNames": {
+          "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/validation.diagnostic/dataValue"
+        }
+      },
+      "dataValue": {
+        "anyOf": [
+          {
+            "type": "string",
+            "maxLength": 256
+          },
+          {
+            "type": "integer",
+            "minimum": 0
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "object",
+            "maxProperties": 16,
+            "propertyNames": {
+              "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "maxProperties": 16,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+                  },
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          },
+          {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "maxProperties": 16,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "location": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/validation.diagnostic/logicalPath"
+          },
+          "range": {
+            "$ref": "#/$defs/validation.diagnostic/range"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "relatedLocations": {
+        "type": "array",
+        "maxItems": 32,
+        "items": {
+          "type": "object",
+          "properties": {
+            "relation": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "message_id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "location": {
+              "$ref": "#/$defs/validation.diagnostic/location"
+            }
+          },
+          "required": [
+            "relation",
+            "message_id",
+            "location"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "causes": {
+        "type": "array",
+        "maxItems": 8,
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "code": {
+              "$ref": "#/$defs/validation.diagnostic/diagnosticCode"
+            },
+            "message_id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "message": {
+              "$ref": "#/$defs/validation.diagnostic/boundedText"
+            },
+            "data": {
+              "$ref": "#/$defs/validation.diagnostic/dataObject"
+            },
+            "provider": {
+              "$ref": "#/$defs/validation.diagnostic/providerMetadata"
+            }
+          },
+          "required": [
+            "id",
+            "code",
+            "message_id",
+            "message",
+            "data"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "fixes": {
+        "type": "array",
+        "maxItems": 16,
+        "items": {
+          "type": "object",
+          "properties": {
+            "fix_id": {
+              "$ref": "#/$defs/validation.diagnostic/ruleId"
+            },
+            "applicability": {
+              "enum": [
+                "safe",
+                "unsafe",
+                "breaking"
+              ]
+            },
+            "message": {
+              "$ref": "#/$defs/validation.diagnostic/boundedText"
+            },
+            "data": {
+              "$ref": "#/$defs/validation.diagnostic/dataObject"
+            },
+            "target": {
+              "$ref": "#/$defs/validation.diagnostic/location"
+            }
+          },
+          "required": [
+            "fix_id",
+            "applicability",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "providerMetadata": {
+        "type": "object",
+        "maxProperties": 8,
+        "propertyNames": {
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+:[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 128
+        },
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "original_code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[\\x21-\\x7E]+$"
+            }
+          },
+          "required": [
+            "original_code"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "diagnosticItem": {
+      "description": "One closed `lekalo/diagnostic/v0.2.16` item: a faithful projection of the governing `contracts/diagnostic.schema.v0.2.16.json` (same grammars, bounds, and closed object shapes) with the receipt-level constants pinned.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "registry_version",
+        "id",
+        "code",
+        "severity",
+        "category",
+        "message_id",
+        "message",
+        "data",
+        "related_locations",
+        "causes",
+        "fixes",
+        "metadata"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "lekalo/diagnostic/v0.2.16"
+        },
+        "registry_version": {
+          "description": "The exact registry version the item resolves against: the MCP union successor (0.8.0) for transport diagnostics, or the accepted predecessor pin of a preserved domain diagnostic.",
+          "enum": [
+            "0.2.16",
+            "0.6.4",
+            "0.6.5",
+            "0.8.0"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/validation.diagnostic/ruleId"
+        },
+        "code": {
+          "$ref": "#/$defs/validation.diagnostic/diagnosticCode"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "category": {
+          "enum": [
+            "model",
+            "semantic",
+            "compatibility",
+            "adapter",
+            "infrastructure",
+            "security"
+          ]
+        },
+        "message_id": {
+          "$ref": "#/$defs/validation.diagnostic/ruleId"
+        },
+        "message": {
+          "$ref": "#/$defs/validation.diagnostic/boundedText"
+        },
+        "symbol": {
+          "$ref": "#/$defs/validation.diagnostic/symbolId"
+        },
+        "source": {
+          "$ref": "#/$defs/validation.diagnostic/source"
+        },
+        "data": {
+          "$ref": "#/$defs/validation.diagnostic/dataObject"
+        },
+        "related_locations": {
+          "$ref": "#/$defs/validation.diagnostic/relatedLocations"
+        },
+        "causes": {
+          "$ref": "#/$defs/validation.diagnostic/causes"
+        },
+        "fixes": {
+          "$ref": "#/$defs/validation.diagnostic/fixes"
+        },
+        "metadata": {
+          "$ref": "#/$defs/validation.diagnostic/providerMetadata"
+        }
+      }
+    },
+    "graph.Root": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/graph/v0.2.16"
+        },
+        "identity": {
+          "const": "dev.lekalo.graph@0.2.16"
+        },
+        "modelVersion": {
+          "enum": [
+            "0.2.16",
+            "0.2.16"
+          ]
+        },
+        "project": {
+          "$ref": "#/$defs/graph.semanticId"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "edgeCount",
+            "nodeCount"
+          ],
+          "properties": {
+            "nodeCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "edgeCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          }
+        },
+        "nodes": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "$ref": "#/$defs/graph.node"
+          }
+        },
+        "edges": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": {
+            "$ref": "#/$defs/graph.edge"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "modelVersion",
+        "metadata",
+        "nodes",
+        "edges"
+      ],
+      "additionalProperties": false
+    },
+    "graph.semanticId": {
+      "description": "A stable semantic id: dotted lowercase segments or an uppercase requirement id.",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_.:-]{0,191}$",
+      "maxLength": 192
+    },
+    "graph.nodeId": {
+      "description": "A kind-qualified node identity: registry kind key, a colon, then the semantic id.",
+      "type": "string",
+      "pattern": "^(project|module|type|entity|operation|policy|event|effect|endpoint|scenario|target-binding|requirement):[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,191}$",
+      "maxLength": 208
+    },
+    "graph.node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/graph.nodeId"
+        },
+        "kind": {
+          "enum": [
+            "project",
+            "module",
+            "type",
+            "entity",
+            "operation",
+            "policy",
+            "event",
+            "effect",
+            "endpoint",
+            "scenario",
+            "target-binding",
+            "requirement"
+          ]
+        },
+        "module": {
+          "$ref": "#/$defs/graph.semanticId"
+        },
+        "subkind": {
+          "enum": [
+            "scalar",
+            "enum",
+            "value-object",
+            "command",
+            "query"
+          ]
+        }
+      },
+      "description": "subkind is present exactly for kind type (scalar/enum/value-object) and kind operation (command/query); the coherence rule is enforced by the release gate invariants."
+    },
+    "graph.edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "relation",
+        "occurrence",
+        "provenance",
+        "confidence"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/graph.nodeId"
+        },
+        "to": {
+          "$ref": "#/$defs/graph.nodeId"
+        },
+        "relation": {
+          "enum": [
+            "requires",
+            "references",
+            "accepts",
+            "returns",
+            "reads",
+            "writes",
+            "emits",
+            "authorizes",
+            "exposes",
+            "implements",
+            "verifies",
+            "derived_from"
+          ]
+        },
+        "occurrence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "provenance": {
+          "$ref": "#/$defs/graph.provenance"
+        },
+        "confidence": {
+          "enum": [
+            "canonical",
+            "verified",
+            "extracted",
+            "inferred",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "graph.provenance": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "referenceRole",
+            "occurrence",
+            "sourceSymbol"
+          ],
+          "properties": {
+            "referenceRole": {
+              "enum": [
+                "module-import",
+                "entity-field",
+                "value-object-field",
+                "event-payload",
+                "command-effect",
+                "effect-entity",
+                "scenario-covers",
+                "command-input",
+                "query-input",
+                "query-returns",
+                "query-reads",
+                "policy-applies-to",
+                "endpoint-invokes",
+                "effect-emits",
+                "derived-from"
+              ]
+            },
+            "occurrence": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "sourceSymbol": {
+              "$ref": "#/$defs/graph.semanticId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "adapterId",
+            "targetId",
+            "protocolVersion",
+            "evidenceDigest",
+            "evidenceStatus"
+          ],
+          "properties": {
+            "adapterId": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(/[a-z][a-z0-9-]{0,62})?$",
+              "maxLength": 128
+            },
+            "targetId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "protocolVersion": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+              "maxLength": 32
+            },
+            "evidenceDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "evidenceStatus": {
+              "enum": [
+                "fresh",
+                "stale",
+                "unknown"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "algorithmId",
+            "algorithmVersion",
+            "parentEdgeKeys"
+          ],
+          "properties": {
+            "algorithmId": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(/[a-z][a-z0-9-]{0,62})?$",
+              "maxLength": 128
+            },
+            "algorithmVersion": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+              "maxLength": 32
+            },
+            "parentEdgeKeys": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "type": "string",
+                "maxLength": 448
+              }
+            }
+          }
+        }
+      ]
+    },
+    "graph.metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edgeCount",
+        "nodeCount"
+      ],
+      "properties": {
+        "nodeCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "edgeCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      }
+    },
+    "graphQuery": {
+      "description": "The frozen core query payloads of `graph show`, `graph callers`, and `graph path`, described without injecting a discriminator; exactly one branch matches.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "node": {
+              "$ref": "#/$defs/graph.node"
+            },
+            "dependencies": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/graph.edge"
+              }
+            },
+            "dependents": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/graph.edge"
+              }
+            }
+          },
+          "required": [
+            "node",
+            "dependencies",
+            "dependents"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "node": {
+              "$ref": "#/$defs/graph.node"
+            },
+            "callers": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/graph.edge"
+              }
+            },
+            "complete": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "node",
+            "callers",
+            "complete"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "confidence": {
+              "type": "string"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "edges": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/graph.edge"
+              }
+            },
+            "from": {
+              "type": "string"
+            },
+            "length": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nodes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "confidence",
+            "complete",
+            "edges",
+            "from",
+            "length",
+            "nodes",
+            "to"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

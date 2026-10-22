@@ -1,0 +1,9 @@
+schema_version: "0.2.16"
+definitions:
+  - id: notify.get_status
+    kind: query
+    version: 1
+    description: "Load the notification status"
+    reads:
+      - "notify.status"
+    returns: "notify.text"

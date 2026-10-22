@@ -1,0 +1,55 @@
+{
+  "schema_version": "lekalo/format-policy/v0.8.0",
+  "identity": "dev.lekalo.format-policy@0.8.0",
+  "encoding": "utf-8-no-bom",
+  "lineEnding": "lf",
+  "finalNewline": true,
+  "indent": {
+    "style": "space",
+    "width": 2
+  },
+  "quotes": "double",
+  "scalars": {
+    "booleans": "lowercase",
+    "null": "lowercase",
+    "integers": "base10",
+    "strings": "double-quoted-escaped"
+  },
+  "collections": {
+    "style": "block",
+    "empty": "json-inline-or-refuse",
+    "sequenceMappingEntry": "dash-aligned"
+  },
+  "ordering": {
+    "mappingKeys": "utf8-bytes-within-groups",
+    "definitions": "semantic-id-within-groups",
+    "setLists": [
+      {
+        "member": "modules[].imports",
+        "ordering": "utf8-bytes"
+      }
+    ],
+    "groupPartition": "blank-line-run"
+  },
+  "trivia": {
+    "comments": "preserve-or-refuse",
+    "blankRuns": "collapse-to-one",
+    "headerFooter": "document-owned"
+  },
+  "paths": {
+    "canonicalFields": "owner-declared-only",
+    "repair": "never"
+  },
+  "limits": {
+    "maxFiles": 4096,
+    "maxCandidateTotalBytes": 67108864,
+    "maxLossRows": 256,
+    "maxDocumentBytes": 8388608
+  },
+  "modelVersion": "0.2.16",
+  "digestRecipe": {
+    "algorithm": "sha256",
+    "input": "canonical-compact-json-excluding-policyDigest"
+  },
+  "policyDigest": "sha256:3fb05d58c24514ba5c11d5d97480c1be9a29e697ef752f55afd74cc0eef5ac91"
+}

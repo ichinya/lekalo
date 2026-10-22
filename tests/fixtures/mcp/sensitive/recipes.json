@@ -1,0 +1,50 @@
+{
+  "note": "Issue #33 sensitive-path recipes. These are synthetic patterns materialized in disposable test roots by the gates; no real user data, secret, or host path exists in this fixture family. Each recipe names a hostile operand spelling and the registered refusal the server must produce instead of a read.",
+  "recipes": [
+    {
+      "name": "traversal",
+      "operand": "../outside/secret.txt",
+      "expect": "not admitted (pure policy refuses before any open)"
+    },
+    {
+      "name": "encoded-traversal",
+      "operand": "%2e%2e/secret.txt",
+      "expect": "not admitted"
+    },
+    {
+      "name": "windows-absolute",
+      "operand": "C:/Windows/system32/config",
+      "expect": "not admitted"
+    },
+    {
+      "name": "unc",
+      "operand": "//server/share/secret",
+      "expect": "not admitted"
+    },
+    {
+      "name": "file-url",
+      "operand": "file:///etc/passwd",
+      "expect": "not admitted"
+    },
+    {
+      "name": "ads",
+      "operand": "model.yaml:stream",
+      "expect": "not admitted"
+    },
+    {
+      "name": "dotfile",
+      "operand": ".env",
+      "expect": "not admitted"
+    },
+    {
+      "name": "dot-directory",
+      "operand": ".git/config",
+      "expect": "not admitted"
+    },
+    {
+      "name": "secret-name",
+      "operand": "keys/id_rsa",
+      "expect": "not admitted"
+    }
+  ]
+}

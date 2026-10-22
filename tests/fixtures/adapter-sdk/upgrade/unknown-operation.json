@@ -1,0 +1,14 @@
+{
+  "accept": false,
+  "name": "unknown-operation",
+  "operation": "transpile",
+  "protocolVersion": "0.6.4",
+  "reason": "operation",
+  "request": {
+    "operation": "transpile",
+    "project_root": ".",
+    "protocol": "lekalo.target/v1",
+    "protocol_version": "0.6.4",
+    "request_id": "req-9238dcd5bbaf6d6a78917203b1a4b9315088274645c853be5e2a54b4d668fa8e"
+  }
+}

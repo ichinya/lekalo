@@ -1,0 +1,42 @@
+schema_version: "0.8.0"
+definitions:
+  - id: planner.title
+    kind: scalar
+    version: 1
+    base: string
+  - id: planner.left
+    kind: entity
+    version: 1
+    fields:
+      - name: title
+        type: planner.title
+        required: true
+    identity:
+      - title
+    relations:
+      - id: planner.rel.title
+        target: planner.right
+        localFields:
+          - title
+        targetFields:
+          - title
+        min: 0
+        max: null
+        ownership: local
+        onDetach: retain-history
+        onDelete: restrict
+    uniqueConstraints:
+      - id: planner.uq.title
+        fields:
+          - title
+        comparison: exact-text
+        scope: planner-title
+  - id: planner.right
+    kind: entity
+    version: 1
+    fields:
+      - name: title
+        type: planner.title
+        required: true
+    identity:
+      - title

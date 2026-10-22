@@ -55,11 +55,11 @@ async function modelDocuments(projectRoot) {
   return output;
 }
 
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(`${JSON.stringify({
     ok: false,
     reason: "ajv-version",
-    expected: "8.17.1",
+    expected: "8.20.0",
     actual: ajvVersion
   }, null, 2)}\n`);
   process.exit(1);

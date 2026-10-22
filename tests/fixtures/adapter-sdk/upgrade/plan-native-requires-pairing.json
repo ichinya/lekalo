@@ -1,0 +1,14 @@
+{
+  "accept": false,
+  "name": "plan-native-requires-pairing",
+  "operation": "plan-native",
+  "protocolVersion": "0.3.2",
+  "reason": "native-request",
+  "request": {
+    "operation": "plan-native",
+    "project_root": ".",
+    "protocol": "lekalo.target/v1",
+    "protocol_version": "0.3.2",
+    "request_id": "req-c13ad7e6845be5a571f1d5379774c413e9a957412cb89d195b7b70d4ec61d65e"
+  }
+}

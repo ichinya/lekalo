@@ -140,6 +140,30 @@ check(is_string($checkResult['digest'] ?? null) && str_starts_with((string) $che
 $committed = file_get_contents(dirname(__DIR__) . '/adapter.php');
 check($committed !== false && hash('sha256', $committed) === substr((string) $checkResult['digest'], 7), 'committed bytes match the reported digest');
 
+// --- confined tokenizer dependency -----------------------------------------
+
+require_once __DIR__ . '/../src/ai-lint.php';
+lint_require_tokenizer();
+check(function_exists('token_get_all'), 'standard tokenizer is available or loaded');
+$runtimeProbe = 'final class RequestRefusal extends RuntimeException {};' .
+    'require ' . var_export(dirname(__DIR__) . '/src/ai-lint.php', true) . ';' .
+    'try { lint_require_tokenizer(); exit(9); }' .
+    'catch (RequestRefusal $e) { echo $e->getMessage(); }';
+$runtimeChild = proc_open([
+    PHP_BINARY, '-n', '-d', 'disable_functions=token_get_all,dl', '-r', $runtimeProbe,
+], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $runtimePipes);
+check(is_resource($runtimeChild), 'tokenizer refusal control starts');
+if (is_resource($runtimeChild)) {
+    fclose($runtimePipes[0]);
+    $runtimeOutput = stream_get_contents($runtimePipes[1]);
+    $runtimeError = stream_get_contents($runtimePipes[2]);
+    fclose($runtimePipes[1]);
+    fclose($runtimePipes[2]);
+    check(proc_close($runtimeChild) === 0, 'missing tokenizer is a controlled refusal');
+    check($runtimeOutput === 'lint-tokenizer-unavailable', 'missing tokenizer has a bounded reason');
+    check($runtimeError === '', 'missing tokenizer exposes no runtime warning');
+}
+
 // --- summary ----------------------------------------------------------------
 
 fwrite(STDOUT, json_encode([

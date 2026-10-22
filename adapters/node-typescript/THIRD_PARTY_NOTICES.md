@@ -105,10 +105,10 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-## drizzle-orm 0.44.7
+## drizzle-orm 0.45.4
 
-- Source: <https://github.com/drizzle-team/drizzle-orm/tree/0.44.7>
-- npm package: `drizzle-orm@0.44.7`
+- Source: <https://github.com/drizzle-team/drizzle-orm/tree/0.45.4>
+- npm package: `drizzle-orm@0.45.4`
 - License: Apache-2.0, Copyright (c) Drizzle Team
 - Embedded content: the declaration closure (`**/*.d.ts`) of exactly
   this release, embedded as type-context-only data by `build.mjs`

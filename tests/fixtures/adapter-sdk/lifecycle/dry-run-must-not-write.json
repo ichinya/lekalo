@@ -1,0 +1,5 @@
+{
+  "adapterMode": "write-through",
+  "case": "dry-run-must-not-write",
+  "expectedTerminal": "dry-run-mutation"
+}

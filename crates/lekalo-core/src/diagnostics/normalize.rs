@@ -54,7 +54,16 @@ pub(crate) fn build(
     let registry = if predecessor.entry(id).is_some() {
         predecessor
     } else {
-        DiagnosticRegistry::successor().map_err(|_| BuildError::Registry)?
+        let successor = DiagnosticRegistry::successor().map_err(|_| BuildError::Registry)?;
+        if successor.entry(id).is_some() {
+            successor
+        } else {
+            // The merged 0.8.0 union registry covers the format, adoption,
+            // portability, worklog-changelog, managed, module-api,
+            // tasklink, search, change, and mcp families; every family
+            // accessor parses the same bytes.
+            DiagnosticRegistry::mcp_successor().map_err(|_| BuildError::Registry)?
+        }
     };
     let entry = registry
         .entry(id)
@@ -190,6 +199,21 @@ impl DiagnosticSet {
             if !entry.allows_status(status) {
                 return Err(SetError::StatusNotAllowed(diagnostic.id().to_owned()));
             }
+        }
+        Self::from_registered_rows(diagnostics)
+    }
+
+    /// Normalize an internal replacement containing independently
+    /// admitted component sets. No component's status admission is
+    /// weakened, and a mixed watch replacement is not misrepresented as
+    /// a single-command set under one aggregate status.
+    pub(crate) fn try_union(sets: Vec<Self>) -> Result<Self, SetError> {
+        Self::from_registered_rows(sets.into_iter().flat_map(|set| set.diagnostics).collect())
+    }
+
+    fn from_registered_rows(diagnostics: Vec<Diagnostic>) -> Result<Self, SetError> {
+        if diagnostics.len() > super::types::limits::DIAGNOSTICS_PER_RESULT {
+            return Err(SetError::OverLimit);
         }
         let mut diagnostics = diagnostics;
         for diagnostic in &mut diagnostics {

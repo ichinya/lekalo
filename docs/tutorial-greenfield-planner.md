@@ -38,7 +38,7 @@ Expected: exit 0 with passing load/IR/validation, projections, semantic-diff mut
 
 ## Laravel and Vue target evidence
 
-Prerequisites: PHP >=8.3 with the CI-listed extensions, Composer, the committed `tests/fixtures/php-laravel/planner/composer.lock`, Node 24, externally provisioned Ajv `8.17.1`, TypeScript `5.9.3` and `@vue/compiler-sfc@3.4.38` via `NODE_PATH`. The lock pins Laravel `13.33.0`, Testo `0.10.53` and Laratesto `v0.7.3`. Provisioning occurs before verification, never inside an adapter. Use the explicit setup steps in [CI](../.github/workflows/ci.yml); do not update the lock during an example run.
+Prerequisites: PHP >=8.3 with the CI-listed extensions, Composer, the committed `tests/fixtures/php-laravel/planner/composer.lock`, Node 24, externally provisioned Ajv `8.20.0`, TypeScript `5.9.3` and `@vue/compiler-sfc@3.4.38` via `NODE_PATH`. The lock pins Laravel `13.33.0`, Testo `0.10.53` and Laratesto `v0.7.3`. Provisioning occurs before verification, never inside an adapter. Use the explicit setup steps in [CI](../.github/workflows/ci.yml); do not update the lock during an example run.
 
 **Implemented** after those prerequisites, from the repository root:
 

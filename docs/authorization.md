@@ -146,7 +146,7 @@ private-field read, wrong job, deny-overrides-allow, and public
 exposure denied).
 
 The Node release gate is
-`node scripts/test-authorization-contracts.mjs` (exact Ajv 8.17.1
+`node scripts/test-authorization-contracts.mjs` (exact Ajv 8.20.0
 against the schema plus canonical-order and closed-vocabulary
 invariants), run in CI on Node 18 and 24. The Rust core tests
 byte-compare the goldens, drive the vector matrix through the evaluator,

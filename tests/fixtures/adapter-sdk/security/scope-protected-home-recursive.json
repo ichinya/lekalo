@@ -1,0 +1,8 @@
+{
+  "logical": false,
+  "name": "scope-protected-home-recursive",
+  "scopeGrammar": true,
+  "scopeOk": true,
+  "touches": "lekalo-model",
+  "value": "lekalo/**"
+}

@@ -210,7 +210,37 @@ fn the_php_kernel_describes_itself_through_the_production_client() {
         described.capabilities.adapter.id,
         "lekalo-target-php-laravel"
     );
-    assert_eq!(described.capabilities.adapter.version, "0.2.0");
+    assert_eq!(described.capabilities.adapter.version, "0.8.0");
+    assert!(
+        described.capabilities.read_scopes.iter().all(|scope| {
+            !lekalo_core::target_protocol::scopes::scope_covers(scope, ".lekalo/cache/writer.lock")
+        }),
+        "adapter reads must not cover the controller's exclusive writer lock"
+    );
+    let manifest: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../adapters/php-laravel/adapter.manifest.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let published: std::collections::BTreeSet<_> = manifest["capabilities"]["readScopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|scope| scope.as_str().unwrap())
+        .collect();
+    let declared: std::collections::BTreeSet<_> = described
+        .capabilities
+        .read_scopes
+        .iter()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        published, declared,
+        "the published package must bind the actual read scopes"
+    );
     assert!(described.capabilities.adapter.digest.starts_with("sha256:"));
     assert_eq!(
         described.capabilities.protocol_versions,

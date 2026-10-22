@@ -7,17 +7,34 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
+# The oracle binary is an auxiliary gate tool (issue #106 review r2 #1);
+# `cargo run -p lekalo-cli` must keep resolving to the user CLI.
+default-run = "lekalo"
 
 [[bin]]
 name = "lekalo"
 path = "src/main.rs"
 
+[[bin]]
+name = "adapter-sdk-oracle"
+path = "src/bin/adapter-sdk-oracle.rs"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["process"] }
+
 [dev-dependencies]
-tempfile.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 lekalo-core.workspace = true
 
 [dependencies]
 clap.workspace = true
 lekalo-core.workspace = true
-serde_json.workspace = true
+rusqlite.workspace = true
+serde = { workspace = true }
+serde_json = { workspace = true, features = ["raw_value"] }
+notify.workspace = true
+tempfile.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }

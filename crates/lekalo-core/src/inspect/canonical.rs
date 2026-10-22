@@ -11,16 +11,16 @@
 //! never do.
 
 use super::result::{
-    BindingItem, Bounds, Completeness, ContractBody, ContractSection, InspectResult, Item,
-    ItemsSection, PortabilitySection, ProjectHeader, SectionState, SelectorProjection, SourceRef,
-    SymbolCard, TypeRefProjection, UnsupportedSection,
+    BindingItem, Bounds, Completeness, ContractBody, ContractSection, InspectResult, InvariantItem,
+    Item, ItemsSection, PortabilitySection, ProjectHeader, SectionState, SelectorProjection,
+    SourceRef, SymbolCard, TypeRefProjection, UnsupportedSection,
 };
 use crate::loader::canonical::write_json_string;
 
 /// Serialize the whole inspect result to canonical payload bytes.
 pub(crate) fn payload_bytes(result: &InspectResult) -> String {
     let mut json = String::from("{\"schemaVersion\":");
-    json.push_str(&quote("lekalo/inspect/v0.2.16"));
+    json.push_str(&quote(super::version::SCHEMA_VERSION));
     json.push_str(",\"identity\":");
     json.push_str(&quote(super::version::IDENTITY));
     json.push_str(",\"modelVersion\":");
@@ -160,7 +160,15 @@ fn contract_bytes(contract: &ContractSection) -> String {
             json.push_str(",\"input\":");
             json.push_str(&fields_bytes(input));
         }
-        ContractBody::Query { reads, output } => {
+        ContractBody::Query {
+            input,
+            reads,
+            output,
+        } => {
+            if !input.is_empty() {
+                json.push_str(",\"input\":");
+                json.push_str(&fields_bytes(input));
+            }
             json.push_str(",\"reads\":");
             json.push_str(&string_array(reads));
             if let Some(output) = output {
@@ -288,10 +296,53 @@ fn items_bytes(section: &ItemsSection) -> String {
 /// One section item's bytes.
 fn item_bytes(item: &Item) -> String {
     match item {
-        Item::Invariant(invariant) => format!(
-            "{{\"fields\":{},\"type\":\"identity\"}}",
-            string_array(&invariant.fields),
-        ),
+        Item::Invariant(invariant) => match invariant {
+            InvariantItem::Identity { fields } => format!(
+                "{{\"fields\":{},\"type\":\"identity\"}}",
+                string_array(fields),
+            ),
+            InvariantItem::Relation {
+                relation,
+                target,
+                local_fields,
+                target_fields,
+                min,
+                max,
+                ownership,
+                on_detach,
+                on_delete,
+            } => format!(
+                "{{\"localFields\":{},\"max\":{},\"min\":{min},\"onDelete\":{},\"onDetach\":{},\"ownership\":{},\"relation\":{},\"target\":{},\"targetFields\":{},\"type\":\"relation\"}}",
+                string_array(local_fields),
+                match max {
+                    Some(max) => max.to_string(),
+                    None => "null".to_owned(),
+                },
+                quote(on_delete),
+                quote(on_detach),
+                quote(ownership),
+                quote(relation),
+                quote(target),
+                string_array(target_fields),
+            ),
+            InvariantItem::UniqueConstraint {
+                constraint,
+                fields,
+                scope,
+                comparison,
+                normalization_ref,
+            } => format!(
+                "{{\"comparison\":{},\"constraint\":{},\"fields\":{},\"normalizationRef\":{},\"scope\":{},\"type\":\"unique-constraint\"}}",
+                quote(comparison),
+                quote(constraint),
+                string_array(fields),
+                match normalization_ref {
+                    Some(reference) => quote(reference),
+                    None => "null".to_owned(),
+                },
+                quote(scope),
+            ),
+        },
         Item::Policy(policy) => format!(
             "{{\"decision\":{},\"id\":{}}}",
             quote(policy.decision),

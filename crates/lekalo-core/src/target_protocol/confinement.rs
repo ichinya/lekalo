@@ -12,8 +12,8 @@ use std::sync::atomic::AtomicBool;
 #[path = "confinement_windows.rs"]
 mod windows;
 
-/// The sandbox's hard memory bound where the platform enforces one
-/// (Windows job object). A resource constant, never host-derived.
+/// Windows' hard job-memory cap, also macOS watch's sampled resident
+/// kill threshold (degraded, not a hard cap). Never host-derived.
 pub(super) const SANDBOX_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// The bounded process/task count applied when the budget denies
@@ -25,10 +25,105 @@ pub(super) const SANDBOX_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// primitive.
 pub(super) const SANDBOX_TASK_BOUND: u64 = 64;
 
+/// The Linux address-space bound (`RLIMIT_AS`) applied through the
+/// prlimit wrapper inside the sandbox namespace. Unlike the Windows
+/// job commit-charge cap this counts *reservations*: a V8 runtime
+/// reserves multi-GiB virtual cages while committing far less, so the
+/// honest bound must cover the reservation, not the commit charge. It
+/// is a real cap on runaway mappings — enforcement is recorded
+/// `Degraded`, never claimed equivalent to the Windows memory job.
+pub(super) const SANDBOX_ADDRESS_SPACE_LIMIT_BYTES: u64 = 8 * 1024 * 1024 * 1024;
+
+/// The read-only execution lane one host can actually build. This is
+/// the hermetic model the platform probes resolve into; the watch
+/// target admission (`TargetClient::bounded_read_only_available`)
+/// requires both a memory and a process bound before any adapter runs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ReadOnlyLane {
+    /// Windows job object: commit-charge memory cap and an
+    /// active-process cap of one when children are denied.
+    WindowsJob,
+    /// Linux bubblewrap namespace with the prlimit wrapper: an
+    /// address-space cap plus the per-user-namespace task bound
+    /// (kernel ≥ 5.14). Resource enforcement is honestly `Degraded`.
+    LinuxNamespace,
+    /// macOS seatbelt denies fork; the host samples owned-process RSS
+    /// and kills at the resident threshold. Sampling can overshoot:
+    /// resource evidence is degraded, never a hard allocation ceiling.
+    MacOsSupervised,
+    /// No bounded lane exists (unknown platform, or Linux without
+    /// bubblewrap/prlimit/kernel support).
+    Unavailable,
+}
+
+/// Resolve the lane from platform facts. Pure and testable on any
+/// development platform; the callers feed it their `cfg!`/host probes.
+pub(super) fn read_only_lane(
+    windows: bool,
+    linux: bool,
+    macos: bool,
+    bwrap: bool,
+    prlimit: bool,
+) -> ReadOnlyLane {
+    if windows {
+        ReadOnlyLane::WindowsJob
+    } else if linux {
+        if bwrap && prlimit {
+            ReadOnlyLane::LinuxNamespace
+        } else {
+            ReadOnlyLane::Unavailable
+        }
+    } else if macos {
+        ReadOnlyLane::MacOsSupervised
+    } else {
+        ReadOnlyLane::Unavailable
+    }
+}
+
+/// The lane's honest memory bound (`None` when the platform has no
+/// primitive and execution must refuse).
+pub(super) fn lane_memory_bound(lane: ReadOnlyLane) -> Option<u64> {
+    match lane {
+        ReadOnlyLane::WindowsJob => Some(SANDBOX_MEMORY_LIMIT_BYTES),
+        ReadOnlyLane::LinuxNamespace => Some(SANDBOX_ADDRESS_SPACE_LIMIT_BYTES),
+        ReadOnlyLane::MacOsSupervised => Some(SANDBOX_MEMORY_LIMIT_BYTES),
+        ReadOnlyLane::Unavailable => None,
+    }
+}
+
+/// The lane's honest process/task bound (`None` when children are
+/// merely unenforced rather than bounded).
+pub(super) fn lane_process_bound(lane: ReadOnlyLane, children_denied: bool) -> Option<u64> {
+    if !children_denied {
+        return None;
+    }
+    match lane {
+        ReadOnlyLane::WindowsJob => Some(1),
+        ReadOnlyLane::LinuxNamespace => Some(SANDBOX_TASK_BOUND),
+        ReadOnlyLane::MacOsSupervised => Some(1),
+        ReadOnlyLane::Unavailable => None,
+    }
+}
+
+/// Whether the Linux bubblewrap sandbox binary exists (the namespace
+/// the prlimit bounds apply inside).
+#[cfg(target_os = "linux")]
+fn bwrap_available() -> bool {
+    Path::new("/usr/bin/bwrap").is_file()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn bwrap_available() -> bool {
+    false
+}
+
 /// The per-session sandbox policy the budget projects onto the OS
 /// primitives (issue #89).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct SandboxPolicy {
+    /// Watch's opt-in resource controls (Linux address space / macOS
+    /// sampled RSS); predecessor command policies remain unchanged.
+    pub bounded_resources: bool,
     /// `processes.children: denied` — children are refused where the
     /// platform has a primitive and bounded/honestly reported where it
     /// does not. Children that do spawn stay inside the sandbox either
@@ -45,15 +140,22 @@ impl SandboxPolicy {
     /// probes and the describe handshake).
     pub fn strict() -> Self {
         Self {
+            bounded_resources: false,
             children_denied: true,
             network_allowlist: false,
         }
+    }
+
+    pub fn with_bounded_resources(mut self, required: bool) -> Self {
+        self.bounded_resources = required;
+        self
     }
 
     /// Project the session budget onto the sandbox policy.
     pub fn from_budget(budget: &crate::adapter_package::budget::SessionBudget) -> Self {
         use crate::adapter_package::budget::{ChildPolicy, NetworkBudget};
         Self {
+            bounded_resources: false,
             children_denied: budget.children() == ChildPolicy::Denied,
             network_allowlist: matches!(budget.network(), NetworkBudget::Allowlist(_)),
         }
@@ -104,7 +206,7 @@ impl ConfinementReport {
     /// policy.
     pub(super) fn compute(policy: SandboxPolicy) -> Self {
         let children = if policy.children_denied {
-            if cfg!(windows) {
+            if cfg!(windows) || (policy.bounded_resources && macos_supervisor_available()) {
                 Enforcement::Enforced
             } else if cfg!(target_os = "linux") && prlimit_available() {
                 // Bounded, and only where the bound is namespace-local.
@@ -119,6 +221,19 @@ impl ConfinementReport {
         };
         let resources = if cfg!(windows) {
             Enforcement::Enforced
+        } else if policy.bounded_resources
+            && cfg!(target_os = "linux")
+            && prlimit_available()
+            && bwrap_available()
+        {
+            // The namespace bounds the adapter's address space through
+            // RLIMIT_AS. That is a real cap on runaway mappings, but it
+            // counts reservations rather than commit charge — an honest
+            // `Degraded`, never a claim of Windows-job equivalence.
+            Enforcement::Degraded
+        } else if policy.bounded_resources && macos_supervisor_available() {
+            // Host-observed RSS kill threshold, not a hard allocation cap.
+            Enforcement::Degraded
         } else {
             // Linux RLIMIT_RSS is a historical no-op and macOS exposes
             // no sandbox primitive: recording anything stronger would
@@ -141,23 +256,41 @@ impl ConfinementReport {
     /// when denied; the Linux task bound where the wrapper exists and
     /// the kernel bounds the namespace, `None` otherwise).
     pub(super) fn process_limit(&self) -> Option<u64> {
-        if !self.children_denied {
-            return None;
-        }
-        if cfg!(windows) {
-            Some(1)
-        } else if cfg!(target_os = "linux") && prlimit_available() {
-            Some(SANDBOX_TASK_BOUND)
-        } else {
-            None
-        }
+        lane_process_bound(host_read_only_lane(), self.children_denied)
+            .filter(|_| self.children != Enforcement::Unenforced)
     }
 
-    /// The effective memory bound for the evidence (Windows only).
+    /// The effective memory bound for the evidence: the Windows job
+    /// commit-charge cap, or the Linux namespace address-space bound.
     pub(super) fn memory_limit(&self) -> Option<u64> {
-        (cfg!(windows) && self.resources == Enforcement::Enforced)
-            .then_some(SANDBOX_MEMORY_LIMIT_BYTES)
+        lane_memory_bound(host_read_only_lane()).filter(|_| {
+            self.resources == Enforcement::Enforced || self.resources == Enforcement::Degraded
+        })
     }
+}
+
+/// The lane this host can actually build, from its `cfg` platform and
+/// the resolved sandbox/wrapper probes.
+fn host_read_only_lane() -> ReadOnlyLane {
+    if cfg!(target_os = "macos") && !macos_supervisor_available() {
+        return ReadOnlyLane::Unavailable;
+    }
+    read_only_lane(
+        cfg!(windows),
+        cfg!(target_os = "linux"),
+        cfg!(target_os = "macos"),
+        bwrap_available(),
+        prlimit_available(),
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn macos_supervisor_available() -> bool {
+    super::memory::available()
+}
+#[cfg(not(target_os = "macos"))]
+fn macos_supervisor_available() -> bool {
+    false
 }
 
 /// Whether the Linux `prlimit` wrapper is available for the bounded
@@ -420,9 +553,17 @@ impl Sandbox {
             return Err(refusal("sandbox-project-location"));
         }
         #[cfg(target_os = "macos")]
-        if ["/System", "/usr/lib", "/dev"]
-            .iter()
-            .any(|p| root.starts_with(p))
+        if [
+            "/System",
+            "/usr/lib",
+            "/dev",
+            "/opt/homebrew/Cellar",
+            "/opt/homebrew/opt",
+            "/usr/local/Cellar",
+            "/usr/local/opt",
+        ]
+        .iter()
+        .any(|p| root.starts_with(p))
         {
             return Err(refusal("sandbox-project-location"));
         }
@@ -529,6 +670,31 @@ impl Sandbox {
             .ok_or_else(|| refusal("sandbox-program"))?;
         let destination = self.runtime.join(filename);
         std::fs::copy(&program, &destination).map_err(|_| refusal("sandbox-runtime"))?;
+        // The runtime-asset closure (issue #106 review r6 #5): an
+        // interpreter is not always one self-contained executable. A
+        // dynamically linked runtime (PHP's `php.exe` + `php8.dll`) cannot
+        // start from a bare copy — the loader resolves siblings of the
+        // executable image only. The closed per-interpreter asset list
+        // below is copied from the interpreter's own directory beside the
+        // copied program; missing assets skip (the confined run then
+        // fails as an honest crash the battery classifies), never fall
+        // back to host-derived search paths. Copies confer no filesystem
+        // grants beyond executing the already-selected interpreter.
+        for asset in runtime_assets(&program) {
+            if filename.eq_ignore_ascii_case(asset) {
+                continue;
+            }
+            let Some(parent) = program.parent() else {
+                continue;
+            };
+            let source = parent.join(asset);
+            if source.is_file() {
+                let target = self.runtime.join(asset);
+                if target != destination {
+                    let _ = std::fs::copy(&source, &target);
+                }
+            }
+        }
         let mut args = command.args.clone();
         // A script explicitly supplied as the interpreter's first argument
         // is executable code, copied read-only. Other argv values confer no
@@ -666,24 +832,30 @@ impl Sandbox {
             self.project.to_string_lossy().into_owned(),
             "--".into(),
         ]);
-        // Issue #89: a denied children policy cannot be enforced inside
-        // bwrap (no fork primitive), but where the resolved prlimit
-        // binary exists and the kernel charges RLIMIT_NPROC per user
-        // namespace (≥5.14) it bounds the confined tree — applied to the
-        // payload INSIDE the namespace, not around bwrap. Outside the
-        // namespace the rlimit check compares against the task's current
-        // (init) userns count — the whole-uid task total — so a busy
-        // host trips the bound before bwrap's setup fork even runs.
-        // Inside the fresh userns the count covers only this tree, so
-        // the bound tracks the sandbox deterministically. The report
-        // records the bound (or its honest absence) either way.
+        // Issue #89/#95: the prlimit wrapper bounds the payload INSIDE
+        // the namespace, not around bwrap. Outside the namespace the
+        // rlimit check compares against the whole-uid task total, so a
+        // busy host trips the bound before bwrap's setup fork even
+        // runs; inside the fresh userns the count covers only this
+        // tree. The namespace lane additionally caps the address space
+        // (`--as=`, reservation-inclusive, recorded honestly as a
+        // degraded memory bound); the task bound applies when children
+        // are denied. The report records whichever bounds actually
+        // applied (or their honest absence).
+        let lane = self.policy.bounded_resources
+            && matches!(host_read_only_lane(), ReadOnlyLane::LinuxNamespace);
+        let mut wrapper_limits = Vec::new();
+        if lane {
+            wrapper_limits.push(format!("--as={SANDBOX_ADDRESS_SPACE_LIMIT_BYTES}"));
+        }
         if self.policy.children_denied {
+            wrapper_limits.push(format!("--nproc={SANDBOX_TASK_BOUND}"));
+        }
+        if !wrapper_limits.is_empty() {
             if let Some(prlimit) = prlimit_path() {
-                args.extend([
-                    prlimit.to_string_lossy().into_owned(),
-                    format!("--nproc={SANDBOX_TASK_BOUND}"),
-                    "--".into(),
-                ]);
+                args.push(prlimit.to_string_lossy().into_owned());
+                args.extend(wrapper_limits);
+                args.push("--".into());
             }
         }
         args.push(command.program.to_string_lossy().into_owned());
@@ -707,13 +879,14 @@ impl Sandbox {
         // sandbox-exec inherits the spawning environment; the private
         // runner scrubs it (env -i semantics) and re-grants exactly the
         // budget pairs at spawn, keeping host values out of argv.
-        transport::run_private(
+        transport::run_private_macos(
             &self.macos_command(command),
             request,
             limits,
             &self.project,
             cancel,
             env,
+            self.policy.bounded_resources,
         )
     }
 
@@ -723,6 +896,10 @@ impl Sandbox {
         // dyld opens the filesystem root while resolving its runtime paths.
         // This literal permits that directory alone, never its descendants.
         let mut profile = format!("(version 1)(deny default)(allow process-exec)(allow sysctl-read)(allow mach-lookup (global-name \"com.apple.system.logger\"))(allow file-read* (literal \"/\") (subpath \"/System\") (subpath \"/usr/lib\") (subpath \"/dev\") (subpath {}) (subpath {}))", quoted(&self.runtime), quoted(&self.project));
+        profile.push_str(macos_interpreter_library_rules(&command.program));
+        if self.policy.bounded_resources && self.policy.children_denied {
+            profile.push_str("(deny process-fork)");
+        }
         for root in &self.write_roots {
             profile.push_str(&format!("(allow file-write* (subpath {}))", quoted(root)));
         }
@@ -737,6 +914,17 @@ impl Sandbox {
             args,
         }
     }
+}
+
+// Homebrew PHP links to platform libraries outside /usr/lib. Permit only
+// shared-library files in its two fixed package roots, with metadata traversal;
+// never package configuration, application sources or whole-prefix reads.
+#[cfg(any(target_os = "macos", test))]
+fn macos_interpreter_library_rules(program: &Path) -> &'static str {
+    if program.file_name() != Some(std::ffi::OsStr::new("php")) {
+        return "";
+    }
+    r##"(allow file-read-metadata (literal "/opt") (literal "/opt/homebrew") (literal "/usr") (literal "/usr/local") (subpath "/opt/homebrew/Cellar") (subpath "/opt/homebrew/opt") (subpath "/usr/local/Cellar") (subpath "/usr/local/opt"))(allow file-read* (regex #"^/(opt/homebrew|usr/local)/(Cellar|opt)/[^/]+(/[^/]+)?/lib/[^/]+[.]dylib$"))"##
 }
 
 fn checked_destination(
@@ -782,7 +970,12 @@ fn resolve_program(program: &Path) -> Option<PathBuf> {
     if program.is_absolute() || program.components().count() > 1 {
         return program.is_file().then(|| program.to_path_buf());
     }
-    for dir in std::env::split_paths(&std::env::var_os("PATH")?) {
+    for dir in std::env::var_os("PATH")
+        .as_deref()
+        .map(std::env::split_paths)
+        .into_iter()
+        .flatten()
+    {
         let candidate = dir.join(program);
         if candidate.is_file() {
             return Some(candidate);
@@ -798,9 +991,141 @@ fn resolve_program(program: &Path) -> Option<PathBuf> {
     None
 }
 
+/// The fixed sibling-asset name bound per known dynamically linked
+/// interpreter (issue #106 review r6 #5): the closed, reviewed list of
+/// runtime files an interpreter image cannot start without. The bound
+/// is name-exact and bounded (no directories, no ini, nothing
+/// host-derived) — the sandbox copies only these from the interpreter's
+/// own directory beside the already-selected program. `php.exe` needs
+/// its core DLL and the ICU data tables the build links; every
+/// self-contained runtime (node, static rust/go binaries) needs none.
+fn runtime_assets(program: &Path) -> &'static [&'static str] {
+    let Some(name) = program.file_stem().and_then(|s| s.to_str()) else {
+        return &[];
+    };
+    if cfg!(windows) && name.eq_ignore_ascii_case("php") {
+        &[
+            "php8.dll",
+            "icudt77.dll",
+            "icuin77.dll",
+            "icuio77.dll",
+            "icuuc77.dll",
+        ]
+    } else {
+        &[]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn homebrew_library_rules_are_fixed_and_interpreter_specific() {
+        assert_eq!(
+            macos_interpreter_library_rules(Path::new("runtime/node")),
+            ""
+        );
+        assert_eq!(
+            macos_interpreter_library_rules(Path::new("runtime/php-fake")),
+            ""
+        );
+        let rules = macos_interpreter_library_rules(Path::new("runtime/php"));
+        assert!(!rules.is_empty());
+    }
+
+    // The lane model is hermetic: every platform combination resolves
+    // identically on any development host, so the Linux/macOS watch
+    // target admission behavior is provable without a hosted lane
+    // (issue #95). Real bwrap/prlimit execution stays on the unix
+    // qualification test below and the hosted CI matrix.
+    #[test]
+    fn read_only_lanes_resolve_from_platform_facts() {
+        assert_eq!(
+            read_only_lane(true, false, false, false, false),
+            ReadOnlyLane::WindowsJob
+        );
+        // Linux needs both bubblewrap and the prlimit wrapper: either
+        // missing is an honest refusal, never an unbounded run.
+        assert_eq!(
+            read_only_lane(false, true, false, true, true),
+            ReadOnlyLane::LinuxNamespace
+        );
+        assert_eq!(
+            read_only_lane(false, true, false, true, false),
+            ReadOnlyLane::Unavailable
+        );
+        assert_eq!(
+            read_only_lane(false, true, false, false, true),
+            ReadOnlyLane::Unavailable
+        );
+        // macOS supervision is degraded sampling, not a kernel ceiling.
+        assert_eq!(
+            read_only_lane(false, false, true, true, true),
+            ReadOnlyLane::MacOsSupervised
+        );
+        assert_eq!(
+            read_only_lane(false, false, false, true, true),
+            ReadOnlyLane::Unavailable
+        );
+    }
+
+    #[test]
+    fn lane_bounds_admit_only_both_dimensions() {
+        // A watch target run requires a memory AND a process bound
+        // (`TargetClient::bounded_read_only_available`): the job lane
+        // and supervised macOS qualify; unavailable never.
+        for (lane, memory, processes) in [
+            (
+                ReadOnlyLane::WindowsJob,
+                Some(SANDBOX_MEMORY_LIMIT_BYTES),
+                Some(1),
+            ),
+            (
+                ReadOnlyLane::LinuxNamespace,
+                Some(SANDBOX_ADDRESS_SPACE_LIMIT_BYTES),
+                Some(SANDBOX_TASK_BOUND),
+            ),
+            (
+                ReadOnlyLane::MacOsSupervised,
+                Some(SANDBOX_MEMORY_LIMIT_BYTES),
+                Some(1),
+            ),
+            (ReadOnlyLane::Unavailable, None, None),
+        ] {
+            assert_eq!(lane_memory_bound(lane), memory, "{lane:?}");
+            assert_eq!(lane_process_bound(lane, true), processes, "{lane:?}");
+            assert_eq!(
+                lane_process_bound(lane, false),
+                None,
+                "{lane:?} declared children"
+            );
+        }
+        // The Linux address-space bound is a weaker semantics than the
+        // Windows commit-charge cap: it must stay strictly larger so a
+        // degraded report can never claim job-equivalence by accident.
+        const _: () = assert!(SANDBOX_ADDRESS_SPACE_LIMIT_BYTES > SANDBOX_MEMORY_LIMIT_BYTES);
+    }
+
+    #[test]
+    fn linux_lane_reports_degraded_resources_and_qualifies_for_watch() {
+        // The namespace lane computes a Degraded (never Enforced)
+        // resources dimension with both bounds present.
+        #[cfg(target_os = "linux")]
+        if matches!(host_read_only_lane(), ReadOnlyLane::LinuxNamespace) {
+            let report =
+                ConfinementReport::compute(SandboxPolicy::strict().with_bounded_resources(true));
+            assert_eq!(report.resources, Enforcement::Degraded);
+            let legacy = ConfinementReport::compute(SandboxPolicy::strict());
+            assert_eq!(legacy.resources, Enforcement::Unenforced);
+            assert_eq!(legacy.memory_limit(), None);
+            assert!(report.memory_limit().is_some() && report.process_limit().is_some());
+            return;
+        }
+        // On any host without a live namespace lane, the model still
+        // proves the report a Degraded lane would publish.
+        assert!(lane_memory_bound(ReadOnlyLane::LinuxNamespace).is_some());
+    }
 
     // Qualification-only evidence from fixed code and owned synthetic data.
     // Product diagnostics must continue to discard raw backend/provider stderr.
@@ -896,6 +1221,67 @@ mod tests {
             b"owned input"
         );
         assert!(!root.path().join("other").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_confined_php_runtime_qualification() {
+        let root = tempfile::tempdir().unwrap();
+        let source = include_str!("../../../../adapters/php-laravel/src/ai-lint.php");
+        let script = root.path().join("php-runtime.php");
+        std::fs::write(
+            &script,
+            format!(
+                "<?php\nclass RequestRefusal extends RuntimeException {{}}\n{}\nlint_require_tokenizer(); if (isset($argv[1]) && @file_get_contents($argv[1]) !== false) {{ fwrite(STDERR, 'private-runtime-file-readable'); exit(24); }} echo 'lekalo-confined-php-ok';",
+                source.strip_prefix("<?php").expect("PHP source header")
+            ),
+        )
+        .unwrap();
+        #[cfg(target_os = "macos")]
+        let protected_runtime = ["/opt/homebrew/Cellar", "/usr/local/Cellar"]
+            .iter()
+            .find(|path| Path::new(path).is_dir())
+            .map(|base| {
+                let owned = tempfile::Builder::new()
+                    .prefix("lekalo-runtime-boundary-")
+                    .tempdir_in(base)
+                    .expect("owned Homebrew boundary fixture");
+                let lib = owned.path().join("1/lib");
+                std::fs::create_dir_all(&lib).unwrap();
+                let private = lib.join("private.ini");
+                std::fs::write(&private, b"not-a-runtime-library").unwrap();
+                (owned, private)
+            });
+        let args = vec![script.to_string_lossy().into_owned()];
+        #[cfg(target_os = "macos")]
+        let args = {
+            let mut args = args;
+            if let Some((_, private)) = &protected_runtime {
+                args.push(private.to_string_lossy().into_owned());
+            }
+            args
+        };
+        let sandbox = Sandbox::new(root.path(), &[], &[], false, SandboxPolicy::strict()).unwrap();
+        let command = transport::AdapterCommand {
+            program: "php".into(),
+            args,
+        };
+        let limits = transport::TransportLimits {
+            timeout_ms: 10_000,
+            max_output_bytes: 1_024,
+            max_stderr_bytes: 8_192,
+            ..Default::default()
+        };
+        let result = sandbox
+            .run(&command, b"", &limits, false, None, &[])
+            .unwrap();
+        assert_eq!(
+            result.exit_code,
+            0,
+            "private synthetic PHP launch evidence: stderr={:?}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"lekalo-confined-php-ok");
     }
 
     // The kernel-release parser runs the per-userns gate; its floor and

@@ -1,0 +1,9 @@
+{
+  "state": "committed",
+  "class": "safe",
+  "semanticEqual": true,
+  "sourceChanged": true,
+  "reapplyState": "replayed",
+  "auditRecords": 1,
+  "postValidation": "passed"
+}

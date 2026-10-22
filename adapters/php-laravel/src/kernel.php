@@ -60,7 +60,7 @@ const ADAPTER_ID = 'lekalo-target-php-laravel';
 /**
  * The adapter identity token.
  */
-const ADAPTER_VERSION = '0.2.0';
+const ADAPTER_VERSION = '0.8.0';
 /** The adapter target token (the wire `target` of generate/bind). */
 const TARGET_TOKEN = 'php-laravel';
 /** The default profile token; the strict profile rides the analysis seam. */
@@ -3069,7 +3069,10 @@ function describe_capabilities(?Analyzer $analyzer = null): array
         'targets' => [TARGET_TOKEN],
         'profiles' => [PROFILE_TOKEN, STRICT_PROFILE_TOKEN],
         'read_scopes' => [
-            '.lekalo/cache/**',
+            '.lekalo/cache/ir/**',
+            '.lekalo/cache/transport/**',
+            '.lekalo/cache/openapi/**',
+            '.lekalo/cache/client-sdk/**',
             '.lekalo/ir/**',
             '.lekalo/import/**',
             'app/**',
@@ -3088,7 +3091,7 @@ function describe_capabilities(?Analyzer $analyzer = null): array
             // Issue #60: the routes input home and the managed routes
             // root are read back for the drift and checked-join gates;
             // the staged transport and OpenAPI evidence rides the
-            // `.lekalo/cache/**` scope.
+            // explicit transport/OpenAPI evidence scopes.
             'lekalo/routes/**',
             '.lekalo/generated/php-laravel/routes/**',
             // Managed types and the scaffold home are read back for the

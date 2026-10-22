@@ -2,7 +2,7 @@
 // Issue #46 release gate: the rendered OpenAPI documents validate
 // against the official OpenAPI Initiative 3.1 meta-schema (pinned
 // file plus sha256 sidecar) under the same pinned Draft 2020-12
-// implementation as the other contract gates (exact Ajv 8.17.1,
+// implementation as the other contract gates (exact Ajv 8.20.0,
 // provisioned outside this checkout, exposed through NODE_PATH /
 // LEKALO_AJV_NODE_PATH). The gate also pins the canonical byte form
 // of the golden, the closed YAML dialect of the emitted document, the
@@ -26,7 +26,7 @@ try {
   );
   process.exit(1);
 }
-if (ajvVersion !== "8.17.1") {
+if (ajvVersion !== "8.20.0") {
   process.stderr.write(
     `${JSON.stringify({ ok: false, reason: "ajv-version", detail: ajvVersion }, null, 2)}\n`,
   );

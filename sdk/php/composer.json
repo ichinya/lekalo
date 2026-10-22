@@ -1,0 +1,25 @@
+{
+  "name": "lekalo/adapter-sdk-php",
+  "description": "Adapter SDK for the lekalo.target/v1 process protocol (issue #106): strict wire decoding, semantic validation, validate-before-write builders, deterministic ids and canonical bytes, path/scope helpers, bounded stderr logging, and the per-exchange serve loop. No telemetry, no network, no shell; adapters stay read-only by default and inside the host's confinement.",
+  "license": "MIT OR Apache-2.0",
+  "type": "library",
+  "version": "0.1.0",
+  "require": {
+    "php": ">=8.3.0"
+  },
+  "suggest": {
+    "ext-mbstring": "Optional: UTF-8 character counting falls back to a byte-exact pure-PHP implementation when absent (issue #106 review r6 #2)."
+  },
+  "autoload": {
+    "psr-4": {
+      "Lekalo\\AdapterSdk\\": "src/"
+    }
+  },
+  "config": {
+    "optimize-autoloader": true
+  },
+  "support": {
+    "issues": "https://github.com/ichinya/lekalo/issues",
+    "source": "https://github.com/ichinya/lekalo"
+  }
+}

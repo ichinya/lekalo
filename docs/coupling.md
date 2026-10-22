@@ -109,5 +109,5 @@ Five own contracts use product generation 0.6.4. The diagnostic registry,
 validation profiles, validation receipts and provider discovery take successors to keep exact pins
 consistent. The provider's ten-operation vocabulary is unchanged. The mandatory
 [`test-coupling-contracts.mjs`](../scripts/test-coupling-contracts.mjs) gate uses
-the built CLI and Ajv **8.17.1** through `LEKALO_AJV_NODE_PATH`, with no extra
+the built CLI and Ajv **8.20.0** through `LEKALO_AJV_NODE_PATH`, with no extra
 dependencies. It is wired after `cargo build` in `build-test`.

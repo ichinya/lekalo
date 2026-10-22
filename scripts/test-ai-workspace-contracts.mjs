@@ -3,7 +3,7 @@
 // schema, its closed canonical key order, the event-key derivation
 // contract, and the privacy closure of the emitted example, validated
 // with the same pinned third-party Draft 2020-12 implementation as the
-// other contract gates. Exact Ajv 8.17.1 is provisioned outside this
+// other contract gates. Exact Ajv 8.20.0 is provisioned outside this
 // checkout (CI does the same) and exposed through NODE_PATH /
 // LEKALO_AJV_NODE_PATH.
 //
@@ -29,13 +29,13 @@ try {
   ajvVersion = require("ajv/package.json").version;
 } catch (error) {
   process.stderr.write(
-    `pinned Ajv 8.17.1 is required (set NODE_PATH or LEKALO_AJV_NODE_PATH): ${error.message}\n`,
+    `pinned Ajv 8.20.0 is required (set NODE_PATH or LEKALO_AJV_NODE_PATH): ${error.message}\n`,
   );
   process.exit(1);
 }
 
-if (ajvVersion !== "8.17.1") {
-  process.stderr.write(`pinned Ajv 8.17.1 required, found ${ajvVersion}\n`);
+if (ajvVersion !== "8.20.0") {
+  process.stderr.write(`pinned Ajv 8.20.0 required, found ${ajvVersion}\n`);
   process.exit(1);
 }
 

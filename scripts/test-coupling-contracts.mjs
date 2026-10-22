@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const require=createRequire(import.meta.url);
 const fail=(reason,detail)=>{process.stderr.write(JSON.stringify({ok:false,gate:'coupling-contracts',reason,detail})+'\n');process.exit(1);};
-let Ajv;try {Ajv=require('ajv/dist/2020').default;if(require('ajv/package.json').version!=='8.17.1')fail('ajv-version','expected 8.17.1');}catch {fail('ajv-unavailable','set NODE_PATH=$LEKALO_AJV_NODE_PATH');}
+let Ajv;try {Ajv=require('ajv/dist/2020').default;if(require('ajv/package.json').version!=='8.20.0')fail('ajv-version','expected 8.20.0');}catch {fail('ajv-unavailable','set NODE_PATH=$LEKALO_AJV_NODE_PATH');}
 const binary=process.env.LEKALO_COUPLING_BIN??join(root,'target/debug',process.platform==='win32'?'lekalo.exe':'lekalo');
 if(!existsSync(binary))fail('binary-missing','cargo build --workspace --locked');
 const read=p=>JSON.parse(readFileSync(join(root,p),'utf8'));
@@ -150,7 +150,7 @@ try {
  const planned=reportOf(run([...args,'--context-budget','1']));assert.equal(planned.planning.contextBudget.state,'known');assert.equal(JSON.parse(planned.planning.contextBudget.value).identity,'dev.lekalo.context-budget-report@0.6.3');
  checked.push('context-plan-required-facts');
  const absent=spawnSync(process.execPath,[fileURLToPath(import.meta.url)],{cwd:root,encoding:'utf8',env:{...process.env,LEKALO_COUPLING_BIN:join(scratch,'absent')}});assert.notEqual(absent.status,0);assert.match(absent.stderr,/binary-missing/);checked.push('binary-missing-fails-closed');
- process.stdout.write(JSON.stringify({ok:true,gate:'coupling-contracts',ajv:'8.17.1',schemas:5,checks:checked.length,checked})+'\n');
+ process.stdout.write(JSON.stringify({ok:true,gate:'coupling-contracts',ajv:'8.20.0',schemas:5,checks:checked.length,checked})+'\n');
 }catch(error){process.stderr.write(JSON.stringify({ok:false,gate:'coupling-contracts',reason:'assertion',detail:error.message})+'\n');process.exitCode=1;}
 finally {
  assert.deepEqual(files(join(root,fixture)),checkoutBefore,'the live gate never changes corpus bytes');

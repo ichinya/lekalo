@@ -1,0 +1,14 @@
+{
+  "scenarioId": "tasklinks.scenario.partial_delivery",
+  "issueVerbatim": "partial provider failure;",
+  "origin": "mock",
+  "steps": [
+    { "command": "tasklinks.dispatch_outbox", "link": "link-a", "providerOutcome": "ok" },
+    { "command": "tasklinks.dispatch_outbox", "link": "link-b", "providerOutcome": "timeout" }
+  ],
+  "expects": [
+    { "kind": "delivery-status", "value": "partial" },
+    { "kind": "receipt-persisted", "link": "link-a" },
+    { "kind": "retry-eligible", "link": "link-b", "only": true }
+  ]
+}

@@ -28,12 +28,24 @@ pub const PROFILE_SCHEMA_VERSION: &str = "lekalo/validation-profile/v0.6.4";
 pub const PROFILE_IDENTITY: &str = "dev.lekalo.validation-profile@0.6.4";
 /// The current validation profile contract version.
 pub const PROFILE_VERSION: &str = "0.6.4";
+/// The exact wire discriminator of the issue #113 boundary profile (0.8.0).
+pub const BOUNDARY_PROFILE_SCHEMA_VERSION: &str = "lekalo/validation-profile/v0.8.0";
+/// The embedded issue #113 boundary profile identity.
+pub const BOUNDARY_PROFILE_IDENTITY: &str = "dev.lekalo.validation-profile@0.8.0";
+/// The issue #113 boundary profile contract version.
+pub const BOUNDARY_PROFILE_VERSION: &str = "0.8.0";
 /// The exact embedded default profile bytes.
 pub const DEFAULT_PROFILE_BYTES: &[u8] =
     include_bytes!("../../../../contracts/validation-profile.default.v0.6.4.json");
 /// The exact embedded strict profile bytes.
 pub const STRICT_PROFILE_BYTES: &[u8] =
     include_bytes!("../../../../contracts/validation-profile.strict.v0.6.4.json");
+/// The exact embedded issue #113 boundary default profile (0.8.0).
+pub const BOUNDARY_DEFAULT_PROFILE_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/validation-profile.default.v0.8.0.json");
+/// The exact embedded issue #113 boundary strict profile (0.8.0).
+pub const BOUNDARY_STRICT_PROFILE_BYTES: &[u8] =
+    include_bytes!("../../../../contracts/validation-profile.strict.v0.8.0.json");
 
 /// Why embedded profile bytes could not be trusted.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -103,24 +115,56 @@ impl ValidationProfile {
         PROFILE.as_ref().map_err(Clone::clone)
     }
 
-    /// Parse and validate profile bytes against the embedded registry.
+    /// The embedded issue #113 boundary default profile (0.8.0).
+    pub fn embedded_boundary_default() -> Result<&'static Self, ProfileError> {
+        static PROFILE: LazyLock<Result<ValidationProfile, ProfileError>> =
+            LazyLock::new(|| ValidationProfile::from_bytes(BOUNDARY_DEFAULT_PROFILE_BYTES));
+        PROFILE.as_ref().map_err(Clone::clone)
+    }
+
+    /// The embedded issue #113 boundary strict profile (0.8.0).
+    pub fn embedded_boundary_strict() -> Result<&'static Self, ProfileError> {
+        static PROFILE: LazyLock<Result<ValidationProfile, ProfileError>> =
+            LazyLock::new(|| ValidationProfile::from_bytes(BOUNDARY_STRICT_PROFILE_BYTES));
+        PROFILE.as_ref().map_err(Clone::clone)
+    }
+
+    /// Select one of the embedded issue #113 boundary profiles.
+    pub fn embedded_boundary(strict: bool) -> Result<&'static Self, ProfileError> {
+        if strict {
+            Self::embedded_boundary_strict()
+        } else {
+            Self::embedded_boundary_default()
+        }
+    }
+
+    /// Parse and validate profile bytes against the registry the profile
+    /// pins. The frozen 0.6.4 pins select the embedded registry; the issue
+    /// #113 0.8.0 boundary pins select the module successor registry.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ProfileError> {
         let wire: ProfileWire =
             serde_json::from_slice(bytes).map_err(|_| ProfileError::Malformed)?;
-        if wire.schema_version != PROFILE_SCHEMA_VERSION
-            || wire.identity != PROFILE_IDENTITY
-            || wire.version != PROFILE_VERSION
+        let (schema_version, identity, version) = match wire.diagnostic_registry_version.as_str() {
+            REGISTRY_VERSION => (PROFILE_SCHEMA_VERSION, PROFILE_IDENTITY, PROFILE_VERSION),
+            crate::diagnostics::version::MODULE_REGISTRY_VERSION => (
+                BOUNDARY_PROFILE_SCHEMA_VERSION,
+                BOUNDARY_PROFILE_IDENTITY,
+                BOUNDARY_PROFILE_VERSION,
+            ),
+            _ => return Err(ProfileError::Unsupported),
+        };
+        if wire.schema_version != schema_version
+            || wire.identity != identity
+            || wire.version != version
             || wire.scope != "project"
         {
-            return Err(ProfileError::Unsupported);
-        }
-        if wire.diagnostic_registry_version != REGISTRY_VERSION {
             return Err(ProfileError::Unsupported);
         }
         if !is_profile_id(&wire.profile_id) {
             return Err(ProfileError::Unsupported);
         }
-        let registry = DiagnosticRegistry::embedded().map_err(|_| ProfileError::Registry)?;
+        let registry = DiagnosticRegistry::for_version(&wire.diagnostic_registry_version)
+            .map_err(|_| ProfileError::Registry)?;
         let mut rules = Vec::with_capacity(wire.rules.len());
         let mut seen = BTreeSet::new();
         let mut previous: Option<String> = None;
