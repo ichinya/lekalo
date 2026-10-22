@@ -27,7 +27,7 @@ jobs:
 
   contracts:
     name: Contracts (Node ${{ matrix.node-version }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -170,7 +170,7 @@ jobs:
           node scripts/test-lockfile-contracts.mjs
   fmt:
     name: Rustfmt
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -187,7 +187,7 @@ jobs:
 
   clippy:
     name: Clippy
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -200,7 +200,7 @@ jobs:
 
   msrv:
     name: Rust 1.80.0 MSRV (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ startsWith(matrix.os, 'ubuntu-') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -215,7 +215,7 @@ jobs:
 
   build-test:
     name: Build and test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ startsWith(matrix.os, 'ubuntu-') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -832,7 +832,7 @@ jobs:
 
   mysql-docs:
     name: Synthetic MySQL documentation tutorial (issue #105)
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     timeout-minutes: 20
     services:
       mysql:
@@ -875,7 +875,7 @@ jobs:
     # as a visible setup step outside the checkout, then runs the real
     # suite with --require-available. A missing tool fails this job; a
     # skipped leg is visible and never counts as Mago acceptance.
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
@@ -929,7 +929,7 @@ jobs:
 
   worklog-changelog-pilot:
     name: Worklog-changelog pilot binary gates (issue #51)
-    runs-on: ubuntu-latest
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7

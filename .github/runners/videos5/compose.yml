@@ -1,0 +1,298 @@
+{
+  "name": "lekalo-ci",
+  "services": {
+    "docker01": {
+      "image": "docker:29-dind",
+      "hostname": "lekalo-ci-docker-01",
+      "privileged": true,
+      "restart": "unless-stopped",
+      "environment": {
+        "DOCKER_TLS_CERTDIR": ""
+      },
+      "command": [
+        "--storage-driver=overlay2",
+        "--log-driver=json-file",
+        "--log-opt=max-size=10m",
+        "--log-opt=max-file=3"
+      ],
+      "cpus": 1,
+      "mem_limit": "1536m",
+      "memswap_limit": "1536m",
+      "cgroup_parent": "lekalo-ci-worker01.slice",
+      "volumes": [
+        "docker-data-01:/var/lib/docker",
+        "/srv/github-runners/lekalo/worker-01/_work:/srv/github-runners/lekalo/worker-01/_work"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "docker",
+          "info"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 20
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "runner01": {
+      "image": "local/lekalo-ci-runner:ubuntu24-20261022",
+      "restart": "unless-stopped",
+      "network_mode": "service:docker01",
+      "depends_on": {
+        "docker01": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": {
+        "DOCKER_HOST": "tcp://127.0.0.1:2375",
+        "RUNNER_ROOT": "/srv/github-runners/lekalo/worker-01",
+        "CI_DOCKER_NAME": "lekalo-ci-docker-01",
+        "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/usr/local/bin/trust.sh",
+        "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh"
+      },
+      "cpus": 2,
+      "mem_limit": "2560m",
+      "memswap_limit": "2560m",
+      "cgroup_parent": "lekalo-ci-worker01.slice",
+      "volumes": [
+        "/srv/github-runners/lekalo/worker-01:/srv/github-runners/lekalo/worker-01"
+      ],
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      },
+      "build": {
+        "context": "."
+      }
+    },
+    "docker02": {
+      "image": "docker:29-dind",
+      "hostname": "lekalo-ci-docker-02",
+      "privileged": true,
+      "restart": "unless-stopped",
+      "environment": {
+        "DOCKER_TLS_CERTDIR": ""
+      },
+      "command": [
+        "--storage-driver=overlay2",
+        "--log-driver=json-file",
+        "--log-opt=max-size=10m",
+        "--log-opt=max-file=3"
+      ],
+      "cpus": 1,
+      "mem_limit": "1536m",
+      "memswap_limit": "1536m",
+      "cgroup_parent": "lekalo-ci-worker02.slice",
+      "volumes": [
+        "docker-data-02:/var/lib/docker",
+        "/srv/github-runners/lekalo/worker-02/_work:/srv/github-runners/lekalo/worker-02/_work"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "docker",
+          "info"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 20
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "runner02": {
+      "image": "local/lekalo-ci-runner:ubuntu24-20261022",
+      "restart": "unless-stopped",
+      "network_mode": "service:docker02",
+      "depends_on": {
+        "docker02": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": {
+        "DOCKER_HOST": "tcp://127.0.0.1:2375",
+        "RUNNER_ROOT": "/srv/github-runners/lekalo/worker-02",
+        "CI_DOCKER_NAME": "lekalo-ci-docker-02",
+        "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/usr/local/bin/trust.sh",
+        "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh"
+      },
+      "cpus": 2,
+      "mem_limit": "2560m",
+      "memswap_limit": "2560m",
+      "cgroup_parent": "lekalo-ci-worker02.slice",
+      "volumes": [
+        "/srv/github-runners/lekalo/worker-02:/srv/github-runners/lekalo/worker-02"
+      ],
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "docker03": {
+      "image": "docker:29-dind",
+      "hostname": "lekalo-ci-docker-03",
+      "privileged": true,
+      "restart": "unless-stopped",
+      "environment": {
+        "DOCKER_TLS_CERTDIR": ""
+      },
+      "command": [
+        "--storage-driver=overlay2",
+        "--log-driver=json-file",
+        "--log-opt=max-size=10m",
+        "--log-opt=max-file=3"
+      ],
+      "cpus": 1,
+      "mem_limit": "1536m",
+      "memswap_limit": "1536m",
+      "cgroup_parent": "lekalo-ci-worker03.slice",
+      "volumes": [
+        "docker-data-03:/var/lib/docker",
+        "/srv/github-runners/lekalo/worker-03/_work:/srv/github-runners/lekalo/worker-03/_work"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "docker",
+          "info"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 20
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "runner03": {
+      "image": "local/lekalo-ci-runner:ubuntu24-20261022",
+      "restart": "unless-stopped",
+      "network_mode": "service:docker03",
+      "depends_on": {
+        "docker03": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": {
+        "DOCKER_HOST": "tcp://127.0.0.1:2375",
+        "RUNNER_ROOT": "/srv/github-runners/lekalo/worker-03",
+        "CI_DOCKER_NAME": "lekalo-ci-docker-03",
+        "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/usr/local/bin/trust.sh",
+        "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh"
+      },
+      "cpus": 2,
+      "mem_limit": "2560m",
+      "memswap_limit": "2560m",
+      "cgroup_parent": "lekalo-ci-worker03.slice",
+      "volumes": [
+        "/srv/github-runners/lekalo/worker-03:/srv/github-runners/lekalo/worker-03"
+      ],
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "docker04": {
+      "image": "docker:29-dind",
+      "hostname": "lekalo-ci-docker-04",
+      "privileged": true,
+      "restart": "unless-stopped",
+      "environment": {
+        "DOCKER_TLS_CERTDIR": ""
+      },
+      "command": [
+        "--storage-driver=overlay2",
+        "--log-driver=json-file",
+        "--log-opt=max-size=10m",
+        "--log-opt=max-file=3"
+      ],
+      "cpus": 1,
+      "mem_limit": "1536m",
+      "memswap_limit": "1536m",
+      "cgroup_parent": "lekalo-ci-worker04.slice",
+      "volumes": [
+        "docker-data-04:/var/lib/docker",
+        "/srv/github-runners/lekalo/worker-04/_work:/srv/github-runners/lekalo/worker-04/_work"
+      ],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "docker",
+          "info"
+        ],
+        "interval": "5s",
+        "timeout": "5s",
+        "retries": 20
+      },
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    },
+    "runner04": {
+      "image": "local/lekalo-ci-runner:ubuntu24-20261022",
+      "restart": "unless-stopped",
+      "network_mode": "service:docker04",
+      "depends_on": {
+        "docker04": {
+          "condition": "service_healthy"
+        }
+      },
+      "environment": {
+        "DOCKER_HOST": "tcp://127.0.0.1:2375",
+        "RUNNER_ROOT": "/srv/github-runners/lekalo/worker-04",
+        "CI_DOCKER_NAME": "lekalo-ci-docker-04",
+        "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/usr/local/bin/trust.sh",
+        "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh"
+      },
+      "cpus": 2,
+      "mem_limit": "2560m",
+      "memswap_limit": "2560m",
+      "cgroup_parent": "lekalo-ci-worker04.slice",
+      "volumes": [
+        "/srv/github-runners/lekalo/worker-04:/srv/github-runners/lekalo/worker-04"
+      ],
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "3"
+        }
+      }
+    }
+  },
+  "volumes": {
+    "docker-data-01": null,
+    "docker-data-02": null,
+    "docker-data-03": null,
+    "docker-data-04": null
+  }
+}
