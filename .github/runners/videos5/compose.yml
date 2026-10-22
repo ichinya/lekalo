@@ -42,7 +42,7 @@
       }
     },
     "runner01": {
-      "image": "local/lekalo-ci-runner:ubuntu24-20261022",
+      "image": "local/lekalo-ci-runner:ubuntu24-php83-20261022",
       "restart": "unless-stopped",
       "network_mode": "service:docker01",
       "depends_on": {
@@ -122,7 +122,7 @@
       }
     },
     "runner02": {
-      "image": "local/lekalo-ci-runner:ubuntu24-20261022",
+      "image": "local/lekalo-ci-runner:ubuntu24-php83-20261022",
       "restart": "unless-stopped",
       "network_mode": "service:docker02",
       "depends_on": {
@@ -199,7 +199,7 @@
       }
     },
     "runner03": {
-      "image": "local/lekalo-ci-runner:ubuntu24-20261022",
+      "image": "local/lekalo-ci-runner:ubuntu24-php83-20261022",
       "restart": "unless-stopped",
       "network_mode": "service:docker03",
       "depends_on": {
@@ -276,7 +276,7 @@
       }
     },
     "runner04": {
-      "image": "local/lekalo-ci-runner:ubuntu24-20261022",
+      "image": "local/lekalo-ci-runner:ubuntu24-php83-20261022",
       "restart": "unless-stopped",
       "network_mode": "service:docker04",
       "depends_on": {

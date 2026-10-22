@@ -1,7 +1,9 @@
 # videos5 Linux runner pool
 
 Four registrations, `videos5-lekalo-01` through `videos5-lekalo-04`, share the
-custom label `videos5-lekalo`. Each listener has a separate Ubuntu 24.04
+custom label `videos5-lekalo`. PHP 8.3 and Composer 2 are installed in the
+image so the visible setup-php steps avoid cold release downloads. Each listener
+has a separate Ubuntu 24.04
 container, registration directory, workspace, tool cache and private Docker
 daemon. No host Docker socket is mounted. The runner and its own daemon share
 a network namespace, keeping service-container loopback ports local to that pair.
@@ -20,7 +22,9 @@ Each worker retains its own Actions tool cache and Cargo registry beneath
 `worker-NN/_work/.cache` across executor recreation. Node 24 is seeded into
 the Actions cache from the identical Node binary/npm shipped in the image;
 `setup-node` still selects and verifies the requested version normally.
-Logs rotate at 10 MB with three files retained.
+The Mago installer may reuse an archive from the checksum-keyed tool cache;
+the committed SHA-256 is always verified before extraction and the real-toolchain
+gates always execute. Logs rotate at 10 MB with three files retained.
 `lekalo-ci-runtime.service` starts the pool after Docker on boot.
 
 The pre-job hook is installed in the image, outside the checkout. It rejects

@@ -910,11 +910,20 @@ jobs:
             console.log(artifact.platform, artifact.archive, artifact.archiveSha256);
           ")
           EOF
-          curl -sSfL --retry 3 -o "$RUNNER_TEMP/mago-archive" \
-            "https://github.com/carthage-software/mago/releases/download/${PIN_VERSION}/${ARCHIVE}"
+          ARCHIVE_CACHE="$RUNNER_TOOL_CACHE/mago-archives/$WANT_SHA/$ARCHIVE"
+          if test -f "$ARCHIVE_CACHE"; then
+            cp "$ARCHIVE_CACHE" "$RUNNER_TEMP/mago-archive"
+          else
+            curl -sSfL --retry 3 -o "$RUNNER_TEMP/mago-archive" \
+              "https://github.com/carthage-software/mago/releases/download/${PIN_VERSION}/${ARCHIVE}"
+          fi
           # Fail-closed verification: the downloaded archive must match
           # the pinned digest byte for byte, or the job stops here.
           echo "${WANT_SHA}  $RUNNER_TEMP/mago-archive" | sha256sum --check --strict
+          if test -w "$RUNNER_TOOL_CACHE"; then
+            mkdir -p "$(dirname "$ARCHIVE_CACHE")"
+            cp "$RUNNER_TEMP/mago-archive" "$ARCHIVE_CACHE"
+          fi
           mkdir -p "$RUNNER_TEMP/mago-bin"
           tar -xzf "$RUNNER_TEMP/mago-archive" -C "$RUNNER_TEMP/mago-bin"
           BIN=$(find "$RUNNER_TEMP/mago-bin" -type f -name mago | head -1)

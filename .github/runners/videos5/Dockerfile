@@ -1,5 +1,6 @@
 FROM node:24-bookworm-slim AS node
 FROM docker:29-cli AS dockercli
+FROM composer:2 AS composer
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -37,4 +38,13 @@ RUN curl --proto '=https' --tlsv1.2 -fsS https://sh.rustup.rs -o /tmp/install-ru
     && sh /tmp/install-rust.sh -y --profile minimal --default-toolchain stable --component clippy,rustfmt \
     && rustup toolchain install 1.80.0 --profile minimal --component clippy \
     && rm /tmp/install-rust.sh
+USER root
+RUN add-apt-repository -y ppa:ondrej/php \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends php8.3-cli php8.3-curl php8.3-mbstring \
+        php8.3-xml php8.3-sqlite3 php8.3-mysql php8.3-zip php8.3-bcmath php8.3-intl \
+    && update-alternatives --set php /usr/bin/php8.3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=composer /usr/bin/composer /usr/local/bin/composer
+USER ci-runner
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
