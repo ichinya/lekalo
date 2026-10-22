@@ -6,8 +6,8 @@ container, registration directory, workspace, tool cache and private Docker
 daemon. No host Docker socket is mounted. The runner and its own daemon share
 a network namespace, keeping service-container loopback ports local to that pair.
 
-The pool has an aggregate ceiling of six logical CPUs and 12 GiB RAM. Each
-runner/daemon pair has a separate three GiB memory ceiling; Rust builds use
+The pool has an aggregate ceiling of six logical CPUs and 16 GiB RAM. Each
+runner/daemon pair has a separate four GiB memory ceiling; Rust builds use
 one compiler job to keep Rust compilation within that ceiling. MemoryHigh equals
 MemoryMax so reclaim throttling cannot stall the runner listener below its hard
 budget. Logs rotate at 10 MB with three files retained.

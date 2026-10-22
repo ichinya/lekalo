@@ -59,8 +59,8 @@
         "CARGO_BUILD_JOBS": "1"
       },
       "cpus": 2,
-      "mem_limit": "2560m",
-      "memswap_limit": "2560m",
+      "mem_limit": "3584m",
+      "memswap_limit": "3584m",
       "cgroup_parent": "lekalo-ci-worker01.slice",
       "volumes": [
         "/srv/github-runners/lekalo/worker-01:/srv/github-runners/lekalo/worker-01"
@@ -134,8 +134,8 @@
         "CARGO_BUILD_JOBS": "1"
       },
       "cpus": 2,
-      "mem_limit": "2560m",
-      "memswap_limit": "2560m",
+      "mem_limit": "3584m",
+      "memswap_limit": "3584m",
       "cgroup_parent": "lekalo-ci-worker02.slice",
       "volumes": [
         "/srv/github-runners/lekalo/worker-02:/srv/github-runners/lekalo/worker-02"
@@ -206,8 +206,8 @@
         "CARGO_BUILD_JOBS": "1"
       },
       "cpus": 2,
-      "mem_limit": "2560m",
-      "memswap_limit": "2560m",
+      "mem_limit": "3584m",
+      "memswap_limit": "3584m",
       "cgroup_parent": "lekalo-ci-worker03.slice",
       "volumes": [
         "/srv/github-runners/lekalo/worker-03:/srv/github-runners/lekalo/worker-03"
@@ -278,8 +278,8 @@
         "CARGO_BUILD_JOBS": "1"
       },
       "cpus": 2,
-      "mem_limit": "2560m",
-      "memswap_limit": "2560m",
+      "mem_limit": "3584m",
+      "memswap_limit": "3584m",
       "cgroup_parent": "lekalo-ci-worker04.slice",
       "volumes": [
         "/srv/github-runners/lekalo/worker-04:/srv/github-runners/lekalo/worker-04"
