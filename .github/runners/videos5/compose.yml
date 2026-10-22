@@ -56,7 +56,10 @@
         "CI_DOCKER_NAME": "lekalo-ci-docker-01",
         "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/usr/local/bin/trust.sh",
         "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh",
-        "CARGO_BUILD_JOBS": "1"
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "line-tables-only",
+        "CARGO_PROFILE_TEST_DEBUG": "line-tables-only"
       },
       "cpus": 2,
       "mem_limit": "3584m",
@@ -131,7 +134,10 @@
         "CI_DOCKER_NAME": "lekalo-ci-docker-02",
         "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/usr/local/bin/trust.sh",
         "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh",
-        "CARGO_BUILD_JOBS": "1"
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "line-tables-only",
+        "CARGO_PROFILE_TEST_DEBUG": "line-tables-only"
       },
       "cpus": 2,
       "mem_limit": "3584m",
@@ -203,7 +209,10 @@
         "CI_DOCKER_NAME": "lekalo-ci-docker-03",
         "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/usr/local/bin/trust.sh",
         "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh",
-        "CARGO_BUILD_JOBS": "1"
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "line-tables-only",
+        "CARGO_PROFILE_TEST_DEBUG": "line-tables-only"
       },
       "cpus": 2,
       "mem_limit": "3584m",
@@ -275,7 +284,10 @@
         "CI_DOCKER_NAME": "lekalo-ci-docker-04",
         "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/usr/local/bin/trust.sh",
         "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh",
-        "CARGO_BUILD_JOBS": "1"
+        "CARGO_BUILD_JOBS": "1",
+        "CARGO_INCREMENTAL": "0",
+        "CARGO_PROFILE_DEV_DEBUG": "line-tables-only",
+        "CARGO_PROFILE_TEST_DEBUG": "line-tables-only"
       },
       "cpus": 2,
       "mem_limit": "3584m",

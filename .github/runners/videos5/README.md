@@ -10,7 +10,12 @@ The pool has an aggregate ceiling of six logical CPUs and 16 GiB RAM. Each
 runner/daemon pair has a separate four GiB memory ceiling; Rust builds use
 one compiler job to keep Rust compilation within that ceiling. MemoryHigh equals
 MemoryMax so reclaim throttling cannot stall the runner listener below its hard
-budget. Logs rotate at 10 MB with three files retained.
+budget. Dev/test builds retain line-table backtraces without full type debug
+information and disable incremental state to bound compiler memory. This does
+not disable debug assertions, overflow checks, tests or Clippy warnings. Release
+profiles and GitHub-hosted build-test jobs keep their existing settings. See the
+[Cargo profile documentation](https://doc.rust-lang.org/cargo/reference/profiles.html#debug).
+Logs rotate at 10 MB with three files retained.
 `lekalo-ci-runtime.service` starts the pool after Docker on boot.
 
 The pre-job hook is installed in the image, outside the checkout. It rejects
