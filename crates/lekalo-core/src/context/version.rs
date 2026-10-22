@@ -19,6 +19,22 @@ pub const IDENTITY: &str = "dev.lekalo.context@0.2.16";
 /// The exact wire discriminator of the context contract.
 pub const SCHEMA_VERSION: &str = "lekalo/context/v0.2.16";
 
+/// The exact payload owner for the selected source Model.
+pub const fn identity_for(version: crate::loader::ModelVersion) -> &'static str {
+    match version {
+        crate::loader::ModelVersion::Current => IDENTITY,
+        crate::loader::ModelVersion::Successor => "dev.lekalo.context@0.8.0",
+    }
+}
+
+/// The published discriminator for the selected source Model.
+pub const fn schema_version_for(version: crate::loader::ModelVersion) -> &'static str {
+    match version {
+        crate::loader::ModelVersion::Current => SCHEMA_VERSION,
+        crate::loader::ModelVersion::Successor => "lekalo/context/v0.8.0",
+    }
+}
+
 /// The maximum token budget one capsule request may carry (fatal beyond it).
 pub const MAX_BUDGET_TOKENS: u64 = 1_000_000;
 

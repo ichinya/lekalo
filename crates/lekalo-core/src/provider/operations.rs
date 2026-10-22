@@ -103,7 +103,7 @@ pub const OPERATIONS: [Operation; crate::provider::version::OPERATION_COUNT] = [
     Operation {
         id: "context",
         effect: EffectClass::ReadOnly,
-        outputSchema: crate::context::version::SCHEMA_VERSION,
+        outputSchema: crate::provider::version::CONTEXT_RESULT_SCHEMA,
         requiresProject: true,
         requiresAdapter: false,
     },
@@ -253,7 +253,7 @@ mod tests {
                 .expect("operation")
                 .output_schema()
         };
-        assert_eq!(schema_of("context"), "lekalo/context/v0.2.16");
+        assert_eq!(schema_of("context"), "lekalo/context-result/v0.8.0");
         assert_eq!(schema_of("impact"), "lekalo/impact/v0.2.16");
         assert_eq!(schema_of("doctor"), "lekalo/doctor/v0.3.2");
         assert_eq!(schema_of("status"), "lekalo/doctor/v0.3.2");

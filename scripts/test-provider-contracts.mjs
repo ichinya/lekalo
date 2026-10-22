@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Issue #34 release gate: the workflow-provider discovery boundary.
 // Validates the committed schema (contracts/provider-capabilities
-// .schema.v0.6.4.json), the committed golden manifest fixture, and the
+// .schema.v0.8.0.json), the committed golden manifest fixture, and the
 // live `lekalo provider describe --json` receipt (when the built binary
 // is present) against the same pinned third-party Draft 2020-12
 // implementation as the other contract gates. Cross-checks the closed
@@ -49,14 +49,16 @@ const fail = (reason, detail) => {
 };
 const read = (relative) => JSON.parse(readFileSync(resolve(root, relative), "utf8"));
 
-const schema = read("contracts/provider-capabilities.schema.v0.6.4.json");
+const schema = read("contracts/provider-capabilities.schema.v0.8.0.json");
 const validationReportSchema = read("contracts/validation-report.schema.v0.6.4.json");
 const generateCheckSchema = read("contracts/generate-check-receipt.schema.v0.6.3.json");
-const golden = read("tests/fixtures/provider/describe.golden.json");
+const golden = read("tests/fixtures/provider/describe.v0.8.0.golden.json");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateManifestReceipt = ajv.compile(schema);
 const validateValidationReport = ajv.compile(validationReportSchema);
 const validateGenerateCheck = ajv.compile(generateCheckSchema);
+const legacyManifest=ajv.compile(read("contracts/provider-capabilities.schema.v0.6.4.json"));
+if(!legacyManifest(read("tests/fixtures/provider/describe.golden.json")))fail("legacy-golden-schema",legacyManifest.errors);
 
 let checks = 0;
 
@@ -68,13 +70,13 @@ checks += 1;
 
 // 2. The golden fixture carries exactly the reviewed identity triple.
 const manifest = golden.manifest;
-if (manifest.schemaVersion !== "lekalo/workflow-provider/v0.6.4") {
+if (manifest.schemaVersion !== "lekalo/workflow-provider/v0.8.0") {
   fail("golden-schema-version", manifest.schemaVersion);
 }
-if (manifest.identity !== "dev.lekalo.workflow-provider@0.6.4") {
+if (manifest.identity !== "dev.lekalo.workflow-provider@0.8.0") {
   fail("golden-identity", manifest.identity);
 }
-if (manifest.productVersion !== "0.6.4") {
+if (manifest.productVersion !== "0.8.0") {
   fail("golden-product-version", manifest.productVersion);
 }
 checks += 1;
@@ -114,7 +116,7 @@ const expectedSchemas = new Map([
   ["doctor", "lekalo/doctor/v0.3.2"],
   ["readiness", "lekalo/doctor/v0.3.2"],
   ["impact", "lekalo/impact/v0.2.16"],
-  ["context", "lekalo/context/v0.2.16"],
+  ["context", "lekalo/context-result/v0.8.0"],
   ["validate", "lekalo/validation-report/v0.6.4"],
   ["drift", "lekalo/generate-check/v0.6.3"],
   ["verify", "lekalo/orchestration/v0.2.16"],
@@ -129,7 +131,9 @@ checks += 1;
 
 // 5. Exact pins cover ten output families and the neutral assessment input.
 const expectedPins = [
+  "lekalo/context-result/v0.8.0",
   "lekalo/context/v0.2.16",
+  "lekalo/context/v0.8.0",
   "lekalo/diagnostic/v0.2.16",
   "lekalo/doctor/v0.3.2",
   "lekalo/generate-check/v0.6.3",
@@ -175,7 +179,7 @@ if (`sha256:${sha256Hex(canonicalize(withoutDigest))}` !== manifestDigest) {
 checks += 1;
 
 // 7. No host identity in the committed bytes.
-const goldenText = readFileSync(resolve(root, "tests/fixtures/provider/describe.golden.json"), "utf8");
+const goldenText = readFileSync(resolve(root, "tests/fixtures/provider/describe.v0.8.0.golden.json"), "utf8");
 if (/\\/u.test(goldenText) || /timestamp/u.test(goldenText.toLowerCase())) {
   fail("host-identity-leak", "golden carries a path or timestamp");
 }

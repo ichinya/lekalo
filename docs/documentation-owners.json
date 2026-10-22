@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:2c148834a51c80bdf542afad31a6c4286888c93c8beb6e1c143b7d3aa0bc4aba",
+  "cliSourceDigest": "sha256:fc69b22f37d07a4b98a9125ad332df28029b2e529f965a60366af562fd181b51",
   "p0Pages": [
     {
       "page": "README.md",
@@ -799,8 +799,8 @@
       "kind": "command",
       "command": "context",
       "usage": "lekalo context [OPTIONS] --budget <TOKENS> [SYMBOL]",
-      "helpDigest": "sha256:25a71a86227f35d6edd4eca311ff123d311fb7774d412b51d1b8e96fc001c0a2",
-      "summary": "Build a bounded context capsule for one semantic symbol, or for the explicitly supplied changed symbols. The human projection of the valid result is the agent-facing Markdown; `--json` emits the structured capsule (`lekalo/context/v1.0.0`)",
+      "helpDigest": "sha256:5264f8c292fb76c6d9b49984ee74b8ac236bccf0c9b0600595237b12c549bb70",
+      "summary": "Build a bounded context capsule for one semantic symbol, or for the explicitly supplied changed symbols. The human projection of the valid result is the agent-facing Markdown; `--json` emits the structured capsule (the contract version follows the selected Model)",
       "leaf": true,
       "owner": "docs/context.md",
       "status": "implemented"
@@ -3285,6 +3285,24 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/context-capsule.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/context-capsule.schema.v0.8.0.json",
+      "sourceDigest": "sha256:9b3e73dab4e2d39e2780442772886c03cda17b0eb8bad7f408db01df29a0e251",
+      "owner": "docs/context.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/context-result.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/context-result.schema.v0.8.0.json",
+      "sourceDigest": "sha256:e2f0fcd30e565c9df5c91b7b8dec12bdb4e3c4b8385254b2dd3665363776db51",
+      "owner": "docs/provider-contract.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/contracted-declaration.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/contracted-declaration.schema.v0.2.16.json",
@@ -3918,7 +3936,7 @@
       "id": "contract:contracts/mcp-tool-context-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-context-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:575fbb2512d999eda0b332453b8b723e42a89a4fc850586173e4259a700dc6d2",
+      "sourceDigest": "sha256:3eedb672ded642c20f5a190c130c594332a25452fa89cf80dd017c391ea56827",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3936,7 +3954,7 @@
       "id": "contract:contracts/mcp-tool-graph-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-graph-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:901b5fe753a1443712cd21528ed0e4fa944ed59a700c939db25ac93c3d144921",
+      "sourceDigest": "sha256:414208bedbd2bac0a0b4729a15b4886b49aaa725717089c59ef503f66de6af5d",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4522,6 +4540,15 @@
       "kind": "contract",
       "source": "contracts/provider-capabilities.schema.v0.6.4.json",
       "sourceDigest": "sha256:8a32a35933471b81483cd07bcfea0f78aead3ce8d9a0aacae4db1e65a040227e",
+      "owner": "docs/provider-contract.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/provider-capabilities.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/provider-capabilities.schema.v0.8.0.json",
+      "sourceDigest": "sha256:cc3da3ce9bda42e4e4cb5fb964c9df6c0d8dc53a745bd79c9d209f7c7d39bbd6",
       "owner": "docs/provider-contract.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

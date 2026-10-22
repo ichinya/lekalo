@@ -147,6 +147,7 @@ jobs:
           node scripts/test-privacy-authorization-subject.mjs
           node scripts/test-fixture-provenance.mjs
           node scripts/test-fixture-git.mjs
+          node scripts/test-schema-json.mjs
       - name: Validate documentation ownership and replay metadata (issue #105)
         run: |
           node scripts/test-docs-ownership.mjs --static
@@ -312,9 +313,11 @@ jobs:
       - name: Qualify the real MCP host connection (issue #33)
         env:
           NODE_PATH: ${{ runner.temp }}/lekalo-mcp-sdk/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           node scripts/test-mcp-host.mjs
+          node scripts/test-context-successor.mjs
       - name: Provision the pinned AI Factory extension installer (issue #33)
         run: npm install --prefix "$RUNNER_TEMP/lekalo-ai-factory" --ignore-scripts --no-audit --no-fund --no-save ai-factory@2.19.0
       - name: Qualify the installed AI Factory extension (issue #33)

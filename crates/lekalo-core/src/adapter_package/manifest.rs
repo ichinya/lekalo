@@ -1010,12 +1010,12 @@ mod committed_exemplar_tests {
             .expect("the committed adapter manifest must parse");
         assert_eq!(document.adapter_id(), "lekalo-target-node-typescript");
         assert_eq!(document.adapter_version().as_str(), "0.4.0");
-        // The Drizzle 0.45.4 security update changes the embedded
-        // declaration closure. Keep the exemplar bound to the package
+        // The successor query-input SDK changes the embedded artifact.
+        // Keep the exemplar bound to the rebuilt package
         // digest independently verified by test-adapter-manifest-golden.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:6a2244b188b769920284d78da1c79885caa8835b5d54c948c78ee62877256f6e"
+            "sha256:71ab8bd6dadb2a49cc6f85ea1323272ac239c1787f655fc330752c5611bd7544"
         );
     }
 

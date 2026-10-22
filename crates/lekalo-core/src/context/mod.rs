@@ -65,31 +65,6 @@ pub fn plan(
     compilation: &Compilation,
 ) -> Result<Capsule, DiagnosticSet> {
     let project = &compilation.project;
-    if project.has_command_emissions() {
-        return Err(diagnostic::input_invalid_set(
-            "command-emission-contract-unsupported",
-        ));
-    }
-    if project.has_command_results() {
-        return Err(diagnostic::input_invalid_set(
-            "command-result-contract-unsupported",
-        ));
-    }
-    if project.has_query_inputs() {
-        return Err(diagnostic::input_invalid_set(
-            "query-input-contract-unsupported",
-        ));
-    }
-    if project.has_enum_wire_values() {
-        return Err(diagnostic::input_invalid_set(
-            "enum-wire-contract-unsupported",
-        ));
-    }
-    if project.has_field_defaults() {
-        return Err(diagnostic::input_invalid_set(
-            "field-default-contract-unsupported",
-        ));
-    }
     let graph = crate::graph::build(project)?;
     let effects = crate::effects::build(project)?;
     let inner = select::plan(

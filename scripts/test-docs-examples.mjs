@@ -303,7 +303,7 @@ function check(kind,output,cwd) {
     assert.equal(value.trace.completeness,"full"); assert.equal(value.trace.nodes.length,9);
     assert.equal(value.manifestDigest,sha(JSON.stringify(value.trace)));
   } else if(kind==="provider") {
-    schema("provider-capabilities.schema.v0.6.4.json",value);
+    schema("provider-capabilities.schema.v0.8.0.json",value);
   } else if(kind==="init") {
     assert.ok(existsSync(join(cwd,"lekalo/project.yaml"))); assert.ok(existsSync(join(cwd,"lekalo/modules/planner/module.yaml")));
   } else if(kind==="contract-update") {

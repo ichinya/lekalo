@@ -131,6 +131,29 @@ pub(crate) fn family_of(tool: &str) -> Family {
     }
 }
 
+impl Family {
+    /// Select source-dependent owners from the admitted normalized Model,
+    /// before evaluation and under the existing before/after snapshot fence.
+    fn for_model(mut self, version: lekalo_core::loader::ModelVersion) -> Self {
+        if version == lekalo_core::loader::ModelVersion::Successor {
+            match self.slug {
+                "context" => {
+                    self.discriminator = "lekalo/context/v0.8.0";
+                    self.identity = "dev.lekalo.context@0.8.0";
+                    self.pin = ("context", "0.8.0");
+                }
+                "graph" => {
+                    self.discriminator = "lekalo/graph/v0.8.0";
+                    self.identity = "dev.lekalo.graph@0.8.0";
+                    self.pin = ("graph", "0.8.0");
+                }
+                _ => {}
+            }
+        }
+        self
+    }
+}
+
 /// The parsed view of one reused CLI success/failure envelope. Payload
 /// members stay raw so the preserved core receipt bytes are spliced
 /// verbatim into the MCP output (byte parity with core/CLI); the
@@ -925,6 +948,7 @@ pub(crate) fn admitted_inputs_for(
 
 pub(crate) struct AdmittedProject {
     pub inputs: Inputs,
+    model_version: lekalo_core::loader::ModelVersion,
     trust: lekalo_core::doctor::TrustInputs,
     pub git: lekalo_core::doctor::GitFacts,
 }
@@ -1052,6 +1076,7 @@ pub(crate) fn admit_project_inputs(
     };
     Some(AdmittedProject {
         inputs,
+        model_version: model.model_version,
         trust,
         git: git_facts,
     })
@@ -1121,6 +1146,8 @@ fn run_checked(
             "mcp.backend-unavailable",
         ));
     };
+    let selected_family = family_of(request.tool_name()).for_model(admitted_before.model_version);
+    let family = &selected_family;
     after_admission();
     let result = match request {
         ToolRequest::Inspect {

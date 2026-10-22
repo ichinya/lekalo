@@ -78,7 +78,7 @@ pub struct ProviderManifest {
     schemaVersion: &'static str,
     /// The exact contract identity.
     identity: &'static str,
-    /// The exact producing contract's product generation (`0.6.4`, the
+    /// The exact producing contract's product generation (`0.8.0`, the
     /// implementation commit's product version; may trail a later
     /// binary's `--version`).
     productVersion: &'static str,
@@ -157,8 +157,20 @@ impl ProviderManifest {
     pub fn describe() -> Self {
         let pins = vec![
             ContractPin {
+                schemaVersion: crate::provider::version::CONTEXT_RESULT_SCHEMA,
+                identity: Some("dev.lekalo.context-result@0.8.0"),
+            },
+            ContractPin {
                 schemaVersion: crate::context::version::SCHEMA_VERSION,
                 identity: Some(crate::context::version::IDENTITY),
+            },
+            ContractPin {
+                schemaVersion: crate::context::version::schema_version_for(
+                    crate::loader::ModelVersion::Successor,
+                ),
+                identity: Some(crate::context::version::identity_for(
+                    crate::loader::ModelVersion::Successor,
+                )),
             },
             ContractPin {
                 schemaVersion: crate::diagnostics::version::SCHEMA_VERSION,
@@ -378,7 +390,9 @@ mod tests {
         assert_eq!(
             schemas,
             vec![
+                "lekalo/context-result/v0.8.0",
                 "lekalo/context/v0.2.16",
+                "lekalo/context/v0.8.0",
                 "lekalo/diagnostic/v0.2.16",
                 "lekalo/doctor/v0.3.2",
                 "lekalo/generate-check/v0.6.3",

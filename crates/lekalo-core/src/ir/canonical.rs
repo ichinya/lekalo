@@ -314,7 +314,7 @@ impl EntityDef {
 }
 
 impl RelationDef {
-    fn write_json(&self) -> String {
+    pub(crate) fn write_json(&self) -> String {
         let mut fields: Vec<(&'static str, String)> = Vec::new();
         fields.extend(optional(
             "description",
@@ -349,7 +349,7 @@ impl RelationDef {
 }
 
 impl UniqueConstraintDef {
-    fn write_json(&self) -> String {
+    pub(crate) fn write_json(&self) -> String {
         let mut fields: Vec<(&'static str, String)> = Vec::new();
         fields.push(pair("comparison", literal(self.comparison.as_str())));
         fields.extend(optional(

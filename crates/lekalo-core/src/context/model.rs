@@ -105,17 +105,22 @@ pub(crate) enum Contract {
         base: &'static str,
     },
     Enum {
-        values: Vec<(String, Option<String>)>,
+        values: Vec<WireEnumValue>,
     },
     Fields {
         fields: Vec<WireField>,
         identity: Vec<String>,
+        relations: Vec<crate::ir::RelationDef>,
+        unique_constraints: Vec<crate::ir::UniqueConstraintDef>,
     },
     Command {
         input: Vec<WireField>,
         effects: Vec<String>,
+        returns: Option<WireType>,
+        emits: Vec<String>,
     },
     Query {
+        input: Option<Vec<WireField>>,
         reads: Vec<String>,
         returns: Option<WireType>,
     },
@@ -151,6 +156,14 @@ pub(crate) struct WireField {
     pub name: String,
     pub required: bool,
     pub r#type: WireType,
+    pub default: Option<crate::ir::DefaultValue>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct WireEnumValue {
+    pub value: String,
+    pub description: Option<String>,
+    pub wire_value: Option<crate::ir::DefaultValue>,
 }
 
 /// The structured wire form of a type reference (never a string grammar).
@@ -524,20 +537,50 @@ fn contract_content(contract: &Option<Contract>, parts: &mut Vec<String>) {
     match contract {
         Contract::Scalar { base } => parts.push((*base).to_owned()),
         Contract::Enum { values } => {
-            for (value, description) in values {
-                parts.push(value.clone());
-                parts.extend(description.clone());
+            for value in values {
+                parts.push(value.value.clone());
+                parts.extend(value.description.clone());
+                if let Some(wire) = &value.wire_value {
+                    parts.push(wire.canonical_json());
+                }
             }
         }
-        Contract::Fields { fields, identity } => {
+        Contract::Fields {
+            fields,
+            identity,
+            relations,
+            unique_constraints,
+        } => {
             fields_content(fields, parts);
             parts.extend(identity.iter().cloned());
+            parts.extend(relations.iter().map(crate::ir::RelationDef::write_json));
+            parts.extend(
+                unique_constraints
+                    .iter()
+                    .map(crate::ir::UniqueConstraintDef::write_json),
+            );
         }
-        Contract::Command { input, effects } => {
+        Contract::Command {
+            input,
+            effects,
+            returns,
+            emits,
+        } => {
             fields_content(input, parts);
             parts.extend(effects.iter().cloned());
+            if let Some(returns) = returns {
+                parts.push(returns.spell());
+            }
+            parts.extend(emits.iter().cloned());
         }
-        Contract::Query { reads, returns } => {
+        Contract::Query {
+            input,
+            reads,
+            returns,
+        } => {
+            if let Some(input) = input {
+                fields_content(input, parts);
+            }
             parts.extend(reads.iter().cloned());
             if let Some(returns) = returns {
                 parts.push(returns.spell());
@@ -584,6 +627,9 @@ fn fields_content(fields: &[WireField], parts: &mut Vec<String>) {
             parts.push("required".to_owned());
         }
         parts.push(field.r#type.spell());
+        if let Some(default) = &field.default {
+            parts.push(default.canonical_json());
+        }
     }
 }
 
@@ -595,15 +641,23 @@ fn contract_json(contract: &Contract) -> String {
         }
         Contract::Enum { values } => super::canonical::object(vec![(
             "values",
-            super::canonical::array(values.iter().map(|(value, description)| {
-                let mut fields = vec![("value", super::canonical::string(value))];
-                if let Some(text) = description {
+            super::canonical::array(values.iter().map(|value| {
+                let mut fields = vec![("value", super::canonical::string(&value.value))];
+                if let Some(text) = &value.description {
                     fields.push(("description", super::canonical::string(text)));
+                }
+                if let Some(wire) = &value.wire_value {
+                    fields.push(("wireValue", wire.canonical_json()));
                 }
                 super::canonical::object(fields)
             })),
         )]),
-        Contract::Fields { fields, identity } => {
+        Contract::Fields {
+            fields,
+            identity,
+            relations,
+            unique_constraints,
+        } => {
             let mut fields_json = vec![("fields", fields_json(fields))];
             if !identity.is_empty() {
                 fields_json.push((
@@ -613,20 +667,62 @@ fn contract_json(contract: &Contract) -> String {
                     ),
                 ));
             }
+            if !relations.is_empty() {
+                fields_json.push((
+                    "relations",
+                    super::canonical::array(
+                        relations.iter().map(crate::ir::RelationDef::write_json),
+                    ),
+                ));
+            }
+            if !unique_constraints.is_empty() {
+                fields_json.push((
+                    "uniqueConstraints",
+                    super::canonical::array(
+                        unique_constraints
+                            .iter()
+                            .map(crate::ir::UniqueConstraintDef::write_json),
+                    ),
+                ));
+            }
             super::canonical::object(fields_json)
         }
-        Contract::Command { input, effects } => super::canonical::object(vec![
-            (
-                "effects",
-                super::canonical::array(effects.iter().map(|id| super::canonical::string(id))),
-            ),
-            ("input", fields_json(input)),
-        ]),
-        Contract::Query { reads, returns } => {
+        Contract::Command {
+            input,
+            effects,
+            returns,
+            emits,
+        } => {
+            let mut fields = vec![
+                (
+                    "effects",
+                    super::canonical::array(effects.iter().map(|id| super::canonical::string(id))),
+                ),
+                ("input", fields_json(input)),
+            ];
+            if let Some(returns) = returns {
+                fields.push(("returns", type_json(returns)));
+            }
+            if !emits.is_empty() {
+                fields.push((
+                    "emits",
+                    super::canonical::array(emits.iter().map(|id| super::canonical::string(id))),
+                ));
+            }
+            super::canonical::object(fields)
+        }
+        Contract::Query {
+            input,
+            reads,
+            returns,
+        } => {
             let mut fields = vec![(
                 "reads",
                 super::canonical::array(reads.iter().map(|id| super::canonical::string(id))),
             )];
+            if let Some(input) = input {
+                fields.push(("input", fields_json(input)));
+            }
             fields.push((
                 "returns",
                 match returns {
@@ -685,11 +781,15 @@ fn contract_json(contract: &Contract) -> String {
 
 fn fields_json(fields: &[WireField]) -> String {
     super::canonical::array(fields.iter().map(|field| {
-        super::canonical::object(vec![
+        let mut members = vec![
             ("name", super::canonical::string(&field.name)),
             ("required", super::canonical::boolean(field.required)),
             ("type", type_json(&field.r#type)),
-        ])
+        ];
+        if let Some(default) = &field.default {
+            members.push(("default", default.canonical_json()));
+        }
+        super::canonical::object(members)
     }))
 }
 
@@ -709,26 +809,62 @@ fn contract_markdown(contract: &Option<Contract>, lines: &mut Vec<String>) {
     match contract {
         Contract::Scalar { base } => lines.push(format!("  base: {base}")),
         Contract::Enum { values } => {
-            for (value, description) in values {
-                match description {
-                    Some(text) => lines.push(format!("  value: {value} ({text})")),
-                    None => lines.push(format!("  value: {value}")),
+            for value in values {
+                match &value.description {
+                    Some(text) => lines.push(format!("  value: {} ({text})", value.value)),
+                    None => lines.push(format!("  value: {}", value.value)),
+                }
+                if let Some(wire) = &value.wire_value {
+                    lines.push(format!(
+                        "  wire value {}: {}",
+                        value.value,
+                        wire.canonical_json()
+                    ));
                 }
             }
         }
-        Contract::Fields { fields, identity } => {
+        Contract::Fields {
+            fields,
+            identity,
+            relations,
+            unique_constraints,
+        } => {
             fields_markdown("field", fields, lines);
             if !identity.is_empty() {
                 lines.push(format!("  identity: {}", identity.join(", ")));
             }
+            for relation in relations {
+                lines.push(format!("  relation: {}", relation.write_json()));
+            }
+            for constraint in unique_constraints {
+                lines.push(format!("  unique constraint: {}", constraint.write_json()));
+            }
         }
-        Contract::Command { input, effects } => {
+        Contract::Command {
+            input,
+            effects,
+            returns,
+            emits,
+        } => {
             fields_markdown("input", input, lines);
             if !effects.is_empty() {
                 lines.push(format!("  effects: {}", effects.join(", ")));
             }
+            if let Some(returns) = returns {
+                lines.push(format!("  returns: {}", returns.spell()));
+            }
+            if !emits.is_empty() {
+                lines.push(format!("  emits: {}", emits.join(", ")));
+            }
         }
-        Contract::Query { reads, returns } => {
+        Contract::Query {
+            input,
+            reads,
+            returns,
+        } => {
+            if let Some(input) = input {
+                fields_markdown("input", input, lines);
+            }
             if !reads.is_empty() {
                 lines.push(format!("  reads: {}", reads.join(", ")));
             }
@@ -784,6 +920,13 @@ fn fields_markdown(label: &str, fields: &[WireField], lines: &mut Vec<String>) {
             field.r#type.spell(),
             required
         ));
+        if let Some(default) = &field.default {
+            lines.push(format!(
+                "  default {label} {}: {}",
+                field.name,
+                default.canonical_json()
+            ));
+        }
     }
 }
 

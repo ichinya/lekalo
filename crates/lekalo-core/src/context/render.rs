@@ -9,7 +9,7 @@ use super::canonical::{array, boolean, number, object, string};
 use super::estimate;
 use super::model::{gap_json, manifest_row_json};
 use super::select::Selected;
-use super::version::{IDENTITY, SCHEMA_VERSION};
+use super::version::{identity_for, schema_version_for};
 
 /// The canonical JSON payload bytes of one capsule.
 pub(crate) fn json(capsule: &Selected) -> String {
@@ -55,7 +55,7 @@ pub(crate) fn json(capsule: &Selected) -> String {
             ]),
         ),
         ("gaps", array(capsule.gaps.iter().map(gap_json))),
-        ("identity", string(IDENTITY)),
+        ("identity", string(identity_for(capsule.model_version))),
         ("irDigest", string(&capsule.ir_digest)),
         (
             "manifest",
@@ -83,7 +83,10 @@ pub(crate) fn json(capsule: &Selected) -> String {
             "roots",
             array(capsule.roots.iter().map(|root| string(root))),
         ),
-        ("schemaVersion", string(SCHEMA_VERSION)),
+        (
+            "schemaVersion",
+            string(schema_version_for(capsule.model_version)),
+        ),
         ("sections", object(sections)),
     ];
     if !capsule.spans.is_empty() {
@@ -118,8 +121,14 @@ fn position(position: crate::loader::Position) -> String {
 /// The deterministic Markdown document of one capsule.
 pub(crate) fn markdown(capsule: &Selected) -> String {
     let mut lines: Vec<String> = vec!["# context capsule".to_owned()];
-    lines.push(format!("- identity: {IDENTITY}"));
-    lines.push(format!("- contract: {SCHEMA_VERSION}"));
+    lines.push(format!(
+        "- identity: {}",
+        identity_for(capsule.model_version)
+    ));
+    lines.push(format!(
+        "- contract: {}",
+        schema_version_for(capsule.model_version)
+    ));
     lines.push(format!(
         "- model version: {}",
         capsule.model_version.as_str()

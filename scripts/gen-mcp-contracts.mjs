@@ -15,6 +15,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createSchemaJson } from "./lib/schema-json.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -22,7 +23,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // and resource schemas (review r2 F10/F11): an embedded core payload is
 // described by the exact published upstream definitions, not a bare
 // `type: object`, so a forged nested member fails host validators too.
-const upstream = (name) => JSON.parse(readFileSync(resolve(root, "contracts", name), "utf8"));
+const schemaJson=createSchemaJson();
+const upstream = (name) => schemaJson.parse(readFileSync(resolve(root, "contracts", name), "utf8"));
 // Deep clone with every local `$ref: "#/$defs/X"` rewritten to the
 // prefixed bundled namespace (`#/$defs/<prefix>.X`), so an upstream
 // document bundle can never collide with the MCP-side definitions.
@@ -65,7 +67,9 @@ const bundleDocument = (source, prefix) => {
 const INSPECT = upstream("inspect.schema.v0.8.0.json");
 const IMPACT = upstream("impact.schema.v0.2.16.json");
 const CONTEXT = upstream("context-capsule.schema.v0.2.16.json");
+const CONTEXT8 = upstream("context-capsule.schema.v0.8.0.json");
 const GRAPH = upstream("graph.schema.v0.2.16.json");
+const GRAPH8 = upstream("graph.schema.v0.8.0.json");
 const TRACE = upstream("trace-manifest.schema.v0.2.16.json");
 const VALIDATION = upstream("validation-report.schema.v0.6.4.json");
 const DOCTOR = upstream("doctor.schema.v0.3.2.json");
@@ -97,15 +101,30 @@ const VALIDATION_MERGED_DEFS = () =>
 const INSPECT_BUNDLE = bundleDocument(INSPECT, "inspect");
 const IMPACT_BUNDLE = bundleDocument(IMPACT, "impact");
 const CONTEXT_BUNDLE = bundleDocument(CONTEXT, "context");
+const CONTEXT8_BUNDLE = bundleDocument(CONTEXT8, "context8");
 const GRAPH_BUNDLE = bundleDocument(GRAPH, "graph");
+const GRAPH8_BUNDLE = bundleDocument(GRAPH8, "graph8");
 const TRACE_BUNDLE = bundleDocument(TRACE, "trace");
 const DOCTOR_BUNDLE = bundleDocument(DOCTOR, "doctor");
 const mergeDefs = (...parts) => Object.assign({}, ...parts);const out = (name, document) => {
-  writeFileSync(join(root, "contracts", name), `${JSON.stringify(document, null, 2)}\n`);
+  writeFileSync(join(root, "contracts", name), `${schemaJson.stringify(document, 2)}\n`);
   process.stdout.write(`${name}\n`);
 };
 
 const VERSION = "0.8.0";
+// Workflow discovery names this closed describing contract because the
+// context payload owner depends on the selected Model version.
+out("context-result.schema.v0.8.0.json", {
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  $id: "dev.lekalo.context-result@0.8.0",
+  title: "Lekalo source-version context success receipt",
+  type: "object", additionalProperties: false, required: ["status", "context"],
+  properties: {
+    status: { const: "valid" },
+    context: { oneOf: [{ $ref: "#/$defs/context.Root" }, { $ref: "#/$defs/context8.Root" }] },
+  },
+  $defs: { ...CONTEXT_BUNDLE.defs, ...CONTEXT8_BUNDLE.defs },
+});
 const PROTOCOL_DATE = "2025-11-25";
 const ID_PATTERN = "^[a-z][a-z0-9-]{0,62}$";
 const SYMBOL_PATTERN = "^[A-Za-z][A-Za-z0-9_.-]{0,191}$";
@@ -265,7 +284,15 @@ const outputEnvelope = (tool, toolConst, pins, discriminator, identityConst, res
   ],
   additionalProperties: false,
   if: statusCoherence.if,
-  then: statusCoherence.then,
+  then: {
+    ...statusCoherence.then,
+    // A supported payload alone is insufficient: its owner must match the
+    // source-dependent contract pin selected from the admitted Model.
+    ...(["context", "graph"].includes(tool) ? { allOf: ["0.2.16", "0.8.0"].map(version => ({
+      if: { properties: { contractPins: { type: "object", properties: { [tool]: { const: version } }, required: [tool] } }, required: ["contractPins"] },
+      then: { properties: { result: { $ref: `#/$defs/${tool}Result${version === "0.8.0" ? "8" : "2"}` } } },
+    })) } : {}),
+  },
   else: statusCoherence.else,
   $defs: {
     // A permissive anchor the coherence conditionals reference so every
@@ -398,7 +425,7 @@ out(
 const RESULT_BRANCHES = {
   inspect: pinnedBranch("lekalo/inspect/v0.8.0", "dev.lekalo.inspect@0.8.0", "inspect", "inspect.Root"),
   impact: pinnedBranch("lekalo/impact/v0.2.16", "dev.lekalo.impact@0.2.16", "impact", "impact.Root"),
-  context: pinnedBranch("lekalo/context/v0.2.16", "dev.lekalo.context@0.2.16", "context", "context.Root"),
+  context: { oneOf: [{ $ref: "#/$defs/contextResult2" }, { $ref: "#/$defs/contextResult8" }] },
   "target-status": pinnedBranch("lekalo/doctor/v0.3.2", "dev.lekalo.doctor@0.3.2", "doctor", "doctor.Root"),
   validate: {
     type: "object",
@@ -423,18 +450,7 @@ const RESULT_BRANCHES = {
     required: ["status", "modelVersion", "validation"],
     additionalProperties: false,
   },
-  graph: {
-    type: "object",
-    description:
-      "Mode-tagged receipt: show/callers/path carry the frozen core query payload unchanged; export carries the canonical whole-graph document (lekalo/graph/v0.2.16), the exact bundled upstream document. Mode/branch coherence is semantic.",
-    properties: {
-      mode: { enum: ["show", "callers", "path", "export"] },
-      query: { $ref: "#/$defs/graphQuery" },
-      export: { $ref: "#/$defs/graph.Root" },
-    },
-    required: ["mode"],
-    additionalProperties: false,
-  },
+  graph: { anyOf: [{ $ref: "#/$defs/graphResult2" }, { $ref: "#/$defs/graphResult8" }] },
   "trace-export": {
     type: "object",
     properties: {
@@ -451,8 +467,8 @@ const RESULT_BRANCHES = {
 const toolPins = {
   inspect: { inspect: idConst("0.8.0") },
   impact: { impact: idConst("0.2.16") },
-  context: { context: idConst("0.2.16") },
-  graph: { graph: idConst("0.2.16") },
+  context: { context: { enum: ["0.2.16", "0.8.0"] } },
+  graph: { graph: { enum: ["0.2.16", "0.8.0"] } },
   validate: { validation: idConst("0.6.4") },
   "target-status": { doctor: idConst("0.3.2") },
   "trace-export": { traceManifest: idConst("0.2.16") },
@@ -510,6 +526,20 @@ const GRAPH_QUERY_DEFS = {
 };
 
 const graphQuery = GRAPH_QUERY_DEFS.graphQuery;
+const graphQuery8 = JSON.parse(JSON.stringify(graphQuery).replaceAll("#/$defs/graph.", "#/$defs/graph8."));
+const graphResult = (prefix, queryRef) => ({
+  type: "object",
+  description: "Mode-tagged core receipt; the contract pin selects the exact source-version payload definitions.",
+  properties: {
+    mode: { enum: ["show", "callers", "path", "export"] },
+    query: { $ref: `#/$defs/${queryRef}` },
+    export: { $ref: `#/$defs/${prefix}.Root` },
+  },
+  required: ["mode"], additionalProperties: false,
+  if: { properties: { mode: { const: "export" } }, required: ["mode"] },
+  then: { required: ["export"], properties: { export: {}, query: { not: {} } } },
+  else: { required: ["query"], properties: { query: {}, export: { not: {} } } },
+});
 // The $defs bundle each output schema carries: the diagnosticItem
 // projection (every diagnostics array, with its nested refs rewritten
 // into the `validation.` namespace) plus the exact upstream payload
@@ -520,13 +550,21 @@ const OUTPUT_DEFS_BASE = {
 const OUTPUT_DEFS = {
   inspect: { ...OUTPUT_DEFS_BASE, ...INSPECT_BUNDLE.defs },
   impact: { ...OUTPUT_DEFS_BASE, ...IMPACT_BUNDLE.defs },
-  context: { ...OUTPUT_DEFS_BASE, ...CONTEXT_BUNDLE.defs },
+  context: {
+    ...OUTPUT_DEFS_BASE, ...CONTEXT_BUNDLE.defs, ...CONTEXT8_BUNDLE.defs,
+    contextResult2: pinnedBranch("lekalo/context/v0.2.16", "dev.lekalo.context@0.2.16", "context", "context.Root"),
+    contextResult8: pinnedBranch("lekalo/context/v0.8.0", "dev.lekalo.context@0.8.0", "context", "context8.Root"),
+  },
   graph: {
     ...OUTPUT_DEFS_BASE,
     ...GRAPH_BUNDLE.defs,
+    ...GRAPH8_BUNDLE.defs,
     // The export branch reuses the graph document's own metadata shape.
     "graph.metadata": rewriteRefs(GRAPH.properties.metadata, "graph"),
     graphQuery,
+    graphQuery8,
+    graphResult2: graphResult("graph", "graphQuery"),
+    graphResult8: graphResult("graph8", "graphQuery8"),
   },
   validate: { ...OUTPUT_DEFS_BASE, ...VALIDATION_MERGED_DEFS() },
   "target-status": { ...OUTPUT_DEFS_BASE, ...DOCTOR_BUNDLE.defs },

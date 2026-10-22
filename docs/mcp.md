@@ -38,9 +38,17 @@ every preserved upstream contract keeps its frozen version.
 | `contracts/diagnostic-registry.v0.8.0.json` | M8 grand union: every landed M8 family (`format.*`, `adoption.*`, `portability.*`, `worklog-changelog.*`, `managed.*`, `module-api.*`, `tasklink.*`) plus `mcp.*` (`LEK-MCP-001..011`) and every frozen predecessor entry; all family Rust accessors resolve this same 0.8.0 identity, and the merge-time union guard (`scripts/check-registry-union.mjs`) refuses a registry that drops a landed family. |
 
 Tool output payloads stay byte-identical with the core contracts:
-inspect `0.8.0` (the merged #52 successor), impact `0.2.16`, context `0.2.16`, graph `0.2.16`,
+inspect `0.8.0` (the merged #52 successor), impact `0.2.16`, context and
+graph `0.2.16` for Model 0.2.16 or `0.8.0` for Model 0.8.0,
 validation report `0.6.4`, doctor `0.3.2`, trace manifest `0.2.16`. Each
-`result` member splices the exact core receipt under its pinned
+source-dependent pin is selected from the admitted normalized Model and
+checked under the existing before/after snapshot fence. The successor
+context preserves query inputs, command results and direct emissions,
+defaults (including exact signed 64-bit integers and explicit null), enum
+wire literals, relations and uniqueness constraints in JSON and Markdown.
+The schema accepts an empty sections object when every whole fact is
+explicitly excluded by the budget; facts are never shortened internally.
+Each `result` member splices the exact core receipt under its pinned
 discriminator; graph receipts ride under an explicit `mode` tag with no
 injected discriminator.
 

@@ -319,7 +319,7 @@ enum Commands {
     /// Build a bounded context capsule for one semantic symbol, or for the
     /// explicitly supplied changed symbols. The human projection of the
     /// valid result is the agent-facing Markdown; `--json` emits the
-    /// structured capsule (`lekalo/context/v1.0.0`).
+    /// structured capsule (the contract version follows the selected Model).
     Context {
         /// The semantic id of the symbol (or `kind:id`); exactly one of
         /// this and `--changed` is required.

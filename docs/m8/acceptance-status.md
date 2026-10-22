@@ -32,6 +32,25 @@ belong to #73; the final milestone candidate is not yet qualified.
 
 ## Verified local corrections
 
+- Context 0.8.0 projects query inputs, command results/direct emissions,
+  exact defaults and enum wire literals, relations and uniqueness into
+  JSON and Markdown with whole-fact budget accounting. Model 0.2.16 keeps
+  its old owner and golden. MCP context/graph select their contract pins
+  from the admitted Model under the existing snapshot fence; schemas
+  reject mismatched owner/pin pairs. A real official SDK host gate passes
+  39 calls and four schemas, including both context modes, all four graph
+  modes, a one-token budget and unchanged source/runtime inventory.
+  Workflow-provider 0.8.0 advertises both context owners through a closed
+  source-version success schema; predecessor discovery artifacts stay
+  frozen. Provider core/CLI and legacy context/MCP gates pass locally.
+  Final relocation and milestone acceptance remain separate work.
+- The rebuilt Node bundle's static AI-lint producer receipt and package
+  manifest now carry its actual artifact digest. Five AI-lint gates and
+  both adapter-manifest golden checks pass without model inference.
+  Hosted CI at `569730de` reached the full Rust suite and exposed one
+  remaining predecessor package digest literal in its exemplar test;
+  that literal is corrected to the actual independently verified package.
+  A new hosted run is still required after this correction.
 - Transport-http and client-SDK have exact 0.8.0 projection owners. Successor
   query parameters join canonical Model input facts through query-model;
   required wire coverage, actual IR digests and mixed-version refusals are
