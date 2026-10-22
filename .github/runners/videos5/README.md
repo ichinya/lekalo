@@ -8,7 +8,9 @@ a network namespace, keeping service-container loopback ports local to that pair
 
 The pool has an aggregate ceiling of six logical CPUs and 12 GiB RAM. Each
 runner/daemon pair has a separate three GiB memory ceiling; Rust builds use
-two compiler jobs. Logs rotate at 10 MB with three files retained.
+one compiler job to keep Rust compilation within that ceiling. MemoryHigh equals
+MemoryMax so reclaim throttling cannot stall the runner listener below its hard
+budget. Logs rotate at 10 MB with three files retained.
 `lekalo-ci-runtime.service` starts the pool after Docker on boot.
 
 The pre-job hook is installed in the image, outside the checkout. It rejects

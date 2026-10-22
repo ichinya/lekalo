@@ -55,7 +55,8 @@
         "RUNNER_ROOT": "/srv/github-runners/lekalo/worker-01",
         "CI_DOCKER_NAME": "lekalo-ci-docker-01",
         "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/usr/local/bin/trust.sh",
-        "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh"
+        "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh",
+        "CARGO_BUILD_JOBS": "1"
       },
       "cpus": 2,
       "mem_limit": "2560m",
@@ -129,7 +130,8 @@
         "RUNNER_ROOT": "/srv/github-runners/lekalo/worker-02",
         "CI_DOCKER_NAME": "lekalo-ci-docker-02",
         "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/usr/local/bin/trust.sh",
-        "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh"
+        "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh",
+        "CARGO_BUILD_JOBS": "1"
       },
       "cpus": 2,
       "mem_limit": "2560m",
@@ -200,7 +202,8 @@
         "RUNNER_ROOT": "/srv/github-runners/lekalo/worker-03",
         "CI_DOCKER_NAME": "lekalo-ci-docker-03",
         "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/usr/local/bin/trust.sh",
-        "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh"
+        "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh",
+        "CARGO_BUILD_JOBS": "1"
       },
       "cpus": 2,
       "mem_limit": "2560m",
@@ -271,7 +274,8 @@
         "RUNNER_ROOT": "/srv/github-runners/lekalo/worker-04",
         "CI_DOCKER_NAME": "lekalo-ci-docker-04",
         "ACTIONS_RUNNER_HOOK_JOB_STARTED": "/usr/local/bin/trust.sh",
-        "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh"
+        "ACTIONS_RUNNER_HOOK_JOB_COMPLETED": "/usr/local/bin/cleanup.sh",
+        "CARGO_BUILD_JOBS": "1"
       },
       "cpus": 2,
       "mem_limit": "2560m",
