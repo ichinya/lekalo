@@ -262,6 +262,7 @@ pub(crate) fn prepare(
     if !difference.equal() {
         let after = candidate.canonical_bytes().as_bytes().to_vec();
         prepared.file_edits.push(FileEdit {
+            operation: None,
             path: owner::source::PROJECT_PATH.to_owned(),
             before_digest: registry_digest.clone(),
             after_digest: receipt::bytes_digest(&after),

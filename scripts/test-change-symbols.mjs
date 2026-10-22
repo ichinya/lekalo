@@ -16,10 +16,11 @@ assert(existsSync(bin), "build the checkout CLI first");
 const ajv = new Ajv({ strict: true, allErrors: true });
 const schemas = Object.fromEntries(["request", "plan", "receipt"].map(name => [name, ajv.compile(JSON.parse(readFileSync(join(root, `contracts/change-${name}.schema.v0.8.0.json`), "utf8")))]));
 const stage = mkdtempSync(join(tmpdir(), "lekalo-change-symbols-"));
+let activeStage=stage;
 let calls = 0;
 function run(args, expected = 0) {
   calls++;
-  const result = spawnSync(bin, [...args, "--project", ".", "--json"], { cwd: stage, encoding: "utf8", timeout: 30000, env: { ...process.env, LEKALO_PROJECT: "" } });
+  const result = spawnSync(bin, [...args, "--project", ".", "--json"], { cwd: activeStage, encoding: "utf8", timeout: 30000, env: { ...process.env, LEKALO_PROJECT: "" } });
   assert.equal(result.status, expected, result.stderr || result.stdout);
   const doc = JSON.parse(result.stdout.trim() || result.stderr.trim());
   if (expected === 0 && args[0] === "change") {
@@ -76,8 +77,70 @@ try {
   assert(moved.includes("- title   \r\n"), "a relocated declaration keeps its internal trailing spaces");
   assert(!readFileSync(entities, "utf8").includes("id: tasks.task"));
   run(["validate"]);
-  run(sugar("other.item", "tasks"), 4); // last definition needs retirement protocol
-  console.log(JSON.stringify({ ok: true, calls, commits: 3, replay: true, schemas: 3 }));
+  const returnArgs=sugar("other.item","tasks");
+  const returnSource=readFileSync(join(destination,"entities.yaml"));
+  writeFileSync(join(destination,"entities.yaml"),Buffer.concat([Buffer.from("# keep document note\n"),returnSource]));
+  run(returnArgs,3);
+  assert(readFileSync(join(destination,"entities.yaml")).includes(Buffer.from("# keep document note")));
+  writeFileSync(join(destination,"entities.yaml"),returnSource);
+  const returning=run(returnArgs);
+  const retirement=returning.fileEdits.find(edit=>edit.operation==="delete");
+  assert.equal(retirement.path,"lekalo/modules/physical-other/entities.yaml");
+  assert(existsSync(join(destination,"entities.yaml")),"preview leaves the source home intact");
+  const returnApply=[...returnArgs,"--apply","--idempotency-key","symbol-last-home","--expect-plan",returning.planId];
+  assert.equal(run(returnApply).state,"committed");
+  assert(!existsSync(join(destination,"entities.yaml")),"last definition retires its canonical kind home");
+  assert(readFileSync(entities,"utf8").includes("id: tasks.item"));
+  assert.equal(run(returnApply).state,"replayed");
+  run(["validate"]);
+  // A newly planted empty file is not an absent retired home, even though
+  // its ordinary byte digest equals the absence sentinel.
+  writeFileSync(join(destination,"entities.yaml"),"");
+  run(returnApply,1);
+  rmSync(join(destination,"entities.yaml"));
+  assert.equal(run(returnApply).state,"replayed");
+  const nested=join(stage,"nested-members");
+  cpSync(join(root,"tests/fixtures/change/field-vertical"),nested,{recursive:true,filter:path=>!/[\\/]\.lekalo$/.test(path)});
+  for(const file of ["lekalo/project.yaml","lekalo/modules/tasks/module.yaml","lekalo/modules/tasks/entities.yaml"]) {
+    const path=join(nested,file);writeFileSync(path,readFileSync(path,"utf8").replaceAll("0.2.16","0.8.0"));
+  }
+  const nestedSource=join(nested,"lekalo/modules/tasks/entities.yaml");
+  writeFileSync(nestedSource,readFileSync(nestedSource,"utf8")+`    relations:
+      - id: tasks.rel.task.parent
+        target: tasks.task
+        localFields:
+          - title
+        targetFields:
+          - title
+        min: 0
+        max: null
+        ownership: local
+        onDetach: retain-history
+        onDelete: restrict
+    uniqueConstraints:
+      - id: tasks.unique.task.title
+        fields:
+          - title
+        comparison: declared-normalization
+        normalizationRef: tasks.text
+        scope: global
+`);
+  mkdirSync(join(nested,"lekalo/modules/other"));
+  writeFileSync(join(nested,"lekalo/modules/other/module.yaml"),"schema_version: '0.8.0'\ndefinitions:\n  - id: other\n    kind: module\n    version: 1\n");
+  activeStage=nested;
+  const nestedApply=[...sugar("tasks.task","other","item"),"--apply","--idempotency-key","nested-member-owner"];
+  assert.equal(run(nestedApply).state,"committed");
+  const nestedIr=run(["load","--ir"]).ir;
+  const nestedEntity=nestedIr.definitions.find(definition=>definition.id==="other.item");
+  assert.equal(nestedEntity.relations[0].id,"tasks.rel.task.parent");
+  assert.equal(nestedEntity.relations[0].target,"other.item");
+  assert.equal(nestedEntity.uniqueConstraints[0].id,"tasks.unique.task.title");
+  assert.equal(nestedEntity.uniqueConstraints[0].normalizationRef,"tasks.text");
+  const registry=nestedIr.project.id_registry.rename_history;
+  assert.deepEqual(registry.map(edge=>[edge.from,edge.to]),[["tasks.task","other.item"]],"member IDs never masquerade as renamed definitions");
+  run(["validate"]);
+  assert.equal(run(nestedApply).state,"replayed");
+  console.log(JSON.stringify({ ok: true, calls, commits: 5, replay: true, schemas: 3,retiredHome:true,stableNestedMembers:true }));
 } finally {
   rmSync(stage, { recursive: true, force: true });
 }

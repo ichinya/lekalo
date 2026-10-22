@@ -97,6 +97,7 @@ pub(crate) const STATE_COMMITTED: &str = "committed";
 /// One staged replacement: the target logical path, its verified backup,
 /// and the exact prospective bytes.
 struct StagedFile {
+    deletion: bool,
     target: PathBuf,
     logical: String,
     backup: Option<PathBuf>,
@@ -253,6 +254,7 @@ impl Transaction {
         let files: Vec<JournalFile> = replacements
             .iter()
             .map(|replacement| JournalFile {
+                deletion: replacement.deletion,
                 path: replacement.logical.clone(),
                 before_digest: replacement.before_digest.clone(),
                 after_digest: replacement.after_digest.clone(),
@@ -370,6 +372,13 @@ impl Transaction {
         index: usize,
         plan: &ReplacementPlan,
     ) -> Result<(), ChangeError> {
+        if plan.deletion
+            && (plan.creation
+                || module_kind_home(&plan.logical).is_none()
+                || !plan.after_bytes.is_empty())
+        {
+            return Err(ChangeError::WriteBoundaryDenied);
+        }
         let target = validated_target(&self.root, &plan.logical)?;
         let current = match read_target_bytes(&self.root, &plan.logical) {
             Ok(bytes) => bytes,
@@ -409,6 +418,7 @@ impl Transaction {
             Some(path)
         };
         self.staged.push(StagedFile {
+            deletion: plan.deletion,
             target,
             logical: plan.logical.clone(),
             backup,
@@ -476,8 +486,16 @@ impl Transaction {
                     })
                 };
             }
-            if write_same_dir(&staged.target, &staged.after_bytes).is_err() {
-                return if self.restore_prefix(replaced) {
+            let write_result = if staged.deletion {
+                remove_kind_home(&self.root, &staged.logical)
+            } else {
+                write_same_dir(&staged.target, &staged.after_bytes)
+            };
+            if write_result.is_err() {
+                // A deletion can succeed before its directory sync fails.
+                // Include that member in rollback even on an error return.
+                let restore_count = replaced + usize::from(staged.deletion);
+                return if self.restore_prefix(restore_count) {
                     Err(ChangeError::CommitFailed {
                         transaction: self.id.clone(),
                         detail: "replace",
@@ -491,9 +509,15 @@ impl Transaction {
             replaced += 1;
         }
         for staged in &self.staged {
-            let verified = read_target_bytes(&self.root, &staged.logical).map(|bytes| {
-                format!("sha256:{}", crate::digest::sha256_hex(&bytes)) == staged.after_digest
-            });
+            let verified = match read_target_bytes(&self.root, &staged.logical) {
+                Err(error) if staged.deletion && error.kind() == std::io::ErrorKind::NotFound => {
+                    Ok(true)
+                }
+                Ok(_) if staged.deletion => Ok(false),
+                result => {
+                    result.map(|bytes| super::receipt::bytes_digest(&bytes) == staged.after_digest)
+                }
+            };
             match verified {
                 Ok(true) => {}
                 _ => {
@@ -565,7 +589,8 @@ impl Transaction {
     fn rollback_bytes(&self, index: usize, staged: &StagedFile) -> Result<Option<Vec<u8>>, ()> {
         validated_target(&self.root, &staged.logical).map_err(|_| ())?;
         let current = match read_target_bytes(&self.root, &staged.logical) {
-            Ok(bytes) => bytes,
+            Ok(bytes) => Some(bytes),
+            Err(error) if staged.deletion && error.kind() == std::io::ErrorKind::NotFound => None,
             Err(error)
                 if staged.backup.is_none() && error.kind() == std::io::ErrorKind::NotFound =>
             {
@@ -573,11 +598,13 @@ impl Transaction {
             }
             Err(_) => return Err(()),
         };
-        let digest = super::receipt::bytes_digest(&current);
-        if staged.backup.is_some() && digest == staged.before_digest {
+        let digest = current.as_deref().map(super::receipt::bytes_digest);
+        if staged.backup.is_some() && digest.as_ref() == Some(&staged.before_digest) {
             return Ok(None);
         }
-        if digest != staged.after_digest {
+        if (staged.deletion && digest.is_some())
+            || (!staged.deletion && digest.as_ref() != Some(&staged.after_digest))
+        {
             return Err(());
         }
         if staged.backup.is_none() {
@@ -650,6 +677,7 @@ impl Transaction {
 /// One planned file replacement handed to [`Transaction::begin`] and
 /// [`Transaction::stage`].
 pub(crate) struct ReplacementPlan {
+    pub deletion: bool,
     pub logical: String,
     pub before_digest: String,
     pub after_digest: String,
@@ -669,6 +697,8 @@ pub(crate) struct ReplacementPlan {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct JournalFile {
+    #[serde(default)]
+    deletion: bool,
     path: String,
     #[serde(rename = "beforeDigest")]
     before_digest: String,
@@ -891,12 +921,16 @@ fn pending_record_json(record: &PendingRecord) -> Json {
 
 /// The canonical JSON projection of one journaled file pin.
 fn journal_file_json(file: &JournalFile) -> Json {
-    serde_json::json!({
+    let mut value = serde_json::json!({
         "path": file.path,
         "beforeDigest": file.before_digest,
         "afterDigest": file.after_digest,
         "creation": file.creation,
-    })
+    });
+    if file.deletion {
+        value["deletion"] = Json::Bool(true);
+    }
+    value
 }
 
 /// Best-effort removal of one transaction's pending record (the journal
@@ -943,6 +977,7 @@ fn verify_journal_provenance(root: &Path, journal: &Journal) -> Result<(), Chang
                     && pinned.before_digest == claimed.before_digest
                     && pinned.after_digest == claimed.after_digest
                     && pinned.creation == claimed.creation
+                    && pinned.deletion == claimed.deletion
             });
     let states_explained = match (state_rank(&record.state), state_rank(&journal.state)) {
         (Some(record_rank), Some(journal_rank)) => {
@@ -1282,7 +1317,7 @@ fn load_validated_journal(
 
 /// The module directory and kind stem of one canonical kind-home path
 /// (`lekalo/modules/<dir>/<stem>.yaml`), or `None` for any other shape.
-fn module_kind_home(path: &str) -> Option<(&str, &str)> {
+pub(super) fn module_kind_home(path: &str) -> Option<(&str, &str)> {
     let rest = path.strip_prefix("lekalo/modules/")?;
     let (dir, file) = rest.split_once('/')?;
     if dir.is_empty() || file.contains('/') {
@@ -1320,6 +1355,13 @@ fn validate_journal_targets(root: &Path, journal: &Journal) -> Result<(), Change
     };
     let mut seen: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for file in &journal.files {
+        if file.deletion
+            && (file.creation
+                || module_kind_home(&file.path).is_none()
+                || file.after_digest != super::absent_digest())
+        {
+            return Err(ChangeError::WriteBoundaryDenied);
+        }
         if !seen.insert(file.path.as_str()) {
             return Err(ChangeError::CommitFailed {
                 transaction: journal.transaction.clone(),
@@ -1402,6 +1444,7 @@ fn restorations_of(
                 detail: "journal-after-digest",
             })?;
             restorations.push(Restoration {
+                deletion: false,
                 path: file.path.clone(),
                 target,
                 backup: None,
@@ -1422,6 +1465,7 @@ fn restorations_of(
             validate_backup(root, &journal.transaction, index, true)?;
         }
         restorations.push(Restoration {
+            deletion: file.deletion,
             path: file.path.clone(),
             target,
             backup: Some(journal_dir.join(BACKUPS_NAME).join(index.to_string())),
@@ -1447,6 +1491,14 @@ pub(crate) fn require_durably_committed(root: &Path, transaction: &str) -> Resul
     }
     let restorations = restorations_of(root, &journal_dir, &journal)?;
     for restoration in &restorations {
+        if restoration.deletion {
+            if target_digest(root, restoration, transaction)?.is_none() {
+                continue;
+            }
+            return Err(ChangeError::RecoveryRequired {
+                transaction: transaction.to_owned(),
+            });
+        }
         let Some(digest) = target_digest(root, restoration, transaction)? else {
             return Err(ChangeError::RecoveryRequired {
                 transaction: transaction.to_owned(),
@@ -1470,6 +1522,12 @@ fn recover_staging(
     restorations: &[Restoration],
 ) -> Result<RecoveryResult, ChangeError> {
     for restoration in restorations {
+        if restoration.deletion && target_digest(root, restoration, transaction)?.is_none() {
+            return Err(ChangeError::CommitFailed {
+                transaction: transaction.to_owned(),
+                detail: "staging-state-contradiction",
+            });
+        }
         let Some(digest) = target_digest(root, restoration, transaction)? else {
             continue; // absent target: never replaced
         };
@@ -1548,7 +1606,7 @@ fn recover_replacing(
             (Some(_), Some(digest)) if digest == restoration.before_digest => true,
             // Still carrying (or indistinguishable from) the transaction's
             // own prospective bytes: restored from the verified backup.
-            (Some(_), Some(digest)) => digest == restoration.after_digest,
+            (Some(_), Some(digest)) => !restoration.deletion && digest == restoration.after_digest,
         };
         if !explained {
             return Err(ChangeError::PreconditionFailed {
@@ -1587,7 +1645,7 @@ fn recover_replacing(
                     let digest = format!("sha256:{}", crate::digest::sha256_hex(&bytes));
                     if digest == restoration.before_digest {
                         Ok(())
-                    } else if digest == restoration.after_digest {
+                    } else if !restoration.deletion && digest == restoration.after_digest {
                         std::fs::read(backup)
                             .and_then(|original| write_same_dir(&restoration.target, &original))
                     } else {
@@ -1657,6 +1715,14 @@ fn recover_committed(
     restorations: &[Restoration],
 ) -> Result<RecoveryResult, ChangeError> {
     for restoration in restorations {
+        if restoration.deletion {
+            if target_digest(root, restoration, transaction)?.is_none() {
+                continue;
+            }
+            return Err(ChangeError::RecoveryRequired {
+                transaction: transaction.to_owned(),
+            });
+        }
         // A committed transaction's every target must still carry the
         // exact committed bytes; a missing or drifted target is an
         // unknown state and fails closed with the barrier retained.
@@ -1691,7 +1757,12 @@ fn recover_committed(
             path: restoration.path.clone(),
             before_digest: restoration.before_digest.clone(),
             after_digest: restoration.after_digest.clone(),
-            outcome: "replaced".to_owned(),
+            outcome: if restoration.deletion {
+                "removed"
+            } else {
+                "replaced"
+            }
+            .to_owned(),
         })
         .collect();
     Ok(RecoveryResult {
@@ -1744,6 +1815,7 @@ fn bind_pending(transaction: &str) -> impl Fn(ChangeError) -> ChangeError + '_ {
 
 /// One validated restoration plan of the recovery pass.
 struct Restoration {
+    deletion: bool,
     /// The journaled logical path (receipt evidence only).
     path: String,
     target: PathBuf,
@@ -1779,6 +1851,64 @@ fn temp_suffix() -> String {
 /// predicted and hard-linked before creation (round 2, finding 2).
 fn write_same_dir(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
     publish_same_dir(target, bytes, false)
+}
+
+/// Only a canonical kind home may be retired. Pin every parent so a
+/// concurrent parent-to-link swap cannot redirect the deletion.
+#[cfg(unix)]
+fn remove_kind_home(root: &Path, logical: &str) -> std::io::Result<()> {
+    use rustix::fs::{openat, unlinkat, AtFlags, Mode, OFlags, CWD};
+    if module_kind_home(logical).is_none() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "kind-home",
+        ));
+    }
+    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let mut parent = openat(CWD, root, flags, Mode::empty())?;
+    let (home, leaf) = logical.rsplit_once('/').expect("kind home");
+    for segment in home.split('/') {
+        parent = openat(&parent, segment, flags, Mode::empty())?;
+    }
+    unlinkat(&parent, leaf, AtFlags::empty())?;
+    std::fs::File::from(parent).sync_all()
+}
+
+#[cfg(windows)]
+fn remove_kind_home(root: &Path, logical: &str) -> std::io::Result<()> {
+    use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ, FILE_SHARE_WRITE,
+    };
+    if module_kind_home(logical).is_none() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "kind-home",
+        ));
+    }
+    let (home, _) = logical.rsplit_once('/').expect("kind home");
+    let mut paths = vec![root.to_path_buf()];
+    for segment in home.split('/') {
+        paths.push(paths.last().expect("root").join(segment));
+    }
+    let mut parents = Vec::new();
+    for path in paths {
+        let parent = std::fs::OpenOptions::new()
+            .access_mode(FILE_READ_ATTRIBUTES)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)?;
+        let metadata = parent.metadata()?;
+        if !metadata.is_dir() || metadata.file_attributes() & 0x400 != 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "kind-parent-link",
+            ));
+        }
+        parents.push(parent);
+    }
+    std::fs::remove_file(root.join(logical.replace('/', std::path::MAIN_SEPARATOR_STR)))
 }
 
 /// Publish only the fixed custody home, atomically and without replacing
@@ -1899,6 +2029,116 @@ mod tests {
     use super::*;
     use crate::project_writer::WriterLock;
 
+    fn retirement_fixture() -> (tempfile::TempDir, Transaction, ReplacementPlan) {
+        let root = tempfile::tempdir().unwrap();
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/change/field-vertical");
+        for logical in [
+            "lekalo/project.yaml",
+            "lekalo/modules/tasks/module.yaml",
+            "lekalo/modules/tasks/entities.yaml",
+        ] {
+            let target = root.path().join(logical);
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            std::fs::copy(fixture.join(logical), target).unwrap();
+        }
+        let logical = "lekalo/modules/tasks/entities.yaml";
+        let before = std::fs::read(root.path().join(logical)).unwrap();
+        let plan = ReplacementPlan {
+            deletion: true,
+            creation: false,
+            logical: logical.to_owned(),
+            before_digest: super::super::receipt::bytes_digest(&before),
+            after_digest: super::super::absent_digest(),
+            after_bytes: Vec::new(),
+        };
+        let transaction = Transaction::begin(
+            root.path(),
+            "change-retirement001",
+            &format!("sha256:{}", "0".repeat(64)),
+            std::slice::from_ref(&plan),
+        )
+        .unwrap();
+        (root, transaction, plan)
+    }
+
+    #[test]
+    fn retirement_restores_verified_source_and_repeats_safely() {
+        let (root, mut transaction, plan) = retirement_fixture();
+        let before = std::fs::read(root.path().join(&plan.logical)).unwrap();
+        transaction.stage(0, &plan).unwrap();
+        transaction.mark_state(STATE_REPLACING).unwrap();
+        transaction.replace_all().unwrap();
+        assert!(!root.path().join(&plan.logical).exists());
+        assert!(transaction.restore_prefix(1));
+        assert_eq!(
+            std::fs::read(root.path().join(&plan.logical)).unwrap(),
+            before
+        );
+        assert!(transaction.restore_prefix(1));
+    }
+
+    #[test]
+    fn retirement_cas_and_rollback_preserve_foreign_bytes_including_empty_files() {
+        let (root, mut transaction, plan) = retirement_fixture();
+        transaction.stage(0, &plan).unwrap();
+        transaction.mark_state(STATE_REPLACING).unwrap();
+        std::fs::write(root.path().join(&plan.logical), b"foreign before delete").unwrap();
+        assert!(transaction.replace_all().is_err());
+        assert_eq!(
+            std::fs::read(root.path().join(&plan.logical)).unwrap(),
+            b"foreign before delete"
+        );
+        // The removal state requires actual absence, not the empty-file hash.
+        std::fs::write(root.path().join(&plan.logical), b"").unwrap();
+        assert!(!transaction.restore_prefix(1));
+        assert!(transaction.journal_dir.join(JOURNAL_NAME).is_file());
+        assert!(root.path().join(&plan.logical).is_file());
+    }
+
+    #[test]
+    fn retirement_recovery_restores_after_a_crash_and_refuses_corrupt_backups() {
+        for corrupt in [false, true] {
+            let (root, mut transaction, plan) = retirement_fixture();
+            let before = std::fs::read(root.path().join(&plan.logical)).unwrap();
+            transaction.stage(0, &plan).unwrap();
+            transaction.mark_state(STATE_REPLACING).unwrap();
+            transaction.replace_all().unwrap();
+            if corrupt {
+                std::fs::write(transaction.staged[0].backup.as_ref().unwrap(), b"corrupt").unwrap();
+            }
+            let outcome = recover(root.path(), &transaction.id);
+            if corrupt {
+                assert!(outcome.is_err());
+                assert!(!root.path().join(&plan.logical).exists());
+                assert!(transaction.journal_dir.join(JOURNAL_NAME).is_file());
+            } else {
+                assert!(!outcome.unwrap().committed);
+                assert_eq!(
+                    std::fs::read(root.path().join(&plan.logical)).unwrap(),
+                    before
+                );
+                assert!(!transaction.journal_dir.exists());
+            }
+        }
+    }
+
+    #[test]
+    fn retirement_committed_verification_requires_absence_and_staging_cannot_claim_deletion() {
+        let (root, mut transaction, plan) = retirement_fixture();
+        transaction.stage(0, &plan).unwrap();
+        // A staging journal never explains a missing original.
+        remove_kind_home(root.path(), &plan.logical).unwrap();
+        assert!(recover(root.path(), &transaction.id).is_err());
+        assert!(transaction.journal_dir.exists());
+        transaction.mark_state(STATE_REPLACING).unwrap();
+        transaction.mark_state(STATE_COMMITTED).unwrap();
+        assert!(require_durably_committed(root.path(), &transaction.id).is_ok());
+        std::fs::write(root.path().join(&plan.logical), b"").unwrap();
+        assert!(require_durably_committed(root.path(), &transaction.id).is_err());
+        assert!(transaction.journal_dir.exists());
+    }
+
     fn applied_rollback_fixture(creation: bool) -> (tempfile::TempDir, Transaction, PathBuf) {
         let root = tempfile::tempdir().unwrap();
         let logical = "lekalo/modules/tasks/entities.yaml";
@@ -1908,6 +2148,7 @@ mod tests {
             std::fs::write(&target, b"before\n").unwrap();
         }
         let plan = ReplacementPlan {
+            deletion: false,
             logical: logical.to_owned(),
             before_digest: super::super::receipt::bytes_digest(if creation {
                 b""
@@ -1991,6 +2232,7 @@ mod tests {
         let backup = transaction.journal_dir.join(BACKUPS_NAME).join("1");
         std::fs::write(&backup, b"before two\n").unwrap();
         transaction.staged.push(StagedFile {
+            deletion: false,
             target: second.clone(),
             logical: "lekalo/modules/tasks/commands.yaml".to_owned(),
             backup: Some(backup),
@@ -2069,6 +2311,7 @@ mod tests {
             ]
             .into_iter()
             .map(|(path, bytes)| JournalFile {
+                deletion: false,
                 path: path.to_owned(),
                 before_digest: super::super::absent_digest(),
                 after_digest: super::super::receipt::bytes_digest(bytes),
@@ -2353,6 +2596,7 @@ mod tests {
             plan_id: zeros.to_owned(),
             state: STATE_STAGING.to_owned(),
             files: vec![JournalFile {
+                deletion: false,
                 path: "lekalo/modules/tasks/entities.yaml".to_owned(),
                 before_digest: zeros.to_owned(),
                 after_digest: zeros.to_owned(),
@@ -2368,6 +2612,7 @@ mod tests {
             plan_id: zeros.to_owned(),
             state: state.to_owned(),
             files: vec![JournalFile {
+                deletion: false,
                 path: "lekalo/modules/tasks/entities.yaml".to_owned(),
                 before_digest: zeros.to_owned(),
                 after_digest: after.to_owned(),

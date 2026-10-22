@@ -4363,13 +4363,23 @@ fn query_input_type_and_description_edits_preserve_inline_comments_and_quoted_ap
     let path = sandbox.root.join("lekalo/modules/tasks/queries.yaml");
     std::fs::write(&path, "schema_version: \"0.8.0\"\r\ndefinitions:\r\n  - id: tasks.list\r\n    kind: query\r\n    version: 1\r\n    reads:\r\n      - tasks.task\r\n    input:\r\n      - name: search\r\n        type: 'tasks.text' # keep type note\r\n        description: 'old description' # keep description note").unwrap();
     let compilation = compiled_sandbox(&sandbox);
-    assert!(lekalo_core::context::plan(
+    let capsule = lekalo_core::context::plan(
         &lekalo_core::context::CapsuleScope::Symbol("tasks.list".to_owned()),
         2000,
         false,
-        &compilation
+        &compilation,
     )
-    .is_err());
+    .expect("successor query input context");
+    let capsule: serde_json::Value = serde_json::from_str(&capsule.to_canonical_json()).unwrap();
+    assert_eq!(capsule["schemaVersion"], "lekalo/context/v0.8.0");
+    assert_eq!(
+        capsule["sections"]["symbol"][0]["contract"]["input"][0]["name"],
+        "search"
+    );
+    assert_eq!(
+        capsule["sections"]["symbol"][0]["contract"]["input"][0]["type"],
+        serde_json::json!({"ref":"tasks.text"})
+    );
     let request = query_inputs_request(
         serde_json::json!([{"name":"search", "type":{"ref":"tasks.bool"}, "description":"can't"}]),
     );
@@ -4576,13 +4586,19 @@ fn structured_enum_wire_values_are_data_and_survive_symbol_relocation() {
         .as_object()
         .unwrap()
         .contains_key("wireValue"));
-    assert!(lekalo_core::context::plan(
+    let capsule = lekalo_core::context::plan(
         &lekalo_core::context::CapsuleScope::Symbol("tasks.priority".to_owned()),
         2000,
         false,
-        &compilation
+        &compilation,
     )
-    .is_err());
+    .expect("successor enum wire context");
+    let capsule: serde_json::Value = serde_json::from_str(&capsule.to_canonical_json()).unwrap();
+    assert_eq!(capsule["schemaVersion"], "lekalo/context/v0.8.0");
+    assert_eq!(
+        capsule["sections"]["symbol"][0]["contract"]["values"],
+        serde_json::Value::Array(values.clone())
+    );
 }
 
 #[test]
@@ -4623,15 +4639,31 @@ fn successor_defaults_survive_all_field_writers_and_default_only_diff() {
     apply_request(&sandbox, &request, "default-writers", false).unwrap();
     let load = lekalo_core::loader::normalize_model(&sandbox.selection()).unwrap();
     let compiled = lekalo_core::ir::compile(&load).unwrap();
-    assert!(
-        lekalo_core::context::plan(
-            &lekalo_core::context::CapsuleScope::Symbol("tasks.task".to_owned()),
-            2000,
-            false,
-            &compiled
-        )
-        .is_err(),
-        "the frozen capsule must not silently drop defaults"
+    let capsule = lekalo_core::context::plan(
+        &lekalo_core::context::CapsuleScope::Symbol("tasks.task".to_owned()),
+        2000,
+        false,
+        &compiled,
+    )
+    .expect("successor context preserves defaults");
+    let capsule: serde_json::Value = serde_json::from_str(&capsule.to_canonical_json()).unwrap();
+    assert_eq!(capsule["schemaVersion"], "lekalo/context/v0.8.0");
+    let context_fields = capsule["sections"]["symbol"][0]["contract"]["fields"]
+        .as_array()
+        .unwrap();
+    assert!(context_fields
+        .iter()
+        .find(|field| field["name"] == "nullable")
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .contains_key("default"));
+    assert_eq!(
+        context_fields
+            .iter()
+            .find(|field| field["name"] == "snapshot")
+            .unwrap()["default"],
+        serde_json::json!({"title":"saved","done":false})
     );
     let ir: serde_json::Value =
         serde_json::from_str(&compiled.project.to_canonical_json()).unwrap();

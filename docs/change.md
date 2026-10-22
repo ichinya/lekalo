@@ -129,11 +129,20 @@ semantic/file diffs and impact/generation plans. Generation is a separate action
 Moves are standalone requests. Cross-module relocation uses the destination
 module's declaring physical directory, preserves the original kind filename,
 qualifies outgoing short references, and either appends to that kind home or
-creates it transactionally. A dependency cycle refuses before writing. Moving
-the last definition out of a kind home, relocating nested relation/uniqueness
-identities, and rewriting separately owned attachments are not implemented yet.
-Those cases explicitly refuse; they are still required follow-up work for #73.
-An existing project error registry also refuses. Other unsupported reference
+creates it transactionally. A dependency cycle refuses before writing.
+Moving the last definition retires its old kind home through the same sealed
+transaction. Preview marks that file edit as `operation: delete`; the receipt
+records `removed` with the absence digest. Staging backs up the exact source,
+apply checks its preimage before unlinking, and rollback/recovery verifies
+the backup and preserves later user changes. A present empty file never
+counts as an absent retired home. Document-level comments outside the moved
+definition refuse retirement so they cannot be silently discarded.
+Relation and uniqueness IDs are stable member identities, not definition
+or module IDs: a move preserves them verbatim, including four-segment IDs.
+Their typed entity targets and normalization references still follow Model
+reference rewrites; member IDs do not enter definition rename history.
+Rewriting separately owned attachments remains unsupported. An existing
+project error registry also refuses. Other unsupported reference
 attachments must be absent (scenario/type/operation/route homes may be empty);
 these absence/home guards are included in the plan inputs and rechecked under
 the writer lock and before commit. Adding even an empty attachment after

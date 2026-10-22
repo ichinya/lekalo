@@ -215,6 +215,7 @@ pub(crate) fn prepare_confirmation(
         });
     }
     prepared.file_edits.push(plan::FileEdit {
+        operation: None,
         path: INDEX_PATH.to_owned(),
         before_digest: index_digest.clone(),
         after_digest: sealed.after.clone(),
@@ -284,6 +285,7 @@ mod tests {
                 .map(|(i, path)| {
                     let after = format!("owned staged bytes {i}").into_bytes();
                     ReplacementPlan {
+                        deletion: false,
                         logical: (*path).to_owned(),
                         before_digest: receipt::bytes_digest(if i == 0 { &before } else { b"" }),
                         after_digest: receipt::bytes_digest(&after),

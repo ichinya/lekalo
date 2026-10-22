@@ -32,6 +32,20 @@ belong to #73; the final milestone candidate is not yet qualified.
 
 ## Verified local corrections
 
+- Symbol relocation now retires a last-definition kind home with an explicit
+  delete plan and removed receipt, sealed preimage/provenance, backup,
+  parent-confined unlink, post-inventory validation and rollback/recovery.
+  Empty-file recreation never passes an absence postcondition. Document
+  comments outside the moved declaration refuse before mutation. Nested
+  relation/uniqueness IDs stay stable as members while their typed references
+  follow the owner move; they never become fabricated definition-history rows.
+  The live gate passes 24 calls, five commits and three schemas; all 20
+  transaction unit tests pass, including four new fault/drift/backup controls.
+  The Change integration suite passes all 114 tests after replacing obsolete
+  context-refusal assertions with exact successor-fact checks. Existing live
+  transaction gates pass 101 steps and the contract gate passes six schemas.
+  Separately owned attachment profiles and final issue acceptance remain
+  explicit qualification boundaries.
 - Context 0.8.0 projects query inputs, command results/direct emissions,
   exact defaults and enum wire literals, relations and uniqueness into
   JSON and Markdown with whole-fact budget accounting. Model 0.2.16 keeps

@@ -747,10 +747,16 @@ fn verify_receipt_projection<'a>(
             || super::expect_digest(&outcome.after_digest).is_none()
             || !matches!(
                 outcome.outcome.as_str(),
-                "replaced" | "moved-from" | "moved-to"
+                "replaced" | "moved-from" | "moved-to" | "removed"
             )
             || (outcome.outcome == "moved-from" && outcome.after_digest != super::absent_digest())
             || (outcome.outcome == "moved-to" && outcome.before_digest != super::absent_digest())
+            || (outcome.outcome == "removed"
+                && (outcome.after_digest != super::absent_digest()
+                    || !operations
+                        .iter()
+                        .any(|operation| operation == "symbol:move")
+                    || super::transaction::module_kind_home(&outcome.path).is_none()))
             || (outcome.outcome.starts_with("moved-")
                 && !operations
                     .iter()

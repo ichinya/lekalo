@@ -269,7 +269,8 @@ pub(crate) fn verify_record_postcondition(
         let endpoint = chain_endpoint_after(history, record.sequence, &outcome.path);
         let endpoint = endpoint.as_ref().unwrap_or(outcome);
         let expected = &endpoint.after_digest;
-        let may_be_absent = expected == &absent_digest() && endpoint.outcome == "moved-from";
+        let may_be_absent = expected == &absent_digest()
+            && matches!(endpoint.outcome.as_str(), "moved-from" | "removed");
         let fs = crate::project_fs::Fs::open(root).map_err(|_| ChangeError::HistoryInvalid {
             detail: "postcondition",
         })?;
@@ -295,9 +296,10 @@ pub(crate) fn verify_record_postcondition(
             }
         };
         let carries = (current.is_none() && may_be_absent)
-            || current
-                .map(|bytes| format!("sha256:{}", crate::digest::sha256_hex(&bytes)))
-                .is_some_and(|digest| &digest == expected);
+            || (!may_be_absent
+                && current
+                    .map(|bytes| format!("sha256:{}", crate::digest::sha256_hex(&bytes)))
+                    .is_some_and(|digest| &digest == expected));
         if !carries {
             return Err(ChangeError::HistoryInvalid {
                 detail: "postcondition",
@@ -993,6 +995,7 @@ pub(crate) fn apply_with_validation(
                 .find(|edit| edit.path == *path)
                 .ok_or(ChangeError::WriteBoundaryDenied)?;
             Ok(ReplacementPlan {
+                deletion: edit.operation == Some("delete"),
                 logical: path.clone(),
                 before_digest: edit.before_digest.clone(),
                 after_digest: format!("sha256:{}", crate::digest::sha256_hex(after_bytes)),
@@ -1027,7 +1030,7 @@ pub(crate) fn apply_with_validation(
                 path: plan.logical.clone(),
                 before_digest: plan.before_digest.clone(),
                 after_digest: plan.after_digest.clone(),
-                outcome: "replaced".to_owned(),
+                outcome: if plan.deletion { "removed" } else { "replaced" }.to_owned(),
             })
             .collect()
     };
@@ -1159,6 +1162,7 @@ pub(crate) fn apply_with_validation(
     // before it on ordinary failure.
     let history_present = history_bytes.is_some();
     plans.push(ReplacementPlan {
+        deletion: false,
         logical: history_logical.to_owned(),
         before_digest: match &history_bytes {
             None => absent_digest(),
@@ -1175,6 +1179,7 @@ pub(crate) fn apply_with_validation(
     let before_pin = custody::read(&root)?;
     let after_pin = custody.encode(&history, &final_history_bytes);
     plans.push(ReplacementPlan {
+        deletion: false,
         logical: custody::LOGICAL_PATH.to_owned(),
         before_digest: receipt::bytes_digest(before_pin.as_deref().unwrap_or_default()),
         after_digest: receipt::bytes_digest(&after_pin),
@@ -1240,6 +1245,14 @@ pub(crate) fn apply_with_validation(
             .map(|pin| (pin.path.clone(), pin.digest.clone()))
             .collect();
         for (path, bytes) in &prepared.edits {
+            if prepared
+                .file_edits
+                .iter()
+                .any(|edit| edit.path == *path && edit.operation == Some("delete"))
+            {
+                expected.remove(path);
+                continue;
+            }
             if path == crate::error_contract::source::PROJECT_PATH {
                 continue;
             }
