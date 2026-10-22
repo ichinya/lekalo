@@ -2,7 +2,8 @@
 
 Four registrations, `videos5-lekalo-01` through `videos5-lekalo-04`, share the
 custom label `videos5-lekalo`. PHP 8.3 and Composer 2 are installed in the
-image so the visible setup-php steps avoid cold release downloads. Each listener
+image, including `php-config` required by setup-php, so the visible setup
+steps avoid cold release downloads. Each listener
 has a separate Ubuntu 24.04
 container, registration directory, workspace, tool cache and private Docker
 daemon. No host Docker socket is mounted. The runner and its own daemon share
@@ -27,7 +28,9 @@ the committed SHA-256 is always verified before extraction and the real-toolchai
 gates always execute. Logs rotate at 10 MB with three files retained.
 `lekalo-ci-runtime.service` starts the pool after Docker on boot.
 
-The pre-job hook is installed in the image, outside the checkout. It rejects
+The pre-job hook restores the image's PHP CLI configuration before every job,
+so Mago's extension disabling cannot leak into later contract/pilot jobs.
+It is installed in the image, outside the checkout. It rejects
 fork pull requests and unexpected repository/event payloads before job or service
 containers start. The workflow routes fork PRs to GitHub-hosted runners and
 retains Windows/macOS matrix jobs there. The complete `build-test` OS matrix

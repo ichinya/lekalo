@@ -42,9 +42,12 @@ USER root
 RUN add-apt-repository -y ppa:ondrej/php \
     && apt-get update \
     && apt-get install -y --no-install-recommends php8.3-cli php8.3-curl php8.3-mbstring \
-        php8.3-xml php8.3-sqlite3 php8.3-mysql php8.3-zip php8.3-bcmath php8.3-intl \
+        php8.3-xml php8.3-sqlite3 php8.3-mysql php8.3-zip php8.3-bcmath php8.3-intl php8.3-dev \
     && update-alternatives --set php /usr/bin/php8.3 \
+    && mkdir -p /opt/ci-php-baseline \
+    && cp -a /etc/php/8.3/cli /opt/ci-php-baseline/cli \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
+COPY --chmod=0755 prepare.sh /usr/local/bin/prepare.sh
 USER ci-runner
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
