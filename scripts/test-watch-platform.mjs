@@ -42,7 +42,15 @@ async function probe(backend){
     const events=[];
     const revisions=[];
     const actions=[
-      ()=>{for(const version of [2,3,4])writeFileSync(path,readFileSync(path,'utf8').replace(/version: \d+/,`version: ${version}`));},
+      ()=>{for(const version of [2,3,4]){
+        const before=readFileSync(path,'utf8');
+        const after=before.replace(/version: \d+/,`version: ${version}`);
+        assert.equal(Buffer.byteLength(after),Buffer.byteLength(before),'fixed-size in-place edit');
+        // This lane expects valid revisions. Avoid an unrelated truncate
+        // window between open and write; the only changing byte is the
+        // version digit. The next action still exercises atomic replace.
+        writeFileSync(path,after,{flag:'r+'});
+      }},
       ()=>{const temp=path+'.tmp';writeFileSync(temp,readFileSync(path,'utf8').replace('version: 4','version: 5'));renameSync(temp,path);},
       ()=>renameSync(join(project,'lekalo/modules/planner'),join(project,'lekalo/modules/moved')),
       ()=>unlinkSync(moved),
