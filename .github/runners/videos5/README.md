@@ -14,8 +14,10 @@ two compiler jobs. Logs rotate at 10 MB with three files retained.
 The pre-job hook is installed in the image, outside the checkout. It rejects
 fork pull requests and unexpected repository/event payloads before job or service
 containers start. The workflow routes fork PRs to GitHub-hosted runners and
-retains Windows/macOS matrix jobs there. Release binaries retain their original
-GitHub-hosted OS images and ABI targets.
+retains Windows/macOS matrix jobs there. The complete `build-test` OS matrix
+also remains GitHub-hosted: its Linux leg validates host AppArmor and native
+process confinement, which must not change the shared videos5 host policy.
+Release binaries retain their original GitHub-hosted OS images and ABI targets.
 
 The post-job hook verifies the private daemon identity before cleaning exited
 containers and unused volumes. Images and build cache are retained. DinD is

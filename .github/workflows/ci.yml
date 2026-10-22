@@ -215,7 +215,9 @@ jobs:
 
   build-test:
     name: Build and test (${{ matrix.os }})
-    runs-on: ${{ startsWith(matrix.os, 'ubuntu-') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || matrix.os }}
+    # This job validates host AppArmor and native process confinement. Keep
+    # its original hosted OS matrix; Docker workers run the other Linux gates.
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
