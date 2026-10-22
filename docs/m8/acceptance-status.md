@@ -20,7 +20,7 @@ belong to #73; the final milestone candidate is not yet qualified.
 | [#41](https://github.com/ichinya/lekalo/issues/41) managed | `scripts/test-managed-contracts.mjs`, `test-managed-cli.mjs`, `test-managed-planner-e2e.mjs`; shared semantic Model validation now precedes managed authority | The query-read fixture and dependent authority pins are corrected. Contract gates, 110 CLI invocations and planner regeneration/native-handler execution pass locally. Final milestone-candidate/CI qualification remains. |
 | [#51](https://github.com/ichinya/lekalo/issues/51) Worklog / Changelog | contract, admission, pilot and consumer gates | Final native/evidence qualification, keeping unsupported publication semantics distinct from executed success. |
 | [#52](https://github.com/ichinya/lekalo/issues/52) TaskExternalLink | relation/uniqueness Model successor, task-link contracts and impact/portability gates | Final public/synthetic provider evidence and exact consumer impact qualification. |
-| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions, symbol relocation, module ownership and Model/IR 0.8.0 defaults, enum wire values, query inputs and command results | Completion of relocation/attachment cases; pure emissions and joins to older signature consumers with owner-compatible successors. Literals retain the documented YAML-layout and legacy-consumer boundaries. Module policy transitions use the existing managed owner's granularity; per-symbol changes do not silently widen to a module. Catalog coverage alone cannot close this issue. |
+| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions, symbol relocation, module ownership and Model/IR 0.8.0 defaults, enum wire values, query inputs, command results and direct event emissions | Completion of relocation/attachment cases and joins to older signature consumers with owner-compatible successors. Literals retain the documented YAML-layout and legacy-consumer boundaries. Module policy transitions use the existing managed owner's granularity; per-symbol changes do not silently widen to a module. Catalog coverage alone cannot close this issue. |
 | [#74](https://github.com/ichinya/lekalo/issues/74) safe fixes | Fix contracts/CLI and rollback tests | Requalify final Change catalog identity, stale/conflicting plans, replay and rollback. |
 | [#93](https://github.com/ichinya/lekalo/issues/93) semantic search | search contracts/CLI and `scripts/bench-search.mjs` | Final result/ambiguity/offline gates and representative benchmark evidence; separate retrieval metrics from agent answer quality. |
 | [#94](https://github.com/ichinya/lekalo/issues/94) formatter | format contracts, CLI, atomicity and portability gates | Final semantic invariance/trivia checks and Linux/Windows/macOS evidence. |
@@ -32,6 +32,18 @@ belong to #73; the final milestone candidate is not yet qualified.
 
 ## Verified local corrections
 
+- Model/IR 0.8.0 commands support direct event `emits` independently of
+  CRUD effects. Change add/remove, including the last emission, preserve the
+  source and durable replay; a declaration and emission compose in one request.
+  The CLI gate passes 15 calls and eight schemas. Graph, inspect, search,
+  portability and signature diff carry the declaration. Unsupported execution
+  and projection owners refuse explicitly. The effect-graph 0.8.0 successor and
+  existing 0.8.0 extended-effect/transaction owners carry matching version pins;
+  mixed-version joins refuse. Their legacy golden bytes stay unchanged. The
+  synthetic TaskExternalLink fixtures were regenerated and their contract,
+  scenario, outbox, impact/portability and public-evidence gates pass. Its local
+  native gate remains `pending-provisioning`; mock evidence does not qualify
+  durable database/race behavior. This is not final milestone acceptance.
 - Model/IR 0.8.0 commands now carry optional typed `returns` through
   declaration, lossless first insertion/replacement, validation, canonical IR,
   graph, inspect, diff, reference renames, portability and public module exports.

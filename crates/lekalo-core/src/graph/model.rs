@@ -386,6 +386,8 @@ pub enum ReferenceRole {
     CommandInput,
     /// A command result type leaf (Model 0.8.0).
     CommandReturns,
+    /// An event emitted directly by a successor command.
+    CommandEmits,
     /// A query input type leaf (Model 0.8.0).
     QueryInput,
     /// A query return type leaf.
@@ -419,6 +421,7 @@ impl ReferenceRole {
             Self::ScenarioCovers => "scenario-covers",
             Self::CommandInput => "command-input",
             Self::CommandReturns => "command-returns",
+            Self::CommandEmits => "command-emits",
             Self::QueryInput => "query-input",
             Self::QueryReturns => "query-returns",
             Self::QueryReads => "query-reads",

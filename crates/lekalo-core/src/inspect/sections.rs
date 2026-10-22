@@ -273,6 +273,11 @@ fn contract_section(definition: &Definition, limits: &InspectLimits) -> Contract
             fields: fields_projection(&entity.fields, limits),
         },
         Definition::Command(command) => ContractBody::Command {
+            emits: command
+                .emits
+                .iter()
+                .map(|event| event.as_str().to_owned())
+                .collect(),
             input: fields_projection(&command.input, limits),
             output: command.returns.as_ref().map(type_ref_projection),
         },

@@ -19,6 +19,24 @@ pub const IDENTITY: &str = "dev.lekalo.effects@0.2.16";
 /// The exact wire discriminator of the effect contract.
 pub const SCHEMA_VERSION: &str = "lekalo/effects/v0.2.16";
 
+/// Model 0.8.0 effect projection, including direct command event emissions.
+pub const SUCCESSOR_IDENTITY: &str = "dev.lekalo.effects@0.8.0";
+pub const SUCCESSOR_SCHEMA_VERSION: &str = "lekalo/effects/v0.8.0";
+
+pub const fn identity_for(version: crate::loader::ModelVersion) -> &'static str {
+    match version {
+        crate::loader::ModelVersion::Current => IDENTITY,
+        crate::loader::ModelVersion::Successor => SUCCESSOR_IDENTITY,
+    }
+}
+
+pub const fn schema_version_for(version: crate::loader::ModelVersion) -> &'static str {
+    match version {
+        crate::loader::ModelVersion::Current => SCHEMA_VERSION,
+        crate::loader::ModelVersion::Successor => SUCCESSOR_SCHEMA_VERSION,
+    }
+}
+
 /// The maximum number of effect edges one graph may hold (declared plus
 /// detected together; fatal beyond it).
 pub const MAX_EFFECTS: usize = 100_000;

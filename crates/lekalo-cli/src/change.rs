@@ -361,7 +361,7 @@ pub(crate) struct AddDefinitionArgs {
 }
 
 /// `command-effect:add`/`command-effect:remove` sugar: exactly one of
-/// the effect reference or the (deferred) emission surface.
+/// the effect reference or a Model 0.8.0 direct event emission.
 #[derive(Debug, Args)]
 pub(crate) struct CommandEffectArgs {
     /// The semantic id of the command.
@@ -370,7 +370,7 @@ pub(crate) struct CommandEffectArgs {
     /// The effect reference to add or remove.
     #[arg(long, value_name = "ID", conflicts_with = "emit")]
     effect: Option<String>,
-    /// The emission surface to bind (deferred to the reviewed successor).
+    /// The event to emit directly (Model 0.8.0).
     #[arg(long, value_name = "ID")]
     emit: Option<String>,
     #[command(flatten)]

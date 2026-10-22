@@ -232,6 +232,9 @@ impl TransactionConcurrencyAttachment {
     /// failure boundary when the operation declares `required` or
     /// `optional`. Pure and read-only; never mutates the graph.
     pub fn validate_against_graph(&self, graph: &EffectGraph) -> Result<(), DiagnosticSet> {
+        if *self.model_ref().version() != graph.model_version() {
+            return Err(diagnostic::input_invalid("graph-model-version", None));
+        }
         if let Some(bound) = &self.effect_graph_digest {
             if bound.as_str() != graph.ir_digest() {
                 return Err(diagnostic::input_invalid("graph-digest-mismatch", None));

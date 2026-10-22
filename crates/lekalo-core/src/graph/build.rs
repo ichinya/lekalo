@@ -510,6 +510,15 @@ impl<'a> Builder<'a> {
                             ordinal,
                         );
                     }
+                    for (ordinal, event) in command.emits.iter().enumerate() {
+                        self.emit_symbol_edge(
+                            symbol,
+                            event,
+                            ReferenceRole::CommandEmits,
+                            RelationKindId::EMITS,
+                            ordinal,
+                        );
+                    }
                 }
                 Definition::Query(query) => {
                     self.emit_field_leaves(

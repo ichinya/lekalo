@@ -65,6 +65,11 @@ pub fn plan(
     compilation: &Compilation,
 ) -> Result<Capsule, DiagnosticSet> {
     let project = &compilation.project;
+    if project.has_command_emissions() {
+        return Err(diagnostic::input_invalid_set(
+            "command-emission-contract-unsupported",
+        ));
+    }
     if project.has_command_results() {
         return Err(diagnostic::input_invalid_set(
             "command-result-contract-unsupported",

@@ -216,7 +216,7 @@ fn graph_cross_validation_accepts_real_edges_and_rejects_foreign_ones() {
     static CWD_LOCK: Mutex<()> = Mutex::new(());
     const FIXTURE: &str = "tests/fixtures/effects/planner";
 
-    fn compile_planner() -> (EffectGraph, Vec<String>) {
+    fn compile_planner(successor: bool) -> (EffectGraph, Vec<String>) {
         let _guard = CWD_LOCK.lock().expect("cwd lock");
         let original = std::env::current_dir().expect("current dir");
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -228,7 +228,10 @@ fn graph_cross_validation_accepts_real_edges_and_rejects_foreign_ones() {
         let selection = LoadSelection {
             project: Some(FIXTURE.to_owned()),
         };
-        let model = normalize_model(&selection).expect("load");
+        let mut model = normalize_model(&selection).expect("load");
+        if successor {
+            model.model_version = lekalo_core::loader::ModelVersion::Successor;
+        }
         let compilation = compile(&model).expect("compile");
         let graph = build(&compilation.project).expect("effect graph");
         let edges: Vec<String> = graph
@@ -243,7 +246,7 @@ fn graph_cross_validation_accepts_real_edges_and_rejects_foreign_ones() {
         (graph, edges)
     }
 
-    let (graph, edges) = compile_planner();
+    let (graph, edges) = compile_planner(false);
     assert!(!edges.is_empty(), "the planner fixture declares edges");
     let base: serde_json::Value = serde_json::from_slice(DIFF_BASE).expect("base JSON");
     let mut wire = base.clone();
@@ -260,6 +263,28 @@ fn graph_cross_validation_accepts_real_edges_and_rejects_foreign_ones() {
     attachment
         .validate_against_graph(&graph)
         .expect("real edges cross-validate");
+
+    let (successor_graph, _) = compile_planner(true);
+    let mut successor = wire.clone();
+    successor["schemaVersion"] = serde_json::json!("lekalo/transaction-concurrency/v0.8.0");
+    successor["identity"] = serde_json::json!("dev.lekalo.transaction-concurrency@0.8.0");
+    successor["modelRef"]["modelVersion"] = serde_json::json!("0.8.0");
+    successor["irRef"]["identity"] = serde_json::json!("dev.lekalo.ir@0.8.0");
+    successor["effectGraphRef"]["identity"] = serde_json::json!("dev.lekalo.effects@0.8.0");
+    successor["effectGraphRef"]["digest"] = serde_json::json!(successor_graph.ir_digest());
+    let successor_attachment = TransactionConcurrencyAttachment::from_value(&successor).unwrap();
+    successor_attachment
+        .validate_against_graph(&successor_graph)
+        .unwrap();
+    assert!(successor_attachment.validate_against_graph(&graph).is_err());
+    let canonical: serde_json::Value =
+        serde_json::from_str(&successor_attachment.canonical_bytes().unwrap()).unwrap();
+    assert_eq!(
+        canonical["effectGraphRef"]["identity"],
+        "dev.lekalo.effects@0.8.0"
+    );
+    successor["effectGraphRef"]["identity"] = serde_json::json!("dev.lekalo.effects@0.2.16");
+    assert!(TransactionConcurrencyAttachment::from_value(&successor).is_err());
 
     // A foreign effect ref fails the cross-check.
     wire["operations"][0]["atomicEffectGroups"][0]["effectRefs"][0] = serde_json::Value::String(

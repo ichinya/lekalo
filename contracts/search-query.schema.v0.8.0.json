@@ -228,6 +228,7 @@
               "command-input",
               "query-input",
               "command-returns",
+              "command-emits",
               "query-returns",
               "query-reads",
               "policy-applies-to",

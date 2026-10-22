@@ -502,7 +502,7 @@
       "kind": "command",
       "command": "change command-effect:add",
       "usage": "lekalo change command-effect:add [OPTIONS] --command <ID>",
-      "helpDigest": "sha256:9af0a63619bb59bc6db8977d6f79e97d1969fe54afdece554c1b84f9a3da3022",
+      "helpDigest": "sha256:5c52d872cd569174e0706b57183be1394b5ef7bc8cc0ce630666d8ebbd731bc5",
       "summary": "Append one effect reference to a command",
       "leaf": true,
       "owner": "docs/change.md",
@@ -513,7 +513,7 @@
       "kind": "command",
       "command": "change command-effect:remove",
       "usage": "lekalo change command-effect:remove [OPTIONS] --command <ID>",
-      "helpDigest": "sha256:3c537086c290f0654786e05b32529d780bd11ed338bff3eecf0bb1d9d159ab08",
+      "helpDigest": "sha256:b216327fc593cec53a11f7586d92c322e00f98fe5c2184c3fc13afe702adfa47",
       "summary": "Remove one effect reference from a command",
       "leaf": true,
       "owner": "docs/change.md",
@@ -3198,7 +3198,7 @@
       "id": "contract:contracts/change-request.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/change-request.schema.v0.8.0.json",
-      "sourceDigest": "sha256:214b627ae3f0f06a14bf3cfb2fb6370643cbd1ad94391e7edd12f406e87fa84a",
+      "sourceDigest": "sha256:fa9e78d6ba920002ce78120db6b373b1dafcf889510851315867c82c93026521",
       "owner": "docs/change.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3474,6 +3474,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/effect-graph.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/effect-graph.schema.v0.8.0.json",
+      "sourceDigest": "sha256:6c32df35a635805ee37533b8afc60acf30fe1fac6cad2d1f6cf7df087dec0839",
+      "owner": "docs/effect-graph.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/error-contract.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/error-contract.schema.v0.2.16.json",
@@ -3585,7 +3594,7 @@
       "id": "contract:contracts/extended-effects.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/extended-effects.schema.v0.8.0.json",
-      "sourceDigest": "sha256:53701216301940cb9f25b53ff1c75ea365e0f7c63bdae214c37d38e922aad456",
+      "sourceDigest": "sha256:bb8d1b634a3b571c5cf9b28c8d9acad55a6d84077f5168320bbbf79fa69253b6",
       "owner": "docs/extended-effects.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3702,7 +3711,7 @@
       "id": "contract:contracts/graph.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/graph.schema.v0.8.0.json",
-      "sourceDigest": "sha256:62a53f398bb4a4da1bb8764b1228d816a5268853b9cc96369962b6755050b31d",
+      "sourceDigest": "sha256:2cc01f4263417ce1c73a17c60b3bbb03755c94e718c3976231625636fa4cdb8c",
       "owner": "docs/graph.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3747,7 +3756,7 @@
       "id": "contract:contracts/inspect.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/inspect.schema.v0.8.0.json",
-      "sourceDigest": "sha256:d7be0d3812f3b3b426013cbb7ea6ee49f58521d250558315d0f4932ed0a47bf9",
+      "sourceDigest": "sha256:7a6bb94d1360edf8e1b61e00f86bd9ccaa4291928e04aa52dc5566f42bf8024c",
       "owner": "docs/inspect.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3765,7 +3774,7 @@
       "id": "contract:contracts/ir.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/ir.schema.v0.8.0.json",
-      "sourceDigest": "sha256:bb1715e25479417c4d06a672093dbad5994e3b3cba1eb02f517644d8adc9401d",
+      "sourceDigest": "sha256:eea494ba267e0513d2d8969cd94d19ba589e8bca9694739c3c79aa9d7286f6d9",
       "owner": "docs/ir.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3873,7 +3882,7 @@
       "id": "contract:contracts/mcp-resource.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-resource.schema.v0.8.0.json",
-      "sourceDigest": "sha256:794ff71a8a75c4355c0a86ef919d43f8c4a2c47b3814cf167e1a857326332a44",
+      "sourceDigest": "sha256:e1cdb6ab963219f7c6cde7861e997adc6f30ea66b61de2872765cc1b6dbc338c",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3918,7 +3927,7 @@
       "id": "contract:contracts/mcp-tool-graph-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-graph-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:b305d02224789999ae5da5dab45a512454c33f1ea087d38ac6f95ae016bcfeab",
+      "sourceDigest": "sha256:901b5fe753a1443712cd21528ed0e4fa944ed59a700c939db25ac93c3d144921",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3954,7 +3963,7 @@
       "id": "contract:contracts/mcp-tool-inspect-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-inspect-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:c8045e7b4d03204182cceeef6873b6af4d82257a9ac3bd64c6ed933f8ed21d16",
+      "sourceDigest": "sha256:1c300ecb8579439732b6ab1c2ec3921ebc6ad68e6945c48e97a25d8c70931964",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4062,7 +4071,7 @@
       "id": "contract:contracts/model.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/model.schema.v0.8.0.json",
-      "sourceDigest": "sha256:c512365e33d9c630601f0b503fdeeed44838c8428130638b2a489dcfca66afee",
+      "sourceDigest": "sha256:2319d5f6230374f77f8eb2fdb0fafb39fd63f01c7c87272b48894ed18e68cf6c",
       "owner": "docs/model.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4647,7 +4656,7 @@
       "id": "contract:contracts/search-query.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/search-query.schema.v0.8.0.json",
-      "sourceDigest": "sha256:3667b741e16c467e63a7ab15876f9c67c6ca2b93346d601ce5a1d0919eddbcb1",
+      "sourceDigest": "sha256:b5db85f7102d1f82173289db7394bc0b171eb95ea9e42053de0ca1c2bd19335a",
       "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4890,7 +4899,7 @@
       "id": "contract:contracts/transaction-concurrency.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/transaction-concurrency.schema.v0.8.0.json",
-      "sourceDigest": "sha256:1babb65786a181a0897c8f0ba7ef1c5c1be2e4c42cbb3138444928cc52139b03",
+      "sourceDigest": "sha256:5a82852f4ef6671aee2071a0c578996308647e25257600c45f2811e46460e42e",
       "owner": "docs/transaction-concurrency.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

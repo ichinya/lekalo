@@ -377,6 +377,10 @@ impl CommandDef {
             "effects",
             sorted_by(&self.effects, symbol, SymbolId::as_str),
         ));
+        fields.extend(present_list(
+            "emits",
+            sorted_by(&self.emits, symbol, SymbolId::as_str),
+        ));
         fields.push(pair("id", symbol(&self.id)));
         fields.extend(present_list(
             "input",

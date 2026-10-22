@@ -705,15 +705,29 @@ fn diff_payload(
             Payload::Command {
                 input: base_input,
                 effects: base_effects,
+                emits: base_emits,
                 returns: base_returns,
             },
             Payload::Command {
                 input: candidate_input,
                 effects: candidate_effects,
+                emits: candidate_emits,
                 returns: candidate_returns,
             },
         ) => {
             diff_input(subject, base_input, candidate_input, changes);
+            if base_emits != candidate_emits {
+                changes.push(ChangeRecord::assemble(
+                    ChangeKind::SignatureEffectsChanged,
+                    Side::Both,
+                    Subject::with_member(subject.family(), subject.id(), "emits"),
+                    Summary::Ids(base_emits.clone()),
+                    Summary::Ids(candidate_emits.clone()),
+                    vec![reason::kind_reason(
+                        ChangeKind::SignatureEffectsChanged.key(),
+                    )],
+                ));
+            }
             if base_returns != candidate_returns {
                 changes.push(ChangeRecord::assemble(
                     ChangeKind::SignatureOutputChanged,

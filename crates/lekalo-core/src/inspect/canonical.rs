@@ -156,7 +156,14 @@ fn contract_bytes(contract: &ContractSection) -> String {
             json.push_str(",\"fields\":");
             json.push_str(&fields_bytes(fields));
         }
-        ContractBody::Command { input, output } => {
+        ContractBody::Command {
+            input,
+            output,
+            emits,
+        } => {
+            if !emits.is_empty() {
+                json.push_str(&format!(",\"emits\":{}", string_array(emits)));
+            }
             json.push_str(",\"input\":");
             json.push_str(&fields_bytes(input));
             if let Some(output) = output {

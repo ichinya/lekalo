@@ -33,7 +33,7 @@ pub fn effects_bytes(graph: &EffectGraph) -> Result<String, crate::diagnostics::
     };
     json.push_str(&format!(
         "],\"identity\":{},\"metadata\":{{\"declaredCount\":{},\"detectedCount\":{},\"effectCount\":{},\"envelopeCount\":{},\"operationCount\":{}}},\"modelVersion\":{},\"project\":{},\"schemaVersion\":{}}}",
-        quote(super::version::IDENTITY),
+        quote(graph.identity()),
         graph.declared().len(),
         graph.detected().len(),
         graph.declared().len() + graph.detected().len(),
@@ -41,7 +41,7 @@ pub fn effects_bytes(graph: &EffectGraph) -> Result<String, crate::diagnostics::
         graph.operation_count(),
         quote(graph.model_version().as_str()),
         project,
-        quote(super::version::SCHEMA_VERSION),
+        quote(graph.schema_version()),
     ));
     if json.len() > MAX_EXPORT_BYTES {
         return Err(diagnostic::export_limit_set(json.len()));
@@ -126,7 +126,7 @@ pub fn show_payload_bytes(
         json.push_str(&edge_bytes(edge));
     }
     json.push_str("],\"identity\":");
-    json.push_str(&quote(super::version::IDENTITY));
+    json.push_str(&quote(graph.identity()));
     json.push_str(",\"operation\":");
     json.push_str(&quote(operation.as_str()));
     // The typed partial-failure traces this operation's detected
@@ -263,7 +263,7 @@ pub fn writers_payload_bytes(
     };
     let mut json = String::from("{\"complete\":true");
     json.push_str(",\"identity\":");
-    json.push_str(&quote(super::version::IDENTITY));
+    json.push_str(&quote(graph.identity()));
     json.push_str(",\"scope\":");
     json.push_str(&quote(&selector.scope_key()));
     json.push_str(",\"subject\":");

@@ -136,7 +136,11 @@ pub(crate) fn from_value(json: &Json) -> Result<TransactionConcurrencyAttachment
     let effect_graph = match object.get("effectGraphRef") {
         Some(value) => Some(digest_member(
             value,
-            "dev.lekalo.effects@0.2.16",
+            if successor {
+                "dev.lekalo.effects@0.8.0"
+            } else {
+                "dev.lekalo.effects@0.2.16"
+            },
             "effect-graph-ref",
         )?),
         None => None,

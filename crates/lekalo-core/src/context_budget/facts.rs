@@ -265,6 +265,9 @@ fn contract_parts(definition: &Definition, parts: &mut Vec<String>) {
             for effect in &command.effects {
                 parts.push(effect.as_str().to_owned());
             }
+            for event in &command.emits {
+                parts.push(event.as_str().to_owned());
+            }
         }
         Definition::Query(query) => {
             for member in &query.input {

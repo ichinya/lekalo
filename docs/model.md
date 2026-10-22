@@ -41,7 +41,8 @@ The [synthetic planner](../tests/fixtures/model-v1/valid-planner) illustrates al
 
 The [Model `0.8.0` successor](../contracts/model.schema.v0.8.0.json) and
 [matching IR](../contracts/ir.schema.v0.8.0.json) additionally represent query
-`input` fields and optional command `returns`. Their type expressions use the
+`input` fields, optional command `returns`, and direct command `emits` event
+references. Their type expressions use the
 same named references and list/optional wrappers as other signatures. A command
 with no `returns` keeps its existing wire representation. The frozen `0.2.16`
 contract does not accept these members. Consumer compatibility is checked by

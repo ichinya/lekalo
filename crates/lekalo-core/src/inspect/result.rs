@@ -146,6 +146,7 @@ pub(crate) enum ContractBody {
     Command {
         input: Vec<FieldProjection>,
         output: Option<TypeRefProjection>,
+        emits: Vec<String>,
     },
     Query {
         input: Vec<FieldProjection>,
@@ -405,11 +406,18 @@ fn push_contract(lines: &mut Vec<String>, body: &ContractBody) {
             lines.push(format!("  {label}:"));
             push_fields(lines, fields);
         }
-        ContractBody::Command { input, output } => {
+        ContractBody::Command {
+            input,
+            output,
+            emits,
+        } => {
             lines.push("  input:".to_owned());
             push_fields(lines, input);
             if let Some(output) = output {
                 lines.push(format!("  returns: {}", type_ref_text(output)));
+            }
+            if !emits.is_empty() {
+                lines.push(format!("  emits: {}", emits.join(", ")));
             }
         }
         ContractBody::Query {

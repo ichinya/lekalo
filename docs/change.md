@@ -289,12 +289,15 @@ Every implemented verb shares the same execution flags
 themselves declarations (`--input-json`, `--payload-json`) take one
 typed JSON array parsed by the same duplicate-key-refusing parser as
 the request surface; type spellings (`--type`, `--returns`) take the
-Model sugar grammar (`ref`, `list<ref>`, `ref?`). The emission
-spelling `command-effect:add --emit <event>` decodes and refuses
-`change.operation-unsupported` with detail `emission-representation`
-pending the reviewed extended-effect successor — the refusal is the
-documented increment boundary, and the `--effect` reference spelling
-is the implemented path.
+Model sugar grammar (`ref`, `list<ref>`, `ref?`). Under Model `0.8.0`,
+`command-effect:add --emit EVENT` and `command-effect:remove --emit EVENT`
+edit the command's typed `emits` list. Each request selects exactly one of
+`--effect` (a CRUD effect definition) and `--emit` (an event). A direct
+emission adds an `emit-event` obligation without inventing an entity mutation
+or an effect-definition ID. Model `0.2.16` refuses direct emissions with
+`change.operation-unsupported` / `emission-representation`. Declaration does
+not execute an emitter; consumers lacking a compatible contract refuse
+`command-emission-contract-unsupported`.
 
 Model `0.8.0` commands may declare an optional typed `returns` contract.
 `definition:add --kind command --returns TYPE` declares it, and

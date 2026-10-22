@@ -2820,9 +2820,8 @@ fn signature_sets_replace_command_input_and_query_output() {
 
 #[test]
 fn command_effect_emit_and_wrong_kinds_stay_explicitly_refused() {
-    // The emission representation is the reviewed extended-effect
-    // successor: it decodes and refuses with the registered unsupported
-    // rule; wrong-kind targets are subject conflicts.
+    // Legacy Model cannot represent a direct event emission. Wrong-kind
+    // targets remain subject conflicts, independently of version support.
     let sandbox = Sandbox::new("staged");
     std::fs::write(
         sandbox.root.join("lekalo/modules/tasks/commands.yaml"),
@@ -2871,6 +2870,134 @@ fn command_effect_emit_and_wrong_kinds_stay_explicitly_refused() {
         ),
         "got {error:?}"
     );
+}
+
+#[test]
+fn pure_command_emissions_are_typed_events_with_lossless_add_remove_and_replay() {
+    let sandbox = Sandbox::new("pure-command-emissions");
+    enable_default_successor(&sandbox);
+    let path = sandbox.root.join("lekalo/modules/tasks/commands.yaml");
+    let source = "schema_version: \"0.8.0\"\r\ndefinitions:\r\n  - id: tasks.complete\r\n    kind: command\r\n    version: 1 # keep command note";
+    std::fs::write(&path, source).unwrap();
+    std::fs::write(
+        sandbox.root.join("lekalo/modules/tasks/events.yaml"),
+        "schema_version: \"0.8.0\"\ndefinitions:\n  - id: tasks.completed\n    kind: event\n    version: 1\n",
+    )
+    .unwrap();
+    let request = defaults_request(serde_json::json!([{
+        "operation":"command-effect:add", "command":"tasks.complete", "emit":"tasks.completed"
+    }]));
+    let policy = evidence_policy();
+    let preview = change::prepare(&PrepareOptions {
+        project: Some(&sandbox.selection_str()),
+        request: &request,
+        policy: Some(&policy),
+        allow_breaking: true,
+    })
+    .unwrap();
+    let plan: serde_json::Value = serde_json::from_str(&preview.to_json_string().unwrap()).unwrap();
+    assert!(plan["semanticDiff"]["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|change| change["kind"] == "signature.effects-changed"));
+    assert_eq!(std::fs::read(&path).unwrap(), source.as_bytes());
+    apply_request_opts(
+        &sandbox,
+        &request,
+        "pure-emission-add",
+        true,
+        Some(policy.clone()),
+    )
+    .unwrap();
+    let after = std::fs::read_to_string(&path).unwrap();
+    assert!(after.starts_with(source));
+    assert!(!after.ends_with('\n'));
+    assert!(!after.replace("\r\n", "").contains('\n'));
+    assert_eq!(
+        apply_request_opts(
+            &sandbox,
+            &request,
+            "pure-emission-add",
+            true,
+            Some(policy.clone())
+        )
+        .unwrap()
+        .state,
+        "replayed"
+    );
+    let compiled = compiled_sandbox(&sandbox);
+    assert!(compiled.project.has_command_emissions());
+    let searchable = lekalo_core::search::projection::project_ir(&compiled.project, 100);
+    assert!(searchable.cards["def:tasks.complete"]
+        .relations
+        .iter()
+        .any(|relation| relation.relation == "command-emits"
+            && relation.other == "def:tasks.completed"));
+    let effects = lekalo_core::effects::build(&compiled.project).unwrap();
+    assert_eq!(effects.declared().len(), 1);
+    assert_eq!(
+        effects.declared()[0].key().kind(),
+        lekalo_core::effects::EffectKind::EmitEvent
+    );
+    let wire: serde_json::Value =
+        serde_json::from_str(&effects.to_canonical_json().unwrap()).unwrap();
+    assert_eq!(wire["schemaVersion"], "lekalo/effects/v0.8.0");
+    assert_eq!(wire["effects"][0]["provenance"]["role"], "command-emits");
+    assert_eq!(wire["metadata"]["effectCount"], 1);
+    let graph = lekalo_core::graph::build(&compiled.project).unwrap();
+    assert!(graph.to_canonical_json().unwrap().contains("command-emits"));
+    let invalid = defaults_request(serde_json::json!([{
+        "operation":"command-effect:add", "command":"tasks.complete", "emit":"tasks.task"
+    }]));
+    assert!(matches!(
+        prepare(&sandbox, &invalid),
+        Err(ChangeError::SubjectConflict {
+            detail: "wrong-kind",
+            ..
+        })
+    ));
+    let duplicate = prepare(&sandbox, &request).unwrap_err();
+    assert!(matches!(
+        duplicate,
+        ChangeError::SubjectConflict {
+            detail: "effect-duplicate",
+            ..
+        }
+    ));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), after);
+    let remove = defaults_request(serde_json::json!([{
+        "operation":"command-effect:remove", "command":"tasks.complete", "emit":"tasks.completed"
+    }]));
+    apply_request_opts(
+        &sandbox,
+        &remove,
+        "pure-emission-remove",
+        true,
+        Some(policy.clone()),
+    )
+    .unwrap();
+    assert_eq!(std::fs::read(&path).unwrap(), source.as_bytes());
+    assert!(!compiled_sandbox(&sandbox).project.has_command_emissions());
+    assert_eq!(
+        apply_request_opts(
+            &sandbox,
+            &remove,
+            "pure-emission-remove",
+            true,
+            Some(policy)
+        )
+        .unwrap()
+        .state,
+        "replayed"
+    );
+    let conflicting = defaults_request(serde_json::json!([{
+        "operation":"command-effect:add", "command":"tasks.complete", "emit":"tasks.completed", "effect":"tasks.task"
+    }]));
+    assert!(matches!(
+        prepare(&sandbox, &conflicting),
+        Err(ChangeError::RequestInvalid { .. })
+    ));
 }
 
 #[test]
@@ -3850,6 +3977,11 @@ fn command_results_follow_typed_diff_graph_inspect_and_lossless_source_edits() {
 
     let compilation = compiled_sandbox(&sandbox);
     assert!(compilation.project.has_command_results());
+    let searchable = lekalo_core::search::projection::project_ir(&compilation.project, 100);
+    assert!(searchable.cards["def:tasks.complete"]
+        .signatures
+        .iter()
+        .any(|signature| signature.role == "output" && signature.id == "tasks.text"));
     let graph = lekalo_core::graph::build(&compilation.project).unwrap();
     assert!(graph
         .to_canonical_json()

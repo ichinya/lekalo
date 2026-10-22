@@ -1778,7 +1778,7 @@ fn resolve_operation(
             effect,
             emit,
         } => {
-            if emit.is_some() {
+            if emit.is_some() && version != crate::loader::ModelVersion::Successor {
                 return Err(ChangeError::UnsupportedMember {
                     operation: operation.operation().to_owned(),
                     member: "emission-representation",
@@ -1791,24 +1791,27 @@ fn resolve_operation(
                     detail: "wrong-kind",
                 });
             }
+            let (reference, member, expected_kind) = match emit {
+                Some(event) => (event, "emits", "event"),
+                None => (effect, "effects", "effect"),
+            };
             if matches!(operation, Operation::CommandEffectAdd { .. }) {
-                // The referenced effect must exist and be an effect.
-                let effect_definition = find_definition(documents, effect)?;
-                if definition_kind_of(effect_definition) != "effect" {
+                let referenced_definition = find_definition(documents, reference)?;
+                if definition_kind_of(referenced_definition) != expected_kind {
                     return Err(ChangeError::SubjectConflict {
-                        subject: effect.clone(),
+                        subject: reference.clone(),
                         detail: "wrong-kind",
                     });
                 }
-                if definition_scalar_exists(&definition.node, "effects", effect) {
+                if definition_scalar_exists(&definition.node, member, reference) {
                     return Err(ChangeError::SubjectConflict {
-                        subject: effect.clone(),
+                        subject: reference.clone(),
                         detail: "effect-duplicate",
                     });
                 }
-            } else if !definition_scalar_exists(&definition.node, "effects", effect) {
+            } else if !definition_scalar_exists(&definition.node, member, reference) {
                 return Err(ChangeError::SubjectConflict {
-                    subject: effect.clone(),
+                    subject: reference.clone(),
                     detail: "member-missing",
                 });
             }
@@ -2297,11 +2300,19 @@ fn apply_tree_edit(
         Operation::EnumCaseChange { name, change, .. } => {
             change_member_item(&mut definition.node, "values", name, change)
         }
-        Operation::CommandEffectAdd { effect, .. } => {
-            push_scalar_item(&mut definition.node, "effects", effect)
+        Operation::CommandEffectAdd { effect, emit, .. } => {
+            let (member, reference) = emit
+                .as_ref()
+                .map(|event| ("emits", event))
+                .unwrap_or(("effects", effect));
+            push_scalar_item(&mut definition.node, member, reference)
         }
-        Operation::CommandEffectRemove { effect, .. } => {
-            remove_scalar_item(&mut definition.node, "effects", effect)
+        Operation::CommandEffectRemove { effect, emit, .. } => {
+            let (member, reference) = emit
+                .as_ref()
+                .map(|event| ("emits", event))
+                .unwrap_or(("effects", effect));
+            remove_scalar_item(&mut definition.node, member, reference)
         }
         Operation::OperationInputSet { input, .. } => {
             replace_member_sequence(&mut definition.node, "input", input)
@@ -3111,21 +3122,29 @@ fn plan_source_edits(
                 .collect();
             vec![edit::plan_document_definition_append(bytes, &nodes, &item)?]
         }
-        Operation::CommandEffectAdd { effect, .. } => {
+        Operation::CommandEffectAdd { effect, emit, .. } => {
+            let (member, reference) = emit
+                .as_ref()
+                .map(|event| ("emits", event))
+                .unwrap_or(("effects", effect));
             // A command synthesized without effects carries no sequence
             // yet: its first effect reference appends the whole member.
-            if node.get("effects").is_none() {
-                vec![edit::plan_member_append(bytes, node, "effects", effect)?]
+            if node.get(member).is_none() {
+                vec![edit::plan_member_append(bytes, node, member, reference)?]
             } else {
-                let item = edit::effect_item_block(bytes, node, "effects", effect)?;
+                let item = edit::effect_item_block(bytes, node, member, reference)?;
                 vec![edit::plan_seq_scalar_insert(
-                    bytes, node, "effects", effect, &item,
+                    bytes, node, member, reference, &item,
                 )?]
             }
         }
-        Operation::CommandEffectRemove { effect, .. } => {
-            vec![edit::plan_seq_scalar_remove(
-                bytes, node, "effects", effect,
+        Operation::CommandEffectRemove { effect, emit, .. } => {
+            let (member, reference) = emit
+                .as_ref()
+                .map(|event| ("emits", event))
+                .unwrap_or(("effects", effect));
+            vec![edit::plan_scalar_list_change(
+                bytes, node, member, reference, false,
             )?]
         }
         Operation::OperationInputSet { input, .. } => {

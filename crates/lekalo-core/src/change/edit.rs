@@ -1708,7 +1708,7 @@ pub fn plan_member_append(
         subject: member.to_owned(),
         detail: "item-layout",
     })?;
-    let insert_at = definition_content_end(bytes, definition)?;
+    let insert_at = inline_trivia_end(bytes, definition_content_end(bytes, definition)?);
     if next_content_is_comment(bytes, insert_at) {
         return Err(ChangeError::SourcePreservation {
             subject: member.to_owned(),
