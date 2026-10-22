@@ -32,6 +32,16 @@ belong to #73; the final milestone candidate is not yet qualified.
 
 ## Verified local corrections
 
+- CI follow-up: Rust 1.80 Clippy rejected a query-model boolean expression
+  that current Clippy accepted; the equivalent expression now passes the
+  actual 1.80 all-target lane locally. Fixture provenance uses bounded Git
+  calls and file-backed clean-filter canaries. A real private Git repository
+  proves that forced text normalization and a corrupt custom clean filter
+  still refuse, including a 256 KiB binary and preservation of a foreign
+  caller index. Portable documentation replay passes nine examples, 25
+  commands and 21 controls with source bytes preserved. The earlier macOS
+  documentation timeout has no confirmed root cause; the revised three-OS
+  CI lane remains required evidence.
 - Query-model 0.8.0 now joins each declared parameter to the canonical query
   input by name, type, explicit presence and exact typed default, including
   null versus absence. Model and IR pins both validate; mixed or stale pins

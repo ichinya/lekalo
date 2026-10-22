@@ -10,11 +10,12 @@
 // gate. No private material may become a public fixture.
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { fixtureGit } from "./lib/fixture-git.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const fixturesDir = resolve(root, "tests/fixtures");
@@ -90,28 +91,34 @@ for (const family of manifest.families) {
 // r7 devin F4). Check every tracked NUL-bearing fixture, not just one SQLite
 // example, and append a CRLF canary to exercise normalization even if a
 // fixture's current bytes happen not to contain any CRLF. The check is
-// defined over TRACKED files, so a working copy without repository
-// metadata (the docs-examples replay copy) simply has nothing to check.
-let tracked;
-try {
-  tracked = execFileSync("git", ["ls-files", "-z", "--", "tests/fixtures"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
-} catch {
-  tracked = [];
-}
+// defined over TRACKED files. Replay copies create a private index; a
+// missing or broken Git inventory must fail rather than skip this leg.
+const tracked = fixtureGit(root, ["ls-files", "-z", "--", "tests/fixtures"], "inventory").split("\0").filter(Boolean);
 let binaryFixtures = 0;
+const scratch = realpathSync.native(mkdtempSync(join(tmpdir(), "lekalo-fixture-provenance-")));
+try {
 for (const path of tracked) {
   const bytes = await readFile(join(root, path));
   if (!bytes.includes(0) && !path.endsWith('.sqlite')) continue;
   binaryFixtures += 1;
-  const attributes = execFileSync("git", ["check-attr", "-z", "text", "eol", "--", path], { cwd: root, encoding: "utf8" }).split("\0");
+  const attributes = fixtureGit(root, ["check-attr", "-z", "text", "eol", "--", path], "attributes").split("\0");
   assert.equal(attributes[2], "unset", `${path}: binary fixture must be -text`);
   assert.equal(attributes[5], "unspecified", `${path}: binary fixture must not set eol`);
   const canary = Buffer.concat([bytes, Buffer.from("\r\nclean-filter-canary\r\n")]);
-  const clean = execFileSync("git", ["hash-object", "--stdin", `--path=${path}`], { cwd: root, input: canary, encoding: "utf8" });
-  const raw = execFileSync("git", ["hash-object", "--stdin", "--no-filters"], { cwd: root, input: canary, encoding: "utf8" });
+  // Use a real file to avoid a large buffered stdin pipe to synchronous Git.
+  // --path retains the tracked fixture's actual attributes and clean filter.
+  const canaryPath = join(scratch, "canary");
+  writeFileSync(canaryPath, canary);
+  const clean = fixtureGit(root, ["hash-object", `--path=${path}`, "--", canaryPath], "clean-hash");
+  const raw = fixtureGit(root, ["hash-object", "--no-filters", "--", canaryPath], "raw-hash");
   assert.equal(clean, raw, `${path}: clean filtering rewrites binary fixture bytes`);
 }
-assert.ok(tracked.length === 0 || binaryFixtures > 0, "binary fixture filter regression must exercise real fixtures");
+} finally {
+  assert.equal(dirname(scratch), realpathSync.native(tmpdir()));
+  assert.ok(basename(scratch).startsWith("lekalo-fixture-provenance-"));
+  rmSync(scratch, { recursive: true, force: true });
+}
+assert.ok(binaryFixtures > 0, "binary fixture filter regression must exercise real fixtures");
 
 console.log(JSON.stringify({
   ok: true,

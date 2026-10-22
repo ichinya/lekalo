@@ -441,8 +441,8 @@ fn parameters(
             .as_object()
             .ok_or_else(|| diagnostic::input_invalid("parameter-shape"))?;
         for key in object.keys() {
-            if !matches!(key.as_str(), "name" | "type")
-                && !(source_version == crate::loader::ModelVersion::Successor
+            if !(matches!(key.as_str(), "name" | "type")
+                || source_version == crate::loader::ModelVersion::Successor
                     && matches!(key.as_str(), "required" | "default"))
             {
                 return Err(diagnostic::input_invalid("parameter-field"));

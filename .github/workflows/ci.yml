@@ -146,6 +146,7 @@ jobs:
           node scripts/test-privacy-authorizing-evidence.mjs
           node scripts/test-privacy-authorization-subject.mjs
           node scripts/test-fixture-provenance.mjs
+          node scripts/test-fixture-git.mjs
       - name: Validate documentation ownership and replay metadata (issue #105)
         run: |
           node scripts/test-docs-ownership.mjs --static
@@ -644,6 +645,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/test-docs-ownership.mjs
+          node scripts/test-fixture-git.mjs
           node scripts/test-docs-examples.mjs
       - name: Run the Node/TypeScript kernel suite (issue #43)
         run: node scripts/test-node-typescript-kernel.mjs
