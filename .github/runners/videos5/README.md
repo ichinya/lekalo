@@ -7,7 +7,8 @@ daemon. No host Docker socket is mounted. The runner and its own daemon share
 a network namespace, keeping service-container loopback ports local to that pair.
 
 The pool has an aggregate ceiling of six logical CPUs and 16 GiB RAM. Each
-runner/daemon pair has a separate four GiB memory ceiling; Rust builds use
+runner/daemon pair has a separate four GiB RAM ceiling and up to two GiB of
+the host's existing swap (eight GiB swap maximum for the pool). Rust builds use
 one compiler job to keep Rust compilation within that ceiling. MemoryHigh equals
 MemoryMax so reclaim throttling cannot stall the runner listener below its hard
 budget. Dev/test builds retain line-table backtraces without full type debug
