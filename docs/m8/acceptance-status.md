@@ -6,31 +6,37 @@ remaining implementation continues in draft [PR #161](https://github.com/ichinya
 on `ichinya/m8-completion`. This inventory does not close issues. A merged implementation is
 not, by itself, acceptance evidence for every criterion in an issue.
 
-The previous integration branch was `ichinya/M8`. Its checkpoints include `8befa2f0`
-(project error unions and consumers), `15ad603c` (PHP adapter input scopes),
-`9c2aaf28` (semantic symbol relocation), `a1f0f5c8` (field defaults) and
-`7c523b31` (enum wire values). The query-input increment follows those
-checkpoints. Their remaining representation and relocation boundaries still
-belong to #73; the final milestone candidate is not yet qualified.
+The current criterion-by-criterion evidence and supported-profile boundaries
+are in [acceptance-criteria.md](acceptance-criteria.md). The source candidate
+`087881a1` passed the complete Windows workspace run: **3,034 passed, zero
+failed, six ignored**. Four opt-in native tests were then qualified separately
+by the real Rust/Laravel SQLite process battery; two cache benchmarks remain
+ignored. Final exact-delivery CI and review status are maintained in PR #161.
 
-| Issue | Available implementation / qualification entry points | Remaining acceptance work |
+| Issue | Available implementation / qualification entry points | Current evidence / boundary |
 |---|---|---|
-| [#19](https://github.com/ichinya/lekalo/issues/19) portability | `scripts/test-portability-contracts.mjs`, core/CLI portability tests | Requalify exact final revision and check every blocker/partial/unknown criterion against the planner fixtures. |
-| [#33](https://github.com/ichinya/lekalo/issues/33) MCP | stdio, scopes, subscriptions, direct host SDK and actual AI Factory 2.19.0 extension installation gates; `docs/mcp.md` | At `2996132c`, the actual installer/host gate passes in Linux, macOS and Windows CI without inference or user-configuration writes (run `39758553648`). Final milestone revision qualification remains. |
-| [#41](https://github.com/ichinya/lekalo/issues/41) managed | `scripts/test-managed-contracts.mjs`, `test-managed-cli.mjs`, `test-managed-planner-e2e.mjs`; shared semantic Model validation now precedes managed authority | The query-read fixture and dependent authority pins are corrected. Contract gates, 110 CLI invocations and planner regeneration/native-handler execution pass locally. Final milestone-candidate/CI qualification remains. |
-| [#51](https://github.com/ichinya/lekalo/issues/51) Worklog / Changelog | contract, admission, pilot and consumer gates | Final native/evidence qualification, keeping unsupported publication semantics distinct from executed success. |
-| [#52](https://github.com/ichinya/lekalo/issues/52) TaskExternalLink | relation/uniqueness Model successor, task-link contracts and impact/portability gates | Final public/synthetic provider evidence and exact consumer impact qualification. |
-| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions, symbol relocation, module ownership and Model/IR 0.8.0 defaults, enum wire values, query inputs, command results and direct event emissions | Completion of relocation/attachment cases and joins to older signature consumers with owner-compatible successors. Literals retain the documented YAML-layout and legacy-consumer boundaries. Module policy transitions use the existing managed owner's granularity; per-symbol changes do not silently widen to a module. Catalog coverage alone cannot close this issue. |
-| [#74](https://github.com/ichinya/lekalo/issues/74) safe fixes | Fix contracts/CLI and rollback tests | Requalify final Change catalog identity, stale/conflicting plans, replay and rollback. |
-| [#93](https://github.com/ichinya/lekalo/issues/93) semantic search | search contracts/CLI and `scripts/bench-search.mjs` | Final result/ambiguity/offline gates and representative benchmark evidence; separate retrieval metrics from agent answer quality. |
-| [#94](https://github.com/ichinya/lekalo/issues/94) formatter | format contracts, CLI, atomicity and portability gates | Final semantic invariance/trivia checks and Linux/Windows/macOS evidence. |
-| [#95](https://github.com/ichinya/lekalo/issues/95) watch | platform, equivalence, fault, consumer and boundary gates | Linux/macOS watcher execution remains unqualified in this Windows session; repeat the final Windows lane after source completion. |
-| [#96](https://github.com/ichinya/lekalo/issues/96) explain | 644 diagnostic explanations, English/Russian and contract/runtime gates | Final registry coverage, executable safe-fix links and locale-independent machine contract qualification. |
-| [#106](https://github.com/ichinya/lekalo/issues/106) adapter SDK | generated codecs/templates, vectors, confined conformance and detached package gates | Requalify SDK/template/host-policy/protocol-upgrade gates against the actual issue checklist. A separate context-provider protocol is explicitly future work in the research; its Planned status alone does not prove an unmet acceptance criterion. |
-| [#113](https://github.com/ichinya/lekalo/issues/113) module boundaries | Module API contracts, CLI, strict validation, diff/consumer-context gates | Final boundary/path/portability checks, distinguishing in-process and extracted-service evidence. |
-| [#136](https://github.com/ichinya/lekalo/issues/136) incremental adoption | adoption contracts, hybrid/refactor/tutorial gates | Final synthetic end-to-end acceptance: confirmation preservation, selective native gates, rollback, stale evidence and hybrid boundaries. |
+| [#19](https://github.com/ichinya/lekalo/issues/19) portability | Live schemas, planner projections and independent classification oracle | Passed locally: nine schemas, 31 subjects, 48 planning rows, 36 controls; unsupported/unknown remain distinct. |
+| [#33](https://github.com/ichinya/lekalo/issues/33) MCP | Scoped stdio, actual host SDK/AI Factory installation and source-version context | Local legacy/successor gates pass; three-OS installer evidence at `2996132c`; exact-delivery hosted status in PR. No inference. |
+| [#41](https://github.com/ichinya/lekalo/issues/41) managed | Deterministic ownership, complete manifests and planner regeneration | Contract gates, 110 CLI invocations and delete/regenerate/native-handler oracle pass locally. |
+| [#51](https://github.com/ichinya/lekalo/issues/51) Worklog / Changelog | Contract/admission/pilot/impact/neutrality | All local gates pass, including expected strict Go denial and explicit permissive unsupported publication. |
+| [#52](https://github.com/ichinya/lekalo/issues/52) TaskExternalLink | Public/synthetic provider plus native Rust/Laravel SQLite battery | Contract/scenario/outbox/impact/public gates and actual maintained-port race/kill/restart/retry battery pass. Other adapters do not inherit native success. |
+| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Typed Model/IR 0.8.0 edits and owner-compatible consumers; sealed last-home retirement | Change 114 tests, transaction 20 unit tests/101 live steps and successor gates pass. Seven live ACs are mapped; separately owned attachment relocation and unrepresentable consumer shapes explicitly refuse. Module policy changes retain the owner's granularity. |
+| [#74](https://github.com/ichinya/lekalo/issues/74) safe fixes | Scoped plans, replay, stale/conflict and rollback | Two schemas, ten rules, five goldens and 26 live checks pass locally. |
+| [#93](https://github.com/ichinya/lekalo/issues/93) semantic search | Exact filters, ranked cards, offline index and rg comparison | 99 live checks and 20/20 declared benchmark correctness cases pass. Retrieval precision/latency are measured, not universal answer-quality claims. |
+| [#94](https://github.com/ichinya/lekalo/issues/94) formatter | Semantic/trivia invariance, atomicity and portable golden | All four local gates pass; exact-delivery three-OS evidence remains a hosted CI requirement. |
+| [#95](https://github.com/ichinya/lekalo/issues/95) watch | Native/poll, boundaries, equivalence, faults, successors and consumers | All seven gates pass locally. Linux/macOS are hosted lanes, not local Windows results. |
+| [#96](https://github.com/ichinya/lekalo/issues/96) explain | Diagnostic registry, locales and executable fix links | 644/644 explanations and live/schema/locale/fix-reference controls pass. |
+| [#106](https://github.com/ichinya/lekalo/issues/106) adapter SDK | Four-language vectors, real host conformance and detached package verification | All pass locally: 1,145 vectors per language, 51 lifecycle pairs, 1,297 production-oracle rows, strict TS/Rust/control with three repeats, six examples and four package lanes. Context-provider research is not an additional AC. |
+| [#113](https://github.com/ichinya/lekalo/issues/113) module boundaries | Strict visibility, public consumers/context and independent implementation mappings | Eight schemas/22 families pass locally. In-process/service contract mappings are qualified; no remote deployment claim. |
+| [#136](https://github.com/ichinya/lekalo/issues/136) incremental adoption | Read-only proposal, actual native refactor, rollback and hybrid modes | Contracts/refactor/hybrid and all ten tutorial blocks pass locally, including hostile custody/stale-input/recovery controls. Native Git Bash selection avoids the unavailable WSL launcher. |
 
-## Verified local corrections
+## Historical implementation checkpoints
+
+The entries below retain earlier candidate-specific results and then-pending
+work. They are historical snapshots; use the current matrix above and the
+criterion evidence for present status. In particular, earlier native
+`pending-provisioning`, unpublished-commit and context/relocation statements
+have been superseded by later entries and current qualification.
 
 - Symbol relocation now retires a last-definition kind home with an explicit
   delete plan and removed receipt, sealed preimage/provenance, backup,
