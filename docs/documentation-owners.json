@@ -4536,6 +4536,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/query-model.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/query-model.schema.v0.8.0.json",
+      "sourceDigest": "sha256:acefffde8dbd0e7e4d59e018e5176d1a0de976eb0ad13ecb4fbad193c303faa3",
+      "owner": "docs/query-model.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/reference-evaluation.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/reference-evaluation.schema.v0.2.16.json",

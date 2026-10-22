@@ -24,9 +24,9 @@ use super::query::{
     PaginationStrategy, QueryDecl, SelectionField, SortKey,
 };
 use super::version::{
-    self, IR_IDENTITY, MAX_COST_ROWS, MAX_INCLUDES, MAX_INCLUDE_PATH, MAX_LIMIT, MAX_OFFSET,
-    MAX_PARAMETERS, MAX_POLICY_REFS, MAX_QUERIES, MAX_REASON_BYTES, MAX_SELECTION, MAX_SORT_KEYS,
-    MAX_STALENESS_SECONDS, MAX_TENANCY,
+    self, MAX_COST_ROWS, MAX_INCLUDES, MAX_INCLUDE_PATH, MAX_LIMIT, MAX_OFFSET, MAX_POLICY_REFS,
+    MAX_QUERIES, MAX_REASON_BYTES, MAX_SELECTION, MAX_SORT_KEYS, MAX_STALENESS_SECONDS,
+    MAX_TENANCY,
 };
 use super::{ModelPin, QueryModelAttachment, TenancyDecl};
 
@@ -97,10 +97,13 @@ pub(crate) fn from_value(json: &Json) -> Result<QueryModelAttachment, Diagnostic
             return Err(diagnostic::input_invalid("missing-field"));
         }
     }
-    if object.get("schemaVersion").and_then(Json::as_str) != Some(version::SCHEMA_VERSION) {
-        return Err(diagnostic::input_invalid("schema-version"));
-    }
-    if object.get("identity").and_then(Json::as_str) != Some(version::IDENTITY) {
+    let source_version = match object.get("schemaVersion").and_then(Json::as_str) {
+        Some(version::SCHEMA_VERSION) => crate::loader::ModelVersion::Current,
+        Some("lekalo/query-model/v0.8.0") => crate::loader::ModelVersion::Successor,
+        _ => return Err(diagnostic::input_invalid("schema-version")),
+    };
+    if object.get("identity").and_then(Json::as_str) != Some(version::identity_for(source_version))
+    {
         return Err(diagnostic::input_invalid("contract-identity"));
     }
     let attachment_revision = SemVer::parse(
@@ -122,10 +125,14 @@ pub(crate) fn from_value(json: &Json) -> Result<QueryModelAttachment, Diagnostic
             .get("modelRef")
             .ok_or_else(|| diagnostic::input_invalid("model-ref"))?,
     )?;
+    if *model_ref.version() != source_version {
+        return Err(diagnostic::input_invalid("model-version"));
+    }
     let ir_digest = digest_member(
         object
             .get("irRef")
             .ok_or_else(|| diagnostic::input_invalid("ir-ref"))?,
+        source_version,
     )?;
     let source_map_ref = match object.get("sourceMapRef") {
         Some(value) => Some(
@@ -149,6 +156,7 @@ pub(crate) fn from_value(json: &Json) -> Result<QueryModelAttachment, Diagnostic
             .get("queries")
             .and_then(Json::as_array)
             .ok_or_else(|| diagnostic::input_invalid("query-list"))?,
+        source_version,
     )?;
     let attachment = QueryModelAttachment::assemble(
         attachment_revision,
@@ -177,10 +185,8 @@ fn model_pin(value: &Json) -> Result<ModelPin, DiagnosticSet> {
         .get("modelVersion")
         .and_then(Json::as_str)
         .ok_or_else(|| diagnostic::input_invalid("model-version"))?;
-    let pin = match version {
-        "0.2.16" => crate::scenario::ModelPin::Current,
-        _ => return Err(diagnostic::input_invalid("model-version")),
-    };
+    let pin = crate::loader::ModelVersion::parse_exact(version)
+        .ok_or_else(|| diagnostic::input_invalid("model-version"))?;
     let digest = Sha256Digest::parse(
         object
             .get("digest")
@@ -192,7 +198,10 @@ fn model_pin(value: &Json) -> Result<ModelPin, DiagnosticSet> {
 }
 
 /// Decode the bound IR digest.
-fn digest_member(value: &Json) -> Result<Sha256Digest, DiagnosticSet> {
+fn digest_member(
+    value: &Json,
+    source_version: crate::loader::ModelVersion,
+) -> Result<Sha256Digest, DiagnosticSet> {
     let object = value
         .as_object()
         .ok_or_else(|| diagnostic::input_invalid("ir-ref-shape"))?;
@@ -201,7 +210,9 @@ fn digest_member(value: &Json) -> Result<Sha256Digest, DiagnosticSet> {
             return Err(diagnostic::input_invalid("ir-ref-field"));
         }
     }
-    if object.get("identity").and_then(Json::as_str) != Some(IR_IDENTITY) {
+    if object.get("identity").and_then(Json::as_str)
+        != Some(crate::ir::version::identity_for(source_version))
+    {
         return Err(diagnostic::input_invalid("ir-identity"));
     }
     Sha256Digest::parse(
@@ -257,7 +268,10 @@ fn tenancy(items: &[Json]) -> Result<Vec<TenancyDecl>, DiagnosticSet> {
 }
 
 /// Decode every query declaration, canonically ordered by query id.
-fn queries(items: &[Json]) -> Result<Vec<QueryDecl>, DiagnosticSet> {
+fn queries(
+    items: &[Json],
+    source_version: crate::loader::ModelVersion,
+) -> Result<Vec<QueryDecl>, DiagnosticSet> {
     if items.len() > MAX_QUERIES {
         return Err(diagnostic::input_invalid("query-bound"));
     }
@@ -266,6 +280,7 @@ fn queries(items: &[Json]) -> Result<Vec<QueryDecl>, DiagnosticSet> {
         declarations.push(query(
             item.as_object()
                 .ok_or_else(|| diagnostic::input_invalid("query-shape"))?,
+            source_version,
         )?);
     }
     declarations.sort_by(|left, right| left.sort_key().cmp(right.sort_key()));
@@ -278,7 +293,10 @@ fn queries(items: &[Json]) -> Result<Vec<QueryDecl>, DiagnosticSet> {
 }
 
 /// Decode one query declaration object.
-fn query(object: &WireMap) -> Result<QueryDecl, DiagnosticSet> {
+fn query(
+    object: &WireMap,
+    source_version: crate::loader::ModelVersion,
+) -> Result<QueryDecl, DiagnosticSet> {
     for key in object.keys() {
         if !QUERY_KEYS.contains(&key.as_str()) {
             return Err(diagnostic::input_invalid("unknown-field"));
@@ -327,7 +345,10 @@ fn query(object: &WireMap) -> Result<QueryDecl, DiagnosticSet> {
         }
         None => None,
     };
-    let parameters = parameters(object.get("parameters").and_then(Json::as_array))?;
+    let parameters = parameters(
+        object.get("parameters").and_then(Json::as_array),
+        source_version,
+    )?;
     let filter = match object.get("filter") {
         Some(value) => Some(filter_expr(value, 0)?),
         None => None,
@@ -403,12 +424,15 @@ fn query(object: &WireMap) -> Result<QueryDecl, DiagnosticSet> {
 }
 
 /// Decode the declared input parameters, canonically sorted by name.
-fn parameters(items: Option<&Vec<Json>>) -> Result<Vec<super::query::Parameter>, DiagnosticSet> {
+fn parameters(
+    items: Option<&Vec<Json>>,
+    source_version: crate::loader::ModelVersion,
+) -> Result<Vec<super::query::Parameter>, DiagnosticSet> {
     let items = match items {
         Some(items) => items,
         None => return Ok(Vec::new()),
     };
-    if items.len() > MAX_PARAMETERS {
+    if items.len() > version::max_parameters_for(source_version) {
         return Err(diagnostic::input_invalid("parameter-bound"));
     }
     let mut parameters = Vec::with_capacity(items.len());
@@ -417,11 +441,14 @@ fn parameters(items: Option<&Vec<Json>>) -> Result<Vec<super::query::Parameter>,
             .as_object()
             .ok_or_else(|| diagnostic::input_invalid("parameter-shape"))?;
         for key in object.keys() {
-            if !matches!(key.as_str(), "name" | "type") {
+            if !matches!(key.as_str(), "name" | "type")
+                && !(source_version == crate::loader::ModelVersion::Successor
+                    && matches!(key.as_str(), "required" | "default"))
+            {
                 return Err(diagnostic::input_invalid("parameter-field"));
             }
         }
-        if object.len() != 2 {
+        if source_version == crate::loader::ModelVersion::Current && object.len() != 2 {
             return Err(diagnostic::input_invalid("parameter-missing"));
         }
         let name = ParameterName::parse(
@@ -436,10 +463,30 @@ fn parameters(items: Option<&Vec<Json>>) -> Result<Vec<super::query::Parameter>,
                 .get("type")
                 .and_then(Json::as_str)
                 .ok_or_else(|| diagnostic::input_invalid("parameter-type"))?,
+            source_version,
         )?;
+        let required = if source_version == crate::loader::ModelVersion::Successor {
+            Some(
+                object
+                    .get("required")
+                    .and_then(Json::as_bool)
+                    .ok_or_else(|| diagnostic::input_invalid("parameter-required"))?,
+            )
+        } else {
+            None
+        };
+        let default = object
+            .get("default")
+            .map(|value| {
+                crate::ir::DefaultValue::from_json(value.clone())
+                    .ok_or_else(|| diagnostic::input_invalid("parameter-default"))
+            })
+            .transpose()?;
         parameters.push(super::query::Parameter {
             name,
             parameter_type,
+            required,
+            default,
         });
     }
     parameters.sort_by(|left, right| left.name.as_str().cmp(right.name.as_str()));
@@ -455,12 +502,17 @@ fn parameters(items: Option<&Vec<Json>>) -> Result<Vec<super::query::Parameter>,
 /// grammar and symbol resolution are checked against the bound Model
 /// at resolution time; the wire level refuses control characters,
 /// whitespace noise, and oversize text.
-fn type_expression(text: &str) -> Result<String, DiagnosticSet> {
-    if text.is_empty() || text.len() > 128 {
+fn type_expression(
+    text: &str,
+    source_version: crate::loader::ModelVersion,
+) -> Result<String, DiagnosticSet> {
+    let successor = source_version == crate::loader::ModelVersion::Successor;
+    if text.is_empty() || text.len() > if successor { 256 } else { 128 } {
         return Err(diagnostic::input_invalid("type-expression"));
     }
     if !text.bytes().all(|byte| {
         byte.is_ascii_lowercase()
+            || (successor && byte.is_ascii_uppercase())
             || byte.is_ascii_digit()
             || matches!(byte, b'.' | b'<' | b'>' | b'?' | b'_')
     }) {
@@ -1200,6 +1252,7 @@ fn is_uri(text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::super::version::IR_IDENTITY;
     use super::*;
     use serde_json::json;
 

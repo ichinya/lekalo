@@ -52,12 +52,15 @@ fn digest(bytes: &[u8]) -> String {
     format!("sha256:{}", lekalo_core::digest::sha256_hex(bytes))
 }
 
-/// Rebind the attachment to the exact canonical load envelope of the
-/// copied fixture project.
+/// Rebind both Model and IR custody to the copied fixture project.
 fn repin_model(dir: &Path, value: &mut Value) {
     let load = lekalo_in(dir, &["--json", "load", "--project", "."]);
     assert_eq!(exit_code(&load), 0, "{}", stderr_text(&load));
     value["modelRef"]["digest"] = digest(load.stdout.strip_suffix(b"\n").unwrap()).into();
+    let ir = lekalo_in(dir, &["--json", "load", "--ir", "--project", "."]);
+    assert_eq!(exit_code(&ir), 0, "{}", stderr_text(&ir));
+    let ir: Value = serde_json::from_slice(&ir.stdout).unwrap();
+    value["irRef"]["digest"] = digest(&serde_json::to_vec(&ir["ir"]).unwrap()).into();
 }
 
 fn attachment_value(dir: &Path) -> Value {
@@ -408,6 +411,15 @@ fn custody_refuses_a_foreign_or_drifted_model() {
     save_attachment(dir, &foreign_project);
     let refusal = validate_err(dir, false);
     assert!(refusal.contains("query.input-invalid"), "{refusal}");
+    save_attachment(dir, &value);
+
+    // A current Model pin cannot authorize a false IR provenance claim.
+    let mut stale_ir = value.clone();
+    assert_ne!(stale_ir["irRef"]["digest"], PLACEHOLDER_DIGEST);
+    stale_ir["irRef"]["digest"] = json!(PLACEHOLDER_DIGEST);
+    save_attachment(dir, &stale_ir);
+    let refusal = validate_err(dir, false);
+    assert!(refusal.contains("ir-digest"), "{refusal}");
     save_attachment(dir, &value);
 
     // A drifted model document breaks the digest custody.

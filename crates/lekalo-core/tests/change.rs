@@ -4080,6 +4080,108 @@ fn command_result_declarations_are_successor_only_and_unknown_types_never_write(
 }
 
 #[test]
+fn query_input_owner_joins_bind_names_types_presence_and_defaults_exactly() {
+    use lekalo_core::query_model::{self, QueryModelAttachment};
+    let sandbox = Sandbox::new("query-input-owner-joins");
+    enable_default_successor(&sandbox);
+    let path = sandbox.root.join("lekalo/modules/tasks/queries.yaml");
+    let source = "schema_version: \"0.8.0\"\ndefinitions:\n  - id: tasks.find\n    kind: query\n    version: 1\n    input:\n      - name: title\n        type: tasks.text\n        required: true\n        default: sample\n      - name: tag\n        type: tasks.text?\n        default: null\n    reads:\n      - tasks.task\n    returns: tasks.task\n";
+    std::fs::write(&path, source).unwrap();
+    let selection = sandbox.selection();
+    let model_wire = lekalo_core::loader::run(&selection, false).to_json_string();
+    let compilation = compiled_sandbox(&sandbox);
+    let project = compilation.project.project.as_ref().unwrap().id.as_str();
+    let model_digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(model_wire.as_bytes())
+    );
+    let ir_digest = format!(
+        "sha256:{}",
+        lekalo_core::digest::sha256_hex(compilation.project.to_canonical_json().as_bytes(),)
+    );
+    let wire = serde_json::json!({
+        "schemaVersion":"lekalo/query-model/v0.8.0", "identity":"dev.lekalo.query-model@0.8.0",
+        "attachmentRevision":"1.0.0", "projectId":project,
+        "modelRef":{"modelVersion":"0.8.0", "digest":model_digest},
+        "irRef":{"identity":"dev.lekalo.ir@0.8.0", "digest":ir_digest},
+        "tenancy":[], "queries":[{
+            "query":"tasks.find", "source":"tasks.task", "cardinality":"one", "consistency":"strong",
+            "parameters":[
+                {"name":"title", "type":"tasks.text", "required":true, "default":"sample"},
+                {"name":"tag", "type":"tasks.text?", "required":false, "default":null}
+            ]
+        }]
+    });
+    let attachment = QueryModelAttachment::from_value(&wire).unwrap();
+    let resolution =
+        query_model::resolve(&attachment, &selection, query_model::Profile::Default).unwrap();
+    assert_eq!(resolution.plans().len(), 1);
+    let snapshot = lekalo_core::loader::normalize_model(&selection).unwrap();
+    let drifted = source.replace("default: sample", "default: newer");
+    std::fs::write(&path, &drifted).unwrap();
+    query_model::resolve_model(&attachment, &snapshot, query_model::Profile::Default).unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), drifted);
+    assert!(
+        query_model::resolve(&attachment, &selection, query_model::Profile::Default)
+            .unwrap_err()
+            .to_json_string()
+            .contains("model-digest")
+    );
+    std::fs::write(&path, source).unwrap();
+    let canonical: serde_json::Value =
+        serde_json::from_str(&attachment.canonical_bytes().unwrap()).unwrap();
+    assert_eq!(canonical["identity"], "dev.lekalo.query-model@0.8.0");
+    assert_eq!(canonical["queries"][0]["parameters"][0]["name"], "tag");
+    assert!(canonical["queries"][0]["parameters"][0]
+        .as_object()
+        .unwrap()
+        .contains_key("default"));
+    assert_eq!(
+        canonical["queries"][0]["parameters"][0]["default"],
+        serde_json::Value::Null
+    );
+    for (member, value, expected) in [
+        ("name", serde_json::json!("other"), "query-input-members"),
+        ("type", serde_json::json!("tasks.bool"), "query-input-type"),
+        ("required", serde_json::json!(false), "query-input-required"),
+        (
+            "default",
+            serde_json::json!("different"),
+            "query-input-default",
+        ),
+    ] {
+        let mut invalid = wire.clone();
+        invalid["queries"][0]["parameters"][0][member] = value;
+        let attachment = QueryModelAttachment::from_value(&invalid).unwrap();
+        let result = query_model::resolve(&attachment, &selection, query_model::Profile::Default)
+            .unwrap_err();
+        assert!(result.to_json_string().contains(expected), "{expected}");
+    }
+    let mut absent = wire.clone();
+    absent["queries"][0]["parameters"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("default");
+    let attachment = QueryModelAttachment::from_value(&absent).unwrap();
+    assert!(
+        query_model::resolve(&attachment, &selection, query_model::Profile::Default)
+            .unwrap_err()
+            .to_json_string()
+            .contains("query-input-default")
+    );
+    let mut required_missing = wire.clone();
+    required_missing["queries"][0]["parameters"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("required");
+    assert!(QueryModelAttachment::from_value(&required_missing).is_err());
+    let mut mixed = wire;
+    mixed["modelRef"]["modelVersion"] = serde_json::json!("0.2.16");
+    assert!(QueryModelAttachment::from_value(&mixed).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), source.as_bytes());
+}
+
+#[test]
 fn definition_add_rejects_duplicate_field_names_before_mutation_on_both_models() {
     for successor in [false, true] {
         for kind in ["command", "query", "event"] {

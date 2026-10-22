@@ -21,11 +21,11 @@ pub(crate) fn attachment_bytes(attachment: &QueryModelAttachment) -> Result<Stri
     let mut root = Map::new();
     root.insert(
         "schemaVersion".to_owned(),
-        Json::String(super::version::SCHEMA_VERSION.to_owned()),
+        Json::String(attachment.schema_version().to_owned()),
     );
     root.insert(
         "identity".to_owned(),
-        Json::String(super::version::IDENTITY.to_owned()),
+        Json::String(attachment.identity().to_owned()),
     );
     root.insert(
         "attachmentRevision".to_owned(),
@@ -48,7 +48,7 @@ pub(crate) fn attachment_bytes(attachment: &QueryModelAttachment) -> Result<Stri
     let mut ir_ref = Map::new();
     ir_ref.insert(
         "identity".to_owned(),
-        Json::String(super::version::IR_IDENTITY.to_owned()),
+        Json::String(crate::ir::version::identity_for(*attachment.model_ref.version()).to_owned()),
     );
     ir_ref.insert(
         "digest".to_owned(),
@@ -140,6 +140,13 @@ fn query_json(decl: &QueryDecl) -> Json {
                             "type".to_owned(),
                             Json::String(parameter.parameter_type.clone()),
                         );
+                        if let Some(required) = parameter.required {
+                            parameter_object.insert("required".to_owned(), Json::Bool(required));
+                        }
+                        if let Some(default) = &parameter.default {
+                            parameter_object
+                                .insert("default".to_owned(), default.as_json().clone());
+                        }
                         Json::Object(parameter_object)
                     })
                     .collect::<Vec<_>>(),

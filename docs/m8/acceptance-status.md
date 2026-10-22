@@ -32,6 +32,17 @@ belong to #73; the final milestone candidate is not yet qualified.
 
 ## Verified local corrections
 
+- Query-model 0.8.0 now joins each declared parameter to the canonical query
+  input by name, type, explicit presence and exact typed default, including
+  null versus absence. Model and IR pins both validate; mixed or stale pins
+  refuse. The successor supports all 256 Model input fields while the frozen
+  predecessor keeps its 64-parameter representation. A pure `resolve_model`
+  validates a prospective immutable snapshot without rereading or changing
+  source files. The live CLI gate passes 17 calls and the independent successor
+  schema; 35 existing core unit tests and 14 legacy CLI tests pass, including
+  a false-IR-pin control. The snapshot/default/presence integration test,
+  Clippy and MSRV also pass. Downstream transport, OpenAPI/SDK and context
+  successors remain separate work; this does not qualify native generation.
 - Model/IR 0.8.0 commands support direct event `emits` independently of
   CRUD effects. Change add/remove, including the last emission, preserve the
   source and durable replay; a declaration and emission compose in one request.

@@ -50,7 +50,7 @@ pub use query::{
     Cardinality, Consistency, CostHint, Direction, ForeignRef, Include, Pagination,
     PaginationStrategy, QueryDecl, SelectionField, SortKey,
 };
-pub use resolve::{resolve, Resolution};
+pub use resolve::{resolve, resolve_model, Resolution};
 pub use version::{FAMILY, IDENTITY, IR_IDENTITY, MAX_CANONICAL_BYTES, SCHEMA_VERSION, VERSION};
 
 use crate::diagnostics::DiagnosticSet;
@@ -64,19 +64,19 @@ pub use resolve::Profile;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelPin {
     /// The accepted Model contract version.
-    pub(crate) version: crate::scenario::ModelPin,
+    pub(crate) version: crate::loader::ModelVersion,
     /// The digest of the exact source Model document.
     pub(crate) digest: Sha256Digest,
 }
 
 impl ModelPin {
     /// Assemble from validated parts (crate internal).
-    pub(crate) fn new(version: crate::scenario::ModelPin, digest: Sha256Digest) -> Self {
+    pub(crate) fn new(version: crate::loader::ModelVersion, digest: Sha256Digest) -> Self {
         Self { version, digest }
     }
 
     /// The accepted Model contract version.
-    pub const fn version(&self) -> &crate::scenario::ModelPin {
+    pub const fn version(&self) -> &crate::loader::ModelVersion {
         &self.version
     }
 
@@ -122,6 +122,15 @@ pub struct QueryModelAttachment {
 }
 
 impl QueryModelAttachment {
+    /// Exact owner contract selected by the bound source Model.
+    pub const fn identity(&self) -> &'static str {
+        version::identity_for(*self.model_ref.version())
+    }
+
+    pub const fn schema_version(&self) -> &'static str {
+        version::schema_version_for(*self.model_ref.version())
+    }
+
     /// Assemble from validated parts (crate internal); collections
     /// arrive in the caller's normalized order.
     pub(crate) fn assemble(
@@ -172,6 +181,16 @@ impl QueryModelAttachment {
     /// read-only.
     pub fn validate_queries(&self) -> Result<(), DiagnosticSet> {
         self.semantic_self_check()
+    }
+
+    /// Bind declared query signatures to an exact compiled project. This
+    /// checks project/version/IR custody and input facts; full read-plan
+    /// semantics still belong to `resolve` over the selected Model.
+    pub fn validate_input_bindings(
+        &self,
+        project: &crate::ir::CompiledProject,
+    ) -> Result<(), DiagnosticSet> {
+        resolve::validate_input_bindings(self, project)
     }
 
     /// The exact attachment revision.

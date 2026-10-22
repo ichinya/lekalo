@@ -1,6 +1,18 @@
 # Lekalo declarative query model
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+> Changed contracts take the current product version; published predecessor schemas remain frozen. See [versioning](versioning.md).
+
+The [0.8.0 successor](../contracts/query-model.schema.v0.8.0.json) binds Model/IR
+0.8.0. Its parameters exactly match each bound query's canonical `input`: names,
+type expressions, explicit `required` flags and optional typed `default` literals.
+An explicit null default differs from absence. Missing, extra or contradictory
+facts refuse. It supports the Model's 256 input-field bound; the predecessor
+retains its 64-parameter bound and original wire representation. Resolution
+checks both Model and IR custody. `resolve_model` validates an immutable
+normalized snapshot without filesystem access, so prospective attachments can
+be qualified before a Change transaction writes anything. Downstream owners
+still require their own compatible contracts; this does not execute a query
+or qualify native generation.
 
 Issue #64 makes the read semantics of queries first-class,
 machine-checkable contract data. One closed, versioned attachment —
