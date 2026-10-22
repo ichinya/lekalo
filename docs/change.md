@@ -369,6 +369,14 @@ Post-replacement user edits and deletions are preserved; an edited
 creation is never removed. Drift or damaged backup material retains the
 journal and reader barrier and reports `change.recovery-required`.
 
+Explicit recovery distinguishes a confirmed missing target from a read
+refusal. IO errors and files above the admitted read bound (8 MiB for
+canonical documents) preserve the current file, journal, backups and
+pending record and report `change.recovery-required`. Every target is
+preflighted before restoration starts, and replacement bytes are checked
+again before each restore. A genuinely missing existing target can still
+be restored from its verified backup.
+
 `change::apply_prepared` is the only writer. Under the shared
 project-wide mutation lock (`.lekalo/cache/writer.lock`, held across
 the change, migration (apply and rollback), format, generate, and

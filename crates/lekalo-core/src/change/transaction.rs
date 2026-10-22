@@ -1447,7 +1447,7 @@ pub(crate) fn require_durably_committed(root: &Path, transaction: &str) -> Resul
     }
     let restorations = restorations_of(root, &journal_dir, &journal)?;
     for restoration in &restorations {
-        let Some(digest) = target_digest(root, restoration) else {
+        let Some(digest) = target_digest(root, restoration, transaction)? else {
             return Err(ChangeError::RecoveryRequired {
                 transaction: transaction.to_owned(),
             });
@@ -1470,7 +1470,7 @@ fn recover_staging(
     restorations: &[Restoration],
 ) -> Result<RecoveryResult, ChangeError> {
     for restoration in restorations {
-        let Some(digest) = target_digest(root, restoration) else {
+        let Some(digest) = target_digest(root, restoration, transaction)? else {
             continue; // absent target: never replaced
         };
         if digest == restoration.after_digest {
@@ -1536,7 +1536,7 @@ fn recover_replacing(
     // does not own: recovery refuses with the journal and the reader
     // barrier retained, and no earlier restoration has been performed.
     for restoration in restorations {
-        let digest = target_digest(root, restoration);
+        let digest = target_digest(root, restoration, transaction)?;
         let explained = match (&restoration.backup, digest) {
             // A creation already removed (or never created).
             (None, None) => true,
@@ -1587,13 +1587,19 @@ fn recover_replacing(
                     let digest = format!("sha256:{}", crate::digest::sha256_hex(&bytes));
                     if digest == restoration.before_digest {
                         Ok(())
-                    } else {
+                    } else if digest == restoration.after_digest {
                         std::fs::read(backup)
                             .and_then(|original| write_same_dir(&restoration.target, &original))
+                    } else {
+                        Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "replacement-drifted",
+                        ))
                     }
                 }
-                Err(_) => std::fs::read(backup)
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => std::fs::read(backup)
                     .and_then(|original| write_same_dir(&restoration.target, &original)),
+                Err(error) => Err(error),
             },
         };
         if outcome.is_err() {
@@ -1654,7 +1660,7 @@ fn recover_committed(
         // A committed transaction's every target must still carry the
         // exact committed bytes; a missing or drifted target is an
         // unknown state and fails closed with the barrier retained.
-        let Some(digest) = target_digest(root, restoration) else {
+        let Some(digest) = target_digest(root, restoration, transaction)? else {
             return Err(ChangeError::RecoveryRequired {
                 transaction: transaction.to_owned(),
             });
@@ -1694,13 +1700,22 @@ fn recover_committed(
     })
 }
 
-/// The digest of one restoration target's current bytes, or `None` when
-/// absent. The read is no-follow through the shared [`Fs`] (r8, omp F6
-/// residual): journal-controlled paths never make recovery follow a
-/// link.
-fn target_digest(root: &Path, restoration: &Restoration) -> Option<String> {
-    let bytes = read_target_bytes(root, &restoration.path).ok()?;
-    Some(format!("sha256:{}", crate::digest::sha256_hex(&bytes)))
+/// The digest of one restoration target's current bytes. Only a confirmed
+/// `NotFound` is absence; a bounded-read or IO refusal retains recovery
+/// material instead of authorizing restoration or cleanup. The shared
+/// no-follow reader also refuses linked or otherwise unconfined targets.
+fn target_digest(
+    root: &Path,
+    restoration: &Restoration,
+    transaction: &str,
+) -> Result<Option<String>, ChangeError> {
+    match read_target_bytes(root, &restoration.path) {
+        Ok(bytes) => Ok(Some(super::receipt::bytes_digest(&bytes))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(_) => Err(ChangeError::RecoveryRequired {
+            transaction: transaction.to_owned(),
+        }),
+    }
 }
 
 impl ChangeError {

@@ -3135,6 +3135,128 @@ fn recovery_preserves_user_edits_made_after_an_interrupted_transaction() {
 }
 
 #[test]
+fn recovery_refuses_oversized_targets_and_retains_all_recovery_material() {
+    for state in ["staging", "replacing"] {
+        for creation in [false, true] {
+            let sandbox = Sandbox::new(&format!("oversized-{state}-{creation}"));
+            let original = sandbox.entities_bytes();
+            let journal_dir = plant_journal(
+                &sandbox,
+                "change-oversize01",
+                state,
+                serde_json::json!([{
+                    "path": "lekalo/modules/tasks/entities.yaml",
+                    "beforeDigest": sha256_of(if creation { b"" } else { &original }),
+                    "afterDigest": sha256_of(b"transaction output\n"),
+                    "creation": creation,
+                }]),
+                false,
+            );
+            if !creation {
+                std::fs::write(journal_dir.join("backups/0"), &original).unwrap();
+            }
+            // Exceed the canonical document read bound. This is a read
+            // refusal, never evidence that the user's file is absent.
+            let user_edit = vec![b' '; 8 * 1024 * 1024 + 1];
+            std::fs::write(sandbox.entities_path(), &user_edit).unwrap();
+            let pending = sandbox.root.join(".lekalo/pending-transactions.json");
+            let pending_before = std::fs::read(&pending).unwrap();
+            let journal_before = std::fs::read(journal_dir.join("journal.json")).unwrap();
+
+            let result =
+                change::recover_transaction(Some(&sandbox.selection_str()), "change-oversize01");
+            assert!(
+                matches!(result, Err(ChangeError::RecoveryRequired { .. })),
+                "{state}, creation={creation}: {result:?}"
+            );
+            assert_eq!(std::fs::read(sandbox.entities_path()).unwrap(), user_edit);
+            assert_eq!(std::fs::read(&pending).unwrap(), pending_before);
+            assert_eq!(
+                std::fs::read(journal_dir.join("journal.json")).unwrap(),
+                journal_before
+            );
+            if !creation {
+                assert_eq!(
+                    std::fs::read(journal_dir.join("backups/0")).unwrap(),
+                    original
+                );
+            }
+            assert!(change::pending_transactions(Some(&sandbox.selection_str()))
+                .unwrap()
+                .contains(&"change-oversize01".to_owned()));
+        }
+    }
+}
+
+#[test]
+fn recovery_refuses_oversized_siblings_before_restoring_any_target() {
+    let sandbox = Sandbox::new("oversized-prefix");
+    let original = sandbox.entities_bytes();
+    let after = b"transaction output\n";
+    let commands = sandbox.root.join("lekalo/modules/tasks/commands.yaml");
+    let journal_dir = plant_journal(
+        &sandbox,
+        "change-oversize02",
+        "replacing",
+        serde_json::json!([
+            {
+                "path": "lekalo/modules/tasks/entities.yaml",
+                "beforeDigest": sha256_of(&original),
+                "afterDigest": sha256_of(after),
+                "creation": false,
+            },
+            {
+                "path": "lekalo/modules/tasks/commands.yaml",
+                "beforeDigest": sha256_of(b"before commands\n"),
+                "afterDigest": sha256_of(after),
+                "creation": false,
+            }
+        ]),
+        false,
+    );
+    std::fs::write(journal_dir.join("backups/0"), &original).unwrap();
+    std::fs::write(journal_dir.join("backups/1"), b"before commands\n").unwrap();
+    std::fs::write(sandbox.entities_path(), after).unwrap();
+    let user_edit = vec![b' '; 8 * 1024 * 1024 + 1];
+    std::fs::write(&commands, &user_edit).unwrap();
+
+    let result = change::recover_transaction(Some(&sandbox.selection_str()), "change-oversize02");
+    assert!(
+        matches!(result, Err(ChangeError::RecoveryRequired { .. })),
+        "{result:?}"
+    );
+    assert_eq!(std::fs::read(sandbox.entities_path()).unwrap(), after);
+    assert_eq!(std::fs::read(&commands).unwrap(), user_edit);
+    assert!(journal_dir.join("journal.json").is_file());
+}
+
+#[test]
+fn recovery_restores_a_missing_existing_target_from_its_verified_backup() {
+    let sandbox = Sandbox::new("missing-recovery");
+    let original = sandbox.entities_bytes();
+    let journal_dir = plant_journal(
+        &sandbox,
+        "change-missing01",
+        "replacing",
+        serde_json::json!([{
+            "path": "lekalo/modules/tasks/entities.yaml",
+            "beforeDigest": sha256_of(&original),
+            "afterDigest": sha256_of(b"transaction output\n"),
+            "creation": false,
+        }]),
+        false,
+    );
+    std::fs::write(journal_dir.join("backups/0"), &original).unwrap();
+    std::fs::remove_file(sandbox.entities_path()).unwrap();
+    change::recover_transaction(Some(&sandbox.selection_str()), "change-missing01").unwrap();
+    assert_eq!(std::fs::read(sandbox.entities_path()).unwrap(), original);
+    assert!(!journal_dir.exists());
+    assert!(change::pending_transactions(Some(&sandbox.selection_str()))
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn committed_recovery_clears_its_reader_barrier_before_success() {
     // Round 3, finding 3: a durably committed journal verifies every
     // target against its pinned after bytes, finishes the cleanup, and
