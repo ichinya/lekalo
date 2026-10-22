@@ -480,7 +480,7 @@
       "kind": "command",
       "command": "change",
       "usage": "lekalo change [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:725ec7baa97ab3cde66df6780823c7ab1e4903f7b492c77c8a6136f893f21ba8",
+      "helpDigest": "sha256:32297cd15a00e0e5af5dcda9ce4f2c438a70aa44df1acfa109efa234cc80e69c",
       "summary": "Semantic operations instead of direct YAML/code edits (issue #73): typed requests, validated candidates, bounded plans, and one durable, idempotent transaction writer",
       "leaf": false,
       "owner": "docs/change.md",
@@ -645,8 +645,8 @@
       "kind": "command",
       "command": "change operation-output:set",
       "usage": "lekalo change operation-output:set [OPTIONS] --operation <ID> --type <TYPE>",
-      "helpDigest": "sha256:2bc817536e7715f6eabc0fab7bf7adc3bf60c4aaa994a6ffba86d41847b8007d",
-      "summary": "Replace a query's return type",
+      "helpDigest": "sha256:eaacf196de47610ecec9b14df213810a86b4ac791d71bb7fcb790f260cc91ccd",
+      "summary": "Set a query or Model 0.8.0 command return type",
       "leaf": true,
       "owner": "docs/change.md",
       "status": "implemented"
@@ -3702,7 +3702,7 @@
       "id": "contract:contracts/graph.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/graph.schema.v0.8.0.json",
-      "sourceDigest": "sha256:649fb9eb2519996bf8321fa57c6f39f6e06b200c05ae73d3d5e595ca4a053660",
+      "sourceDigest": "sha256:62a53f398bb4a4da1bb8764b1228d816a5268853b9cc96369962b6755050b31d",
       "owner": "docs/graph.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3765,7 +3765,7 @@
       "id": "contract:contracts/ir.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/ir.schema.v0.8.0.json",
-      "sourceDigest": "sha256:a87ddb640c550fddc689a48fe1b02ec8c7c16e9808fc8843010c113c17c810a6",
+      "sourceDigest": "sha256:bb1715e25479417c4d06a672093dbad5994e3b3cba1eb02f517644d8adc9401d",
       "owner": "docs/ir.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3918,7 +3918,7 @@
       "id": "contract:contracts/mcp-tool-graph-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-graph-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:6f3254bbc9582d2af6d53532d48d8303fa5bb24e70eef8eb4e6725ff680dbd95",
+      "sourceDigest": "sha256:b305d02224789999ae5da5dab45a512454c33f1ea087d38ac6f95ae016bcfeab",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4062,7 +4062,7 @@
       "id": "contract:contracts/model.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/model.schema.v0.8.0.json",
-      "sourceDigest": "sha256:9975620b925058f7b26e59689abb3b80c19ffdfa7d098497d5c6a6a58f3326ff",
+      "sourceDigest": "sha256:c512365e33d9c630601f0b503fdeeed44838c8428130638b2a489dcfca66afee",
       "owner": "docs/model.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4647,7 +4647,7 @@
       "id": "contract:contracts/search-query.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/search-query.schema.v0.8.0.json",
-      "sourceDigest": "sha256:81a77cdee4314a90720a6fbca0b0711d1b121ba2dcad8471e45f92abd01624d1",
+      "sourceDigest": "sha256:3667b741e16c467e63a7ab15876f9c67c6ca2b93346d601ce5a1d0919eddbcb1",
       "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

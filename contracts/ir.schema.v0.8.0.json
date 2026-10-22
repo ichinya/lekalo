@@ -628,6 +628,9 @@
         },
         "visibility": {
           "$ref": "#/$defs/definitionCommon/properties/visibility"
+        },
+        "returns": {
+          "$ref": "#/$defs/typeExpression"
         }
       }
     },

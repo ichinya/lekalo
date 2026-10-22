@@ -486,6 +486,15 @@ impl<'a> Builder<'a> {
                     }
                 }
                 Definition::Command(command) => {
+                    if let Some(returns) = &command.returns {
+                        self.emit_type_edge(
+                            symbol,
+                            type_leaf(returns),
+                            ReferenceRole::CommandReturns,
+                            RelationKindId::RETURNS,
+                            0,
+                        );
+                    }
                     self.emit_field_leaves(
                         symbol,
                         ReferenceRole::CommandInput,

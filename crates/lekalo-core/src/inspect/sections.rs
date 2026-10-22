@@ -274,6 +274,7 @@ fn contract_section(definition: &Definition, limits: &InspectLimits) -> Contract
         },
         Definition::Command(command) => ContractBody::Command {
             input: fields_projection(&command.input, limits),
+            output: command.returns.as_ref().map(type_ref_projection),
         },
         Definition::Query(query) => ContractBody::Query {
             input: fields_projection(&query.input, limits),

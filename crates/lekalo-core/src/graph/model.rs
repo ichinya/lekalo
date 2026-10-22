@@ -384,6 +384,8 @@ pub enum ReferenceRole {
     ScenarioCovers,
     /// A command input type leaf.
     CommandInput,
+    /// A command result type leaf (Model 0.8.0).
+    CommandReturns,
     /// A query input type leaf (Model 0.8.0).
     QueryInput,
     /// A query return type leaf.
@@ -416,6 +418,7 @@ impl ReferenceRole {
             Self::EffectEntity => "effect-entity",
             Self::ScenarioCovers => "scenario-covers",
             Self::CommandInput => "command-input",
+            Self::CommandReturns => "command-returns",
             Self::QueryInput => "query-input",
             Self::QueryReturns => "query-returns",
             Self::QueryReads => "query-reads",

@@ -375,6 +375,7 @@ fn enforce_filter_grammar(filters: &FilterSet) -> Result<(), crate::diagnostics:
                 | "command-input"
                 | "query-input"
                 | "query-returns"
+                | "command-returns"
                 | "query-reads"
                 | "policy-applies-to"
                 | "endpoint-invokes"

@@ -273,7 +273,12 @@ fn all_sites(definition: &Definition) -> Vec<Site<'_>> {
             fields("/fields", &value_object.fields, &mut sites)
         }
         Definition::Entity(entity) => fields("/fields", &entity.fields, &mut sites),
-        Definition::Command(command) => fields("/input", &command.input, &mut sites),
+        Definition::Command(command) => {
+            fields("/input", &command.input, &mut sites);
+            if let Some(returns) = &command.returns {
+                walk(returns, "/returns".to_owned(), &mut sites);
+            }
+        }
         Definition::Event(event) => fields("/payload", &event.payload, &mut sites),
         Definition::Query(query) => {
             fields("/input", &query.input, &mut sites);

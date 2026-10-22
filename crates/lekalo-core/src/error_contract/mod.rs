@@ -288,12 +288,17 @@ pub fn validate(registry: &ErrorRegistry, project: &CompiledProject) -> Diagnost
             continue;
         };
         match (binding.kind(), definition) {
-            (OperationKind::Command, crate::ir::Definition::Command(_)) => {
-                if !matches!(binding.output(), OutputType::Unit) {
-                    findings.extend(diagnostic::finding(
-                        diagnostic::BINDING_INVALID,
-                        data_two("output-mismatch", binding.operation().as_str()),
-                    ));
+            (OperationKind::Command, crate::ir::Definition::Command(command)) => {
+                match (binding.output(), &command.returns) {
+                    (OutputType::Unit, None) => {}
+                    (OutputType::Value(expr), Some(returns))
+                        if type_expr_matches(expr, returns) => {}
+                    _ => {
+                        findings.extend(diagnostic::finding(
+                            diagnostic::BINDING_INVALID,
+                            data_two("output-mismatch", binding.operation().as_str()),
+                        ));
+                    }
                 }
             }
             (OperationKind::Query, crate::ir::Definition::Query(query)) => {

@@ -296,6 +296,16 @@ pending the reviewed extended-effect successor — the refusal is the
 documented increment boundary, and the `--effect` reference spelling
 is the implemented path.
 
+Model `0.8.0` commands may declare an optional typed `returns` contract.
+`definition:add --kind command --returns TYPE` declares it, and
+`operation-output:set --operation COMMAND --type TYPE` adds or replaces it.
+The result participates in validation, IR, graph (`command-returns`), inspect,
+semantic diff, and symbol-reference rewrites. A changed result has the same
+`signature.output-changed` compatibility review as a query result. Model
+`0.2.16` commands refuse this member. A consumer without a compatible result
+contract refuses explicitly; acceptance by Change alone does not qualify
+context, managed generation, SDK, OpenAPI or reference execution.
+
 `--apply` requires `--idempotency-key`; without it the invocation is a
 read-only preview (`--dry-run` is an explicit synonym and conflicts
 with `--apply`). Preview never writes: no history, no cache, no locks,

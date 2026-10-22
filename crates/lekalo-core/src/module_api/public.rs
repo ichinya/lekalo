@@ -506,6 +506,11 @@ fn project_export(
         }
         Definition::Command(command) => {
             let input = project_fields(&command.input, by_id, module, exported, foreign)?;
+            let returns = command
+                .returns
+                .as_ref()
+                .map(|returns| project_type(returns, by_id, module, exported, foreign))
+                .transpose()?;
             let effects = command
                 .effects
                 .iter()
@@ -539,6 +544,7 @@ fn project_export(
                 kind: "command".to_owned(),
                 version,
                 input,
+                returns,
                 effects,
                 ..PublicExport::empty(&id, "command")
             });

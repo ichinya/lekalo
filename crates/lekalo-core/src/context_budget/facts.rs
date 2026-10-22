@@ -256,6 +256,9 @@ fn contract_parts(definition: &Definition, parts: &mut Vec<String>) {
             }
         }
         Definition::Command(command) => {
+            if let Some(returns) = &command.returns {
+                parts.push(type_spelling(returns));
+            }
             for member in &command.input {
                 field(member, parts);
             }

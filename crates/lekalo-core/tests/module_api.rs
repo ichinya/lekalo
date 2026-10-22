@@ -25,6 +25,64 @@ fn attachment(project: &str) -> Vec<u8> {
 const REFERENCE: &str = "tests/fixtures/module-api/reference/tasks";
 
 #[test]
+fn command_results_enter_the_public_signature_and_enforce_its_type_allowlist() {
+    let mut compilation = compile(REFERENCE);
+    compilation.project.model_version = lekalo_core::loader::ModelVersion::Successor;
+    let returns = compilation
+        .project
+        .definitions
+        .iter()
+        .find_map(|definition| match definition {
+            lekalo_core::ir::Definition::Query(query) if query.id.as_str() == "tasks.get_task" => {
+                query.returns.clone()
+            }
+            _ => None,
+        })
+        .unwrap();
+    for definition in &mut compilation.project.definitions {
+        if let lekalo_core::ir::Definition::Command(command) = definition {
+            if command.id.as_str() == "tasks.create_task_cmd" {
+                command.returns = Some(returns.clone());
+            }
+        }
+    }
+    let bytes = attachment(REFERENCE);
+    let resolved = resolve(&bytes, &compilation).unwrap();
+    let public = export_public(&resolved, &compilation, "tasks").unwrap();
+    let result = public
+        .exports
+        .iter()
+        .find(|entry| entry.export == "tasks.create_task_cmd")
+        .unwrap();
+    assert!(serde_json::to_string(&result.returns)
+        .unwrap()
+        .contains("tasks.task_view"));
+    let mut denied: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    denied["modules"][0]["exports"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|entry| entry["export"] != "tasks.task_view");
+    // Remove the query exports, so the command result is the sole public
+    // dependency on the now-private view.
+    denied["modules"][0]["exports"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|entry| entry["kind"] != "query");
+    denied["modules"][0]["consumers"] = serde_json::json!([]);
+    denied["modules"][0]["ports"] = serde_json::json!([]);
+    denied["modules"][0]["queryFacts"] = serde_json::json!([]);
+    denied["modules"][0]["operationErrors"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|entry| {
+            entry["operation"] == "tasks.create_task_cmd"
+                || entry["operation"] == "tasks.complete_task_cmd"
+        });
+    let resolved = resolve(&serde_json::to_vec(&denied).unwrap(), &compilation).unwrap();
+    assert!(export_public(&resolved, &compilation, "tasks").is_err());
+}
+
+#[test]
 fn explicit_error_owner_controls_public_unions_and_refuses_stale_attachment_facts() {
     use lekalo_core::error_contract::{self as owner, ErrorRegistry};
     let compilation = compile(REFERENCE);

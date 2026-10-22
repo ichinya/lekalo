@@ -383,6 +383,10 @@ impl CommandDef {
             array(self.input.iter().map(Field::write_json)),
         ));
         fields.push(pair("kind", literal("command")));
+        fields.extend(optional(
+            "returns",
+            self.returns.as_ref().map(TypeRef::write_json),
+        ));
         object(&mut fields)
     }
 }

@@ -1711,6 +1711,15 @@ fn resolve_operation(
                     member: "query-input",
                 });
             }
+            if kind == "command"
+                && definition.returns.is_some()
+                && version != crate::loader::ModelVersion::Successor
+            {
+                return Err(ChangeError::UnsupportedMember {
+                    operation: operation.operation().to_owned(),
+                    member: "command-return",
+                });
+            }
             definition_decl_members_fit_kind(kind, definition)?;
             // Defaults require the Model/IR successor at every field
             // writer; the predecessor never silently discards intent.
@@ -1848,8 +1857,7 @@ fn resolve_operation(
             let definition = find_definition(documents, target)?;
             match definition_kind_of(definition).as_str() {
                 "query" => {}
-                // Command results are unit in the accepted Model; the
-                // command-return surface is the reviewed successor.
+                "command" if version == crate::loader::ModelVersion::Successor => {}
                 "command" => {
                     return Err(ChangeError::UnsupportedMember {
                         operation: operation.operation().to_owned(),
@@ -1975,7 +1983,6 @@ fn definition_decl_members_fit_kind(
         }
         "command" => {
             unused(has_ids(&definition.reads), "reads")?;
-            unused(definition.returns.is_some(), "returns")?;
             unused(has(&definition.payload), "payload")?;
             unused(has_ids(&definition.applies_to), "appliesTo")?;
             unused(definition.decision.is_some(), "decision")?;
@@ -2534,14 +2541,42 @@ fn replace_member_sequence(
 /// Replace the `returns` mapping value with the synthesized type node.
 fn replace_returns(node: &mut Node, r#type: &request::TypeRef) -> Result<(), ChangeError> {
     let span = placeholder_span();
-    let entry = node
-        .get_mut("returns")
-        .ok_or(ChangeError::SubjectConflict {
-            subject: "returns".to_owned(),
-            detail: "member-missing",
-        })?;
-    entry.value = type_node(r#type, span).value;
+    if let Some(entry) = node.get_mut("returns") {
+        entry.value = type_node(r#type, span).value;
+    } else {
+        let Value::Map(entries) = &mut node.value else {
+            return Err(ChangeError::WriteBoundaryDenied);
+        };
+        entries.push(MapEntry {
+            key: "returns".to_owned(),
+            key_span: span,
+            value: type_node(r#type, span),
+        });
+    }
     Ok(())
+}
+
+/// Compare only type facts, ignoring source spans, comments and spelling layout.
+fn type_node_matches(node: &Node, requested: &request::TypeRef) -> bool {
+    if let Some(spelling) = node.as_str() {
+        return spelling == requested.to_spelling();
+    }
+    let Value::Map(entries) = &node.value else {
+        return false;
+    };
+    if entries.len() != 1 {
+        return false;
+    }
+    let entry = &entries[0];
+    match requested {
+        request::TypeRef::Ref(id) => entry.key == "ref" && entry.value.as_str() == Some(id),
+        request::TypeRef::List(inner) => {
+            entry.key == "list" && type_node_matches(&entry.value, inner)
+        }
+        request::TypeRef::Optional(inner) => {
+            entry.key == "optional" && type_node_matches(&entry.value, inner)
+        }
+    }
 }
 
 /// The synthesized mapping node of one closed type reference.
@@ -2671,6 +2706,9 @@ fn synthesized_definition_node(
             }
             if let Some(effects) = seq_entry("effects", id_items(&declaration.effects)) {
                 entries.push(effects);
+            }
+            if let Some(returns) = &declaration.returns {
+                entries.push(entry("returns", type_node(returns, span)));
             }
         }
         "query" => {
@@ -3108,11 +3146,19 @@ fn plan_source_edits(
             edit::plan_member_sequence_replace(bytes, node, "input", &fields)?
         }
         Operation::OperationOutputSet { r#type, .. } => {
-            vec![edit::plan_returns_replace(
-                bytes,
-                node,
-                &r#type.to_spelling(),
-            )?]
+            if node
+                .get("returns")
+                .map(|current| type_node_matches(current, r#type))
+                .unwrap_or(false)
+            {
+                Vec::new()
+            } else {
+                vec![edit::plan_returns_replace(
+                    bytes,
+                    node,
+                    &r#type.to_spelling(),
+                )?]
+            }
         }
         Operation::QueryEffect { effect, add, .. } => {
             vec![edit::plan_scalar_list_change(
@@ -3222,6 +3268,13 @@ fn definition_members_block(
                     anchor_column,
                     "effects",
                     &ids(&declaration.effects),
+                ));
+            }
+            if let Some(returns) = &declaration.returns {
+                block.push_str(&edit::yaml_returns_block(
+                    bytes,
+                    anchor_column,
+                    &returns.to_spelling(),
                 ));
             }
             block

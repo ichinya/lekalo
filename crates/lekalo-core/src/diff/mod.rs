@@ -705,13 +705,31 @@ fn diff_payload(
             Payload::Command {
                 input: base_input,
                 effects: base_effects,
+                returns: base_returns,
             },
             Payload::Command {
                 input: candidate_input,
                 effects: candidate_effects,
+                returns: candidate_returns,
             },
         ) => {
             diff_input(subject, base_input, candidate_input, changes);
+            if base_returns != candidate_returns {
+                changes.push(ChangeRecord::assemble(
+                    ChangeKind::SignatureOutputChanged,
+                    Side::Both,
+                    Subject::with_member(subject.family(), subject.id(), "returns"),
+                    base_returns
+                        .as_ref()
+                        .map_or(Summary::None, |v| Summary::Text(v.clone())),
+                    candidate_returns
+                        .as_ref()
+                        .map_or(Summary::None, |v| Summary::Text(v.clone())),
+                    vec![reason::kind_reason(
+                        ChangeKind::SignatureOutputChanged.key(),
+                    )],
+                ));
+            }
             if base_effects != candidate_effects {
                 changes.push(ChangeRecord::assemble(
                     ChangeKind::SignatureEffectsChanged,

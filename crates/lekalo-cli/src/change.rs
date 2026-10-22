@@ -43,7 +43,7 @@ pub(crate) enum ChangeCommands {
     /// Replace a command's input field list.
     #[command(name = "operation-input:set")]
     OperationInputSet(OperationInputArgs),
-    /// Replace a query's return type.
+    /// Set a query or Model 0.8.0 command return type.
     #[command(name = "operation-output:set")]
     OperationOutputSet(OperationOutputArgs),
     /// Add one read dependency to a query.
@@ -394,7 +394,7 @@ pub(crate) struct OperationInputArgs {
 /// `operation-output:set` sugar.
 #[derive(Debug, Args)]
 pub(crate) struct OperationOutputArgs {
-    /// The semantic id of the query whose return type is replaced.
+    /// The semantic id of the query or Model 0.8.0 command whose return type is set.
     #[arg(long = "operation", value_name = "ID")]
     operation_target: String,
     /// The new return type sugar (`ref`, `list<ref>`, `ref?`).

@@ -86,6 +86,12 @@ pub fn render(
     context: &ValidationContext<'_>,
     config: &RenderConfig,
 ) -> Result<OpenApiDocument, DiagnosticSet> {
+    if context.project.has_command_results() {
+        return Err(diagnostic::version_unsupported(
+            "command-result-contract",
+            "0.8.0",
+        ));
+    }
     if context.project.has_query_inputs() {
         return Err(diagnostic::version_unsupported(
             "query-input-contract",

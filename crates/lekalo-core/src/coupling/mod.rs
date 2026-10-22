@@ -115,6 +115,9 @@ pub fn analyze(
 ) -> Result<Report, DiagnosticSet> {
     profile.validate()?;
     let project = &compilation.project;
+    if project.has_command_results() {
+        return Err(diagnostic::invalid("command-result-contract-unsupported"));
+    }
     if project.has_query_inputs() {
         return Err(diagnostic::invalid("query-input-contract-unsupported"));
     }

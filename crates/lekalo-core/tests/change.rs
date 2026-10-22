@@ -3789,6 +3789,165 @@ fn query_inputs_request(input: serde_json::Value) -> Vec<u8> {
 }
 
 #[test]
+fn command_results_follow_typed_diff_graph_inspect_and_lossless_source_edits() {
+    let sandbox = Sandbox::new("command-results");
+    enable_default_successor(&sandbox);
+    let path = sandbox.root.join("lekalo/modules/tasks/commands.yaml");
+    let source = "schema_version: \"0.8.0\"\r\ndefinitions:\r\n  - id: tasks.complete\r\n    kind: command\r\n    version: 1 # keep this command note";
+    std::fs::write(&path, source).unwrap();
+    let entities = sandbox.entities_bytes();
+    let request = defaults_request(serde_json::json!([{
+        "operation":"operation-output:set", "operationTarget":"tasks.complete",
+        "type":{"optional":{"ref":"tasks.text"}}
+    }]));
+    let policy = evidence_policy();
+    let preview = change::prepare(&PrepareOptions {
+        project: Some(&sandbox.selection_str()),
+        request: &request,
+        policy: Some(&policy),
+        allow_breaking: true,
+    })
+    .unwrap();
+    let plan: serde_json::Value = serde_json::from_str(&preview.to_json_string().unwrap()).unwrap();
+    assert!(plan["semanticDiff"]["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|change| change["kind"] == "signature.output-changed"));
+    assert_eq!(std::fs::read(&path).unwrap(), source.as_bytes());
+    apply_request_opts(
+        &sandbox,
+        &request,
+        "command-result-add",
+        true,
+        Some(policy.clone()),
+    )
+    .unwrap();
+    let after = std::fs::read_to_string(&path).unwrap();
+    assert!(after.starts_with(source), "{after}");
+    assert!(after.contains("# keep this command note\r\n    returns:"));
+    assert!(!after.ends_with('\n'));
+    assert!(!after.replace("\r\n", "").contains('\n'));
+    assert_eq!(sandbox.entities_bytes(), entities);
+    assert_eq!(
+        apply_request_opts(&sandbox, &request, "command-result-add", true, Some(policy))
+            .unwrap()
+            .state,
+        "replayed"
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), after);
+
+    let unchanged = change::prepare(&PrepareOptions {
+        project: Some(&sandbox.selection_str()),
+        request: &request,
+        policy: Some(&evidence_policy()),
+        allow_breaking: true,
+    })
+    .unwrap();
+    let unchanged: serde_json::Value =
+        serde_json::from_str(&unchanged.to_json_string().unwrap()).unwrap();
+    assert_eq!(unchanged["fileEdits"].as_array().unwrap().len(), 0);
+
+    let compilation = compiled_sandbox(&sandbox);
+    assert!(compilation.project.has_command_results());
+    let graph = lekalo_core::graph::build(&compilation.project).unwrap();
+    assert!(graph
+        .to_canonical_json()
+        .unwrap()
+        .contains("command-returns"));
+    let effects = lekalo_core::effects::build(&compilation.project).unwrap();
+    let inspected = lekalo_core::inspect::run(
+        &compilation,
+        &graph,
+        &effects,
+        &lekalo_core::inspect::InspectRequest {
+            selector: "tasks.complete".to_owned(),
+            include: Default::default(),
+        },
+    )
+    .unwrap();
+    let inspected: serde_json::Value = serde_json::from_str(&inspected.json).unwrap();
+    assert!(inspected["contract"]["output"]
+        .to_string()
+        .contains("tasks.text"));
+    // The existing error-output grammar already represents value results;
+    // its semantic binding must agree exactly with the new command result.
+    let mut errors: serde_json::Value =
+        serde_json::from_slice(lekalo_core::error_contract::REGISTRY_BYTES).unwrap();
+    let mut declared_error = errors["errors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|error| error["id"] == "planner.store_unavailable")
+        .unwrap()
+        .clone();
+    declared_error["id"] = serde_json::json!("tasks.store_unavailable");
+    errors["errors"] = serde_json::json!([declared_error]);
+    errors["bindings"] = serde_json::json!([{
+        "operation":"tasks.complete", "kind":"command",
+        "output":{"optional":{"ref":"tasks.text"}}, "errors":["tasks.store_unavailable"]
+    }]);
+    let registry = lekalo_core::error_contract::ErrorRegistry::from_bytes(
+        &serde_json::to_vec(&errors).unwrap(),
+    )
+    .unwrap();
+    lekalo_core::error_contract::source::validate(&registry, &compilation.project).unwrap();
+    errors["bindings"][0]["output"] = serde_json::Value::Null;
+    let mismatched = lekalo_core::error_contract::ErrorRegistry::from_bytes(
+        &serde_json::to_vec(&errors).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        lekalo_core::error_contract::source::validate(&mismatched, &compilation.project).is_err()
+    );
+    let rename = defaults_request(serde_json::json!([{
+        "operation":"symbol:move", "symbol":"tasks.text", "toModule":"tasks", "toName":"label"
+    }]));
+    apply_request(&sandbox, &rename, "command-result-type-rename", true).unwrap();
+    assert!(std::fs::read_to_string(&path)
+        .unwrap()
+        .contains("tasks.label"));
+}
+
+#[test]
+fn command_result_declarations_are_successor_only_and_unknown_types_never_write() {
+    for successor in [false, true] {
+        let sandbox = Sandbox::new("command-result-declaration");
+        if successor {
+            enable_default_successor(&sandbox);
+        }
+        let request = defaults_request(serde_json::json!([{
+            "operation":"definition:add", "kind":"command", "module":"tasks",
+            "definition":{"name":"complete", "returns":{"ref":"tasks.text"}}
+        }]));
+        let path = sandbox.root.join("lekalo/modules/tasks/commands.yaml");
+        if !successor {
+            assert!(matches!(
+                prepare(&sandbox, &request),
+                Err(ChangeError::UnsupportedMember {
+                    member: "command-return",
+                    ..
+                })
+            ));
+            assert!(!path.exists());
+            continue;
+        }
+        apply_request(&sandbox, &request, "declare-command-result", false).unwrap();
+        assert!(compiled_sandbox(&sandbox).project.has_command_results());
+        let before = std::fs::read(&path).unwrap();
+        let invalid = defaults_request(serde_json::json!([{
+            "operation":"operation-output:set", "operationTarget":"tasks.complete",
+            "type":{"ref":"tasks.missing"}
+        }]));
+        assert!(matches!(
+            prepare(&sandbox, &invalid),
+            Err(ChangeError::LoadFailed(_))
+        ));
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+}
+
+#[test]
 fn definition_add_rejects_duplicate_field_names_before_mutation_on_both_models() {
     for successor in [false, true] {
         for kind in ["command", "query", "event"] {

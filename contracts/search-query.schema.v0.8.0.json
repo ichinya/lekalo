@@ -227,6 +227,7 @@
               "scenario-covers",
               "command-input",
               "query-input",
+              "command-returns",
               "query-returns",
               "query-reads",
               "policy-applies-to",

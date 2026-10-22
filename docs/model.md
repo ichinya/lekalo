@@ -37,6 +37,17 @@ Fields reference named scalar/enum/value-object/entity types, with bounded list/
 
 The [synthetic planner](../tests/fixtures/model-v1/valid-planner) illustrates all kinds. The [minimal quickstart](../README.md#build-and-first-valid-example) validates a smaller input. Native operation availability depends on the selected profile/capability; valid Model alone does not prove generation or execution.
 
+## Successor operation signatures
+
+The [Model `0.8.0` successor](../contracts/model.schema.v0.8.0.json) and
+[matching IR](../contracts/ir.schema.v0.8.0.json) additionally represent query
+`input` fields and optional command `returns`. Their type expressions use the
+same named references and list/optional wrappers as other signatures. A command
+with no `returns` keeps its existing wire representation. The frozen `0.2.16`
+contract does not accept these members. Consumer compatibility is checked by
+each owner; see [semantic changes](change.md) for the mutation surface and its
+current integration boundaries.
+
 ## Glossary
 
 This is the canonical terminology location. Other pages link here.

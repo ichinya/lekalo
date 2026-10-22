@@ -123,7 +123,7 @@ pub enum Operation {
         target: String,
         input: Vec<FieldDecl>,
     },
-    /// `operation-output:set`: replace a query's return type.
+    /// `operation-output:set`: set a query or successor command return type.
     OperationOutputSet { target: String, r#type: TypeRef },
     /// Add or remove an existing read dependency of a query.
     QueryEffect {
@@ -492,7 +492,7 @@ pub struct DefinitionDecl {
     pub effects: Vec<String>,
     /// `query`: the read symbol ids.
     pub reads: Vec<String>,
-    /// `query`: the returned type.
+    /// A query or successor command's returned type.
     pub returns: Option<TypeRef>,
     /// `event`: the payload field list.
     pub payload: Vec<FieldDecl>,

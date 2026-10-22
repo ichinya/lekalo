@@ -1,11 +1,12 @@
 # M8 acceptance status
 
 GitHub milestone [M8](https://github.com/ichinya/lekalo/milestone/9) was
-checked on 2026-10-21: **14 open issues, zero closed**. This inventory does
-not close issues or publish the local branch. A merged implementation is
+checked on 2026-10-22: **14 open issues**. PR #160 has merged into `main`;
+remaining implementation continues in draft [PR #161](https://github.com/ichinya/lekalo/pull/161)
+on `ichinya/m8-completion`. This inventory does not close issues. A merged implementation is
 not, by itself, acceptance evidence for every criterion in an issue.
 
-The integration branch is `ichinya/M8`. Local checkpoints include `8befa2f0`
+The previous integration branch was `ichinya/M8`. Its checkpoints include `8befa2f0`
 (project error unions and consumers), `15ad603c` (PHP adapter input scopes),
 `9c2aaf28` (semantic symbol relocation), `a1f0f5c8` (field defaults) and
 `7c523b31` (enum wire values). The query-input increment follows those
@@ -15,11 +16,11 @@ belong to #73; the final milestone candidate is not yet qualified.
 | Issue | Available implementation / qualification entry points | Remaining acceptance work |
 |---|---|---|
 | [#19](https://github.com/ichinya/lekalo/issues/19) portability | `scripts/test-portability-contracts.mjs`, core/CLI portability tests | Requalify exact final revision and check every blocker/partial/unknown criterion against the planner fixtures. |
-| [#33](https://github.com/ichinya/lekalo/issues/33) MCP | stdio, scopes, subscriptions and host SDK gates; `docs/mcp.md` | Requalify final revision. An official SDK host smoke is distinct from installing or running a user's actual AI Factory extension. |
+| [#33](https://github.com/ichinya/lekalo/issues/33) MCP | stdio, scopes, subscriptions, direct host SDK and actual AI Factory 2.19.0 extension installation gates; `docs/mcp.md` | At `2996132c`, the actual installer/host gate passes in Linux, macOS and Windows CI without inference or user-configuration writes (run `39758553648`). Final milestone revision qualification remains. |
 | [#41](https://github.com/ichinya/lekalo/issues/41) managed | `scripts/test-managed-contracts.mjs`, `test-managed-cli.mjs`, `test-managed-planner-e2e.mjs`; shared semantic Model validation now precedes managed authority | The query-read fixture and dependent authority pins are corrected. Contract gates, 110 CLI invocations and planner regeneration/native-handler execution pass locally. Final milestone-candidate/CI qualification remains. |
 | [#51](https://github.com/ichinya/lekalo/issues/51) Worklog / Changelog | contract, admission, pilot and consumer gates | Final native/evidence qualification, keeping unsupported publication semantics distinct from executed success. |
 | [#52](https://github.com/ichinya/lekalo/issues/52) TaskExternalLink | relation/uniqueness Model successor, task-link contracts and impact/portability gates | Final public/synthetic provider evidence and exact consumer impact qualification. |
-| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions, symbol relocation, module ownership and Model/IR 0.8.0 defaults, enum wire values and query inputs | Completion of relocation/attachment cases; command results, pure emissions and joins to older query-parameter consumers with owner-compatible successors. Literals retain the documented YAML-layout and legacy-consumer boundaries. Module policy transitions use the existing managed owner's granularity; per-symbol changes do not silently widen to a module. Catalog coverage alone cannot close this issue. |
+| [#73](https://github.com/ichinya/lekalo/issues/73) Change API | Change contracts, CLI, transactions, bindings, error unions, symbol relocation, module ownership and Model/IR 0.8.0 defaults, enum wire values, query inputs and command results | Completion of relocation/attachment cases; pure emissions and joins to older signature consumers with owner-compatible successors. Literals retain the documented YAML-layout and legacy-consumer boundaries. Module policy transitions use the existing managed owner's granularity; per-symbol changes do not silently widen to a module. Catalog coverage alone cannot close this issue. |
 | [#74](https://github.com/ichinya/lekalo/issues/74) safe fixes | Fix contracts/CLI and rollback tests | Requalify final Change catalog identity, stale/conflicting plans, replay and rollback. |
 | [#93](https://github.com/ichinya/lekalo/issues/93) semantic search | search contracts/CLI and `scripts/bench-search.mjs` | Final result/ambiguity/offline gates and representative benchmark evidence; separate retrieval metrics from agent answer quality. |
 | [#94](https://github.com/ichinya/lekalo/issues/94) formatter | format contracts, CLI, atomicity and portability gates | Final semantic invariance/trivia checks and Linux/Windows/macOS evidence. |
@@ -31,6 +32,17 @@ belong to #73; the final milestone candidate is not yet qualified.
 
 ## Verified local corrections
 
+- Model/IR 0.8.0 commands now carry optional typed `returns` through
+  declaration, lossless first insertion/replacement, validation, canonical IR,
+  graph, inspect, diff, reference renames, portability and public module exports.
+  Error-output bindings compare against the actual command result; error-union
+  edits preserve it. Same-type output edits are byte-identical no-ops.
+  Legacy command declarations refuse the member. Consumers lacking a compatible
+  result contract explicitly refuse rather than discard it. The local CLI gate
+  passes 13 calls and seven schemas, including preview/apply/replay, no-op,
+  CRLF/no-EOF/comment preservation and invalid-type controls. Dedicated core
+  tests cover public type allowlists and exact error-output binding. This is an
+  implementation increment, not final #73 or milestone acceptance.
 - Model/IR 0.8.0 query inputs now support declaration, first-list insertion,
   replacement and clearing through Change. Shared validation resolves their
   types and checks defaults. Graph `query-input`/`accepts` edges, signature

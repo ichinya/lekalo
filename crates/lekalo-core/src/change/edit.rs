@@ -1131,6 +1131,18 @@ pub fn plan_returns_replace(
     definition: &Node,
     type_spelling: &str,
 ) -> Result<ByteEdit, ChangeError> {
+    if definition.get("returns").is_none() {
+        let indent = definition
+            .get_entry("id")
+            .and_then(|entry| entry.key_span.start.column.checked_sub(1))
+            .ok_or(ChangeError::WriteBoundaryDenied)?;
+        let suffix = type_mapping_lines(
+            type_spelling,
+            indent + 2,
+            newline_before(bytes, bytes.len()),
+        );
+        return plan_raw_member_append(bytes, definition, "returns", &suffix);
+    }
     let (start, end, key_indent) = member_block_range(bytes, definition, "returns")?;
     let block = yaml_returns_block(bytes, key_indent - 2, type_spelling);
     // The replaced range starts at the key line; the block's leading

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lekalo.dev/schemas/model/0.8.0/schema.json",
   "title": "Lekalo Model v1.0 (0.8.0 successor)",
-  "description": "Language-neutral Model 0.8.0 successor with exact ID classes, symbol rename history, typed entity relations and secondary uniqueness, bounded field defaults, explicit enum wire values and query input fields. The Model 0.2.16 contract remains frozen.",
+  "description": "Language-neutral Model 0.8.0 successor with exact ID classes, symbol rename history, typed entity relations and secondary uniqueness, bounded field defaults, explicit enum wire values, query input fields and optional command results. The Model 0.2.16 contract remains frozen.",
   "type": "object",
   "oneOf": [
     {
@@ -683,6 +683,9 @@
             },
             "renamed_from": {
               "$ref": "#/$defs/renamedFrom"
+            },
+            "returns": {
+              "$ref": "#/$defs/typeExpression"
             }
           }
         }

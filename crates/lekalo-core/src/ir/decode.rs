@@ -1642,6 +1642,7 @@ fn decode_symbol(
             &["fields", "identity", "relations", "uniqueConstraints"]
         }
         "entity" => &["fields", "identity"],
+        "command" if cx.version == ModelVersion::Successor => &["input", "effects", "returns"],
         "command" => &["input", "effects"],
         "query" if cx.version == ModelVersion::Successor => &["input", "reads", "returns"],
         "query" => &["reads", "returns"],
@@ -1764,6 +1765,10 @@ fn decode_symbol(
                 common,
                 input,
                 effects,
+                returns: match cx.find(&found, "returns") {
+                    Some(entry) => Some(decode_type(&entry.value, &child("returns"), cx, 0)?),
+                    None => None,
+                },
             }))
         }
         "query" => {
