@@ -32,6 +32,21 @@ belong to #73; the final milestone candidate is not yet qualified.
 
 ## Verified local corrections
 
+- Transport-http and client-SDK have exact 0.8.0 projection owners. Successor
+  query parameters join canonical Model input facts through query-model;
+  required wire coverage, actual IR digests and mixed-version refusals are
+  checked. CLI, watch and generation bind the same immutable Model snapshot.
+  OpenAPI 3.0/3.1 retains defaults and nested nullability; SDK query parameters,
+  whole and explicit bodies preserve supported types and presence. Deeper
+  shapes outside the SDK owner, defaults and enum literals remain explicit
+  refusals. The CLI gate passes 25 calls, including clean/watch equivalence
+  and a predecessor-adapter incompatibility control. Core schemas and direct
+  API bypass controls pass.
+  The native SDK kernel gate typechecks and executes generated TypeScript
+  and runs generated Go tests without network access; absent versus present
+  empty strings survive. Native parameter lists/null/cookies refuse rather
+  than become strings. This does not qualify general CLI native generation
+  or the still-pending context/relocation work.
 - CI follow-up: Rust 1.80 Clippy rejected a query-model boolean expression
   that current Clippy accepted; the equivalent expression now passes the
   actual 1.80 all-target lane locally. Fixture provenance uses bounded Git
@@ -40,8 +55,10 @@ belong to #73; the final milestone candidate is not yet qualified.
   still refuse, including a 256 KiB binary and preservation of a foreign
   caller index. Portable documentation replay passes nine examples, 25
   commands and 21 controls with source bytes preserved. The earlier macOS
-  documentation timeout has no confirmed root cause; the revised three-OS
-  CI lane remains required evidence.
+  documentation timeout has no confirmed root cause. At `85169eb7`, hosted
+  documentation replay and Rust 1.80 pass on all three OSes (run
+  `39775208513`); Linux and macOS complete build/test successfully. Each later
+  milestone candidate still requires its own CI evidence.
 - Query-model 0.8.0 now joins each declared parameter to the canonical query
   input by name, type, explicit presence and exact typed default, including
   null versus absence. Model and IR pins both validate; mixed or stale pins
@@ -51,8 +68,8 @@ belong to #73; the final milestone candidate is not yet qualified.
   source files. The live CLI gate passes 17 calls and the independent successor
   schema; 35 existing core unit tests and 14 legacy CLI tests pass, including
   a false-IR-pin control. The snapshot/default/presence integration test,
-  Clippy and MSRV also pass. Downstream transport, OpenAPI/SDK and context
-  successors remain separate work; this does not qualify native generation.
+  Clippy and MSRV also pass. The transport/OpenAPI/SDK projection increment
+  above follows this checkpoint; context remains separate work.
 - Model/IR 0.8.0 commands support direct event `emits` independently of
   CRUD effects. Change add/remove, including the last emission, preserve the
   source and durable replay; a declaration and emission compose in one request.

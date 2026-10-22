@@ -115,13 +115,6 @@ pub fn project(
             None,
         ));
     }
-    if project.has_query_inputs() {
-        return Err(diagnostic::rule_invalid(
-            diagnostic::MAPPING_UNSUPPORTED,
-            "query-input-contract-unsupported",
-            None,
-        ));
-    }
     if project.has_enum_wire_values() {
         return Err(diagnostic::rule_invalid(
             diagnostic::MAPPING_UNSUPPORTED,
@@ -135,6 +128,33 @@ pub fn project(
             "field-default-contract-unsupported",
             None,
         ));
+    }
+    if project.model_version == crate::loader::ModelVersion::Successor {
+        crate::transport_http::validate(document, context)?;
+        // This owner represents one outer nullable axis and one list of
+        // non-null leaves. Refuse deeper shapes rather than flatten them.
+        for definition in &project.definitions {
+            if let Definition::Query(query) = definition {
+                for field in &query.input {
+                    let inner = match &field.r#type {
+                        TypeRef::Optional(inner) => inner.as_ref(),
+                        other => other,
+                    };
+                    let supported = match inner {
+                        TypeRef::Ref(_) => true,
+                        TypeRef::List(inner) => matches!(inner.as_ref(), TypeRef::Ref(_)),
+                        _ => false,
+                    };
+                    if !supported {
+                        return Err(diagnostic::rule_invalid(
+                            diagnostic::MAPPING_UNSUPPORTED,
+                            "query-input-shape-unsupported",
+                            Some(query.id.as_str()),
+                        ));
+                    }
+                }
+            }
+        }
     }
 
     // Custody: the projection binds the exact project.
@@ -209,6 +229,19 @@ pub fn project(
             None,
         ));
     }
+    if project.model_version == crate::loader::ModelVersion::Successor
+        && types.iter().any(|definition| match &definition.kind {
+            TypeKind::Enum(values) => values.len() > 128,
+            TypeKind::Object(fields) => fields.len() > 256,
+            TypeKind::Scalar(_) => false,
+        })
+    {
+        return Err(diagnostic::rule_invalid(
+            diagnostic::LIMIT_EXCEEDED,
+            "type-shape-bound",
+            None,
+        ));
+    }
 
     // Every operation, ordered by effective operation id.
     let mut operations = Vec::with_capacity(document.endpoints().len());
@@ -232,8 +265,8 @@ pub fn project(
     }
 
     Ok(ClientContractWire::assemble(
-        version::IDENTITY.to_owned(),
-        version::SCHEMA_VERSION.to_owned(),
+        version::identity_for(project.model_version).to_owned(),
+        version::schema_version_for(project.model_version).to_owned(),
         document.attachment_revision().clone(),
         project_id,
         model_pin,
@@ -278,7 +311,10 @@ pub(crate) fn canonical_bytes(contract: &ClientContractWire) -> Result<String, D
     let mut ir_ref = Map::new();
     ir_ref.insert(
         "identity".to_owned(),
-        Json::String(version::IR_IDENTITY.to_owned()),
+        Json::String(
+            crate::transport_http::version::ir_identity_for(*contract.model_ref.version())
+                .to_owned(),
+        ),
     );
     ir_ref.insert(
         "digest".to_owned(),
@@ -288,7 +324,9 @@ pub(crate) fn canonical_bytes(contract: &ClientContractWire) -> Result<String, D
     let mut transport_ref = Map::new();
     transport_ref.insert(
         "identity".to_owned(),
-        Json::String(crate::transport_http::IDENTITY.to_owned()),
+        Json::String(
+            crate::transport_http::version::identity_for(*contract.model_ref.version()).to_owned(),
+        ),
     );
     transport_ref.insert(
         "digest".to_owned(),
@@ -498,6 +536,26 @@ fn collect_operation_types(
                 .or_insert_with(|| TypeKind::Object(fields));
         }
         Definition::Query(query) => {
+            if project.model_version == crate::loader::ModelVersion::Successor {
+                let input_id = format!("{}.input", query.id.as_str());
+                if project
+                    .definitions
+                    .iter()
+                    .any(|definition| definition.id().as_str() == input_id)
+                {
+                    return Err(diagnostic::rule_invalid(
+                        diagnostic::MAPPING_UNSUPPORTED,
+                        "query-input-type-identity-collision",
+                        Some(query.id.as_str()),
+                    ));
+                }
+                let mut fields = Vec::new();
+                for field in &query.input {
+                    collect_field_types(project, field, decimals, collected)?;
+                    fields.push(client_field_of(field));
+                }
+                collected.insert(input_id, TypeKind::Object(fields));
+            }
             if let Some(returns) = &query.returns {
                 collect_type_ref(project, returns, decimals, collected)?;
             }
@@ -847,6 +905,11 @@ fn param_type_ref(
                     .map(str::to_owned)
                     .unwrap_or_default()
             }),
+        Definition::Query(query) if !query.input.is_empty() => query
+            .input
+            .iter()
+            .find(|field| field.name.as_str() == name)
+            .and_then(|field| leaf_ref(&field.r#type).map(str::to_owned)),
         Definition::Query(query) => query_model
             .queries()
             .iter()
@@ -889,6 +952,12 @@ fn param_shape(
             .find(|field| field.name.as_str() == name)
             .map(|field| shape_of(&field.r#type))
             .unwrap_or(TypeShape::Value),
+        Definition::Query(query) if !query.input.is_empty() => query
+            .input
+            .iter()
+            .find(|field| field.name.as_str() == name)
+            .map(|field| shape_of(&field.r#type))
+            .unwrap_or(TypeShape::Value),
         Definition::Query(query) => query_model
             .queries()
             .iter()
@@ -916,6 +985,11 @@ fn param_shape(
 fn param_nullable(operation: &Definition, query_model: &QueryModelAttachment, name: &str) -> bool {
     match operation {
         Definition::Command(command) => command
+            .input
+            .iter()
+            .find(|field| field.name.as_str() == name)
+            .is_some_and(|field| nullable_of(&field.r#type)),
+        Definition::Query(query) if !query.input.is_empty() => query
             .input
             .iter()
             .find(|field| field.name.as_str() == name)
@@ -951,6 +1025,11 @@ fn body_of(
     decimals: &BTreeMap<String, ScalarMapping>,
 ) -> Result<ClientBody, DiagnosticSet> {
     let (type_ref, body_shape) = match operation {
+        Definition::Query(query)
+            if input && project.model_version == crate::loader::ModelVersion::Successor =>
+        {
+            (format!("{}.input", query.id.as_str()), TypeShape::Value)
+        }
         Definition::Command(command) if input => {
             // A whole-input command body is the command's synthetic
             // input object — a collected type (never a dangling ref).
@@ -1057,6 +1136,7 @@ fn bound_member(
     };
     match (operation, input) {
         (Definition::Command(command), true) => member(&command.input, name),
+        (Definition::Query(query), true) => member(&query.input, name),
         (Definition::Query(query), false) => {
             let returns = query.returns.as_ref()?;
             let source = leaf_ref(returns)?;

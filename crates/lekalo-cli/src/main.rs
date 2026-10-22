@@ -3341,8 +3341,34 @@ fn run_validate_profiled(
             match lekalo_core::transport_http::read_document(&root) {
                 Err(diagnostics) => return DomainResult::invalid(diagnostics),
                 Ok(Some(attachment)) => {
+                    let query_model =
+                        if model.model_version == lekalo_core::loader::ModelVersion::Successor {
+                            if let Err(set) = attachment.validate_model_pin(&model) {
+                                return DomainResult::invalid(set);
+                            }
+                            let query_model =
+                                match lekalo_core::client_sdk::source::read_query_model(&root) {
+                                    Ok(query_model) => query_model,
+                                    Err(set) => return DomainResult::invalid(set),
+                                };
+                            if let Some(query_model) = &query_model {
+                                if let Err(result) = lekalo_core::query_model::resolve_model(
+                                    query_model,
+                                    &model,
+                                    lekalo_core::query_model::Profile::Default,
+                                ) {
+                                    return result;
+                                }
+                            }
+                            query_model
+                        } else {
+                            None
+                        };
                     let mut context =
                         lekalo_core::transport_http::ValidationContext::new(&compilation.project);
+                    if let Some(query_model) = &query_model {
+                        context = context.with_query_model(query_model);
+                    }
                     if let Some(registry) = &error_registry {
                         context = context.with_errors(registry);
                     }
@@ -8853,7 +8879,7 @@ fn transport_session(
                 .map_err(DomainResult::invalid)?
         }
     };
-    let model_json = match lekalo_core::loader::run(&selection, false) {
+    let model_json = match lekalo_core::loader::render_load_output(&model, false) {
         DomainResult::Valid {
             payload: lekalo_core::result::SuccessPayload::Model { json, .. },
             ..
@@ -8869,6 +8895,15 @@ fn transport_session(
                 None,
             ),
         ));
+    }
+    if model.model_version == lekalo_core::loader::ModelVersion::Successor {
+        if let Some(query_model) = &query_model {
+            lekalo_core::query_model::resolve_model(
+                query_model,
+                &model,
+                lekalo_core::query_model::Profile::Default,
+            )?;
+        }
     }
     Ok(TransportSession {
         attachment,

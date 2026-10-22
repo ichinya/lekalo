@@ -1333,7 +1333,32 @@ impl WatchService {
         match crate::transport_http::read_document(root) {
             Err(set) => return (set.as_slice().to_vec(), Status::Invalid),
             Ok(Some(attachment)) => {
-                let context = crate::transport_http::ValidationContext::new(&compilation.project);
+                let query_model = if model.model_version == crate::loader::ModelVersion::Successor {
+                    if let Err(set) = attachment.validate_model_pin(model) {
+                        return (set.as_slice().to_vec(), Status::Invalid);
+                    }
+                    let query_model = match crate::client_sdk::source::read_query_model(root) {
+                        Ok(query_model) => query_model,
+                        Err(set) => return (set.as_slice().to_vec(), Status::Invalid),
+                    };
+                    if let Some(query_model) = &query_model {
+                        if let Err(result) = crate::query_model::resolve_model(
+                            query_model,
+                            model,
+                            crate::query_model::Profile::Default,
+                        ) {
+                            return (result.diagnostics().to_vec(), Status::Invalid);
+                        }
+                    }
+                    query_model
+                } else {
+                    None
+                };
+                let mut context =
+                    crate::transport_http::ValidationContext::new(&compilation.project);
+                if let Some(query_model) = &query_model {
+                    context = context.with_query_model(query_model);
+                }
                 if let Err(set) = crate::transport_http::validate(&attachment, &context) {
                     return (set.as_slice().to_vec(), Status::Invalid);
                 }

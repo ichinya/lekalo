@@ -497,6 +497,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-command-results.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-emissions.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-query-input-bindings.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-query-transport-bindings.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-transactions.mjs
       - name: Run the versioned fix recipe contract and live CLI gates (issue #74)
         env:
@@ -759,12 +760,12 @@ jobs:
         run: node scripts/test-node-typescript-transport.mjs
       - name: Run the OpenAPI generator gate (issue #46)
         run: node scripts/test-node-openapi.mjs
-      - name: Run the client-SDK generator gate (issue #72)
-        run: node scripts/test-node-client-sdk.mjs
       - name: Provision the pinned Go toolchain for the client-SDK gate (issue #72)
         uses: actions/setup-go@v5
         with:
           go-version: "1.23.5"
+      - name: Run the client-SDK generator gate (issue #72)
+        run: node scripts/test-node-client-sdk.mjs
       - name: Run the client-SDK runtime gate (issue #72)
         env:
           NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules

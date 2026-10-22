@@ -10,9 +10,11 @@ facts refuse. It supports the Model's 256 input-field bound; the predecessor
 retains its 64-parameter bound and original wire representation. Resolution
 checks both Model and IR custody. `resolve_model` validates an immutable
 normalized snapshot without filesystem access, so prospective attachments can
-be qualified before a Change transaction writes anything. Downstream owners
-still require their own compatible contracts; this does not execute a query
-or qualify native generation.
+be qualified before a Change transaction writes anything. Transport-http and
+client-SDK now have exact 0.8.0 projection owners; OpenAPI 3.0/3.1 retains the
+typed inputs and defaults. Their native profiles remain explicitly bounded;
+context still needs its compatible successor. This does not execute a query
+or qualify general native generation.
 
 Issue #64 makes the read semantics of queries first-class,
 machine-checkable contract data. One closed, versioned attachment —

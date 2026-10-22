@@ -917,7 +917,7 @@ pub(crate) fn render_model_envelope(
 /// Render the terminal CLI envelope from one normalized aggregate (phase
 /// 9): canonical model bytes, the optional sorted source map, and the
 /// success line. Byte-identical to the pre-#8 rendering.
-pub(crate) fn render_load_output(model: &NormalizedModel, spans_requested: bool) -> DomainResult {
+pub fn render_load_output(model: &NormalizedModel, spans_requested: bool) -> DomainResult {
     let model_version = model.model_version;
     let mut source_map: Vec<SourceMapEntry> = Vec::new();
     if spans_requested {

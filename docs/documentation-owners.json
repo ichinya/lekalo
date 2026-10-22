@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.8.0",
-  "cliSourceDigest": "sha256:baf106daf200c4ec5711186302d2c9f220e5826654e05ebc98dfa45506ac22cd",
+  "cliSourceDigest": "sha256:2c148834a51c80bdf542afad31a6c4286888c93c8beb6e1c143b7d3aa0bc4aba",
   "p0Pages": [
     {
       "page": "README.md",
@@ -3231,6 +3231,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/client-sdk.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/client-sdk.schema.v0.8.0.json",
+      "sourceDigest": "sha256:89712b63b72350be7db6a067a964c76dd11e023565b148f4ef8269cfbaed68a5",
+      "owner": "docs/client-sdk.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/context-budget-comparison.schema.v0.6.3.json",
       "kind": "contract",
       "source": "contracts/context-budget-comparison.schema.v0.6.3.json",
@@ -4923,6 +4932,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/transport-http.schema.v0.8.0.json",
+      "kind": "contract",
+      "source": "contracts/transport-http.schema.v0.8.0.json",
+      "sourceDigest": "sha256:047cc2aa7a44fc9b9c5603106f66d54147a1d031cd75b958562633da2978eafa",
+      "owner": "docs/transport-http.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/validation-profile.default.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/validation-profile.default.v0.6.4.json",
@@ -5083,6 +5101,13 @@
     },
     {
       "id": "protocol:node-typescript:lekalo/client-sdk/v0.4.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/client-sdk/v0.8.0",
       "kind": "protocol",
       "source": "adapters/node-typescript/src",
       "owner": "adapters/node-typescript/README.md",

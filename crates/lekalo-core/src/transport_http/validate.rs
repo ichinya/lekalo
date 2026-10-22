@@ -210,6 +210,29 @@ pub fn validate(
             Some(document.model_ref().version().as_str()),
         ));
     }
+    if context.project.model_version == crate::loader::ModelVersion::Successor {
+        let ir_digest = format!(
+            "sha256:{}",
+            crate::digest::sha256_hex(context.project.to_canonical_json().as_bytes())
+        );
+        if document.ir_digest().as_str() != ir_digest {
+            return Err(diagnostic::rule_invalid(
+                diagnostic::CONTRACT_INVALID,
+                "ir-digest",
+                None,
+            ));
+        }
+        if let Some(query_model) = context.query_model {
+            query_model.validate_input_bindings(context.project)?;
+            if query_model.model_ref().digest() != document.model_ref().digest() {
+                return Err(diagnostic::rule_invalid(
+                    diagnostic::CONTRACT_INVALID,
+                    "query-model-pin",
+                    None,
+                ));
+            }
+        }
+    }
     let symbols = symbol_table(context.project);
     for binding in document.endpoints() {
         validate_endpoint(document, binding, &symbols, context)?;
@@ -276,10 +299,15 @@ fn validate_endpoint(
     let (input_fields, is_query) = match operation {
         Definition::Command(command) => (Some(&command.input), false),
         Definition::Query(query) => {
-            if !query.input.is_empty() {
+            if !query.input.is_empty()
+                && context
+                    .query_model
+                    .and_then(|model| model.query(query.id.as_str()))
+                    .is_none()
+            {
                 return Err(diagnostic::rule_invalid(
                     diagnostic::ENDPOINT_UNRESOLVED,
-                    "query-input-contract-unsupported",
+                    "query-model-required",
                     Some(subject),
                 ));
             }
@@ -389,6 +417,34 @@ fn validate_endpoint(
                 "bodyless-method",
                 Some(subject),
             ));
+        }
+    }
+
+    // A successor query's required domain inputs must be carried by a
+    // required wire parameter, a required explicit body field, or a whole
+    // required body. Transport may strengthen optional presence, never erase it.
+    if let Definition::Query(query) = operation {
+        for input in query.input.iter().filter(|field| field.required) {
+            let parameter = binding.params.iter().any(|param| {
+                !param.field.is_input()
+                    && param.field.name().as_str() == input.name.as_str()
+                    && param.required
+            });
+            let body = binding.body.as_ref().is_some_and(|body| {
+                body.mode == ProjectionMode::Whole
+                    || body.fields.iter().any(|field| {
+                        !field.field.is_input()
+                            && field.field.name().as_str() == input.name.as_str()
+                            && field.required
+                    })
+            });
+            if !parameter && !body {
+                return Err(diagnostic::rule_invalid(
+                    diagnostic::PARAM_INVALID,
+                    "query-input-required",
+                    Some(subject),
+                ));
+            }
         }
     }
 
