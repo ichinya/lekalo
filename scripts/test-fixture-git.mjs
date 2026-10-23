@@ -2,7 +2,7 @@
 // Exercise the production provenance gate against real private Git filters.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,15 +24,35 @@ try {
   fixtureGit(repository,["add","--",".gitattributes","tests/fixtures"],"test-index");
   const sentinel=join(root,"foreign-index");
   writeFileSync(sentinel,"unrelated caller index bytes");
-  const environment={...fixtureGitEnv(),GIT_DIR:join(root,"foreign-git"),GIT_WORK_TREE:root,GIT_INDEX_FILE:sentinel};
+  const temporary=join(root,"tmp"); mkdirSync(temporary);
+  const fixture=join(repository,"tests/fixtures/binary/large.sqlite");
+  const fixtureBefore=readFileSync(fixture);
+  const environment={...fixtureGitEnv(),GIT_DIR:join(root,"foreign-git"),GIT_WORK_TREE:root,GIT_INDEX_FILE:sentinel,TMPDIR:temporary,TEMP:temporary,TMP:temporary};
   function gate() {
-    return spawnSync(process.execPath,["scripts/test-fixture-provenance.mjs"],{cwd:repository,env:environment,encoding:"utf8",timeout:90000,killSignal:"SIGKILL"});
+    const result=spawnSync(process.execPath,["scripts/test-fixture-provenance.mjs"],{cwd:repository,env:environment,encoding:"utf8",timeout:90000,killSignal:"SIGKILL"});
+    assert.deepEqual(readdirSync(temporary),[],"provenance canary leaked after child exit");
+    assert.deepEqual(readFileSync(fixture),fixtureBefore,"provenance modified the source fixture");
+    return result;
   }
-  const pass=gate();
-  assert.equal(pass.error,undefined);
-  assert.equal(pass.status,0,pass.stderr);
-  assert.equal(JSON.parse(pass.stdout).binaryFixtures,1);
+  // Match the synchronous parent/child shape of documentation replay.
+  // The original macOS stdin deadlock was intermittent, so repeat real input
+  // larger than a pipe buffer rather than relying on a single green run.
+  for(let attempt=0;attempt<5;attempt++) {
+    const pass=gate();
+    assert.equal(pass.error,undefined);
+    assert.equal(pass.status,0,pass.stderr);
+    assert.equal(JSON.parse(pass.stdout).binaryFixtures,1);
+  }
   assert.equal(readFileSync(sentinel,"utf8"),"unrelated caller index bytes");
+  const index=join(repository,".git/index"), savedIndex=readFileSync(index);
+  try {
+    writeFileSync(index,"invalid-index");
+    const broken=gate();
+    assert.notEqual(broken.status,0,"corrupt Git index silently accepted");
+    assert.match(broken.stderr,/fixture Git failed: inventory/);
+  } finally {
+    writeFileSync(index,savedIndex);
+  }
   writeFileSync(attributes,"tests/fixtures/binary/** text eol=lf\n");
   const text=gate();
   assert.notEqual(text.status,0);
@@ -51,7 +71,11 @@ try {
   assert.equal(restored.status,0,restored.stderr);
   assert.equal(JSON.parse(restored.stdout).binaryFixtures,1);
   assert.equal(readFileSync(sentinel,"utf8"),"unrelated caller index bytes");
-  console.log(JSON.stringify({ok:true,gate:"fixture-git",binaryBytes:256*1024,controls:["normal","text-refused","corrupt-clean-filter-refused","restored","foreign-index-preserved"]}));
+  renameSync(join(repository,".git"),join(repository,".git-held"));
+  const missing=gate();
+  assert.notEqual(missing.status,0,"missing private Git index silently accepted");
+  assert.match(missing.stderr,/fixture Git failed: inventory/);
+  console.log(JSON.stringify({ok:true,gate:"fixture-git",binaryBytes:256*1024,repetitions:5,controls:["normal","corrupt-index-refused","text-refused","corrupt-clean-filter-refused","restored","foreign-index-preserved","missing-index-refused","canaries-cleaned","fixture-unchanged"]}));
 } finally {
   assert.equal(dirname(root),realpathSync.native(tmpdir()));
   assert.ok(basename(root).startsWith("lekalo-fixture-git-test-"));

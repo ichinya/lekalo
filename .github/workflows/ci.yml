@@ -235,6 +235,11 @@ jobs:
         with:
           node-version: 24.x
           package-manager-cache: false
+      - name: Reject provenance pipe stalls and unsafe Git custody
+        timeout-minutes: 3
+        run: |
+          node scripts/test-fixture-git.mjs
+          node scripts/test-fixture-provenance.mjs
       - name: Verify release packaging and publication guards
         run: node --test scripts/release.test.mjs
       - name: Provision PHP 8.3 (issue #54, visible setup step, no project install)
