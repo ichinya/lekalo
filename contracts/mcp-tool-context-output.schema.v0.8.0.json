@@ -62,7 +62,10 @@
           "const": "2025-11-25"
         },
         "context": {
-          "const": "0.2.16"
+          "enum": [
+            "0.2.16",
+            "0.8.0"
+          ]
         }
       },
       "required": [
@@ -82,24 +85,14 @@
       "description": "Wire diagnostic items (lekalo/diagnostic/v0.2.16) resolved against dev.lekalo.diagnostic-registry@0.8.0; every item is the closed published projection bundled under $defs.diagnosticItem."
     },
     "result": {
-      "type": "object",
-      "properties": {
-        "schemaVersion": {
-          "const": "lekalo/context/v0.2.16"
+      "oneOf": [
+        {
+          "$ref": "#/$defs/contextResult2"
         },
-        "identity": {
-          "const": "dev.lekalo.context@0.2.16"
-        },
-        "context": {
-          "$ref": "#/$defs/context.Root"
+        {
+          "$ref": "#/$defs/contextResult8"
         }
-      },
-      "required": [
-        "schemaVersion",
-        "identity",
-        "context"
-      ],
-      "additionalProperties": false
+      ]
     },
     "failure": {
       "type": "object",
@@ -168,6 +161,62 @@
     },
     "required": [
       "result"
+    ],
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "contractPins": {
+              "type": "object",
+              "properties": {
+                "context": {
+                  "const": "0.2.16"
+                }
+              },
+              "required": [
+                "context"
+              ]
+            }
+          },
+          "required": [
+            "contractPins"
+          ]
+        },
+        "then": {
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/contextResult2"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "contractPins": {
+              "type": "object",
+              "properties": {
+                "context": {
+                  "const": "0.8.0"
+                }
+              },
+              "required": [
+                "context"
+              ]
+            }
+          },
+          "required": [
+            "contractPins"
+          ]
+        },
+        "then": {
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/contextResult8"
+            }
+          }
+        }
+      }
     ]
   },
   "else": {
@@ -1722,6 +1771,1443 @@
           "minimum": 1
         }
       }
+    },
+    "context8.Root": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/context/v0.8.0"
+        },
+        "identity": {
+          "const": "dev.lekalo.context@0.8.0"
+        },
+        "modelVersion": {
+          "const": "0.8.0"
+        },
+        "mode": {
+          "enum": [
+            "symbol",
+            "changed"
+          ]
+        },
+        "project": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/context8.semanticId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.nodeId"
+          },
+          "minItems": 1,
+          "maxItems": 128
+        },
+        "budget": {
+          "$ref": "#/$defs/context8.budget"
+        },
+        "estimator": {
+          "$ref": "#/$defs/context8.estimator"
+        },
+        "irDigest": {
+          "$ref": "#/$defs/context8.digest"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "candidates",
+            "excluded",
+            "included"
+          ],
+          "properties": {
+            "candidates": {
+              "$ref": "#/$defs/context8.count"
+            },
+            "excluded": {
+              "$ref": "#/$defs/context8.count"
+            },
+            "included": {
+              "$ref": "#/$defs/context8.count"
+            }
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.gap"
+          },
+          "maxItems": 100
+        },
+        "manifest": {
+          "$ref": "#/$defs/context8.manifest"
+        },
+        "sections": {
+          "$ref": "#/$defs/context8.sections"
+        },
+        "spans": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.span"
+          },
+          "maxItems": 128
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "modelVersion",
+        "mode",
+        "project",
+        "roots",
+        "budget",
+        "estimator",
+        "irDigest",
+        "complete",
+        "coverage",
+        "gaps",
+        "manifest",
+        "sections"
+      ],
+      "additionalProperties": false
+    },
+    "context8.count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "context8.semanticId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 192,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "context8.nodeId": {
+      "type": "string",
+      "pattern": "^(project|module|type|entity|operation|policy|event|effect|endpoint|scenario|target-binding|requirement):[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "context8.digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "context8.ordinal": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "context8.confidence": {
+      "enum": [
+        "canonical",
+        "verified",
+        "extracted",
+        "inferred",
+        "unknown"
+      ]
+    },
+    "context8.relation": {
+      "enum": [
+        "requires",
+        "references",
+        "accepts",
+        "returns",
+        "reads",
+        "writes",
+        "emits",
+        "authorizes",
+        "exposes",
+        "implements",
+        "verifies",
+        "derived_from"
+      ]
+    },
+    "context8.effectKind": {
+      "enum": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "write-field",
+        "emit-event",
+        "enqueue-job",
+        "external-call",
+        "cache-read",
+        "cache-write",
+        "cache-invalidate",
+        "publish-output",
+        "audit-log",
+        "transaction-boundary"
+      ]
+    },
+    "context8.writeAction": {
+      "enum": [
+        "set",
+        "clear",
+        "append",
+        "replace",
+        "merge"
+      ]
+    },
+    "context8.resourceKind": {
+      "enum": [
+        "canonical",
+        "target-resource",
+        "external-service",
+        "cache",
+        "event",
+        "job",
+        "output",
+        "audit"
+      ]
+    },
+    "context8.budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "estimated",
+        "fits",
+        "limit",
+        "minimumRequired"
+      ],
+      "properties": {
+        "estimated": {
+          "$ref": "#/$defs/context8.count"
+        },
+        "fits": {
+          "type": "boolean"
+        },
+        "limit": {
+          "$ref": "#/$defs/context8.count"
+        },
+        "minimumRequired": {
+          "$ref": "#/$defs/context8.count"
+        }
+      }
+    },
+    "context8.estimator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digest",
+        "identity",
+        "version"
+      ],
+      "properties": {
+        "digest": {
+          "$ref": "#/$defs/context8.digest"
+        },
+        "identity": {
+          "const": "dev.lekalo.estimator.chars-4@0.2.16"
+        },
+        "version": {
+          "const": "0.2.16"
+        }
+      }
+    },
+    "context8.gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gap"
+      ],
+      "properties": {
+        "gap": {
+          "enum": [
+            "closure-bounded",
+            "detected-effects-absent",
+            "error-contracts-unrepresentable",
+            "no-description",
+            "no-effects",
+            "no-policies",
+            "no-relevant-bindings",
+            "no-scenario-coverage"
+          ]
+        },
+        "symbols": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "maxItems": 128
+        }
+      }
+    },
+    "context8.manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "excluded",
+        "included"
+      ],
+      "properties": {
+        "excluded": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.excludedRow"
+          },
+          "maxItems": 50000
+        },
+        "included": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.includedRow"
+          },
+          "maxItems": 50000
+        }
+      }
+    },
+    "context8.excludedRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "reason",
+        "section"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 600
+        },
+        "reason": {
+          "enum": [
+            "budget"
+          ]
+        },
+        "section": {
+          "$ref": "#/$defs/context8.sectionKey"
+        }
+      }
+    },
+    "context8.includedRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "section",
+        "tokens"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 600
+        },
+        "section": {
+          "$ref": "#/$defs/context8.sectionKey"
+        },
+        "tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "context8.sectionKey": {
+      "enum": [
+        "symbol",
+        "policies",
+        "effects",
+        "dependencies",
+        "scenarios",
+        "public-impact",
+        "bindings",
+        "types",
+        "closure"
+      ]
+    },
+    "context8.sections": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 0,
+      "properties": {
+        "symbol": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.card"
+          },
+          "maxItems": 128
+        },
+        "policies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.policyFact"
+          },
+          "maxItems": 50000
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.effectFact"
+          },
+          "maxItems": 50000
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.edgeFact"
+          },
+          "maxItems": 50000
+        },
+        "scenarios": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.scenarioFact"
+          },
+          "maxItems": 50000
+        },
+        "public-impact": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.edgeFact"
+          },
+          "maxItems": 50000
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.bindingFact"
+          },
+          "maxItems": 50000
+        },
+        "types": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.card"
+          },
+          "maxItems": 50000
+        },
+        "closure": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.edgeFact"
+          },
+          "maxItems": 50000
+        }
+      }
+    },
+    "context8.card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "description",
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/context8.nodeId"
+        },
+        "kind": {
+          "enum": [
+            "project",
+            "module",
+            "type",
+            "entity",
+            "operation",
+            "policy",
+            "event",
+            "effect",
+            "endpoint",
+            "scenario",
+            "target-binding",
+            "requirement"
+          ]
+        },
+        "subkind": {
+          "enum": [
+            "scalar",
+            "enum",
+            "value-object",
+            "command",
+            "query"
+          ]
+        },
+        "module": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/context8.semanticId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "visibility": {
+          "enum": [
+            "module",
+            "project"
+          ]
+        },
+        "portability": {
+          "enum": [
+            "portable",
+            "target-specific"
+          ]
+        },
+        "derivedFrom": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.semanticId"
+          },
+          "maxItems": 128
+        },
+        "description": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contract": {
+          "$ref": "#/$defs/context8.contract"
+        }
+      }
+    },
+    "context8.contract": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "base"
+          ],
+          "properties": {
+            "base": {
+              "enum": [
+                "string",
+                "number",
+                "boolean",
+                "date",
+                "datetime",
+                "uuid",
+                "uri"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "values"
+          ],
+          "properties": {
+            "values": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "value"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  "wireValue": {
+                    "$ref": "#/$defs/context8.defaultLiteral1"
+                  }
+                }
+              },
+              "maxItems": 1024
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "fields"
+          ],
+          "properties": {
+            "fields": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/context8.field"
+              },
+              "maxItems": 1024
+            },
+            "identity": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "maxItems": 64
+            },
+            "relations": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/context8.ir.relation"
+              }
+            },
+            "uniqueConstraints": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/context8.ir.uniqueConstraint"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "effects",
+            "input"
+          ],
+          "properties": {
+            "effects": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/context8.semanticId"
+              },
+              "maxItems": 1024
+            },
+            "input": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/context8.field"
+              },
+              "maxItems": 1024
+            },
+            "returns": {
+              "$ref": "#/$defs/context8.typeExpr"
+            },
+            "emits": {
+              "type": "array",
+              "maxItems": 1024,
+              "items": {
+                "$ref": "#/$defs/context8.semanticId"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reads",
+            "returns",
+            "input"
+          ],
+          "properties": {
+            "reads": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/context8.semanticId"
+              },
+              "maxItems": 1024
+            },
+            "returns": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/context8.typeExpr"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "input": {
+              "type": "array",
+              "maxItems": 1024,
+              "items": {
+                "$ref": "#/$defs/context8.field"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "appliesTo",
+            "decision"
+          ],
+          "properties": {
+            "appliesTo": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/context8.semanticId"
+              },
+              "maxItems": 1024
+            },
+            "decision": {
+              "enum": [
+                "allow",
+                "deny"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "payload"
+          ],
+          "properties": {
+            "payload": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/context8.field"
+              },
+              "maxItems": 1024
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "emits",
+            "entity",
+            "operation"
+          ],
+          "properties": {
+            "emits": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/context8.semanticId"
+              },
+              "maxItems": 1024
+            },
+            "entity": {
+              "$ref": "#/$defs/context8.semanticId"
+            },
+            "operation": {
+              "enum": [
+                "create",
+                "update",
+                "delete"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "invokes",
+            "method",
+            "path"
+          ],
+          "properties": {
+            "invokes": {
+              "$ref": "#/$defs/context8.semanticId"
+            },
+            "method": {
+              "enum": [
+                "GET",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ]
+            },
+            "path": {
+              "type": "string",
+              "maxLength": 512,
+              "pattern": "^(/[a-z0-9:_{}-]+)+$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "covers",
+            "summary"
+          ],
+          "properties": {
+            "covers": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/context8.semanticId"
+              },
+              "maxItems": 1024
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "target"
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "maxLength": 63,
+              "pattern": "^[a-z][a-z0-9_-]*$"
+            }
+          }
+        }
+      ]
+    },
+    "context8.field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "required",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "type": {
+          "$ref": "#/$defs/context8.typeExpr"
+        },
+        "default": {
+          "$ref": "#/$defs/context8.defaultLiteral1"
+        }
+      }
+    },
+    "context8.typeExpr": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ref"
+          ],
+          "properties": {
+            "ref": {
+              "$ref": "#/$defs/context8.semanticId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "list"
+          ],
+          "properties": {
+            "list": {
+              "$ref": "#/$defs/context8.typeExpr"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "optional"
+          ],
+          "properties": {
+            "optional": {
+              "$ref": "#/$defs/context8.typeExpr"
+            }
+          }
+        }
+      ]
+    },
+    "context8.policyFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "appliesTo",
+        "decision",
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/context8.nodeId"
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "appliesTo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.semanticId"
+          },
+          "maxItems": 1024
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      }
+    },
+    "context8.effectFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "confidence",
+        "field",
+        "kind",
+        "occurrence",
+        "operation",
+        "resource"
+      ],
+      "properties": {
+        "action": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/context8.writeAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/context8.confidence"
+        },
+        "field": {
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/context8.effectKind"
+        },
+        "occurrence": {
+          "$ref": "#/$defs/context8.ordinal"
+        },
+        "operation": {
+          "type": "string",
+          "pattern": "^operation:[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "resource": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/context8.semanticId"
+            },
+            "kind": {
+              "$ref": "#/$defs/context8.resourceKind"
+            }
+          }
+        }
+      }
+    },
+    "context8.edgeFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "confidence",
+        "from",
+        "occurrence",
+        "relation",
+        "to"
+      ],
+      "properties": {
+        "confidence": {
+          "$ref": "#/$defs/context8.confidence"
+        },
+        "from": {
+          "$ref": "#/$defs/context8.nodeId"
+        },
+        "occurrence": {
+          "$ref": "#/$defs/context8.ordinal"
+        },
+        "relation": {
+          "$ref": "#/$defs/context8.relation"
+        },
+        "to": {
+          "$ref": "#/$defs/context8.nodeId"
+        }
+      }
+    },
+    "context8.scenarioFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "covers",
+        "id",
+        "summary"
+      ],
+      "properties": {
+        "covers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/context8.semanticId"
+          },
+          "maxItems": 1024
+        },
+        "id": {
+          "$ref": "#/$defs/context8.nodeId"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      }
+    },
+    "context8.bindingFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "target"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/context8.nodeId"
+        },
+        "target": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^[a-z][a-z0-9_-]*$"
+        }
+      }
+    },
+    "context8.span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "span"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/context8.nodeId"
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "end",
+            "path",
+            "start"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "start": {
+              "$ref": "#/$defs/context8.position"
+            },
+            "end": {
+              "$ref": "#/$defs/context8.position"
+            }
+          }
+        }
+      }
+    },
+    "context8.position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "byte",
+        "column",
+        "line"
+      ],
+      "properties": {
+        "byte": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "context8.defaultLiteral4": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        {
+          "type": "string",
+          "maxLength": 8192
+        },
+        {
+          "type": "array",
+          "maxItems": 0
+        },
+        {
+          "type": "object",
+          "maxProperties": 0
+        }
+      ]
+    },
+    "context8.defaultLiteral3": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        {
+          "type": "string",
+          "maxLength": 8192
+        },
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/context8.defaultLiteral4"
+          }
+        },
+        {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "maxLength": 64
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/context8.defaultLiteral4"
+          }
+        }
+      ]
+    },
+    "context8.defaultLiteral2": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        {
+          "type": "string",
+          "maxLength": 8192
+        },
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/context8.defaultLiteral3"
+          }
+        },
+        {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "maxLength": 64
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/context8.defaultLiteral3"
+          }
+        }
+      ]
+    },
+    "context8.defaultLiteral1": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "minimum": -9223372036854775808,
+          "maximum": 9223372036854775807
+        },
+        {
+          "type": "string",
+          "maxLength": 8192
+        },
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/context8.defaultLiteral2"
+          }
+        },
+        {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "maxLength": 64
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/context8.defaultLiteral2"
+          }
+        }
+      ]
+    },
+    "context8.ir.uniqueConstraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "fields",
+        "comparison",
+        "scope"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,3}$",
+          "minLength": 3,
+          "maxLength": 255
+        },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/context8.ir.fieldName"
+          }
+        },
+        "comparison": {
+          "enum": [
+            "exact-text",
+            "declared-normalization"
+          ]
+        },
+        "normalizationRef": {
+          "$ref": "#/$defs/context8.ir.semanticId"
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "description": {
+          "$ref": "#/$defs/context8.ir.boundedText"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "comparison": {
+                "const": "declared-normalization"
+              }
+            },
+            "required": [
+              "comparison"
+            ]
+          },
+          "then": {
+            "properties": {
+              "normalizationRef": {
+                "$ref": "#/$defs/context8.ir.semanticId"
+              }
+            },
+            "required": [
+              "normalizationRef"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "normalizationRef"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "context8.ir.semanticId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,2}$",
+      "minLength": 3,
+      "maxLength": 191
+    },
+    "context8.ir.boundedText": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "context8.ir.fieldName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "context8.ir.relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "target",
+        "localFields",
+        "targetFields",
+        "min",
+        "max",
+        "ownership",
+        "onDetach",
+        "onDelete"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62}){1,3}$",
+          "minLength": 3,
+          "maxLength": 255
+        },
+        "target": {
+          "$ref": "#/$defs/context8.ir.semanticId"
+        },
+        "localFields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/context8.ir.fieldName"
+          }
+        },
+        "targetFields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/context8.ir.fieldName"
+          }
+        },
+        "min": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "max": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000000,
+          "description": "The member is required in the source document and carried in the IR; null is the explicit unbounded spelling."
+        },
+        "ownership": {
+          "enum": [
+            "local",
+            "external",
+            "shared"
+          ]
+        },
+        "onDetach": {
+          "enum": [
+            "retain-history",
+            "forbid"
+          ]
+        },
+        "onDelete": {
+          "enum": [
+            "restrict",
+            "detach"
+          ]
+        },
+        "description": {
+          "$ref": "#/$defs/context8.ir.boundedText"
+        }
+      }
+    },
+    "contextResult2": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/context/v0.2.16"
+        },
+        "identity": {
+          "const": "dev.lekalo.context@0.2.16"
+        },
+        "context": {
+          "$ref": "#/$defs/context.Root"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "context"
+      ],
+      "additionalProperties": false
+    },
+    "contextResult8": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/context/v0.8.0"
+        },
+        "identity": {
+          "const": "dev.lekalo.context@0.8.0"
+        },
+        "context": {
+          "$ref": "#/$defs/context8.Root"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "context"
+      ],
+      "additionalProperties": false
     }
   }
 }

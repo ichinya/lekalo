@@ -160,8 +160,11 @@ impl Session {
                     "dev.lekalo.model",
                     model_identity(graph.model_version().as_str()),
                 ),
-                ("dev.lekalo.ir", crate::ir::IDENTITY),
-                ("dev.lekalo.graph", crate::graph::IDENTITY),
+                (
+                    "dev.lekalo.ir",
+                    crate::ir::version::identity_for(graph.model_version()),
+                ),
+                ("dev.lekalo.graph", graph.identity()),
             ]),
             PayloadValue::new(
                 graph_digest,
@@ -200,9 +203,15 @@ impl Session {
             RecordKind::EffectFragment,
             key,
             Binding::producer(&[
-                ("dev.lekalo.ir", crate::ir::IDENTITY),
-                ("dev.lekalo.graph", crate::graph::IDENTITY),
-                ("dev.lekalo.effects", crate::effects::IDENTITY),
+                (
+                    "dev.lekalo.ir",
+                    crate::ir::version::identity_for(graph.model_version()),
+                ),
+                (
+                    "dev.lekalo.graph",
+                    crate::graph::version::identity_for(graph.model_version()),
+                ),
+                ("dev.lekalo.effects", graph.identity()),
             ]),
             PayloadValue::new(
                 graph_digest,

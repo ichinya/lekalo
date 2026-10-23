@@ -161,7 +161,7 @@ impl Projection {
                 "entity-field" | "value-object-field" | "event-payload" | "command-effect"
                 | "effect-entity" => "references",
                 "command-input" => "accepts",
-                "query-returns" => "returns",
+                "query-returns" | "command-returns" => "returns",
                 "query-reads" => "reads",
                 "endpoint-invokes" => "exposes",
                 "effect-emits" => "emits",

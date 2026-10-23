@@ -23,6 +23,20 @@ pub const SCHEMA_VERSION: &str = "lekalo/query-model/v0.2.16";
 /// The exact IR identity this attachment binds (`irRef`).
 pub const IR_IDENTITY: &str = "dev.lekalo.ir@0.2.16";
 
+pub const fn identity_for(version: crate::loader::ModelVersion) -> &'static str {
+    match version {
+        crate::loader::ModelVersion::Current => IDENTITY,
+        crate::loader::ModelVersion::Successor => "dev.lekalo.query-model@0.8.0",
+    }
+}
+
+pub const fn schema_version_for(version: crate::loader::ModelVersion) -> &'static str {
+    match version {
+        crate::loader::ModelVersion::Current => SCHEMA_VERSION,
+        crate::loader::ModelVersion::Successor => "lekalo/query-model/v0.8.0",
+    }
+}
+
 /// The maximum number of tenancy declarations one attachment may carry.
 pub const MAX_TENANCY: usize = 256;
 
@@ -31,6 +45,14 @@ pub const MAX_QUERIES: usize = 10_000;
 
 /// The maximum number of parameters one query may declare.
 pub const MAX_PARAMETERS: usize = 64;
+
+/// The successor can represent the full Model input-field bound.
+pub const fn max_parameters_for(version: crate::loader::ModelVersion) -> usize {
+    match version {
+        crate::loader::ModelVersion::Current => MAX_PARAMETERS,
+        crate::loader::ModelVersion::Successor => 256,
+    }
+}
 
 /// The maximum depth of one filter AST.
 pub const MAX_FILTER_DEPTH: usize = 8;

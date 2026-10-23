@@ -115,10 +115,16 @@ pub(crate) fn prepare(
             detail: "definition-missing",
         })?;
     let (kind, family, output) = match definition {
-        ir::Definition::Command(_) => (
+        ir::Definition::Command(command) => (
             owner::OperationKind::Command,
             "command",
-            owner::OutputType::Unit,
+            command
+                .returns
+                .as_ref()
+                .map(output_type)
+                .transpose()?
+                .map(owner::OutputType::Value)
+                .unwrap_or(owner::OutputType::Unit),
         ),
         ir::Definition::Query(query) => (
             owner::OperationKind::Query,
@@ -256,6 +262,7 @@ pub(crate) fn prepare(
     if !difference.equal() {
         let after = candidate.canonical_bytes().as_bytes().to_vec();
         prepared.file_edits.push(FileEdit {
+            operation: None,
             path: owner::source::PROJECT_PATH.to_owned(),
             before_digest: registry_digest.clone(),
             after_digest: receipt::bytes_digest(&after),

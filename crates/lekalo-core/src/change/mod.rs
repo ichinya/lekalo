@@ -269,7 +269,8 @@ pub(crate) fn verify_record_postcondition(
         let endpoint = chain_endpoint_after(history, record.sequence, &outcome.path);
         let endpoint = endpoint.as_ref().unwrap_or(outcome);
         let expected = &endpoint.after_digest;
-        let may_be_absent = expected == &absent_digest() && endpoint.outcome == "moved-from";
+        let may_be_absent = expected == &absent_digest()
+            && matches!(endpoint.outcome.as_str(), "moved-from" | "removed");
         let fs = crate::project_fs::Fs::open(root).map_err(|_| ChangeError::HistoryInvalid {
             detail: "postcondition",
         })?;
@@ -295,9 +296,10 @@ pub(crate) fn verify_record_postcondition(
             }
         };
         let carries = (current.is_none() && may_be_absent)
-            || current
-                .map(|bytes| format!("sha256:{}", crate::digest::sha256_hex(&bytes)))
-                .is_some_and(|digest| &digest == expected);
+            || (!may_be_absent
+                && current
+                    .map(|bytes| format!("sha256:{}", crate::digest::sha256_hex(&bytes)))
+                    .is_some_and(|digest| &digest == expected));
         if !carries {
             return Err(ChangeError::HistoryInvalid {
                 detail: "postcondition",
@@ -993,6 +995,7 @@ pub(crate) fn apply_with_validation(
                 .find(|edit| edit.path == *path)
                 .ok_or(ChangeError::WriteBoundaryDenied)?;
             Ok(ReplacementPlan {
+                deletion: edit.operation == Some("delete"),
                 logical: path.clone(),
                 before_digest: edit.before_digest.clone(),
                 after_digest: format!("sha256:{}", crate::digest::sha256_hex(after_bytes)),
@@ -1027,7 +1030,7 @@ pub(crate) fn apply_with_validation(
                 path: plan.logical.clone(),
                 before_digest: plan.before_digest.clone(),
                 after_digest: plan.after_digest.clone(),
-                outcome: "replaced".to_owned(),
+                outcome: if plan.deletion { "removed" } else { "replaced" }.to_owned(),
             })
             .collect()
     };
@@ -1159,6 +1162,7 @@ pub(crate) fn apply_with_validation(
     // before it on ordinary failure.
     let history_present = history_bytes.is_some();
     plans.push(ReplacementPlan {
+        deletion: false,
         logical: history_logical.to_owned(),
         before_digest: match &history_bytes {
             None => absent_digest(),
@@ -1175,6 +1179,7 @@ pub(crate) fn apply_with_validation(
     let before_pin = custody::read(&root)?;
     let after_pin = custody.encode(&history, &final_history_bytes);
     plans.push(ReplacementPlan {
+        deletion: false,
         logical: custody::LOGICAL_PATH.to_owned(),
         before_digest: receipt::bytes_digest(before_pin.as_deref().unwrap_or_default()),
         after_digest: receipt::bytes_digest(&after_pin),
@@ -1240,6 +1245,14 @@ pub(crate) fn apply_with_validation(
             .map(|pin| (pin.path.clone(), pin.digest.clone()))
             .collect();
         for (path, bytes) in &prepared.edits {
+            if prepared
+                .file_edits
+                .iter()
+                .any(|edit| edit.path == *path && edit.operation == Some("delete"))
+            {
+                expected.remove(path);
+                continue;
+            }
             if path == crate::error_contract::source::PROJECT_PATH {
                 continue;
             }
@@ -1711,6 +1724,15 @@ fn resolve_operation(
                     member: "query-input",
                 });
             }
+            if kind == "command"
+                && definition.returns.is_some()
+                && version != crate::loader::ModelVersion::Successor
+            {
+                return Err(ChangeError::UnsupportedMember {
+                    operation: operation.operation().to_owned(),
+                    member: "command-return",
+                });
+            }
             definition_decl_members_fit_kind(kind, definition)?;
             // Defaults require the Model/IR successor at every field
             // writer; the predecessor never silently discards intent.
@@ -1769,7 +1791,7 @@ fn resolve_operation(
             effect,
             emit,
         } => {
-            if emit.is_some() {
+            if emit.is_some() && version != crate::loader::ModelVersion::Successor {
                 return Err(ChangeError::UnsupportedMember {
                     operation: operation.operation().to_owned(),
                     member: "emission-representation",
@@ -1782,24 +1804,27 @@ fn resolve_operation(
                     detail: "wrong-kind",
                 });
             }
+            let (reference, member, expected_kind) = match emit {
+                Some(event) => (event, "emits", "event"),
+                None => (effect, "effects", "effect"),
+            };
             if matches!(operation, Operation::CommandEffectAdd { .. }) {
-                // The referenced effect must exist and be an effect.
-                let effect_definition = find_definition(documents, effect)?;
-                if definition_kind_of(effect_definition) != "effect" {
+                let referenced_definition = find_definition(documents, reference)?;
+                if definition_kind_of(referenced_definition) != expected_kind {
                     return Err(ChangeError::SubjectConflict {
-                        subject: effect.clone(),
+                        subject: reference.clone(),
                         detail: "wrong-kind",
                     });
                 }
-                if definition_scalar_exists(&definition.node, "effects", effect) {
+                if definition_scalar_exists(&definition.node, member, reference) {
                     return Err(ChangeError::SubjectConflict {
-                        subject: effect.clone(),
+                        subject: reference.clone(),
                         detail: "effect-duplicate",
                     });
                 }
-            } else if !definition_scalar_exists(&definition.node, "effects", effect) {
+            } else if !definition_scalar_exists(&definition.node, member, reference) {
                 return Err(ChangeError::SubjectConflict {
-                    subject: effect.clone(),
+                    subject: reference.clone(),
                     detail: "member-missing",
                 });
             }
@@ -1848,8 +1873,7 @@ fn resolve_operation(
             let definition = find_definition(documents, target)?;
             match definition_kind_of(definition).as_str() {
                 "query" => {}
-                // Command results are unit in the accepted Model; the
-                // command-return surface is the reviewed successor.
+                "command" if version == crate::loader::ModelVersion::Successor => {}
                 "command" => {
                     return Err(ChangeError::UnsupportedMember {
                         operation: operation.operation().to_owned(),
@@ -1975,7 +1999,6 @@ fn definition_decl_members_fit_kind(
         }
         "command" => {
             unused(has_ids(&definition.reads), "reads")?;
-            unused(definition.returns.is_some(), "returns")?;
             unused(has(&definition.payload), "payload")?;
             unused(has_ids(&definition.applies_to), "appliesTo")?;
             unused(definition.decision.is_some(), "decision")?;
@@ -2290,11 +2313,19 @@ fn apply_tree_edit(
         Operation::EnumCaseChange { name, change, .. } => {
             change_member_item(&mut definition.node, "values", name, change)
         }
-        Operation::CommandEffectAdd { effect, .. } => {
-            push_scalar_item(&mut definition.node, "effects", effect)
+        Operation::CommandEffectAdd { effect, emit, .. } => {
+            let (member, reference) = emit
+                .as_ref()
+                .map(|event| ("emits", event))
+                .unwrap_or(("effects", effect));
+            push_scalar_item(&mut definition.node, member, reference)
         }
-        Operation::CommandEffectRemove { effect, .. } => {
-            remove_scalar_item(&mut definition.node, "effects", effect)
+        Operation::CommandEffectRemove { effect, emit, .. } => {
+            let (member, reference) = emit
+                .as_ref()
+                .map(|event| ("emits", event))
+                .unwrap_or(("effects", effect));
+            remove_scalar_item(&mut definition.node, member, reference)
         }
         Operation::OperationInputSet { input, .. } => {
             replace_member_sequence(&mut definition.node, "input", input)
@@ -2534,14 +2565,42 @@ fn replace_member_sequence(
 /// Replace the `returns` mapping value with the synthesized type node.
 fn replace_returns(node: &mut Node, r#type: &request::TypeRef) -> Result<(), ChangeError> {
     let span = placeholder_span();
-    let entry = node
-        .get_mut("returns")
-        .ok_or(ChangeError::SubjectConflict {
-            subject: "returns".to_owned(),
-            detail: "member-missing",
-        })?;
-    entry.value = type_node(r#type, span).value;
+    if let Some(entry) = node.get_mut("returns") {
+        entry.value = type_node(r#type, span).value;
+    } else {
+        let Value::Map(entries) = &mut node.value else {
+            return Err(ChangeError::WriteBoundaryDenied);
+        };
+        entries.push(MapEntry {
+            key: "returns".to_owned(),
+            key_span: span,
+            value: type_node(r#type, span),
+        });
+    }
     Ok(())
+}
+
+/// Compare only type facts, ignoring source spans, comments and spelling layout.
+fn type_node_matches(node: &Node, requested: &request::TypeRef) -> bool {
+    if let Some(spelling) = node.as_str() {
+        return spelling == requested.to_spelling();
+    }
+    let Value::Map(entries) = &node.value else {
+        return false;
+    };
+    if entries.len() != 1 {
+        return false;
+    }
+    let entry = &entries[0];
+    match requested {
+        request::TypeRef::Ref(id) => entry.key == "ref" && entry.value.as_str() == Some(id),
+        request::TypeRef::List(inner) => {
+            entry.key == "list" && type_node_matches(&entry.value, inner)
+        }
+        request::TypeRef::Optional(inner) => {
+            entry.key == "optional" && type_node_matches(&entry.value, inner)
+        }
+    }
 }
 
 /// The synthesized mapping node of one closed type reference.
@@ -2671,6 +2730,9 @@ fn synthesized_definition_node(
             }
             if let Some(effects) = seq_entry("effects", id_items(&declaration.effects)) {
                 entries.push(effects);
+            }
+            if let Some(returns) = &declaration.returns {
+                entries.push(entry("returns", type_node(returns, span)));
             }
         }
         "query" => {
@@ -3073,21 +3135,29 @@ fn plan_source_edits(
                 .collect();
             vec![edit::plan_document_definition_append(bytes, &nodes, &item)?]
         }
-        Operation::CommandEffectAdd { effect, .. } => {
+        Operation::CommandEffectAdd { effect, emit, .. } => {
+            let (member, reference) = emit
+                .as_ref()
+                .map(|event| ("emits", event))
+                .unwrap_or(("effects", effect));
             // A command synthesized without effects carries no sequence
             // yet: its first effect reference appends the whole member.
-            if node.get("effects").is_none() {
-                vec![edit::plan_member_append(bytes, node, "effects", effect)?]
+            if node.get(member).is_none() {
+                vec![edit::plan_member_append(bytes, node, member, reference)?]
             } else {
-                let item = edit::effect_item_block(bytes, node, "effects", effect)?;
+                let item = edit::effect_item_block(bytes, node, member, reference)?;
                 vec![edit::plan_seq_scalar_insert(
-                    bytes, node, "effects", effect, &item,
+                    bytes, node, member, reference, &item,
                 )?]
             }
         }
-        Operation::CommandEffectRemove { effect, .. } => {
-            vec![edit::plan_seq_scalar_remove(
-                bytes, node, "effects", effect,
+        Operation::CommandEffectRemove { effect, emit, .. } => {
+            let (member, reference) = emit
+                .as_ref()
+                .map(|event| ("emits", event))
+                .unwrap_or(("effects", effect));
+            vec![edit::plan_scalar_list_change(
+                bytes, node, member, reference, false,
             )?]
         }
         Operation::OperationInputSet { input, .. } => {
@@ -3108,11 +3178,19 @@ fn plan_source_edits(
             edit::plan_member_sequence_replace(bytes, node, "input", &fields)?
         }
         Operation::OperationOutputSet { r#type, .. } => {
-            vec![edit::plan_returns_replace(
-                bytes,
-                node,
-                &r#type.to_spelling(),
-            )?]
+            if node
+                .get("returns")
+                .map(|current| type_node_matches(current, r#type))
+                .unwrap_or(false)
+            {
+                Vec::new()
+            } else {
+                vec![edit::plan_returns_replace(
+                    bytes,
+                    node,
+                    &r#type.to_spelling(),
+                )?]
+            }
         }
         Operation::QueryEffect { effect, add, .. } => {
             vec![edit::plan_scalar_list_change(
@@ -3222,6 +3300,13 @@ fn definition_members_block(
                     anchor_column,
                     "effects",
                     &ids(&declaration.effects),
+                ));
+            }
+            if let Some(returns) = &declaration.returns {
+                block.push_str(&edit::yaml_returns_block(
+                    bytes,
+                    anchor_column,
+                    &returns.to_spelling(),
                 ));
             }
             block

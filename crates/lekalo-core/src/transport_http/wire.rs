@@ -105,10 +105,13 @@ pub(crate) fn from_value(json: &Json) -> Result<TransportDocument, DiagnosticSet
             return Err(diagnostic::input_invalid("missing-field"));
         }
     }
-    if object.get("schemaVersion").and_then(Json::as_str) != Some(version::SCHEMA_VERSION) {
-        return Err(diagnostic::input_invalid("schema-version"));
-    }
-    if object.get("identity").and_then(Json::as_str) != Some(version::IDENTITY) {
+    let source_version = match object.get("schemaVersion").and_then(Json::as_str) {
+        Some(version::SCHEMA_VERSION) => crate::loader::ModelVersion::Current,
+        Some("lekalo/transport-http/v0.8.0") => crate::loader::ModelVersion::Successor,
+        _ => return Err(diagnostic::input_invalid("schema-version")),
+    };
+    if object.get("identity").and_then(Json::as_str) != Some(version::identity_for(source_version))
+    {
         return Err(diagnostic::input_invalid("contract-identity"));
     }
     let attachment_revision = SemVer::parse(
@@ -129,11 +132,13 @@ pub(crate) fn from_value(json: &Json) -> Result<TransportDocument, DiagnosticSet
         object
             .get("modelRef")
             .ok_or_else(|| diagnostic::input_invalid("model-ref"))?,
+        source_version,
     )?;
     let ir_digest = ir_digest_member(
         object
             .get("irRef")
             .ok_or_else(|| diagnostic::input_invalid("ir-ref"))?,
+        source_version,
     )?;
     let wire = wire_dialect(
         object
@@ -171,7 +176,10 @@ pub(crate) fn from_value(json: &Json) -> Result<TransportDocument, DiagnosticSet
 }
 
 /// Decode the bound source Model contract.
-fn model_pin(value: &Json) -> Result<ModelPin, DiagnosticSet> {
+fn model_pin(
+    value: &Json,
+    version: crate::loader::ModelVersion,
+) -> Result<ModelPin, DiagnosticSet> {
     let object = value
         .as_object()
         .ok_or_else(|| diagnostic::input_invalid("model-ref-shape"))?;
@@ -180,14 +188,9 @@ fn model_pin(value: &Json) -> Result<ModelPin, DiagnosticSet> {
             return Err(diagnostic::input_invalid("model-ref-field"));
         }
     }
-    let pin = match object
-        .get("modelVersion")
-        .and_then(Json::as_str)
-        .ok_or_else(|| diagnostic::input_invalid("model-version"))?
-    {
-        version::MODEL_VERSION => crate::scenario::ModelPin::Current,
-        _ => return Err(diagnostic::input_invalid("model-version")),
-    };
+    if object.get("modelVersion").and_then(Json::as_str) != Some(version.as_str()) {
+        return Err(diagnostic::input_invalid("model-version"));
+    }
     let digest = Sha256Digest::parse(
         object
             .get("digest")
@@ -195,11 +198,14 @@ fn model_pin(value: &Json) -> Result<ModelPin, DiagnosticSet> {
             .ok_or_else(|| diagnostic::input_invalid("model-digest"))?,
     )
     .map_err(|_| diagnostic::input_invalid("model-digest"))?;
-    Ok(ModelPin::new(pin, digest))
+    Ok(ModelPin::new(version, digest))
 }
 
 /// Decode the bound IR digest.
-fn ir_digest_member(value: &Json) -> Result<Sha256Digest, DiagnosticSet> {
+fn ir_digest_member(
+    value: &Json,
+    version: crate::loader::ModelVersion,
+) -> Result<Sha256Digest, DiagnosticSet> {
     let object = value
         .as_object()
         .ok_or_else(|| diagnostic::input_invalid("ir-ref-shape"))?;
@@ -208,7 +214,7 @@ fn ir_digest_member(value: &Json) -> Result<Sha256Digest, DiagnosticSet> {
             return Err(diagnostic::input_invalid("ir-ref-field"));
         }
     }
-    if object.get("identity").and_then(Json::as_str) != Some(version::IR_IDENTITY) {
+    if object.get("identity").and_then(Json::as_str) != Some(version::ir_identity_for(version)) {
         return Err(diagnostic::input_invalid("ir-identity"));
     }
     Sha256Digest::parse(

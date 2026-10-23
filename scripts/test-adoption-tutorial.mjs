@@ -11,6 +11,8 @@
 // (bash) and node on PATH; `lekalo` resolves to the freshly built
 // binary through PATH precedence. Runs after `cargo build --workspace
 // --locked` in the same job.
+// LEKALO_TUTORIAL_BASH selects a native Git Bash executable on Windows
+// when PATH resolves `bash` to the WSL launcher instead.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -24,6 +26,7 @@ const fail = (reason, detail) => {
 };
 const BINARY = join(root, "target", "debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
 if (!existsSync(BINARY)) fail("binary-missing", "cargo build --workspace --locked first");
+const shell = process.env.LEKALO_TUTORIAL_BASH ?? "bash";
 
 const DOC = join(root, "docs", "tutorial-incremental-adoption.md");
 const doc = readFileSync(DOC, "utf8");
@@ -85,7 +88,7 @@ const runBlocks = (from, upto) => {
       const scriptPath = join(scriptDir, `block-${blockSeq}.sh`);
       const cdLine = `cd '${segment.cwd.replace(/\\/g, "/")}' || exit 70`;
       writeFileSync(scriptPath, `${cdLine}\n${segment.lines.join("\n")}`);
-      const result = spawnSync("bash", [scriptPath], {
+      const result = spawnSync(shell, [scriptPath.replaceAll("\\", "/")], {
         cwd: segment.cwd,
         encoding: "utf8",
         maxBuffer: 64 * 1024 * 1024,

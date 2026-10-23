@@ -148,7 +148,8 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
     let Some(supply) = request.supply.as_ref() else {
         return Err(DomainResult::from(&Failure::AdapterSupplyRequired));
     };
-    let compilation = compile(request.selection)?;
+    let model = loader::normalize_model(request.selection)?;
+    let compilation = crate::ir::compile(&model).map_err(|failure| failure.into_result())?;
     let local_registry =
         crate::error_contract::source::read(prepared.root()).map_err(DomainResult::invalid)?;
     if let Some(registry) = &local_registry {
@@ -217,7 +218,24 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
     match crate::transport_http::read_document(prepared.root()) {
         Err(diagnostics) => return Err(DomainResult::invalid(diagnostics)),
         Ok(Some(attachment)) => {
+            let query_model = crate::client_sdk::source::read_query_model(prepared.root())
+                .map_err(DomainResult::invalid)?;
+            if model.model_version == ModelVersion::Successor {
+                attachment
+                    .validate_model_pin(&model)
+                    .map_err(DomainResult::invalid)?;
+                if let Some(query_model) = &query_model {
+                    crate::query_model::resolve_model(
+                        query_model,
+                        &model,
+                        crate::query_model::Profile::Default,
+                    )?;
+                }
+            }
             let mut context = crate::transport_http::ValidationContext::new(&compilation.project);
+            if let Some(query_model) = &query_model {
+                context = context.with_query_model(query_model);
+            }
             if local_registry.is_some() {
                 context = context.with_errors(registry);
             }
@@ -233,8 +251,11 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
             // homes — the only OpenAPI input an adapter may read. The
             // project-selected #62 registry is bound so the identity variants
             // render; the declared defaults (3.1, full) apply.
-            let context = crate::transport_http::ValidationContext::new(&compilation.project)
+            let mut context = crate::transport_http::ValidationContext::new(&compilation.project)
                 .with_errors(registry);
+            if let Some(query_model) = &query_model {
+                context = context.with_query_model(query_model);
+            }
             let rendered =
                 crate::openapi::render(&attachment, &context, &crate::openapi::RenderConfig::new())
                     .map_err(DomainResult::invalid)?;
@@ -254,10 +275,9 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
             // fails to read or validate propagates its registered
             // refusal, never a silent skip.
             let capabilities = crate::transport_http::CapabilityMap::http_json();
-            match crate::client_sdk::source::read_query_model(prepared.root()) {
-                Err(diagnostics) => return Err(DomainResult::invalid(diagnostics)),
-                Ok(None) => {}
-                Ok(Some(query_model)) => {
+            match query_model {
+                None => {}
+                Some(query_model) => {
                     let context =
                         crate::transport_http::ValidationContext::new(&compilation.project)
                             .with_errors(registry)

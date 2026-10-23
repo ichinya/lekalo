@@ -119,8 +119,13 @@ pub fn extract(project: &CompiledProject, recipe: &Recipe) -> Subjects {
             Definition::Entity(d) => ("entity", field_refs(&d.fields), vec![], vec![], vec![]),
             Definition::Command(d) => {
                 let mut deps = field_refs(&d.input);
+                if let Some(returns) = &d.returns {
+                    type_refs(returns, &mut deps);
+                }
                 deps.extend(d.effects.iter().map(|id| id.as_str().to_owned()));
-                ("command", deps, vec![], vec![], vec![])
+                let emits: Vec<String> = d.emits.iter().map(|id| id.as_str().to_owned()).collect();
+                deps.extend(emits.iter().cloned());
+                ("command", deps, vec![], emits, vec![])
             }
             Definition::Query(d) => {
                 let mut deps: Vec<String> =

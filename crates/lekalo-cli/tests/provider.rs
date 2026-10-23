@@ -52,13 +52,13 @@ fn describe_emits_a_valid_manifest_receipt_on_stdout() {
     assert_eq!(document["status"], "valid");
     assert_eq!(
         document["manifest"]["schemaVersion"],
-        "lekalo/workflow-provider/v0.6.4"
+        "lekalo/workflow-provider/v0.8.0"
     );
     assert_eq!(
         document["manifest"]["identity"],
-        "dev.lekalo.workflow-provider@0.6.4"
+        "dev.lekalo.workflow-provider@0.8.0"
     );
-    assert_eq!(document["manifest"]["productVersion"], "0.6.4");
+    assert_eq!(document["manifest"]["productVersion"], "0.8.0");
     assert_eq!(
         document["manifest"]["targetProtocolIdentity"], "dev.lekalo.target-protocol@0.3.2",
         "the target protocol stays a separate negotiated family"
@@ -78,7 +78,7 @@ fn json_projection_is_byte_identical_to_the_committed_golden() {
     assert_eq!(output.status.code(), Some(0));
     let golden = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/fixtures/provider/describe.golden.json"
+        "/../../tests/fixtures/provider/describe.v0.8.0.golden.json"
     ))
     .expect("golden fixture");
     assert_eq!(
@@ -198,7 +198,7 @@ fn describe_pins_one_output_schema_per_operation_and_the_shared_families() {
     assert_eq!(schema_of("doctor"), "lekalo/doctor/v0.3.2");
     assert_eq!(schema_of("readiness"), "lekalo/doctor/v0.3.2");
     assert_eq!(schema_of("impact"), "lekalo/impact/v0.2.16");
-    assert_eq!(schema_of("context"), "lekalo/context/v0.2.16");
+    assert_eq!(schema_of("context"), "lekalo/context-result/v0.8.0");
     assert_eq!(schema_of("validate"), "lekalo/validation-report/v0.6.4");
     assert_eq!(schema_of("drift"), "lekalo/generate-check/v0.6.3");
     assert_eq!(schema_of("verify"), "lekalo/orchestration/v0.2.16");
@@ -213,7 +213,7 @@ fn describe_pins_one_output_schema_per_operation_and_the_shared_families() {
         .iter()
         .map(|pin| pin["schemaVersion"].as_str().expect("pin"))
         .collect();
-    assert_eq!(pins.len(), 11);
+    assert_eq!(pins.len(), 13);
     assert!(
         pins.contains(&"lekalo/diagnostic/v0.2.16"),
         "diagnostics are pinned"
@@ -306,7 +306,7 @@ fn human_projection_is_one_stable_summary_line() {
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(
         stdout_text(&output),
-        "provider dev.lekalo.workflow-provider@0.6.4 product 0.6.4 operations \
+        "provider dev.lekalo.workflow-provider@0.8.0 product 0.8.0 operations \
          context,doctor,drift,generate,impact,readiness,status,trace.assess,trace.export,validate,verify\n"
     );
 }

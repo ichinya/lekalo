@@ -560,6 +560,16 @@ impl Run<'_> {
         }
 
         let outcome = match self.evaluation.definitions.get(operation.as_str()) {
+            Some(Definition::Command(command)) if !command.emits.is_empty() => {
+                Ok(Outcome::Unsupported {
+                    reason: "command-emission-contract-unsupported",
+                })
+            }
+            Some(Definition::Command(command)) if command.returns.is_some() => {
+                Ok(Outcome::Unsupported {
+                    reason: "command-result-contract-unsupported",
+                })
+            }
             Some(Definition::Command(_)) => self.execute_command(step, &operation, &input, &clock),
             Some(Definition::Query(query)) if !query.input.is_empty() => Ok(Outcome::Unsupported {
                 reason: "query-input-contract-unsupported",

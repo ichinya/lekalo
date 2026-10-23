@@ -65,6 +65,7 @@ export function commandOwner(command) {
   return `docs/${commandOwners[top]}.md`;
 }
 const families = {
+  "context-result":"provider-contract",
   "watch-event":"cli", "watch-result":"cli",
   "managed-ownership":"managed-mode", "managed-coverage":"managed-mode", "managed-generation-plan":"managed-mode", "managed-generation-record":"managed-mode", "managed-transaction":"managed-mode", "managed-rollback-plan":"managed-mode", "managed-equivalence":"managed-mode",
   "architecture-rule-catalog":"architecture-profile", "architecture-profile":"architecture-profile", "architecture-profile-resolved":"architecture-profile", "architecture-profile-lock":"architecture-profile", "architecture-profile-report":"architecture-profile", "architecture-profile-diff":"architecture-profile", "architecture-adoption":"architecture-profile",

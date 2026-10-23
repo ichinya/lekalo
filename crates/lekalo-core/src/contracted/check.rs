@@ -322,7 +322,7 @@ pub(super) fn canonical_members(project: &CompiledProject, id: &str) -> Option<C
             CanonicalMembers {
                 signature: Some(SignatureEvidence {
                     inputs,
-                    output: None,
+                    output: command.returns.as_ref().map(render_type),
                     reads: Vec::new(),
                 }),
                 effects,

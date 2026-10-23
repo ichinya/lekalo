@@ -81,6 +81,20 @@ pub struct Compilation {
 }
 
 impl CompiledProject {
+    /// Whether a consumer needs the successor's typed command result.
+    pub fn has_command_results(&self) -> bool {
+        self.definitions
+            .iter()
+            .any(|d| matches!(d, Definition::Command(c) if c.returns.is_some()))
+    }
+
+    /// Whether a successor command declares event emissions independently of CRUD.
+    pub fn has_command_emissions(&self) -> bool {
+        self.definitions
+            .iter()
+            .any(|definition| matches!(definition, Definition::Command(command) if !command.emits.is_empty()))
+    }
+
     /// Whether a consumer needs the Model 0.8.0 query input contract.
     pub fn has_query_inputs(&self) -> bool {
         self.definitions
@@ -597,6 +611,10 @@ pub struct CommandDef {
     pub common: Common,
     pub input: Vec<Field>,
     pub effects: Vec<SymbolId>,
+    /// Events emitted directly by this command (Model 0.8.0 only).
+    pub emits: Vec<SymbolId>,
+    /// Optional result contract, admitted only by Model 0.8.0.
+    pub returns: Option<TypeRef>,
 }
 
 /// The `query` definition.

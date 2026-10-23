@@ -69,6 +69,9 @@ pub fn project(
     context: &ValidationContext<'_>,
     namespace: &str,
 ) -> Result<RouteSurface, DiagnosticSet> {
+    if context.project.model_version == crate::loader::ModelVersion::Successor {
+        super::validate(document, context)?;
+    }
     if !NAMESPACES.contains(&namespace) {
         return Err(diagnostic::rule_invalid(
             diagnostic::CONTRACT_INVALID,

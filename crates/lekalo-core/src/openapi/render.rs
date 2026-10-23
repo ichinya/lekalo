@@ -86,11 +86,20 @@ pub fn render(
     context: &ValidationContext<'_>,
     config: &RenderConfig,
 ) -> Result<OpenApiDocument, DiagnosticSet> {
-    if context.project.has_query_inputs() {
+    if context.project.has_command_emissions() {
         return Err(diagnostic::version_unsupported(
-            "query-input-contract",
+            "command-emission-contract",
             "0.8.0",
         ));
+    }
+    if context.project.has_command_results() {
+        return Err(diagnostic::version_unsupported(
+            "command-result-contract",
+            "0.8.0",
+        ));
+    }
+    if context.project.model_version == crate::loader::ModelVersion::Successor {
+        crate::transport_http::validate(document, context)?;
     }
     let version = config.version;
     if document.endpoints().len() > MAX_OPERATIONS {
@@ -281,7 +290,10 @@ pub fn render(
     let mut ir_ref = Map::new();
     ir_ref.insert(
         "identity".to_owned(),
-        Json::String(crate::transport_http::IR_IDENTITY.to_owned()),
+        Json::String(
+            crate::transport_http::version::ir_identity_for(*document.model_ref().version())
+                .to_owned(),
+        ),
     );
     ir_ref.insert(
         "digest".to_owned(),
@@ -291,7 +303,7 @@ pub fn render(
     let mut transport_ref = Map::new();
     transport_ref.insert(
         "schemaVersion".to_owned(),
-        Json::String(crate::transport_http::SCHEMA_VERSION.to_owned()),
+        Json::String(document.schema_version().to_owned()),
     );
     transport_ref.insert(
         "digest".to_owned(),
@@ -590,6 +602,10 @@ fn field_schema(
         return json!({});
     }
     if let Some(decl) = query_decl {
+        if let Some(schema) = mapper.query_input_schema(decl.query.as_str(), field.name().as_str())
+        {
+            return schema;
+        }
         if let Some(parameter) = decl
             .parameters
             .iter()
@@ -611,6 +627,9 @@ fn pagination_param_schema(
     mapper: &mut SchemaMapper,
 ) -> Json {
     if let Some(decl) = query_decl {
+        if let Some(schema) = mapper.query_input_schema(decl.query.as_str(), name) {
+            return schema;
+        }
         if let Some(parameter) = decl
             .parameters
             .iter()
@@ -1204,6 +1223,12 @@ fn command_input<'a>(
         .find_map(|definition| match definition {
             Definition::Command(command) if command.id.as_str() == operation => {
                 Some(&command.input)
+            }
+            Definition::Query(query)
+                if query.id.as_str() == operation
+                    && project.model_version == crate::loader::ModelVersion::Successor =>
+            {
+                Some(&query.input)
             }
             _ => None,
         })

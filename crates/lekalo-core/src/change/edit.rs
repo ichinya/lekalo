@@ -1131,6 +1131,18 @@ pub fn plan_returns_replace(
     definition: &Node,
     type_spelling: &str,
 ) -> Result<ByteEdit, ChangeError> {
+    if definition.get("returns").is_none() {
+        let indent = definition
+            .get_entry("id")
+            .and_then(|entry| entry.key_span.start.column.checked_sub(1))
+            .ok_or(ChangeError::WriteBoundaryDenied)?;
+        let suffix = type_mapping_lines(
+            type_spelling,
+            indent + 2,
+            newline_before(bytes, bytes.len()),
+        );
+        return plan_raw_member_append(bytes, definition, "returns", &suffix);
+    }
     let (start, end, key_indent) = member_block_range(bytes, definition, "returns")?;
     let block = yaml_returns_block(bytes, key_indent - 2, type_spelling);
     // The replaced range starts at the key line; the block's leading
@@ -1696,7 +1708,7 @@ pub fn plan_member_append(
         subject: member.to_owned(),
         detail: "item-layout",
     })?;
-    let insert_at = definition_content_end(bytes, definition)?;
+    let insert_at = inline_trivia_end(bytes, definition_content_end(bytes, definition)?);
     if next_content_is_comment(bytes, insert_at) {
         return Err(ChangeError::SourcePreservation {
             subject: member.to_owned(),

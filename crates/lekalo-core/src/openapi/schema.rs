@@ -87,6 +87,24 @@ impl<'a> SchemaMapper<'a> {
         }
     }
 
+    /// Successor query signatures are typed Model fields, including defaults
+    /// and nested nullability; never flatten them through a textual leaf.
+    pub(crate) fn query_input_schema(&mut self, query: &str, name: &str) -> Option<Json> {
+        let field = self
+            .project
+            .definitions
+            .iter()
+            .find_map(|definition| match definition {
+                Definition::Query(def) if def.id.as_str() == query => def
+                    .input
+                    .iter()
+                    .find(|field| field.name.as_str() == name)
+                    .cloned(),
+                _ => None,
+            })?;
+        Some(self.field_schema(&field))
+    }
+
     /// Map the closed #62 payload type expression. The reference names
     /// a Model symbol resolved against the compiled project.
     pub fn map_error_type(&mut self, expr: &crate::error_contract::types::TypeExpr) -> Json {

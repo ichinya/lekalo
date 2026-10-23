@@ -160,12 +160,9 @@ pub(super) fn prepare(
     let guards = Guards;
     guards.check(&base.root)?;
     let cross_module = from_module != to_module;
-    if cross_module
-        && (source.node.get("relations").is_some()
-            || source.node.get("uniqueConstraints").is_some())
-    {
-        return Err(unsupported("nested-identity-relocation"));
-    }
+    // Relation and uniqueness IDs identify members, not definitions or
+    // module ownership. Keep those stable IDs verbatim when their owner
+    // moves; rewrite only the typed target/normalization references below.
     let source_doc = load
         .documents
         .iter()
@@ -176,9 +173,6 @@ pub(super) fn prepare(
                 .any(|definition| definition.id == *symbol)
         })
         .ok_or(ChangeError::WriteBoundaryDenied)?;
-    if cross_module && load.documents[source_doc].document.definitions.len() == 1 {
-        return Err(unsupported("last-definition-relocation"));
-    }
     let destination_doc = load
         .documents
         .iter()
@@ -334,6 +328,7 @@ pub(super) fn prepare(
     }
 
     let mut creations = Vec::new();
+    let mut retirement = None;
     if cross_module {
         let source_path = documents[source_doc].document.path.clone();
         let bytes = prospective
@@ -348,7 +343,19 @@ pub(super) fn prepare(
             .find(|definition| definition.id == target)
             .ok_or(ChangeError::WriteBoundaryDenied)?;
         let (cut, block) = edit::plan_definition_cut(&bytes, &moved.node)?;
-        prospective.insert(source_path, cut.apply(&bytes));
+        if documents[source_doc].document.definitions.len() == 1 {
+            if cut.apply(&bytes).contains(&b'#') {
+                // Document-level comments cannot be silently retired or
+                // reassigned to another home by a definition move.
+                return Err(preservation("document-trivia"));
+            }
+            // Retire the exact source home under the ordinary transaction;
+            // never leave an invalid empty definitions document behind.
+            prospective.insert(source_path.clone(), Vec::new());
+            retirement = Some(source_path);
+        } else {
+            prospective.insert(source_path, cut.apply(&bytes));
+        }
         let position = documents[source_doc]
             .document
             .definitions
@@ -410,6 +417,9 @@ pub(super) fn prepare(
             prospective.insert(target_path.clone(), rendered.into_bytes());
             creations.push(target_path);
         }
+    }
+    if let Some(path) = retirement {
+        documents.retain(|document| document.document.path != path);
     }
     let audit = ResolvedOperation {
         operation: "symbol:move".to_owned(),

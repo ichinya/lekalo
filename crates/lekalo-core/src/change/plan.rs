@@ -50,6 +50,9 @@ pub struct InputPin {
 #[derive(Clone, Debug, Serialize, Eq, PartialEq)]
 pub struct FileEdit {
     pub path: String,
+    /// An explicit file retirement; absence keeps legacy replacement bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation: Option<&'static str>,
     #[serde(rename = "beforeDigest")]
     pub before_digest: String,
     #[serde(rename = "afterDigest")]

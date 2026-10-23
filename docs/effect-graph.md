@@ -20,6 +20,13 @@ detected effects enter only as typed evidence records and never mutate the
 canonical model. Canonical export bytes are compact UTF-8 JSON with
 byte-sorted keys, path-independent and byte-identical for the same IR.
 
+Model `0.8.0` selects the [effect-graph `0.8.0` successor](../contracts/effect-graph.schema.v0.8.0.json):
+`lekalo/effects/v0.8.0` / `dev.lekalo.effects@0.8.0`. It adds the closed
+`command-emits` provenance role for direct command event declarations.
+The frozen `0.2.16` family and its canonical bytes remain unchanged for
+Model `0.2.16` sources. Both families keep declared and detected evidence
+separate; a declared emission is not proof of runtime dispatch.
+
 ## Effect kinds
 
 Closed v1 kinds: `read`, `create`, `update`, `delete`, `write-field`
@@ -29,7 +36,7 @@ Closed v1 kinds: `read`, `create`, `update`, `delete`, `write-field`
 `transaction-boundary`. Entity and field scope are distinct everywhere.
 The Model can declare only what it has grammar for: query `reads`
 (entity reads), command `effects` (CRUD on the effect's entity), and
-effect `emits` (event emissions). Every other kind enters only through
+effect `emits` and successor command `emits` (event emissions). Every other kind enters only through
 typed detected evidence supplied by an adapter; this tooling never
 detects effects from source and never infers them from names.
 

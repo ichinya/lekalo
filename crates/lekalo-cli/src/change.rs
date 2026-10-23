@@ -43,7 +43,7 @@ pub(crate) enum ChangeCommands {
     /// Replace a command's input field list.
     #[command(name = "operation-input:set")]
     OperationInputSet(OperationInputArgs),
-    /// Replace a query's return type.
+    /// Set a query or Model 0.8.0 command return type.
     #[command(name = "operation-output:set")]
     OperationOutputSet(OperationOutputArgs),
     /// Add one read dependency to a query.
@@ -361,7 +361,7 @@ pub(crate) struct AddDefinitionArgs {
 }
 
 /// `command-effect:add`/`command-effect:remove` sugar: exactly one of
-/// the effect reference or the (deferred) emission surface.
+/// the effect reference or a Model 0.8.0 direct event emission.
 #[derive(Debug, Args)]
 pub(crate) struct CommandEffectArgs {
     /// The semantic id of the command.
@@ -370,7 +370,7 @@ pub(crate) struct CommandEffectArgs {
     /// The effect reference to add or remove.
     #[arg(long, value_name = "ID", conflicts_with = "emit")]
     effect: Option<String>,
-    /// The emission surface to bind (deferred to the reviewed successor).
+    /// The event to emit directly (Model 0.8.0).
     #[arg(long, value_name = "ID")]
     emit: Option<String>,
     #[command(flatten)]
@@ -394,7 +394,7 @@ pub(crate) struct OperationInputArgs {
 /// `operation-output:set` sugar.
 #[derive(Debug, Args)]
 pub(crate) struct OperationOutputArgs {
-    /// The semantic id of the query whose return type is replaced.
+    /// The semantic id of the query or Model 0.8.0 command whose return type is set.
     #[arg(long = "operation", value_name = "ID")]
     operation_target: String,
     /// The new return type sugar (`ref`, `list<ref>`, `ref?`).

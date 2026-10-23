@@ -405,6 +405,8 @@
             "operation",
             "command"
           ],
+          "minProperties": 3,
+          "maxProperties": 3,
           "properties": {
             "operation": {
               "const": "command-effect:add"
@@ -427,6 +429,8 @@
             "operation",
             "command"
           ],
+          "minProperties": 3,
+          "maxProperties": 3,
           "properties": {
             "operation": {
               "const": "command-effect:remove"

@@ -218,8 +218,17 @@ pub(crate) fn references_of(definition: &Definition) -> Vec<&str> {
             for effect in &command.effects {
                 references.push(effect.as_str());
             }
+            for event in &command.emits {
+                references.push(event.as_str());
+            }
+            if let Some(returns) = &command.returns {
+                push_type(returns, &mut references);
+            }
         }
         Definition::Query(query) => {
+            for field in &query.input {
+                push_type(&field.r#type, &mut references);
+            }
             for read in &query.reads {
                 references.push(read.as_str());
             }

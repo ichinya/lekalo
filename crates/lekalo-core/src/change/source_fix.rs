@@ -157,6 +157,7 @@ pub(crate) fn prepare_source_only(
             });
         }
         file_edits.push(FileEdit {
+            operation: None,
             path: path.clone(),
             before_digest: receipt::bytes_digest(before.as_bytes()),
             after_digest: receipt::bytes_digest(after.as_bytes()),

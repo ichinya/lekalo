@@ -161,7 +161,7 @@
       ],
       "properties": {
         "identity": {
-          "const": "dev.lekalo.effects@0.2.16"
+          "const": "dev.lekalo.effects@0.8.0"
         },
         "digest": {
           "$ref": "#/$defs/sha256"

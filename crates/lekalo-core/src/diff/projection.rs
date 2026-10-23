@@ -82,6 +82,8 @@ pub(crate) enum Payload {
     Command {
         input: Vec<FieldProjection>,
         effects: Vec<String>,
+        emits: Vec<String>,
+        returns: Option<String>,
     },
     Query {
         input: Vec<FieldProjection>,
@@ -300,6 +302,13 @@ pub(crate) fn project(compiled: &CompiledProject) -> Result<Projection, usize> {
             },
             Definition::Command(def) => Payload::Command {
                 input: fields(&def.input),
+                returns: def.returns.as_ref().map(type_expression),
+                emits: sorted(
+                    def.emits
+                        .iter()
+                        .map(|event| event.as_str().to_owned())
+                        .collect(),
+                ),
                 effects: sorted(
                     def.effects
                         .iter()
@@ -465,11 +474,31 @@ fn payload_bytes(payload: &Payload) -> String {
                 )
             }
         }
-        Payload::Command { input, effects } => format!(
-            "{{\"effects\":{},\"input\":{},\"kind\":\"command\"}}",
-            string_array(effects),
-            field_array(input)
-        ),
+        Payload::Command {
+            input,
+            effects,
+            emits,
+            returns,
+        } => {
+            let mut body = format!(
+                "{{\"effects\":{}{},\"input\":{},\"kind\":\"command\"}}",
+                string_array(effects),
+                if emits.is_empty() {
+                    String::new()
+                } else {
+                    format!(",\"emits\":{}", string_array(emits))
+                },
+                field_array(input)
+            );
+            if let Some(returns) = returns {
+                body.pop();
+                body.push_str(&format!(
+                    ",\"returns\":{}}}",
+                    super::canonical::quote(returns)
+                ));
+            }
+            body
+        }
         Payload::Query {
             input,
             reads,
@@ -681,11 +710,20 @@ pub(crate) fn substitute_references(projection: &mut Projection, from: &str, to:
                     }
                 }
             }
-            Payload::Command { input, effects } => {
+            Payload::Command {
+                input,
+                effects,
+                emits,
+                returns,
+            } => {
                 for field in input {
                     field.field_type = substitute_expression(&field.field_type, from, to);
                 }
                 substitute_slice(effects, from, to);
+                substitute_slice(emits, from, to);
+                if let Some(expression) = returns {
+                    *expression = substitute_expression(expression, from, to);
+                }
             }
             Payload::Query {
                 input,

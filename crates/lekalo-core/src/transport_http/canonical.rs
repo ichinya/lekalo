@@ -23,11 +23,11 @@ pub(crate) fn attachment_bytes(document: &TransportDocument) -> Result<String, D
     let mut root = Map::new();
     root.insert(
         "schemaVersion".to_owned(),
-        Json::String(super::version::SCHEMA_VERSION.to_owned()),
+        Json::String(document.schema_version().to_owned()),
     );
     root.insert(
         "identity".to_owned(),
-        Json::String(super::version::IDENTITY.to_owned()),
+        Json::String(document.identity().to_owned()),
     );
     root.insert(
         "attachmentRevision".to_owned(),
@@ -50,7 +50,7 @@ pub(crate) fn attachment_bytes(document: &TransportDocument) -> Result<String, D
     let mut ir_ref = Map::new();
     ir_ref.insert(
         "identity".to_owned(),
-        Json::String(super::version::IR_IDENTITY.to_owned()),
+        Json::String(super::version::ir_identity_for(*document.model_ref().version()).to_owned()),
     );
     ir_ref.insert(
         "digest".to_owned(),

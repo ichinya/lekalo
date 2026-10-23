@@ -6,6 +6,11 @@ This tutorial walks one existing project from a read-only analysis through one s
 
 Working copy: the fixture staged into `.adoption-tutorial/app` (all commands run from `.adoption-tutorial/` with `--project app`, so the derived documents land beside the project, never inside the tree a verified plan pins).
 
+On Windows the replay gate needs native Git Bash. If `bash` on `PATH` selects
+the WSL launcher, set `LEKALO_TUTORIAL_BASH` to the Git Bash executable before
+running `node scripts/test-adoption-tutorial.mjs`; script paths use forward
+slashes. The walkthrough itself keeps the same POSIX commands.
+
 ## 0. Stage the walkthrough (repository root)
 
 ```sh

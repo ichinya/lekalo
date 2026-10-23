@@ -1,5 +1,21 @@
 # Typed client SDKs (issue #72)
 
+The [0.8.0 projection owner](../contracts/client-sdk.schema.v0.8.0.json)
+binds Model/IR, transport-http and query-model 0.8.0. It retains canonical
+query input types, explicit requiredness and outer nullability for parameters
+and request bodies. Whole query bodies name a collected input-object type,
+including a closed empty input and the full 256-field successor bound.
+Nested list/inner-nullability shapes beyond the owner's flat representation,
+defaults and explicit enum wire literals refuse rather than lose information.
+
+The native Node adapter accepts exact 0.8.0 SDK evidence in its confined SDK
+pipeline. Its parameter profile supports non-null string scalars in path,
+query and header locations; lists, nullable parameters, objects and cookies
+are explicitly unsupported. Generated TypeScript distinguishes undefined from
+an empty string; generated Go uses pointers for optional parameters. These
+SDK-kernel checks do not widen an adapter's declared Model compatibility:
+general CLI generation with a predecessor adapter still refuses.
+
 Issue #72 adds the closed, versioned **client-SDK projection family**
 ([`contracts/client-sdk.schema.v0.4.0.json`](../contracts/client-sdk.schema.v0.4.0.json),
 `lekalo/client-sdk/v0.4.0`, identity `dev.lekalo.client-sdk@0.4.0`):

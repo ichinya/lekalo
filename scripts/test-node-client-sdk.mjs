@@ -5,17 +5,20 @@
 // the client module plus the compatibility and ownership sidecars, the
 // apply publishes exactly the declared plan, and the verify posture
 // recomputes without drift and reports a maintained edit. Driven
-// through the production kernel. Node built-ins only.
+// through the production kernel. The successor native leg requires the
+// adapter's pinned TypeScript compiler and an installed Go toolchain.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { spawnSync } from "node:child_process";
 
 import { createKernel, validateResolvedProjectProfile } from "../adapters/node-typescript/src/kernel.mjs";
 import { descriptor as generationComposite } from "../adapters/node-typescript/src/generation-composite.mjs";
-import { CLIENT_SDK_CAPABILITY } from "../adapters/node-typescript/src/client-sdk-gen.mjs";
+import { CLIENT_SDK_CAPABILITY, clientSdkGenerateOperation } from "../adapters/node-typescript/src/client-sdk-gen.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const goldenBytes = readFileSync(
@@ -217,5 +220,96 @@ test("gate: absent SDK evidence fails honestly when the profile reads the home",
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("successor: exact pins, optional empty values and explicit native parameter boundaries", async () => {
+  const root=evidenceProject();
+  try {
+    const document=JSON.parse(goldenBytes);
+    document.schemaVersion="lekalo/client-sdk/v0.8.0";
+    document.identity="dev.lekalo.client-sdk@0.8.0";
+    document.modelRef.modelVersion="0.8.0";
+    document.irRef.identity="dev.lekalo.ir@0.8.0";
+    document.transportRef.identity="dev.lekalo.transport-http@0.8.0";
+    // Keep this native profile's response/query surface bounded to one
+    // operation; the core integration test separately checks typed lists.
+    document.operations=[document.operations.find(row=>row.ident==="listTasks")];
+    const operation=document.operations[0];
+    delete operation.pagination; delete operation.correlation; delete operation.auth;
+    operation.params=[
+      {name:"optional",in:"query",field:"optional",typeRef:"planner.text",shape:"value",nullable:false,required:false},
+      {name:"title",in:"query",field:"title",typeRef:"planner.text",shape:"value",nullable:false,required:true},
+    ];
+    const evidence=join(root,".lekalo/cache/client-sdk/planner.json");
+    writeFileSync(evidence,JSON.stringify(document));
+    const kernel=kernelFor();
+    const plan=dispatch(kernel,root,REQUEST);
+    assert.equal(plan.status,"ok",JSON.stringify(plan.error));
+    const apply=dispatch(kernel,root,{...REQUEST,dry_run:false,plan_id:plan.evidence?.plan_id});
+    assert.equal(apply.status,"ok",JSON.stringify(apply.error));
+    const home=join(root,"src/generated/node-typescript/clients");
+    const typescript=readFileSync(join(home,"planner.client.ts"),"utf8");
+    assert.match(typescript,/Contract: lekalo\/client-sdk\/v0\.8\.0/);
+    assert.match(typescript,/listTasks\(title: string, optional\?: string\)/);
+    const go=readFileSync(join(home,"planner.client.go"),"utf8");
+    assert.match(go,/optional \*string/);
+    assert.match(go,/if optional != nil/);
+    assert.match(go,/query.Set\("optional", \*optional\)/);
+    // Typecheck the generated module with the same pinned compiler bundled
+    // into the production adapter, then execute its actual call method.
+    const require=createRequire(import.meta.url);
+    const ts=require("../adapters/node-typescript/node_modules/typescript");
+    assert.equal(ts.version,"5.9.3");
+    const filename=join(home,"planner.client.ts");
+    const program=ts.createProgram([filename],{strict:true,target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,noEmit:true,types:[]});
+    assert.deepEqual(ts.getPreEmitDiagnostics(program).map(row=>ts.flattenDiagnosticMessageText(row.messageText,"\n")),[]);
+    const emitted=ts.transpileModule(typescript,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+    const {LekaloClient}=await import("data:text/javascript;base64,"+Buffer.from(emitted).toString("base64"));
+    const sent=[];
+    const client=new LekaloClient({baseUrl:"",transport:{send:async request=>{sent.push(request);return {status:200,body:"[]"};}}});
+    await client.listTasks("title");
+    await client.listTasks("title","");
+    assert(!Object.hasOwn(sent[0].query,"optional"));
+    assert.equal(sent[1].query.optional,"");
+    assert.equal(sent[1].query.title,"title");
+    writeFileSync(join(home,"go.mod"),"module sdk-presence-test\n\ngo 1.20\n");
+    writeFileSync(join(home,"presence_test.go"),`package planner
+import ("context"; "testing")
+type recordedTransport struct { requests []Request }
+func (transport *recordedTransport) Send(ctx context.Context, request Request) (Response, error) {
+  transport.requests = append(transport.requests, request)
+  return Response{Status:200,Body:[]byte("[]")}, nil
+}
+func TestOptionalEmptyPresence(t *testing.T) {
+  transport := &recordedTransport{}
+  client := NewPlannerClient("", transport, nil)
+  if _, err := client.ListTasks(context.Background(), nil, "title"); err != nil { t.Fatal(err) }
+  empty := ""
+  if _, err := client.ListTasks(context.Background(), &empty, "title"); err != nil { t.Fatal(err) }
+  if _, ok := transport.requests[0].Query["optional"]; ok { t.Fatal("absent optional parameter serialized") }
+  values, ok := transport.requests[1].Query["optional"]
+  if !ok || len(values) != 1 || values[0] != "" { t.Fatal("present empty parameter erased") }
+}
+`);
+    const goTest=spawnSync("go",["test","-count=1","./..."],{cwd:home,encoding:"utf8",timeout:120000,env:{...process.env,GOTOOLCHAIN:"local",GOPROXY:"off",GOSUMDB:"off",GOWORK:"off"}});
+    assert.equal(goTest.error,undefined);
+    assert.equal(goTest.status,0,goTest.stderr||goTest.stdout);
+    const mixed=structuredClone(document); mixed.transportRef.identity="dev.lekalo.transport-http@0.4.0";
+    writeFileSync(evidence,JSON.stringify(mixed));
+    const refused=dispatch(kernel,root,REQUEST);
+    assert.equal(refused.status,"error");
+    for(const override of [{shape:"list"},{nullable:true},{in:"cookie"}]) {
+      const unsupported=structuredClone(document); Object.assign(unsupported.operations[0].params[0],override);
+      writeFileSync(evidence,JSON.stringify(unsupported));
+      const response=dispatch(kernel,root,REQUEST);
+      assert.notEqual(response.status,"ok");
+      assert.equal(response.error.class,"unsupported");
+      const owner=clientSdkGenerateOperation({request:REQUEST,readView:{canRead:path=>path===REQUEST.ir_path,readFile:()=>Buffer.from(JSON.stringify(unsupported))}});
+      assert.equal(owner.state,"unsupported");
+      assert.deepEqual(owner.diagnostics,[{reason:"client-sdk-parameter-unsupported"}]);
+    }
+  } finally {
+    rmSync(root,{recursive:true,force:true});
   }
 });

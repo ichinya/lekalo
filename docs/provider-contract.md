@@ -8,19 +8,22 @@ the exit/stream discipline, the side-effect classes, and the limits a
 consumer may rely on. It does not change any existing command; it
 describes and constrains them.
 
-The contract identity is **`dev.lekalo.workflow-provider@0.6.4`**, wire
-discriminator **`lekalo/workflow-provider/v0.6.4`**, schema
-`contracts/provider-capabilities.schema.v0.6.4.json` — updated in fix
-round 1 (see [issue-34-fix1.md](issue-34-fix1.md)): the operation
-vocabulary is eleven operations (the read-only `drift` check joined), the
-`validate`/`drift` receipts have their own published describing
-schemas, the prescribed `validate` argv carries `--no-cache`, and the
-schema enforces per-operation const tuples. Per
+The contract identity is **`dev.lekalo.workflow-provider@0.8.0`**, wire
+discriminator **`lekalo/workflow-provider/v0.8.0`**, schema
+`contracts/provider-capabilities.schema.v0.8.0.json`. The eleven operations
+retain their effects and prerequisites. `context` now pins the closed
+`lekalo/context-result/v0.8.0` success describing schema: a selected Model
+0.2.16 produces context 0.2.16; Model 0.8.0 produces context 0.8.0 with
+typed signatures, defaults, enum literals, relations and uniqueness facts.
+The manifest pins both payload owners and the describing schema explicitly.
+The predecessor 0.6.4 schema and golden remain published separately.
+The `validate`/`drift` describing schemas and `--no-cache` discipline retain
+their independent versions (see [issue-34-fix1.md](issue-34-fix1.md)). Per
 [versioning.md](versioning.md), this contract takes the product version
 of its implementation commit; the upstream contracts it pins keep
 their own independent family versions.
 
-Issue #35 adds the read-only `trace.assess` operation and the exact `lekalo/trace-assessment/v0.6.4` and `lekalo/trace-validation-evidence/v0.6.4` pins. There are eleven pinned families including the neutral evidence input. See [trace-assessment.md](trace-assessment.md) for the mapping, digest domains, policy and external adapter obligations. The trace-manifest and generate-check pins retain their independent versions.
+Issue #35 adds the read-only `trace.assess` operation and the exact `lekalo/trace-assessment/v0.6.4` and `lekalo/trace-validation-evidence/v0.6.4` pins. There are thirteen pins including both context owners, the context success describing schema and the neutral evidence input. See [trace-assessment.md](trace-assessment.md) for the mapping, digest domains, policy and external adapter obligations. The trace-manifest and generate-check pins retain their independent versions.
 
 ## Positions
 
@@ -74,7 +77,7 @@ lekalo provider describe --json
 ```
 
 Exit 0, stdout. The receipt is `{"status":"valid","manifest":{...}}`
-exactly as in `tests/fixtures/provider/describe.golden.json` and the
+exactly as in `tests/fixtures/provider/describe.v0.8.0.golden.json` and the
 committed schema. Byte-identical across hosts and runs for the same
 binary; no timestamps, no host paths, no environment.
 
@@ -82,10 +85,10 @@ The manifest advertises:
 
 | Field | Meaning |
 | --- | --- |
-| `schemaVersion`, `identity`, `productVersion` | The exact workflow-provider contract discriminator, identity, and the product version this contract was implemented at (`0.6.4`; deliberately frozen — it may trail a later binary's `--version`, and consumers negotiate on `identity`/`schemaVersion`, never on this field). |
+| `schemaVersion`, `identity`, `productVersion` | The exact workflow-provider contract discriminator, identity, and implementation generation (`0.8.0`); consumers negotiate on `identity`/`schemaVersion`. |
 | `discoveryCommand` | `lekalo provider describe` (presentation form). |
 | `targetProtocolIdentity` | `dev.lekalo.target-protocol@0.3.2`. The adapter protocol is a separate negotiated family: a supported workflow operation never implies a configured target. |
-| `schemaPins` | The exact upstream output identities plus neutral trace assessment `lekalo/trace-assessment/v0.6.4` and its input `lekalo/trace-validation-evidence/v0.6.4`: the existing seven wire-discriminated families — context `lekalo/context/v0.2.16`, diagnostics `lekalo/diagnostic/v0.2.16`, doctor `lekalo/doctor/v0.3.2`, impact `lekalo/impact/v0.2.16`, orchestration `lekalo/orchestration/v0.2.16`, trace `lekalo/trace-manifest/v0.2.16`, validation profile `lekalo/validation-profile/v0.6.4` — plus the two describing schemas of this contract series for the receipt-shaped payloads without embedded discriminators: `lekalo/validation-report/v0.6.4` (`validate` success) and `lekalo/generate-check/v0.6.3` (`drift` receipts). |
+| `schemaPins` | Thirteen exact owners: context result `0.8.0`, context payloads `0.2.16` and `0.8.0`, diagnostics `0.2.16`, doctor `0.3.2`, generate-check `0.6.3`, impact `0.2.16`, orchestration `0.2.16`, trace assessment `0.6.4`, trace manifest `0.2.16`, trace validation evidence `0.6.4`, validation profile `0.6.4` and validation report `0.6.4`. The tuple in the schema fixes each discriminator and identity. |
 | `operations` | The eleven operations below, canonical order, with effect class, output schema, and the `requiresProject` / `requiresAdapter` prerequisites. |
 | `bounds` | `recommendedContextBudgetTokens` 5000, `maxContextBudgetTokens` 1000000 (`context.MAX_BUDGET_TOKENS`), `maxExportBytes` 33554432 (the 32 MiB impact/trace export bound). |
 | `manifestDigest` | `sha256:` over the canonical JSON (sorted keys, no whitespace) of the manifest with this field removed. Integrity metadata, not a signature. |
@@ -105,7 +108,7 @@ order):
 | `status` | `lekalo status [--project DIR]` | read-only | `lekalo/doctor/v0.3.2` | project |
 | `doctor` | `lekalo doctor [--project DIR] [--trace PATH]...` | read-only | `lekalo/doctor/v0.3.2` | project |
 | `impact` | `lekalo impact --changed (--base REF [--head REF] \| --worktree) [--project DIR]` | read-only | `lekalo/impact/v0.2.16` | project |
-| `context` | `lekalo context --changed SYMBOLS --budget TOKENS [--project DIR]` | read-only | `lekalo/context/v0.2.16` | project |
+| `context` | `lekalo context --changed SYMBOLS --budget TOKENS [--project DIR]` | read-only | `lekalo/context-result/v0.8.0` (describes source-version payload) | project |
 | `validate` | `lekalo validate --no-cache [--project DIR] [--module MODULE] [--strict]` | read-only | `lekalo/validation-report/v0.6.4` | project |
 | `drift` | `lekalo generate --check [--locked] [--project DIR]` | read-only | `lekalo/generate-check/v0.6.3` | project + lock (unconditional: a missing `lekalo.lock` fails with `lock.missing`; `--locked` only adds the freshness check) |
 | `generate` | `lekalo generate --target TARGET [--dry-run] [--locked] [--project DIR] -- PROGRAM [ARGS...]` | generated-artifacts | `lekalo/orchestration/v0.2.16` | project + adapter |

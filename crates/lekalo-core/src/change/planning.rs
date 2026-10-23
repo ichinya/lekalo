@@ -222,6 +222,14 @@ pub(super) fn finish(
     let file_edits: Vec<FileEdit> = prospective
         .iter()
         .map(|(path, after)| {
+            let deletion = after.is_empty()
+                && !documents
+                    .iter()
+                    .any(|document| &document.document.path == path)
+                && load
+                    .documents
+                    .iter()
+                    .any(|document| &document.document.path == path);
             // A creation target has no pinned original: its before digest
             // is the absence sentinel (round 3, finding 11).
             let before: &[u8] = match load
@@ -234,6 +242,7 @@ pub(super) fn finish(
             };
             FileEdit {
                 path: path.clone(),
+                operation: deletion.then_some("delete"),
                 before_digest: format!("sha256:{}", crate::digest::sha256_hex(before)),
                 after_digest: format!("sha256:{}", crate::digest::sha256_hex(after)),
             }

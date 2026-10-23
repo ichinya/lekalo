@@ -1,7 +1,7 @@
 {
   "schemaVersion": "lekalo/task-links-integration/v0.8.0",
   "identity": "dev.lekalo.task-links-integration@0.8.0",
-  "attachmentRevision": "sha256:92317bf666a8e8dd000c436e13d0ba9ddfcae4323502bbd76722b23e50f7166e",
+  "attachmentRevision": "sha256:695025b73494f1ff8bc18d8750e5d3fcb7455ac4b1cea64bd053e46909a25147",
   "projectId": "tasklinks",
   "modelRef": {
     "schemaVersion": "0.8.0",
@@ -20,7 +20,7 @@
     {
       "family": "extended-effects",
       "identity": "dev.lekalo.extended-effects@0.8.0",
-      "digest": "sha256:53701216301940cb9f25b53ff1c75ea365e0f7c63bdae214c37d38e922aad456"
+      "digest": "sha256:bb8d1b634a3b571c5cf9b28c8d9acad55a6d84077f5168320bbbf79fa69253b6"
     },
     {
       "family": "invariant-transition",
@@ -35,7 +35,7 @@
     {
       "family": "transaction-concurrency",
       "identity": "dev.lekalo.transaction-concurrency@0.8.0",
-      "digest": "sha256:1babb65786a181a0897c8f0ba7ef1c5c1be2e4c42cbb3138444928cc52139b03"
+      "digest": "sha256:5a82852f4ef6671aee2071a0c578996308647e25257600c45f2811e46460e42e"
     }
   ],
   "entities": [

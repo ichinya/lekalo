@@ -35,6 +35,20 @@ pub const IR_IDENTITY: &str = "dev.lekalo.ir@0.2.16";
 /// The exact Model version every projection binds (`modelRef`).
 pub const MODEL_VERSION: &str = "0.2.16";
 
+pub const fn identity_for(version: crate::loader::ModelVersion) -> &'static str {
+    match version {
+        crate::loader::ModelVersion::Current => IDENTITY,
+        crate::loader::ModelVersion::Successor => "dev.lekalo.client-sdk@0.8.0",
+    }
+}
+
+pub const fn schema_version_for(version: crate::loader::ModelVersion) -> &'static str {
+    match version {
+        crate::loader::ModelVersion::Current => SCHEMA_VERSION,
+        crate::loader::ModelVersion::Successor => "lekalo/client-sdk/v0.8.0",
+    }
+}
+
 /// The closed generation modes of one client artifact set.
 pub const MODE_GENERATED: &str = "generated";
 /// The read-only maintained-client mode.

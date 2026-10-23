@@ -121,6 +121,7 @@ pub fn compare(
     }
     if base.model_ref().digest().as_str() != candidate.model_ref().digest().as_str()
         || base.ir_digest().as_str() != candidate.ir_digest().as_str()
+        || base.model_ref().version() != candidate.model_ref().version()
     {
         return Err(diagnostic::input_invalid("diff-mixed-pins"));
     }

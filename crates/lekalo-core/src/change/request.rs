@@ -123,7 +123,7 @@ pub enum Operation {
         target: String,
         input: Vec<FieldDecl>,
     },
-    /// `operation-output:set`: replace a query's return type.
+    /// `operation-output:set`: set a query or successor command return type.
     OperationOutputSet { target: String, r#type: TypeRef },
     /// Add or remove an existing read dependency of a query.
     QueryEffect {
@@ -311,7 +311,9 @@ impl Operation {
                 emit,
             } => {
                 map.insert("command".to_owned(), Json::String(command.clone()));
-                map.insert("effect".to_owned(), Json::String(effect.clone()));
+                if !effect.is_empty() {
+                    map.insert("effect".to_owned(), Json::String(effect.clone()));
+                }
                 if let Some(emit) = emit {
                     map.insert("emit".to_owned(), Json::String(emit.clone()));
                 }
@@ -492,7 +494,7 @@ pub struct DefinitionDecl {
     pub effects: Vec<String>,
     /// `query`: the read symbol ids.
     pub reads: Vec<String>,
-    /// `query`: the returned type.
+    /// A query or successor command's returned type.
     pub returns: Option<TypeRef>,
     /// `event`: the payload field list.
     pub payload: Vec<FieldDecl>,
@@ -1148,8 +1150,11 @@ fn decode_operation(catalog: &Catalog, value: &Json) -> Result<Operation, &'stat
                 &["operation", "command"],
             )?;
             let command = member_string(map, "command")?;
-            // Either the effect reference or the emission surface is
-            // required; both are decoded when present.
+            // One reference kind per operation: never silently ignore an
+            // effect when a direct event emission is also supplied.
+            if map.contains_key("effect") && map.contains_key("emit") {
+                return Err("conflicting-members");
+            }
             let effect = match map.get("effect") {
                 Some(value) => {
                     let effect = value.as_str().ok_or("type-invalid")?;
@@ -1163,9 +1168,7 @@ fn decode_operation(catalog: &Catalog, value: &Json) -> Result<Operation, &'stat
             if effect.is_empty() && !map.contains_key("emit") {
                 return Err("missing-member");
             }
-            // The explicit emission representation decodes here and is
-            // refused at resolution with the registered unsupported member
-            // until the reviewed extended-effect successor lands.
+            // Resolution admits direct emissions only under Model 0.8.0.
             let emit = match map.get("emit") {
                 None => None,
                 Some(value) => {

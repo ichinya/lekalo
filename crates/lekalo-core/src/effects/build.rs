@@ -166,6 +166,9 @@ impl<'a> Builder<'a> {
                     for (ordinal, effect) in command.effects.iter().enumerate() {
                         self.emit_declared_command_effect(&operation, effect.as_str(), ordinal)?;
                     }
+                    for (ordinal, event) in command.emits.iter().enumerate() {
+                        self.emit_declared_command_emission(&operation, event.as_str(), ordinal)?;
+                    }
                 }
                 _ => {}
             }
@@ -258,6 +261,30 @@ impl<'a> Builder<'a> {
                 emit_occurrence,
             );
         }
+        Ok(())
+    }
+
+    /// A direct command event has no fabricated entity mutation or effect ID.
+    fn emit_declared_command_emission(
+        &mut self,
+        operation: &OperationId,
+        event: &str,
+        ordinal: usize,
+    ) -> Result<(), DiagnosticSet> {
+        if self.kinds.get(event) != Some(&DefinitionKind::Event) {
+            return Err(unresolved_declared(operation, event));
+        }
+        let occurrence = u32::try_from(ordinal).map_err(|_| malformed_subject(operation, event))?;
+        let resource = ResourceId::new(ResourceKind::Event, event)
+            .ok_or_else(|| malformed_subject(operation, event))?;
+        self.push(
+            operation,
+            EffectKind::EmitEvent,
+            Subject::new(resource),
+            EffectOrigin::Occurrence(occurrence),
+            DeclaredRole::CommandEmits,
+            occurrence,
+        );
         Ok(())
     }
 
