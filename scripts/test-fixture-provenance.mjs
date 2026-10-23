@@ -11,8 +11,9 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 
@@ -92,24 +93,53 @@ for (const family of manifest.families) {
 // fixture's current bytes happen not to contain any CRLF. The check is
 // defined over TRACKED files, so a working copy without repository
 // metadata (the docs-examples replay copy) simply has nothing to check.
-let tracked;
-try {
-  tracked = execFileSync("git", ["ls-files", "-z", "--", "tests/fixtures"], { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
-} catch {
-  tracked = [];
+function gitOutput(stage, args) {
+  try {
+    return execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 30000,
+      killSignal: "SIGKILL",
+      maxBuffer: 16 * 1024 * 1024,
+    });
+  } catch (error) {
+    // The outer documentation replay collects stable FAIL tokens from stdout.
+    // Do not turn an unreadable real index into an empty successful inventory.
+    const code = typeof error.code === "string" && /^[A-Z0-9_]+$/.test(error.code) ? error.code : "UNKNOWN";
+    console.log(`FAIL - fixture-provenance-git-${stage} Git operation failed (${code})`);
+    throw new Error(`fixture provenance Git operation failed: ${stage} (${code})`);
+  }
 }
+const tracked = existsSync(join(root, ".git"))
+  ? gitOutput("tracked-files", ["ls-files", "-z", "--", "tests/fixtures"]).split("\0").filter(Boolean)
+  : [];
 let binaryFixtures = 0;
 for (const path of tracked) {
   const bytes = await readFile(join(root, path));
   if (!bytes.includes(0) && !path.endsWith('.sqlite')) continue;
   binaryFixtures += 1;
-  const attributes = execFileSync("git", ["check-attr", "-z", "text", "eol", "--", path], { cwd: root, encoding: "utf8" }).split("\0");
+  const attributes = gitOutput("attributes", ["check-attr", "-z", "text", "eol", "--", path]).split("\0");
   assert.equal(attributes[2], "unset", `${path}: binary fixture must be -text`);
   assert.equal(attributes[5], "unspecified", `${path}: binary fixture must not set eol`);
   const canary = Buffer.concat([bytes, Buffer.from("\r\nclean-filter-canary\r\n")]);
-  const clean = execFileSync("git", ["hash-object", "--stdin", `--path=${path}`], { cwd: root, input: canary, encoding: "utf8" });
-  const raw = execFileSync("git", ["hash-object", "--stdin", "--no-filters"], { cwd: root, input: canary, encoding: "utf8" });
-  assert.equal(clean, raw, `${path}: clean filtering rewrites binary fixture bytes`);
+  // Git applies the original fixture's attributes via --path while reading
+  // an owned file. On macOS, hash-object --stdin can wait for input while
+  // Node's synchronous pipe waits for Git to exit. A regular file removes
+  // that circular wait without skipping the actual clean-filter comparison.
+  const canaryDirectory = mkdtempSync(join(tmpdir(), "lekalo-fixture-clean-filter-"));
+  const canaryPath = join(canaryDirectory, "canary.bin");
+  try {
+    writeFileSync(canaryPath, canary, { flag: "wx", mode: 0o600 });
+    const clean = gitOutput("filtered-hash", ["hash-object", `--path=${path}`, "--", canaryPath]);
+    const raw = gitOutput("raw-hash", ["hash-object", "--no-filters", "--", canaryPath]);
+    assert.deepEqual(readFileSync(canaryPath), canary, "temporary canary bytes changed");
+    assert.equal(clean, raw, `${path}: clean filtering rewrites binary fixture bytes`);
+  } finally {
+    // Both paths were created above; no recursive removal or fixture writes.
+    rmSync(canaryPath, { force: true });
+    rmdirSync(canaryDirectory);
+  }
 }
 assert.ok(tracked.length === 0 || binaryFixtures > 0, "binary fixture filter regression must exercise real fixtures");
 
