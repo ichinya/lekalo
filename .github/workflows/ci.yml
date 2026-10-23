@@ -394,7 +394,7 @@ jobs:
           echo "REPORTS_DIR=$REPORTS" >> "$GITHUB_ENV"
       - name: Upload the CI report artifacts (issue #103)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lekalo-ci-reports-${{ matrix.os }}-${{ github.run_attempt }}
           # Explicit finalized filenames from the confined report
@@ -771,9 +771,12 @@ jobs:
       - name: Run the OpenAPI generator gate (issue #46)
         run: node scripts/test-node-openapi.mjs
       - name: Provision the pinned Go toolchain for the client-SDK gate (issue #72)
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.23.5"
+          # The SDK gate creates its Go module in a disposable directory.
+          # There is no repository-root dependency file to use as a cache key.
+          cache: false
       - name: Run the client-SDK generator gate (issue #72)
         run: node scripts/test-node-client-sdk.mjs
       - name: Run the client-SDK runtime gate (issue #72)
