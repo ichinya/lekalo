@@ -58,15 +58,26 @@ pub fn resolve(
     selection: &LoadSelection,
     profile: Profile,
 ) -> Result<Resolution, DomainResult> {
-    let model_json = match crate::loader::run(selection, false) {
+    let model = crate::loader::normalize_model(selection)?;
+    resolve_model(attachment, &model, profile)
+}
+
+/// Resolve one immutable normalized snapshot without filesystem access.
+/// Change can qualify a prospective owned attachment against its candidate
+/// before any source file is written.
+pub fn resolve_model(
+    attachment: &QueryModelAttachment,
+    model: &crate::loader::NormalizedModel,
+    profile: Profile,
+) -> Result<Resolution, DomainResult> {
+    let model_json = match crate::loader::render_load_output(model, false) {
         DomainResult::Valid {
             payload: crate::result::SuccessPayload::Model { json, .. },
             ..
         } => json,
         other => return Err(other),
     };
-    let model = crate::loader::normalize_model(selection)?;
-    let compilation = crate::ir::compile(&model).map_err(|failure| failure.into_result())?;
+    let compilation = crate::ir::compile(model).map_err(|failure| failure.into_result())?;
 
     // Custody: the attachment binds exactly one project and one Model
     // state; anything else refuses before any resolution.
@@ -88,6 +99,9 @@ pub fn resolve(
     {
         return Err(DomainResult::invalid(custody_set("model-digest")));
     }
+    attachment
+        .validate_input_bindings(&compilation.project)
+        .map_err(DomainResult::invalid)?;
 
     // The symbol table: every definition by id.
     let symbols = symbol_table(&compilation.project);
@@ -190,13 +204,7 @@ fn resolve_query(
         _ => return Err(invalid(SOURCE_INVALID, "query-symbol-kind", subject)),
     };
 
-    if !query_def.input.is_empty() {
-        return Err(invalid(
-            SOURCE_INVALID,
-            "query-input-contract-unsupported",
-            subject,
-        ));
-    }
+    check_input_contract(attachment, decl, query_def).map_err(DomainResult::invalid)?;
 
     // The source must be an entity the bound query reads.
     let source = symbols
@@ -715,6 +723,88 @@ fn relation_target(field_type: &TypeRef) -> Option<crate::ir::SymbolId> {
     match field_type {
         TypeRef::Ref(symbol) => Some(symbol.clone()),
         TypeRef::Optional(inner) | TypeRef::List(inner) => relation_target(inner),
+    }
+}
+
+pub(crate) fn validate_input_bindings(
+    attachment: &QueryModelAttachment,
+    project: &CompiledProject,
+) -> Result<(), DiagnosticSet> {
+    attachment.validate_queries()?;
+    if *attachment.model_ref().version() != project.model_version {
+        return Err(custody_set("model-version"));
+    }
+    if project
+        .project
+        .as_ref()
+        .map(|definition| definition.id.as_str())
+        != Some(attachment.project_id().as_str())
+    {
+        return Err(custody_set("project-id"));
+    }
+    if attachment.ir_digest().as_str()
+        != crate::requirements::sha256_digest(project.to_canonical_json().as_bytes())
+    {
+        return Err(custody_set("ir-digest"));
+    }
+    let symbols = symbol_table(project);
+    for decl in attachment.queries() {
+        let fail =
+            |detail| diagnostic::rule_invalid(SOURCE_INVALID, detail, Some(decl.query.as_str()));
+        let definition = symbols
+            .get(decl.query.as_str())
+            .copied()
+            .ok_or_else(|| fail("query-symbol-unresolved"))?;
+        let query = match definition {
+            Definition::Query(query) => query,
+            Definition::Command(_) | Definition::Effect(_) => return Err(fail("write-surface")),
+            _ => return Err(fail("query-symbol-kind")),
+        };
+        check_input_contract(attachment, decl, query)?;
+    }
+    Ok(())
+}
+
+fn check_input_contract(
+    attachment: &QueryModelAttachment,
+    decl: &super::query::QueryDecl,
+    query: &crate::ir::QueryDef,
+) -> Result<(), DiagnosticSet> {
+    let fail = |detail| diagnostic::rule_invalid(SOURCE_INVALID, detail, Some(decl.query.as_str()));
+    if *attachment.model_ref().version() == crate::loader::ModelVersion::Current {
+        return if query.input.is_empty() {
+            Ok(())
+        } else {
+            Err(fail("query-input-contract-unsupported"))
+        };
+    }
+    if decl.parameters.len() != query.input.len() {
+        return Err(fail("query-input-members"));
+    }
+    for input in &query.input {
+        let parameter = decl
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name.as_str() == input.name.as_str())
+            .ok_or_else(|| fail("query-input-members"))?;
+        if parameter.parameter_type != input_type_spelling(&input.r#type) {
+            return Err(fail("query-input-type"));
+        }
+        if parameter.required != Some(input.required) {
+            return Err(fail("query-input-required"));
+        }
+        if parameter.default != input.default {
+            return Err(fail("query-input-default"));
+        }
+    }
+    Ok(())
+}
+
+fn input_type_spelling(reference: &TypeRef) -> String {
+    match reference {
+        TypeRef::Ref(id) => id.as_str().to_owned(),
+        TypeRef::List(inner) => format!("list<{}>", input_type_spelling(inner)),
+        TypeRef::Optional(inner) => format!("{}?", input_type_spelling(inner)),
     }
 }
 

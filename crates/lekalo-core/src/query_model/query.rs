@@ -105,13 +105,45 @@ impl Consistency {
 }
 
 /// One declared query parameter with its model type expression.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Parameter {
     /// The closed parameter name.
     pub name: ParameterName,
     /// The model type expression (`planner.due_date`,
     /// `list<planner.task_state>`).
     pub parameter_type: String,
+    /// Explicit presence contract in 0.8.0; absent in the frozen predecessor.
+    pub required: Option<bool>,
+    /// The exact Model default; an explicit null differs from absence.
+    pub default: Option<crate::ir::DefaultValue>,
+}
+
+impl Ord for Parameter {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (
+            &self.name,
+            &self.parameter_type,
+            self.required,
+            self.default
+                .as_ref()
+                .map(crate::ir::DefaultValue::canonical_json),
+        )
+            .cmp(&(
+                &other.name,
+                &other.parameter_type,
+                other.required,
+                other
+                    .default
+                    .as_ref()
+                    .map(crate::ir::DefaultValue::canonical_json),
+            ))
+    }
+}
+
+impl PartialOrd for Parameter {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 /// One sort key with its direction.
@@ -281,8 +313,8 @@ impl QueryDecl {
     /// Whether every collection member count stays inside the closed
     /// bounds (typed-level check; the wire decoder enforces the same
     /// limits incrementally).
-    pub(crate) fn within_bounds(&self) -> bool {
-        if self.parameters.len() > super::version::MAX_PARAMETERS
+    pub(crate) fn within_bounds(&self, max_parameters: usize) -> bool {
+        if self.parameters.len() > max_parameters
             || self.includes.len() > MAX_INCLUDES
             || self.policies.len() > MAX_POLICY_REFS
             || self.scenarios.len() > MAX_SCENARIO_REFS

@@ -77,19 +77,19 @@ pub use validate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelPin {
     /// The accepted Model contract version.
-    pub(crate) version: crate::scenario::ModelPin,
+    pub(crate) version: crate::loader::ModelVersion,
     /// The digest of the exact source Model document.
     pub(crate) digest: Sha256Digest,
 }
 
 impl ModelPin {
     /// Assemble from validated parts (crate internal).
-    pub(crate) fn new(version: crate::scenario::ModelPin, digest: Sha256Digest) -> Self {
+    pub(crate) fn new(version: crate::loader::ModelVersion, digest: Sha256Digest) -> Self {
         Self { version, digest }
     }
 
     /// The accepted Model contract version.
-    pub const fn version(&self) -> &crate::scenario::ModelPin {
+    pub const fn version(&self) -> &crate::loader::ModelVersion {
         &self.version
     }
 
@@ -114,6 +114,40 @@ pub struct TransportDocument {
 }
 
 impl TransportDocument {
+    /// Exact owner contract selected by the bound source Model.
+    pub const fn identity(&self) -> &'static str {
+        version::identity_for(*self.model_ref.version())
+    }
+
+    pub const fn schema_version(&self) -> &'static str {
+        version::schema_version_for(*self.model_ref.version())
+    }
+
+    /// Check source custody against an immutable normalized snapshot. Semantic
+    /// transport validation separately binds the exact compiled IR.
+    pub fn validate_model_pin(
+        &self,
+        model: &crate::loader::NormalizedModel,
+    ) -> Result<(), DiagnosticSet> {
+        if *self.model_ref.version() != model.model_version {
+            return Err(diagnostic::rule_invalid(
+                diagnostic::CONTRACT_INVALID,
+                "model-version",
+                None,
+            ));
+        }
+        let envelope = crate::loader::render_load_output(model, false).to_json_string();
+        let digest = format!("sha256:{}", crate::digest::sha256_hex(envelope.as_bytes()));
+        if self.model_ref.digest().as_str() != digest {
+            return Err(diagnostic::rule_invalid(
+                diagnostic::CONTRACT_INVALID,
+                "model-digest",
+                None,
+            ));
+        }
+        Ok(())
+    }
+
     /// Assemble from validated parts (crate internal); collections
     /// arrive in the caller's normalized order.
     #[allow(clippy::too_many_arguments)]

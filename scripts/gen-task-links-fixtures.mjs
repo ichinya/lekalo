@@ -142,7 +142,7 @@ const writeOwner = (name, value) => writeFileSync(join(fixtureRoot, `contracts/$
 const definitionDigest = (id) => sha(canonicalBytes(irObject.definitions.find(row => row.id === id)));
 const sourcePins = (family) => ({ schemaVersion: `lekalo/${family}/v0.8.0`, identity: `dev.lekalo.${family}@0.8.0`, projectId: "tasklinks",
   modelRef: { modelVersion: "0.8.0", digest: irDigest }, irRef: { identity: "dev.lekalo.ir@0.8.0", digest: irDigest },
-  effectGraphRef: { identity: "dev.lekalo.effects@0.2.16", digest: irDigest } });
+  effectGraphRef: { identity: "dev.lekalo.effects@0.8.0", digest: irDigest } });
 const effectRun = spawnSync(binary, ["--no-cache", "--json", "effects", "show", "tasklinks.request_action", "--project", projectRel], { cwd: root, encoding: "utf8", timeout: 120000 });
 if (effectRun.error || effectRun.status !== 0) throw new Error("live effect identity unavailable");
 const localRefs = JSON.parse(effectRun.stdout).effects.edges.map(edge =>

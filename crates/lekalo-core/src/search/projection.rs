@@ -565,6 +565,12 @@ fn add_definition_card(projection: &mut Projection, definition: &Definition, cap
             }
         }
         Definition::Command(def) => {
+            if let Some(returns) = &def.returns {
+                signatures.push(SignatureRef {
+                    role: "output".to_owned(),
+                    id: type_leaf(returns),
+                });
+            }
             for field in &def.input {
                 signatures.push(SignatureRef {
                     role: "input".to_owned(),
@@ -574,8 +580,17 @@ fn add_definition_card(projection: &mut Projection, definition: &Definition, cap
             for effect in &def.effects {
                 record(&mut relations, "effect", effect.as_str(), "command-effect");
             }
+            for event in &def.emits {
+                record(&mut relations, "emits", event.as_str(), "command-emits");
+            }
         }
         Definition::Query(def) => {
+            for field in &def.input {
+                signatures.push(SignatureRef {
+                    role: "input".to_owned(),
+                    id: type_leaf(&field.r#type),
+                });
+            }
             if let Some(returns) = &def.returns {
                 signatures.push(SignatureRef {
                     role: "output".to_owned(),

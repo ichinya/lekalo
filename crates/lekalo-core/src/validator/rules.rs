@@ -11,7 +11,8 @@
 //! Reference-kind matrix: the kind expectations below mirror the published
 //! model contract exactly (`model.ref-kind-mismatch`), so every model-valid
 //! project validates and no model-invalid project passes. Event references
-//! have no site beyond `effect.emits`, so no distinct event rules exist;
+//! occur at `effect.emits` and successor `command.emits`; both use the
+//! event-reference rules. No distinct event rules are needed;
 //! target bindings name target configs with no in-Model registry, and the
 //! model layer already owns `model.target-unresolved`, so target resolution
 //! stays deferred to the adapters issue (#27).
@@ -219,6 +220,11 @@ fn all_sites(definition: &Definition) -> Vec<Site<'_>> {
                 &command.effects.iter().collect::<Vec<_>>(),
                 &mut sites,
             );
+            push_array(
+                "emits",
+                &command.emits.iter().collect::<Vec<_>>(),
+                &mut sites,
+            );
         }
         Definition::Query(query) => {
             push_array("reads", &query.reads.iter().collect::<Vec<_>>(), &mut sites);
@@ -273,7 +279,12 @@ fn all_sites(definition: &Definition) -> Vec<Site<'_>> {
             fields("/fields", &value_object.fields, &mut sites)
         }
         Definition::Entity(entity) => fields("/fields", &entity.fields, &mut sites),
-        Definition::Command(command) => fields("/input", &command.input, &mut sites),
+        Definition::Command(command) => {
+            fields("/input", &command.input, &mut sites);
+            if let Some(returns) = &command.returns {
+                walk(returns, "/returns".to_owned(), &mut sites);
+            }
+        }
         Definition::Event(event) => fields("/payload", &event.payload, &mut sites),
         Definition::Query(query) => {
             fields("/input", &query.input, &mut sites);

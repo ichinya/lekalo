@@ -358,6 +358,7 @@ pub(crate) fn prepare(
             reasons: vec!["ownership.policy-transition".to_owned()],
         });
         prepared.file_edits.push(FileEdit {
+            operation: None,
             path: owner::source::PROJECT_PATH.to_owned(),
             before_digest: ownership_digest.clone(),
             after_digest: after_digest.clone(),

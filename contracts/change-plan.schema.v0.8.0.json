@@ -213,12 +213,17 @@
     "fileEdit": {
       "type": "object",
       "additionalProperties": false,
+      "if": {"properties":{"operation":{"const":"delete"}},"required":["operation"]},
+      "then": {"properties":{"afterDigest":{"const":"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}},
       "required": [
         "path",
         "beforeDigest",
         "afterDigest"
       ],
       "properties": {
+        "operation": {
+          "const": "delete"
+        },
         "path": {
           "type": "string",
           "minLength": 1,

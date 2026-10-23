@@ -7,6 +7,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { ROOT, P0, text, safePath, sha, binary, fences } from "./lib/docs-maintenance.mjs";
+import { fixtureGit, fixtureGitEnv } from "./lib/fixture-git.mjs";
 
 const args = process.argv.slice(2);
 assert.ok(args.length === 0 || args.join(" ") === "--static" || (args.length === 2 && args[0] === "--lane" && ["portable","planner","mysql"].includes(args[1])), "unknown docs gate arguments");
@@ -157,7 +158,7 @@ function copy(from,to) {
   cpSync(from,to,{recursive:true,filter:path=>admitSource(relative(ROOT,path).replaceAll("\\","/"))});
 }
 const temp=join(root,"tmp"); mkdirSync(temp);
-const childEnv={...process.env,TMPDIR:temp,TEMP:temp,TMP:temp};
+const childEnv={...fixtureGitEnv(),TMPDIR:temp,TEMP:temp,TMP:temp};
 // Limit MySQL to the fixture's fixed synthetic database/user and loopback.
 if(lane==="mysql") {
   assert.match(childEnv.LEKALO_DOCS_MYSQL_PORT ?? "",/^[0-9]{1,5}$/,"mysql-port-missing");
@@ -168,22 +169,15 @@ function repositoryCopy() {
   if(repository) return repository;
   repository=join(root,"repository"); mkdirSync(repository);
   for(const path of INPUTS) copy(safePath(path),join(repository,path));
-  // Provenance checks Git's real clean-filter custody (including the
-  // tracked binary fixtures). A filesystem copy has no index; create a
-  // private local one with the copied attributes, never borrow the user's
-  // repository or silently skip the binary-filter regression.
-  for(const argv of [["init","-q"],["-c","core.autocrlf=false","add","--",".gitattributes","tests/fixtures"]]) {
-    const git=spawnSync("git",argv,{cwd:repository,encoding:"utf8"});
-    assert.equal(git.status,0,"private provenance replay index unavailable");
-  }
   const copiedBin=join(repository,"target/debug",basename(bin)); mkdirSync(dirname(copiedBin),{recursive:true}); cpSync(bin,copiedBin);
   // The M8 provenance gate verifies binary fixtures through Git's actual
   // clean filter. Give the disposable replay its own index and the exact
   // copied attributes; never consult or modify the source checkout's Git
   // metadata, and never skip the binary-custody leg in a source copy.
   for(const argv of [["init","--quiet"],["-c","core.autocrlf=false","add","--force","--",".gitattributes","tests/fixtures"]]) {
-    const indexed=spawnSync("git",argv,{cwd:repository,env:childEnv,encoding:"utf8"});
-    assert.equal(indexed.status,0,"disposable fixture custody index unavailable");
+    // The complete fixture tree contains thousands of tracked files. Index
+    // construction has its own bounded budget, separate from per-file hashes.
+    fixtureGit(repository,argv,argv[0]==="init"?"replay-init":"replay-add",childEnv,120000);
   }
   if(lane==="planner") {
     const vendor=safePath("tests/fixtures/php-laravel/planner/vendor");
@@ -215,7 +209,10 @@ function run(cwd,line,expected=0,stream="stdout") {
   // Errors print only a stable step token, never raw tool output or paths.
   if(result.status!==expected) {
     const failedLegs=[...(result.stdout ?? "").matchAll(/^FAIL - ([a-z-]+) /gm)].map(x=>x[1]);
-    console.error(JSON.stringify({gate:"docs-examples-child",program,exit:result.status,failedLegs}));
+    const gitFailures=(result.stderr ?? "").split(/\r?\n/).flatMap(line=>{
+      try {const value=JSON.parse(line); return value.gate==="fixture-git"?[value]:[];} catch {return [];}
+    });
+    console.error(JSON.stringify({gate:"docs-examples-child",program,exit:result.status,signal:result.signal,code:result.error?.code ?? null,failedLegs,gitFailures}));
   }
   assert.equal(result.status,expected,`unexpected exit: ${program} ${argv.slice(0,2).join(" ")}`);
   assert.equal(result.error,undefined,"child spawn failure");
@@ -266,7 +263,7 @@ function check(kind,output,cwd) {
   }
   if(["provenance","planner-chain","laravel-vue"].includes(kind)) {
     assert.equal(value.ok,true);
-    if(kind==="provenance") assert.equal(value.evidenceBacked,0);
+    if(kind==="provenance") {assert.equal(value.evidenceBacked,0); assert.ok(value.binaryFixtures>0,"private replay index must exercise binary custody");}
     if(kind==="planner-chain") {
       assert.equal(value.stages,6);
       assert.deepEqual(value.stageNames,["materialize-shared-planner-project","load-and-validate-project","graph-and-query-projections","semantic-diff-mutation","scenario-lane-compile-and-run","trace-manifest-chain"]);
@@ -306,7 +303,7 @@ function check(kind,output,cwd) {
     assert.equal(value.trace.completeness,"full"); assert.equal(value.trace.nodes.length,9);
     assert.equal(value.manifestDigest,sha(JSON.stringify(value.trace)));
   } else if(kind==="provider") {
-    schema("provider-capabilities.schema.v0.6.4.json",value);
+    schema("provider-capabilities.schema.v0.8.0.json",value);
   } else if(kind==="init") {
     assert.ok(existsSync(join(cwd,"lekalo/project.yaml"))); assert.ok(existsSync(join(cwd,"lekalo/modules/planner/module.yaml")));
   } else if(kind==="contract-update") {
@@ -394,5 +391,5 @@ try {
 } finally {
   assert.equal(dirname(root),realpathSync.native(tmpdir()),"temporary cleanup target changed");
   assert.ok(basename(root).startsWith("lekalo-docs-105-"));
-  rmSync(root,{recursive:true,force:true});
+  rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});
 }

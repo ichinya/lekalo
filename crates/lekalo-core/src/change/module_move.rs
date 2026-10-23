@@ -92,6 +92,7 @@ pub(crate) fn prepare_change(
         }
         for (path, before, after) in [(from, text, ""), (to, "", text)] {
             prepared.file_edits.push(super::plan::FileEdit {
+                operation: None,
                 path: path.clone(),
                 before_digest: receipt::bytes_digest(before.as_bytes()),
                 after_digest: receipt::bytes_digest(after.as_bytes()),
@@ -435,6 +436,7 @@ mod tests {
     fn replacement(path: &str) -> ReplacementPlan {
         let bytes = b"test transaction bytes".to_vec();
         ReplacementPlan {
+            deletion: false,
             logical: path.to_owned(),
             before_digest: crate::change::absent_digest(),
             after_digest: receipt::bytes_digest(&bytes),

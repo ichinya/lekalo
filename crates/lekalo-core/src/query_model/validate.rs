@@ -15,10 +15,24 @@ use crate::diagnostics::DiagnosticSet;
 /// read-only.
 pub(crate) fn semantic_self_check(attachment: &QueryModelAttachment) -> Result<(), DiagnosticSet> {
     for decl in attachment.queries() {
+        let successor = *attachment.model_ref().version() == crate::loader::ModelVersion::Successor;
+        for parameter in &decl.parameters {
+            if parameter.required.is_some() != successor
+                || (!successor && parameter.default.is_some())
+            {
+                return Err(diagnostic::rule_invalid(
+                    diagnostic::CONTRACT_INVALID,
+                    "parameter-version",
+                    Some(decl.query.as_str()),
+                ));
+            }
+        }
         // Defense in depth: the wire decoder enforces the same bounds
         // incrementally; the typed revalidation refuses anything that
         // reached this level through another constructor.
-        if !decl.within_bounds() {
+        if !decl.within_bounds(super::version::max_parameters_for(
+            *attachment.model_ref().version(),
+        )) {
             return Err(diagnostic::rule_invalid(
                 diagnostic::CONTRACT_INVALID,
                 "declaration-bound",

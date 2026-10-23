@@ -603,8 +603,14 @@ fn shape_references_of(definition: &crate::ir::Definition) -> Vec<&str> {
             for field in &command.input {
                 push_type(&field.r#type, &mut references);
             }
+            if let Some(returns) = &command.returns {
+                push_type(returns, &mut references);
+            }
         }
         crate::ir::Definition::Query(query) => {
+            for field in &query.input {
+                push_type(&field.r#type, &mut references);
+            }
             if let Some(returns) = &query.returns {
                 push_type(returns, &mut references);
             }

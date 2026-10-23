@@ -19,8 +19,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::diagnostic;
 use super::model::{
-    CardFact, Contract, EdgeFact, EffectFact, ExclusionReason, Fact, Gap, ManifestRow, WireField,
-    WireType,
+    CardFact, Contract, EdgeFact, EffectFact, ExclusionReason, Fact, Gap, ManifestRow,
+    WireEnumValue, WireField, WireType,
 };
 use super::version::{
     MAX_BUDGET_TOKENS, MAX_CLOSURE_DEPTH, MAX_CLOSURE_EDGES, MAX_CLOSURE_NODES, MAX_MANIFEST_ITEMS,
@@ -311,7 +311,7 @@ pub(crate) fn plan(
             if !type_seen.insert(target.as_str().to_owned()) {
                 continue;
             }
-            if let Some(card) = type_card(target_node, &definitions) {
+            if let Some(card) = type_card(target_node, &definitions, project.model_version) {
                 type_facts.push(Fact::Card(card));
             }
         }
@@ -514,7 +514,7 @@ fn root_card(
     };
     let contract = definitions
         .get(semantic)
-        .and_then(|definition| contract_of(definition));
+        .and_then(|definition| contract_of(definition, project.model_version));
     let (version, visibility, portability, description, derived_from) = match &common {
         Some(common) => (
             Some(common.version),
@@ -548,11 +548,12 @@ fn root_card(
 }
 
 /// The canonical contract of one definition.
-fn contract_of(definition: &Definition) -> Option<Contract> {
+fn contract_of(definition: &Definition, version: ModelVersion) -> Option<Contract> {
     let field = |field: &crate::ir::Field| WireField {
         name: field.name.as_str().to_owned(),
         required: field.required,
         r#type: wire_type(&field.r#type),
+        default: field.default.clone(),
     };
     match definition {
         Definition::Scalar(scalar) => Some(Contract::Scalar {
@@ -562,20 +563,21 @@ fn contract_of(definition: &Definition) -> Option<Contract> {
             values: enumeration
                 .values
                 .iter()
-                .map(|value| {
-                    (
-                        value.value.as_str().to_owned(),
-                        value
-                            .description
-                            .as_ref()
-                            .map(|text| text.as_str().to_owned()),
-                    )
+                .map(|value| WireEnumValue {
+                    value: value.value.as_str().to_owned(),
+                    description: value
+                        .description
+                        .as_ref()
+                        .map(|text| text.as_str().to_owned()),
+                    wire_value: value.wire_value.clone(),
                 })
                 .collect(),
         }),
         Definition::ValueObject(value_object) => Some(Contract::Fields {
             fields: value_object.fields.iter().map(field).collect(),
             identity: Vec::new(),
+            relations: Vec::new(),
+            unique_constraints: Vec::new(),
         }),
         Definition::Entity(entity) => Some(Contract::Fields {
             fields: entity.fields.iter().map(field).collect(),
@@ -584,6 +586,8 @@ fn contract_of(definition: &Definition) -> Option<Contract> {
                 .iter()
                 .map(|name| name.as_str().to_owned())
                 .collect(),
+            relations: entity.relations.clone(),
+            unique_constraints: entity.unique_constraints.clone(),
         }),
         Definition::Command(command) => Some(Contract::Command {
             input: command.input.iter().map(field).collect(),
@@ -592,8 +596,16 @@ fn contract_of(definition: &Definition) -> Option<Contract> {
                 .iter()
                 .map(|id| id.as_str().to_owned())
                 .collect(),
+            returns: command.returns.as_ref().map(wire_type),
+            emits: command
+                .emits
+                .iter()
+                .map(|id| id.as_str().to_owned())
+                .collect(),
         }),
         Definition::Query(query) => Some(Contract::Query {
+            input: (version == ModelVersion::Successor)
+                .then(|| query.input.iter().map(field).collect()),
             reads: query
                 .reads
                 .iter()
@@ -641,9 +653,13 @@ fn contract_of(definition: &Definition) -> Option<Contract> {
 }
 
 /// The supporting card of one type node.
-fn type_card(node: &GraphNode, definitions: &HashMap<&str, &Definition>) -> Option<CardFact> {
+fn type_card(
+    node: &GraphNode,
+    definitions: &HashMap<&str, &Definition>,
+    version: ModelVersion,
+) -> Option<CardFact> {
     let definition = definitions.get(node.id().semantic_id())?;
-    let contract = contract_of(definition)?;
+    let contract = contract_of(definition, version)?;
     Some(CardFact {
         kind: NodeKindId::TYPE.key().to_owned(),
         qualified: node.id().as_str().to_owned(),

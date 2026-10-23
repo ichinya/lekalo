@@ -99,6 +99,8 @@ pub enum DeclaredRole {
     CommandEffect,
     /// An effect definition `emits` symbol (the declared event emission).
     EffectEmits,
+    /// An event emitted directly by a successor command.
+    CommandEmits,
 }
 
 impl DeclaredRole {
@@ -108,6 +110,7 @@ impl DeclaredRole {
             Self::QueryReads => "query-reads",
             Self::CommandEffect => "command-effect",
             Self::EffectEmits => "effect-emits",
+            Self::CommandEmits => "command-emits",
         }
     }
 }

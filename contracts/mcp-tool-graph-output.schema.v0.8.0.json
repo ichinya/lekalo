@@ -62,7 +62,10 @@
           "const": "2025-11-25"
         },
         "graph": {
-          "const": "0.2.16"
+          "enum": [
+            "0.2.16",
+            "0.8.0"
+          ]
         }
       },
       "required": [
@@ -82,28 +85,14 @@
       "description": "Wire diagnostic items (lekalo/diagnostic/v0.2.16) resolved against dev.lekalo.diagnostic-registry@0.8.0; every item is the closed published projection bundled under $defs.diagnosticItem."
     },
     "result": {
-      "type": "object",
-      "description": "Mode-tagged receipt: show/callers/path carry the frozen core query payload unchanged; export carries the canonical whole-graph document (lekalo/graph/v0.2.16), the exact bundled upstream document. Mode/branch coherence is semantic.",
-      "properties": {
-        "mode": {
-          "enum": [
-            "show",
-            "callers",
-            "path",
-            "export"
-          ]
+      "anyOf": [
+        {
+          "$ref": "#/$defs/graphResult2"
         },
-        "query": {
-          "$ref": "#/$defs/graphQuery"
-        },
-        "export": {
-          "$ref": "#/$defs/graph.Root"
+        {
+          "$ref": "#/$defs/graphResult8"
         }
-      },
-      "required": [
-        "mode"
-      ],
-      "additionalProperties": false
+      ]
     },
     "failure": {
       "type": "object",
@@ -172,6 +161,62 @@
     },
     "required": [
       "result"
+    ],
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "contractPins": {
+              "type": "object",
+              "properties": {
+                "graph": {
+                  "const": "0.2.16"
+                }
+              },
+              "required": [
+                "graph"
+              ]
+            }
+          },
+          "required": [
+            "contractPins"
+          ]
+        },
+        "then": {
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/graphResult2"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "contractPins": {
+              "type": "object",
+              "properties": {
+                "graph": {
+                  "const": "0.8.0"
+                }
+              },
+              "required": [
+                "graph"
+              ]
+            }
+          },
+          "required": [
+            "contractPins"
+          ]
+        },
+        "then": {
+          "properties": {
+            "result": {
+              "$ref": "#/$defs/graphResult8"
+            }
+          }
+        }
+      }
     ]
   },
   "else": {
@@ -857,7 +902,6 @@
                 "effect-entity",
                 "scenario-covers",
                 "command-input",
-                "query-input",
                 "query-returns",
                 "query-reads",
                 "policy-applies-to",
@@ -873,6 +917,286 @@
             },
             "sourceSymbol": {
               "$ref": "#/$defs/graph.semanticId"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "adapterId",
+            "targetId",
+            "protocolVersion",
+            "evidenceDigest",
+            "evidenceStatus"
+          ],
+          "properties": {
+            "adapterId": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(/[a-z][a-z0-9-]{0,62})?$",
+              "maxLength": 128
+            },
+            "targetId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "protocolVersion": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+              "maxLength": 32
+            },
+            "evidenceDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "evidenceStatus": {
+              "enum": [
+                "fresh",
+                "stale",
+                "unknown"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "algorithmId",
+            "algorithmVersion",
+            "parentEdgeKeys"
+          ],
+          "properties": {
+            "algorithmId": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+(/[a-z][a-z0-9-]{0,62})?$",
+              "maxLength": 128
+            },
+            "algorithmVersion": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+              "maxLength": 32
+            },
+            "parentEdgeKeys": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "type": "string",
+                "maxLength": 448
+              }
+            }
+          }
+        }
+      ]
+    },
+    "graph8.Root": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/graph/v0.8.0"
+        },
+        "identity": {
+          "const": "dev.lekalo.graph@0.8.0"
+        },
+        "modelVersion": {
+          "const": "0.8.0"
+        },
+        "project": {
+          "$ref": "#/$defs/graph8.semanticId"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "edgeCount",
+            "nodeCount"
+          ],
+          "properties": {
+            "nodeCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "edgeCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          }
+        },
+        "nodes": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "$ref": "#/$defs/graph8.node"
+          }
+        },
+        "edges": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": {
+            "$ref": "#/$defs/graph8.edge"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "identity",
+        "modelVersion",
+        "metadata",
+        "nodes",
+        "edges"
+      ],
+      "additionalProperties": false
+    },
+    "graph8.semanticId": {
+      "description": "A stable semantic id: dotted lowercase segments or an uppercase requirement id.",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_][a-zA-Z0-9_.:-]{0,191}$",
+      "maxLength": 192
+    },
+    "graph8.nodeId": {
+      "description": "A kind-qualified node identity: registry kind key, a colon, then the semantic id.",
+      "type": "string",
+      "pattern": "^(project|module|type|entity|operation|policy|event|effect|endpoint|scenario|target-binding|requirement):[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,191}$",
+      "maxLength": 208
+    },
+    "graph8.node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/graph8.nodeId"
+        },
+        "kind": {
+          "enum": [
+            "project",
+            "module",
+            "type",
+            "entity",
+            "operation",
+            "policy",
+            "event",
+            "effect",
+            "endpoint",
+            "scenario",
+            "target-binding",
+            "requirement"
+          ]
+        },
+        "module": {
+          "$ref": "#/$defs/graph8.semanticId"
+        },
+        "subkind": {
+          "enum": [
+            "scalar",
+            "enum",
+            "value-object",
+            "command",
+            "query"
+          ]
+        }
+      },
+      "description": "subkind is present exactly for kind type (scalar/enum/value-object) and kind operation (command/query); the coherence rule is enforced by the release gate invariants."
+    },
+    "graph8.edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "relation",
+        "occurrence",
+        "provenance",
+        "confidence"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/graph8.nodeId"
+        },
+        "to": {
+          "$ref": "#/$defs/graph8.nodeId"
+        },
+        "relation": {
+          "enum": [
+            "requires",
+            "references",
+            "accepts",
+            "returns",
+            "reads",
+            "writes",
+            "emits",
+            "authorizes",
+            "exposes",
+            "implements",
+            "verifies",
+            "derived_from"
+          ]
+        },
+        "occurrence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "provenance": {
+          "$ref": "#/$defs/graph8.provenance"
+        },
+        "confidence": {
+          "enum": [
+            "canonical",
+            "verified",
+            "extracted",
+            "inferred",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "graph8.provenance": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "referenceRole",
+            "occurrence",
+            "sourceSymbol"
+          ],
+          "properties": {
+            "referenceRole": {
+              "enum": [
+                "module-import",
+                "entity-field",
+                "value-object-field",
+                "event-payload",
+                "command-effect",
+                "effect-entity",
+                "scenario-covers",
+                "command-input",
+                "query-input",
+                "command-returns",
+                "command-emits",
+                "query-returns",
+                "query-reads",
+                "policy-applies-to",
+                "endpoint-invokes",
+                "effect-emits",
+                "derived-from",
+                "entity-relation-target"
+              ]
+            },
+            "occurrence": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            "sourceSymbol": {
+              "$ref": "#/$defs/graph8.semanticId"
             }
           }
         },
@@ -1062,6 +1386,215 @@
           "additionalProperties": false
         }
       ]
+    },
+    "graphQuery8": {
+      "description": "The frozen core query payloads of `graph show`, `graph callers`, and `graph path`, described without injecting a discriminator; exactly one branch matches.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "node": {
+              "$ref": "#/$defs/graph8.node"
+            },
+            "dependencies": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/graph8.edge"
+              }
+            },
+            "dependents": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/graph8.edge"
+              }
+            }
+          },
+          "required": [
+            "node",
+            "dependencies",
+            "dependents"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "node": {
+              "$ref": "#/$defs/graph8.node"
+            },
+            "callers": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/graph8.edge"
+              }
+            },
+            "complete": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "node",
+            "callers",
+            "complete"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "confidence": {
+              "type": "string"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "edges": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/graph8.edge"
+              }
+            },
+            "from": {
+              "type": "string"
+            },
+            "length": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nodes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "confidence",
+            "complete",
+            "edges",
+            "from",
+            "length",
+            "nodes",
+            "to"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "graphResult2": {
+      "type": "object",
+      "description": "Mode-tagged core receipt; the contract pin selects the exact source-version payload definitions.",
+      "properties": {
+        "mode": {
+          "enum": [
+            "show",
+            "callers",
+            "path",
+            "export"
+          ]
+        },
+        "query": {
+          "$ref": "#/$defs/graphQuery"
+        },
+        "export": {
+          "$ref": "#/$defs/graph.Root"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "export"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "required": [
+          "export"
+        ],
+        "properties": {
+          "export": {},
+          "query": {
+            "not": {}
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {},
+          "export": {
+            "not": {}
+          }
+        }
+      }
+    },
+    "graphResult8": {
+      "type": "object",
+      "description": "Mode-tagged core receipt; the contract pin selects the exact source-version payload definitions.",
+      "properties": {
+        "mode": {
+          "enum": [
+            "show",
+            "callers",
+            "path",
+            "export"
+          ]
+        },
+        "query": {
+          "$ref": "#/$defs/graphQuery8"
+        },
+        "export": {
+          "$ref": "#/$defs/graph8.Root"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "export"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "required": [
+          "export"
+        ],
+        "properties": {
+          "export": {},
+          "query": {
+            "not": {}
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {},
+          "export": {
+            "not": {}
+          }
+        }
+      }
     }
   }
 }

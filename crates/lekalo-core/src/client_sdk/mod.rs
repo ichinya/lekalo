@@ -64,19 +64,19 @@ pub use diagnostic::{io_failure, rule_set};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ModelPin {
     /// The accepted Model contract version.
-    pub(crate) version: crate::scenario::ModelPin,
+    pub(crate) version: crate::loader::ModelVersion,
     /// The digest of the exact source Model document.
     pub(crate) digest: Sha256Digest,
 }
 
 impl ModelPin {
     /// Assemble from validated parts (crate internal).
-    pub(crate) fn new(version: crate::scenario::ModelPin, digest: Sha256Digest) -> Self {
+    pub(crate) fn new(version: crate::loader::ModelVersion, digest: Sha256Digest) -> Self {
         Self { version, digest }
     }
 
     /// The accepted Model contract version.
-    pub const fn version(&self) -> &crate::scenario::ModelPin {
+    pub const fn version(&self) -> &crate::loader::ModelVersion {
         &self.version
     }
 
@@ -224,7 +224,7 @@ mod tests {
             attachment_revision: SemVer::parse("0.4.0").expect("semver"),
             project_id: SemanticId::parse_root("planner").expect("id"),
             model_ref: ModelPin::new(
-                crate::scenario::ModelPin::Current,
+                crate::loader::ModelVersion::Current,
                 Sha256Digest::from_hex(
                     "0000000000000000000000000000000000000000000000000000000000000000",
                 ),

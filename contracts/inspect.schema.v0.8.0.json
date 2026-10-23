@@ -973,7 +973,8 @@
                   "enum": [
                     "query-reads",
                     "command-effect",
-                    "effect-emits"
+                    "effect-emits",
+                    "command-emits"
                   ]
                 },
                 "occurrence": {

@@ -146,6 +146,8 @@ jobs:
           node scripts/test-privacy-authorizing-evidence.mjs
           node scripts/test-privacy-authorization-subject.mjs
           node scripts/test-fixture-provenance.mjs
+          node scripts/test-fixture-git.mjs
+          node scripts/test-schema-json.mjs
       - name: Validate documentation ownership and replay metadata (issue #105)
         run: |
           node scripts/test-docs-ownership.mjs --static
@@ -313,9 +315,20 @@ jobs:
       - name: Qualify the real MCP host connection (issue #33)
         env:
           NODE_PATH: ${{ runner.temp }}/lekalo-mcp-sdk/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |
           set -euo pipefail
           node scripts/test-mcp-host.mjs
+          node scripts/test-context-successor.mjs
+      - name: Provision the pinned AI Factory extension installer (issue #33)
+        run: npm install --prefix "$RUNNER_TEMP/lekalo-ai-factory" --ignore-scripts --no-audit --no-fund --no-save ai-factory@2.19.0
+      - name: Qualify the installed AI Factory extension (issue #33)
+        timeout-minutes: 5
+        env:
+          NODE_PATH: ${{ runner.temp }}/lekalo-mcp-sdk/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+          LEKALO_AI_FACTORY_DIR: ${{ runner.temp }}/lekalo-ai-factory/node_modules/ai-factory
+        run: node scripts/test-mcp-ai-factory.mjs
       - name: Run the live portability contract gate (issue #19)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
@@ -485,7 +498,11 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-ownership.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-defaults.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-enum-wire.mjs
-            NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-query-inputs.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-query-inputs.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-command-results.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-emissions.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-query-input-bindings.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-query-transport-bindings.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-transactions.mjs
       - name: Run the versioned fix recipe contract and live CLI gates (issue #74)
         env:
@@ -634,6 +651,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/test-docs-ownership.mjs
+          node scripts/test-fixture-git.mjs
           node scripts/test-docs-examples.mjs
       - name: Run the Node/TypeScript kernel suite (issue #43)
         run: node scripts/test-node-typescript-kernel.mjs
@@ -747,12 +765,12 @@ jobs:
         run: node scripts/test-node-typescript-transport.mjs
       - name: Run the OpenAPI generator gate (issue #46)
         run: node scripts/test-node-openapi.mjs
-      - name: Run the client-SDK generator gate (issue #72)
-        run: node scripts/test-node-client-sdk.mjs
       - name: Provision the pinned Go toolchain for the client-SDK gate (issue #72)
         uses: actions/setup-go@v5
         with:
           go-version: "1.23.5"
+      - name: Run the client-SDK generator gate (issue #72)
+        run: node scripts/test-node-client-sdk.mjs
       - name: Run the client-SDK runtime gate (issue #72)
         env:
           NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules

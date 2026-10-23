@@ -52,6 +52,7 @@ import {
   CLIENT_SDK_EVIDENCE_DIR as CLIENT_SDK_READ_ROOT,
   clientSdkGenerateOperation,
   clientSdkVerifyOperation,
+  isClientSdkEvidence,
 } from "./client-sdk-gen.mjs";
 
 /** The resolved transport descriptor (never registered separately). */
@@ -170,8 +171,7 @@ function documentIdentity(readView, irPath) {
   }
   // Issue #72: the client-SDK evidence is a first-class primary input
   // with its own closed identity; it routes to the SDK pipeline.
-  if (document.schemaVersion === "lekalo/client-sdk/v0.4.0"
-    && document.identity === "dev.lekalo.client-sdk@0.4.0") {
+  if (isClientSdkEvidence(document)) {
     return "client-sdk";
   }
   if (document.contract === "dev.lekalo.ir@0.2.16") {
@@ -276,7 +276,7 @@ function sdkIsPrimary(context) {
     return (
       document !== null
       && typeof document === "object"
-      && document.schemaVersion === "lekalo/client-sdk/v0.4.0"
+      && isClientSdkEvidence(document)
     );
   } catch {
     return false;

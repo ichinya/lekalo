@@ -59,9 +59,12 @@ fn attachment_payload(attachment: &super::ExtendedEffectsAttachment) -> String {
         ),
         (
             "effectGraphRef",
-            attachment
-                .effect_graph_digest()
-                .map(|digest| digest_payload("dev.lekalo.effects@0.2.16", digest.as_str())),
+            attachment.effect_graph_digest().map(|digest| {
+                digest_payload(
+                    crate::effects::version::identity_for(*attachment.model_ref().version()),
+                    digest.as_str(),
+                )
+            }),
         ),
         (
             "events",

@@ -505,7 +505,15 @@ fn project_export(
             push_type("entity", None, vec![], fields, identity)?;
         }
         Definition::Command(command) => {
+            if !command.emits.is_empty() {
+                return Err(invalid("command-emission-contract-unsupported"));
+            }
             let input = project_fields(&command.input, by_id, module, exported, foreign)?;
+            let returns = command
+                .returns
+                .as_ref()
+                .map(|returns| project_type(returns, by_id, module, exported, foreign))
+                .transpose()?;
             let effects = command
                 .effects
                 .iter()
@@ -539,6 +547,7 @@ fn project_export(
                 kind: "command".to_owned(),
                 version,
                 input,
+                returns,
                 effects,
                 ..PublicExport::empty(&id, "command")
             });

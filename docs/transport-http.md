@@ -1,5 +1,15 @@
 # Lekalo HTTP/JSON transport attachment
 
+The [0.8.0 owner](../contracts/transport-http.schema.v0.8.0.json) binds
+Model/IR 0.8.0 and query-model 0.8.0. Its exact identity is
+`dev.lekalo.transport-http@0.8.0`; mixed owner, Model and IR versions refuse.
+Query inputs join by name, type, presence and typed default through the bound
+query model. Every required input needs a required wire parameter or body
+field. The exact IR digest is checked; CLI validation, watch and generation
+also bind an immutable source Model snapshot. OpenAPI 3.0/3.1 preserves nested
+types and defaults. A predecessor adapter remains incompatible with Model 0.8.0
+unless its own declared compatibility and native profile admit it.
+
 Issue #70 makes the HTTP/JSON wire surface of every Model endpoint a
 first-class, machine-checkable contract. One closed, versioned
 attachment — [`contracts/transport-http.schema.v0.4.0.json`](../contracts/transport-http.schema.v0.4.0.json)

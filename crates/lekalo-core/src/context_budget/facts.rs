@@ -256,11 +256,17 @@ fn contract_parts(definition: &Definition, parts: &mut Vec<String>) {
             }
         }
         Definition::Command(command) => {
+            if let Some(returns) = &command.returns {
+                parts.push(type_spelling(returns));
+            }
             for member in &command.input {
                 field(member, parts);
             }
             for effect in &command.effects {
                 parts.push(effect.as_str().to_owned());
+            }
+            for event in &command.emits {
+                parts.push(event.as_str().to_owned());
             }
         }
         Definition::Query(query) => {

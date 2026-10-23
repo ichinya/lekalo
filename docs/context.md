@@ -1,6 +1,6 @@
 # The bounded context capsule
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
+> При изменении контракт получает текущую версию продукта. Опубликованный контракт 0.2.16 сохраняется для старой модели; новая модель выбирает контракт 0.8.0.
 
 Issue #17 projects a minimal-but-sufficient context document for one
 symbol or one explicitly supplied change set: `lekalo context SYMBOL
@@ -14,11 +14,17 @@ owner decisions live in [ADR-0018](adr/0018-context-capsules.md).
 
 ## Contract identity
 
-- Discriminator: `lekalo/context/v0.2.16`
-- Identity: `dev.lekalo.context@0.2.16`
-- Schema: [`contracts/context-capsule.schema.v0.2.16.json`](../contracts/context-capsule.schema.v0.2.16.json)
-- Independent of the product release, the Model/IR/graph/effect/protocol
-  versions, and the diagnostic registry version.
+- Model 0.2.16 retains `lekalo/context/v0.2.16`,
+  `dev.lekalo.context@0.2.16` and its [published schema](../contracts/context-capsule.schema.v0.2.16.json).
+- Model 0.8.0 selects `lekalo/context/v0.8.0`,
+  `dev.lekalo.context@0.8.0` and the [successor schema](../contracts/context-capsule.schema.v0.8.0.json).
+  The successor includes query inputs (including an empty input), command
+  results and direct event emissions, exact typed defaults and enum wire
+  literals, entity relations and uniqueness constraints in both projections.
+- Workflow-provider 0.8.0 discovers both payload owners through the closed
+  [context success describing schema](../contracts/context-result.schema.v0.8.0.json).
+  MCP preserves the selected owner and validates its contract pin against
+  the admitted source version. Other families retain their independent pins.
 
 ## Sections
 
@@ -53,6 +59,9 @@ the truncation is explicit metadata.
 - `budget.estimated` is the emitted capsule; `budget.minimumRequired`
   is the exact minimum budget with zero exclusions; `budget.fits`
   is `false` exactly when exclusions exist.
+- An exhausted successor budget may produce `sections: {}`. Every omitted
+  fact remains in `manifest.excluded`; a fact that fits retains its whole
+  typed contract. Literal and nested relation bytes contribute to estimates.
 - Every candidate appears in exactly one manifest row: included rows
   carry their token estimate, excluded rows carry `reason: "budget"`.
 
@@ -125,6 +134,11 @@ lekalo context --changed planner.focus_task,planner.edit_task_cmd --budget 12000
   exact Ajv 8.20.0 schema gate plus coverage arithmetic, manifest walk
   order, gap vocabulary, and privacy invariants, run in CI on Node 18
   and 24.
+- Successor CLI and official MCP host gate:
+  `node scripts/test-context-successor.mjs`, with pinned Ajv and MCP SDK
+  dependencies provisioned outside the checkout. It verifies both
+  projections, source-dependent owners, budget accounting and read-only
+  custody without model inference.
 - Rust suites: `crates/lekalo-core/tests/context.rs` (selection,
   determinism, budget walk, changed scope, gaps, estimator, privacy,
   benchmark proxy) and `crates/lekalo-cli/tests/context.rs` (goldens,

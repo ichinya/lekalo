@@ -623,7 +623,7 @@ impl ErrorUnion {
 /// The closed operation kind.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OperationKind {
-    /// A command: unit output.
+    /// A command, with unit or a successor Model's declared value output.
     Command,
     /// A query: typed output.
     Query,
@@ -643,7 +643,7 @@ impl OperationKind {
 /// expression for queries.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum OutputType {
-    /// The command unit.
+    /// An operation with no declared value output.
     Unit,
     /// The query result type.
     Value(TypeExpr),

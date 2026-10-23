@@ -121,14 +121,14 @@ impl EffectGraph {
         }
     }
 
-    /// The effect contract identity (`dev.lekalo.effects@0.2.16`).
+    /// The exact effect contract identity for this source Model.
     pub const fn identity(&self) -> &'static str {
-        IDENTITY
+        version::identity_for(self.model_version)
     }
 
-    /// The effect contract discriminator (`lekalo/effects/v0.2.16`).
+    /// The exact effect contract discriminator for this source Model.
     pub const fn schema_version(&self) -> &'static str {
-        SCHEMA_VERSION
+        version::schema_version_for(self.model_version)
     }
 
     /// The exact source Model version the IR was compiled from.

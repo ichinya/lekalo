@@ -129,11 +129,20 @@ semantic/file diffs and impact/generation plans. Generation is a separate action
 Moves are standalone requests. Cross-module relocation uses the destination
 module's declaring physical directory, preserves the original kind filename,
 qualifies outgoing short references, and either appends to that kind home or
-creates it transactionally. A dependency cycle refuses before writing. Moving
-the last definition out of a kind home, relocating nested relation/uniqueness
-identities, and rewriting separately owned attachments are not implemented yet.
-Those cases explicitly refuse; they are still required follow-up work for #73.
-An existing project error registry also refuses. Other unsupported reference
+creates it transactionally. A dependency cycle refuses before writing.
+Moving the last definition retires its old kind home through the same sealed
+transaction. Preview marks that file edit as `operation: delete`; the receipt
+records `removed` with the absence digest. Staging backs up the exact source,
+apply checks its preimage before unlinking, and rollback/recovery verifies
+the backup and preserves later user changes. A present empty file never
+counts as an absent retired home. Document-level comments outside the moved
+definition refuse retirement so they cannot be silently discarded.
+Relation and uniqueness IDs are stable member identities, not definition
+or module IDs: a move preserves them verbatim, including four-segment IDs.
+Their typed entity targets and normalization references still follow Model
+reference rewrites; member IDs do not enter definition rename history.
+Rewriting separately owned attachments remains unsupported. An existing
+project error registry also refuses. Other unsupported reference
 attachments must be absent (scenario/type/operation/route homes may be empty);
 these absence/home guards are included in the plan inputs and rechecked under
 the writer lock and before commit. Adding even an empty attachment after
@@ -289,12 +298,25 @@ Every implemented verb shares the same execution flags
 themselves declarations (`--input-json`, `--payload-json`) take one
 typed JSON array parsed by the same duplicate-key-refusing parser as
 the request surface; type spellings (`--type`, `--returns`) take the
-Model sugar grammar (`ref`, `list<ref>`, `ref?`). The emission
-spelling `command-effect:add --emit <event>` decodes and refuses
-`change.operation-unsupported` with detail `emission-representation`
-pending the reviewed extended-effect successor — the refusal is the
-documented increment boundary, and the `--effect` reference spelling
-is the implemented path.
+Model sugar grammar (`ref`, `list<ref>`, `ref?`). Under Model `0.8.0`,
+`command-effect:add --emit EVENT` and `command-effect:remove --emit EVENT`
+edit the command's typed `emits` list. Each request selects exactly one of
+`--effect` (a CRUD effect definition) and `--emit` (an event). A direct
+emission adds an `emit-event` obligation without inventing an entity mutation
+or an effect-definition ID. Model `0.2.16` refuses direct emissions with
+`change.operation-unsupported` / `emission-representation`. Declaration does
+not execute an emitter; consumers lacking a compatible contract refuse
+`command-emission-contract-unsupported`.
+
+Model `0.8.0` commands may declare an optional typed `returns` contract.
+`definition:add --kind command --returns TYPE` declares it, and
+`operation-output:set --operation COMMAND --type TYPE` adds or replaces it.
+The result participates in validation, IR, graph (`command-returns`), inspect,
+semantic diff, and symbol-reference rewrites. A changed result has the same
+`signature.output-changed` compatibility review as a query result. Model
+`0.2.16` commands refuse this member. A consumer without a compatible result
+contract refuses explicitly; acceptance by Change alone does not qualify
+context, managed generation, SDK, OpenAPI or reference execution.
 
 `--apply` requires `--idempotency-key`; without it the invocation is a
 read-only preview (`--dry-run` is an explicit synonym and conflicts

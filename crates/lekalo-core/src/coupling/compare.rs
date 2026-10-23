@@ -164,6 +164,7 @@ pub fn validate(r: &Report) -> Result<(), DiagnosticSet> {
                         | "effect-entity"
                         | "command-input"
                         | "query-returns"
+                        | "command-returns"
                         | "query-reads"
                         | "endpoint-invokes"
                         | "effect-emits"
