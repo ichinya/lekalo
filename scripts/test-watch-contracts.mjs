@@ -12,13 +12,13 @@ const require=createRequire(import.meta.url);
 assert.equal(require('ajv/package.json').version,'8.20.0');
 const Ajv=require('ajv/dist/2020').default;
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
-const load=name=>JSON.parse(readFileSync(resolve(root,`contracts/${name}.schema.v0.8.0.json`),'utf8'));
+const load=(name,version=name.startsWith('watch-')?'0.8.14':'0.8.0')=>JSON.parse(readFileSync(resolve(root,`contracts/${name}.schema.v${version}.json`),'utf8'));
 const ajv=new Ajv({strict:true,allErrors:true});
 const validateResult=ajv.compile(load('watch-result'));
 const validateEvent=ajv.compile(load('watch-event'));
 const digest='sha256:'+ '0'.repeat(64);
-const result={schemaVersion:'lekalo/watch-result/v0.8.0',identity:'dev.lekalo.watch-result@0.8.0',status:'valid',diagnosticsMode:'replace',sourceRevision:digest,diagnostics:[],stages:[{stage:'validate',state:'executed',coverage:'complete'}],changedInputs:[],affected:{scope:'full',reason:'baseline',modules:[]},work:[],counts:{diagnostics:0,executedUnits:0,reusedUnits:0,changedFiles:0},capsuleInvalidations:[],pins:{modelVersion:'0.2.16',registryVersion:'0.8.0',versions:{core:'0.8.0',ir:'0.2.16',graph:'0.2.16',impact:'0.2.16',validationProfile:'0.6.4',diagnostic:'lekalo/diagnostic/v0.2.16',artifactManifest:'lekalo/artifact-manifest/v0.2.16',lock:'lekalo/lock/v0.3.2',targetProtocol:'0.3.2',targetCapabilities:'dev.lekalo.target-capabilities@0.6.4'},revisions:{},adapters:[]},pipelineCounts:{decodedDocuments:0,reusedDocuments:0,decodedDefinitions:0,reusedDefinitions:0,emittedGraphUnits:0,reusedGraphUnits:0,assembledGraphNodes:0,assembledGraphEdges:0,graphCyclePasses:0}};
-const common={schemaVersion:'lekalo/watch-event/v0.8.0',identity:'dev.lekalo.watch-event@0.8.0',sequence:1,sessionId:'contract-test'};
+const result={schemaVersion:'lekalo/watch-result/v0.8.14',identity:'dev.lekalo.watch-result@0.8.14',status:'valid',diagnosticsMode:'replace',sourceRevision:digest,diagnostics:[],stages:[{stage:'validate',state:'executed',coverage:'complete'}],changedInputs:[],affected:{scope:'full',reason:'baseline',modules:[]},work:[],counts:{diagnostics:0,executedUnits:0,reusedUnits:0,changedFiles:0},capsuleInvalidations:[],pins:{modelVersion:'0.2.16',registryVersion:'0.8.0',versions:{core:'0.8.0',ir:'0.2.16',graph:'0.2.16',impact:'0.2.16',validationProfile:'0.6.4',diagnostic:'lekalo/diagnostic/v0.2.16',artifactManifest:'lekalo/artifact-manifest/v0.2.16',lock:'lekalo/lock/v0.3.2',targetProtocol:'0.3.2',targetCapabilities:'dev.lekalo.target-capabilities@0.6.4'},revisions:{},adapters:[]},pipelineCounts:{decodedDocuments:0,reusedDocuments:0,decodedDefinitions:0,reusedDefinitions:0,emittedGraphUnits:0,reusedGraphUnits:0,assembledGraphNodes:0,assembledGraphEdges:0,graphCyclePasses:0}};
+const common={schemaVersion:'lekalo/watch-event/v0.8.14',identity:'dev.lekalo.watch-event@0.8.14',sequence:1,sessionId:'contract-test'};
 const run={runId:1,generation:0,sourceRevision:digest};
 const events=[
  {...common,event:'session-started',backend:'native',fallback:false,stages:['validate'],debounceMs:150,maxWaitMs:1000},
@@ -34,6 +34,20 @@ let positive=0,negative=0;
 function valid(validate,value){assert(validate(value),JSON.stringify(validate.errors));positive++;}
 function invalid(validate,value){assert(!validate(value),'schema unexpectedly accepted invalid vector');negative++;}
 valid(validateResult,result);
+// Product metadata may advance without changing Model/IR or registry pins.
+// The old wire stays exact; it never acquires this successor's admission.
+const previousResult=ajv.compile(load('watch-result','0.8.0'));
+const previousEvent=ajv.compile(load('watch-event','0.8.0'));
+const legacyResult=structuredClone(result);
+legacyResult.schemaVersion='lekalo/watch-result/v0.8.0';
+legacyResult.identity='dev.lekalo.watch-result@0.8.0';
+valid(previousResult,legacyResult);
+invalid(previousResult,{...legacyResult,pins:{...legacyResult.pins,versions:{...legacyResult.pins.versions,core:'0.8.14'}}});
+const legacyEvent={...events.find(event=>event.event==='run-completed'),schemaVersion:'lekalo/watch-event/v0.8.0',identity:'dev.lekalo.watch-event@0.8.0',result:legacyResult};
+valid(previousEvent,legacyEvent);
+invalid(previousEvent,{...legacyEvent,result:{...legacyResult,pins:{...legacyResult.pins,versions:{...legacyResult.pins.versions,core:'0.8.14'}}}});
+for(const core of ['0.8.14','0.9.0','1.0.0-rc.1'])valid(validateResult,{...result,pins:{...result.pins,versions:{...result.pins.versions,core}}});
+for(const core of ['', '00.8.14','0.8.14\n','C:/private','1'.repeat(65)])invalid(validateResult,{...result,pins:{...result.pins,versions:{...result.pins.versions,core}}});
 for(const event of events){valid(validateEvent,event);invalid(validateEvent,{...event,unknown:true});invalid(validateEvent,{...event,schemaVersion:'lekalo/watch-event/v0.7.0'});invalid(validateEvent,{...event,sequence:0});}
 for(const status of ['valid','invalid','denied','unsupported','unavailable','unsupported-version'])valid(validateResult,{...result,status});
 for(const value of [-1,1.5,Number.MAX_SAFE_INTEGER+1])invalid(validateResult,{...result,counts:{...result.counts,diagnostics:value}});

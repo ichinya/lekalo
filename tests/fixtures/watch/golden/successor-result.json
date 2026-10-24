@@ -50,7 +50,7 @@
   },
   "diagnostics": [],
   "diagnosticsMode": "replace",
-  "identity": "dev.lekalo.watch-result@0.8.0",
+  "identity": "dev.lekalo.watch-result@0.8.14",
   "impact": {
     "algorithm": "dev.lekalo.impact.algorithm@0.2.16",
     "artifacts": {
@@ -424,7 +424,7 @@
     },
     "versions": {
       "artifactManifest": "lekalo/artifact-manifest/v0.2.16",
-      "core": "0.8.0",
+      "core": "0.8.14",
       "diagnostic": "lekalo/diagnostic/v0.2.16",
       "graph": "0.8.0",
       "impact": "0.8.0",
@@ -446,7 +446,7 @@
     "reusedDocuments": 0,
     "reusedGraphUnits": 0
   },
-  "schemaVersion": "lekalo/watch-result/v0.8.0",
+  "schemaVersion": "lekalo/watch-result/v0.8.14",
   "sourceRevision": "sha256:69c47360248e545be44292e70a43b84199e6e2899470740dd5515dc2f0c4eef6",
   "stages": [
     {

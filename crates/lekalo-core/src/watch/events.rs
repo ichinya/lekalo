@@ -44,7 +44,7 @@ pub enum DecodeError {
 fn validator() -> &'static jsonschema::Validator {
     static VALIDATOR: LazyLock<jsonschema::Validator> = LazyLock::new(|| {
         let schema: Value = serde_json::from_slice(include_bytes!(
-            "../../../../contracts/watch-event.schema.v0.8.0.json"
+            "../../../../contracts/watch-event.schema.v0.8.14.json"
         ))
         .expect("embedded watch schema JSON");
         jsonschema::validator_for(&schema).expect("offline closed watch schema")

@@ -5058,10 +5058,28 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/watch-event.schema.v0.8.14.json",
+      "kind": "contract",
+      "source": "contracts/watch-event.schema.v0.8.14.json",
+      "sourceDigest": "sha256:e43fcc606e30e6a164b2f9d4ba5cc77f2938f2894f198b97372f00c85c74c517",
+      "owner": "docs/cli.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/watch-result.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/watch-result.schema.v0.8.0.json",
       "sourceDigest": "sha256:d0ea5d8af4c8a66f3e0d93b16d1c5bd25e7676100605a5673a38d6aeb8edb097",
+      "owner": "docs/cli.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/watch-result.schema.v0.8.14.json",
+      "kind": "contract",
+      "source": "contracts/watch-result.schema.v0.8.14.json",
+      "sourceDigest": "sha256:5957ea54062113a6476674ada28817ec95a4bd05c3715b9c4310673cfeaa2637",
       "owner": "docs/cli.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

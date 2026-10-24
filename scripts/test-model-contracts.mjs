@@ -789,9 +789,9 @@ check(
   semanticIds?.diagnostics
 );
 
-// Issue #6 is a contract-foundation issue: the docs must enumerate exactly
-// the machine contract's closed canonical-key consumer list and mark every
-// listed consumer deferred, with the checker as the only implemented surface.
+// The docs enumerate the contract's closed canonical-key consumer list.
+// Feature availability is owned by each consumer; the foundation's old
+// implementation-time "deferred" label is not an identity invariant.
 const semanticIdsDocText = await readFile(join(root, "docs", "semantic-ids.md"), "utf8");
 const targetKeysSection = semanticIdsDocText.split("## Target canonical keys")[1]?.split(/\n## /)[0] ?? "";
 schemaCases += 1;
@@ -800,7 +800,6 @@ check(
   targetKeysSection.length > 0
     && CANONICAL_KEY_CONSUMERS.every((name) => targetKeysSection.includes(name))
     && /closed/i.test(targetKeysSection)
-    && /deferred/i.test(targetKeysSection)
     && /verbatim/i.test(targetKeysSection),
   { sectionLength: targetKeysSection.length }
 );

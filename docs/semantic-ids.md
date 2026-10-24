@@ -132,7 +132,7 @@ definition version; a project at version 1 cannot contain a registry.
 
 ## Target canonical keys
 
-The machine contract closes the list of canonical-key consumers:
+The machine contract defines the closed list of canonical-key consumers:
 target-adapters, generated-artifacts, inspect, impact, context.capsule, and
 trace.manifest. Every one of them uses the semantic symbol ID verbatim as its
 canonical key and must never invent, derive, replace, rewrite, case-fold,

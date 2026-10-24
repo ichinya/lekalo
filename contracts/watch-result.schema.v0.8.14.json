@@ -1,0 +1,3269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.watch-result@0.8.14",
+  "title": "Atomic watch diagnostic replacement v0.8.14",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/watch-result/v0.8.14"
+    },
+    "identity": {
+      "const": "dev.lekalo.watch-result@0.8.14"
+    },
+    "status": {
+      "enum": [
+        "valid",
+        "invalid",
+        "denied",
+        "unsupported",
+        "unavailable",
+        "unsupported-version"
+      ]
+    },
+    "diagnosticsMode": {
+      "const": "replace"
+    },
+    "sourceRevision": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "previousSourceRevision": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      },
+      "maxItems": 512
+    },
+    "stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "stage": {
+            "enum": [
+              "validate",
+              "impact",
+              "generate-check",
+              "target-scan",
+              "lock-preflight"
+            ]
+          },
+          "state": {
+            "enum": [
+              "executed",
+              "reused",
+              "not-requested",
+              "unavailable"
+            ]
+          },
+          "coverage": {
+            "enum": [
+              "complete",
+              "partial",
+              "unsupported"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "stage",
+          "state",
+          "coverage"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 16
+    },
+    "changedInputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(?:\\.lekalo/)?[a-z0-9][a-z0-9._-]*(/[a-z0-9._-]+)*$",
+            "not": {
+              "pattern": "(^|/)\\.\\.?(/|$)"
+            }
+          },
+          "kind": {
+            "enum": [
+              "created",
+              "modified",
+              "deleted"
+            ]
+          },
+          "oldSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "newSha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "renameOf": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^(?:\\.lekalo/)?[a-z0-9][a-z0-9._-]*(/[a-z0-9._-]+)*$",
+            "not": {
+              "pattern": "(^|/)\\.\\.?(/|$)"
+            }
+          },
+          "class": {
+            "enum": [
+              "semantic",
+              "generated"
+            ]
+          }
+        },
+        "required": [
+          "path",
+          "kind",
+          "class"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 4096
+    },
+    "affected": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "enum": [
+            "selective",
+            "full"
+          ]
+        },
+        "reason": {
+          "enum": [
+            "baseline",
+            "project-input",
+            "target-input",
+            "unknown-owner",
+            "recovery",
+            "pending-overflow",
+            "parse-invalid",
+            "no-cache",
+            "graph-unavailable"
+          ]
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)*$"
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": [
+        "scope",
+        "modules"
+      ],
+      "additionalProperties": false
+    },
+    "work": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "module": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)*$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "state": {
+            "enum": [
+              "executed",
+              "reused"
+            ]
+          }
+        },
+        "required": [
+          "module",
+          "sha256",
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 4096
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "diagnostics": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "executedUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reusedUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "changedFiles": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "diagnostics",
+        "executedUnits",
+        "reusedUnits",
+        "changedFiles"
+      ],
+      "additionalProperties": false
+    },
+    "capsuleInvalidations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)*$"
+      },
+      "maxItems": 128
+    },
+    "pins": {
+      "type": "object",
+      "properties": {
+        "modelVersion": {
+          "enum": [
+            "0.2.16",
+            "0.8.0"
+          ]
+        },
+        "registryVersion": {
+          "const": "0.8.0"
+        },
+        "versions": {
+          "type": "object",
+          "properties": {
+            "core": {
+              "type": "string",
+              "minLength": 5,
+              "maxLength": 64,
+              "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+              "description": "Exact producing core product version; distinct from this wire contract and source Model/IR versions."
+            },
+            "ir": {
+              "enum": [
+                "0.2.16",
+                "0.8.0"
+              ]
+            },
+            "graph": {
+              "enum": [
+                "0.2.16",
+                "0.8.0"
+              ]
+            },
+            "impact": {
+              "enum": [
+                "0.2.16",
+                "0.8.0"
+              ]
+            },
+            "validationProfile": {
+              "const": "0.6.4"
+            },
+            "diagnostic": {
+              "const": "lekalo/diagnostic/v0.2.16"
+            },
+            "artifactManifest": {
+              "const": "lekalo/artifact-manifest/v0.2.16"
+            },
+            "lock": {
+              "const": "lekalo/lock/v0.3.2"
+            },
+            "targetProtocol": {
+              "const": "0.3.2"
+            },
+            "targetCapabilities": {
+              "const": "dev.lekalo.target-capabilities@0.6.4"
+            }
+          },
+          "required": [
+            "core",
+            "ir",
+            "graph",
+            "impact",
+            "validationProfile",
+            "diagnostic",
+            "artifactManifest",
+            "lock",
+            "targetProtocol",
+            "targetCapabilities"
+          ],
+          "additionalProperties": false
+        },
+        "revisions": {
+          "type": "object",
+          "properties": {
+            "modelDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "irDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "sourceMapDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "graphDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "lockDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "lockInputDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "profileDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "manifestInputDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "adapters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "target": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)*$"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)*$"
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "declaredDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "entryDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "capabilityDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "protocolVersion": {
+                "enum": [
+                  "0.3.2",
+                  "0.6.4",
+                  "0.8.0"
+                ]
+              },
+              "profile": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)*$"
+              },
+              "work": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "scope": {
+                      "enum": [
+                        "module",
+                        "global"
+                      ]
+                    },
+                    "module": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)*$"
+                    },
+                    "state": {
+                      "enum": [
+                        "executed",
+                        "reused"
+                      ]
+                    },
+                    "sourceRevision": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    },
+                    "selectionDigest": {
+                      "type": "string",
+                      "pattern": "^sha256:[0-9a-f]{64}$"
+                    }
+                  },
+                  "required": [
+                    "scope",
+                    "state",
+                    "sourceRevision",
+                    "selectionDigest"
+                  ],
+                  "additionalProperties": false
+                },
+                "maxItems": 4097
+              }
+            },
+            "required": [
+              "target",
+              "id",
+              "version",
+              "digest",
+              "declaredDigest",
+              "entryDigest",
+              "capabilityDigest",
+              "protocolVersion"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 8
+        }
+      },
+      "required": [
+        "registryVersion",
+        "versions",
+        "revisions",
+        "adapters"
+      ],
+      "additionalProperties": false
+    },
+    "impact": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/impact"
+        },
+        {
+          "$ref": "#/$defs/successorImpact"
+        }
+      ]
+    },
+    "drift": {
+      "type": "object",
+      "properties": {
+        "verdict": {
+          "enum": [
+            "clean",
+            "reported"
+          ]
+        },
+        "clean": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "stale": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "manualDrift": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "missing": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "orphan": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reported": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "findings": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "verdict",
+        "clean",
+        "stale",
+        "manualDrift",
+        "missing",
+        "orphan",
+        "reported",
+        "findings"
+      ],
+      "additionalProperties": false
+    },
+    "pipelineCounts": {
+      "type": "object",
+      "properties": {
+        "decodedDocuments": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reusedDocuments": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "decodedDefinitions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reusedDefinitions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "emittedGraphUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "reusedGraphUnits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "assembledGraphNodes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "assembledGraphEdges": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "graphCyclePasses": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "decodedDocuments",
+        "reusedDocuments",
+        "decodedDefinitions",
+        "reusedDefinitions",
+        "emittedGraphUnits",
+        "reusedGraphUnits",
+        "assembledGraphNodes",
+        "assembledGraphEdges",
+        "graphCyclePasses"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "identity",
+    "status",
+    "diagnosticsMode",
+    "sourceRevision",
+    "diagnostics",
+    "stages",
+    "changedInputs",
+    "affected",
+    "work",
+    "counts",
+    "capsuleInvalidations",
+    "pins"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "pins": {
+            "type": "object",
+            "properties": {
+              "modelVersion": {
+                "const": "0.2.16"
+              }
+            },
+            "required": [
+              "modelVersion"
+            ]
+          }
+        },
+        "required": [
+          "pins"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "pins": {
+            "type": "object",
+            "properties": {
+              "versions": {
+                "type": "object",
+                "properties": {
+                  "ir": {
+                    "const": "0.2.16"
+                  },
+                  "graph": {
+                    "const": "0.2.16"
+                  },
+                  "impact": {
+                    "const": "0.2.16"
+                  }
+                }
+              }
+            }
+          },
+          "impact": {
+            "$ref": "#/$defs/impact"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "pins": {
+            "type": "object",
+            "properties": {
+              "modelVersion": {
+                "const": "0.8.0"
+              }
+            },
+            "required": [
+              "modelVersion"
+            ]
+          }
+        },
+        "required": [
+          "pins"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "pins": {
+            "type": "object",
+            "properties": {
+              "versions": {
+                "type": "object",
+                "properties": {
+                  "ir": {
+                    "const": "0.8.0"
+                  },
+                  "graph": {
+                    "const": "0.8.0"
+                  },
+                  "impact": {
+                    "const": "0.8.0"
+                  }
+                }
+              }
+            }
+          },
+          "impact": {
+            "$ref": "#/$defs/successorImpact"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "pins": {
+            "type": "object",
+            "not": {
+              "type": "object",
+              "properties": {
+                "modelVersion": {}
+              },
+              "required": [
+                "modelVersion"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "not": {
+          "type": "object",
+          "properties": {
+            "impact": {}
+          },
+          "required": [
+            "impact"
+          ]
+        },
+        "properties": {
+          "pins": {
+            "type": "object",
+            "properties": {
+              "versions": {
+                "type": "object",
+                "properties": {
+                  "ir": {
+                    "const": "0.2.16"
+                  },
+                  "graph": {
+                    "const": "0.2.16"
+                  },
+                  "impact": {
+                    "const": "0.2.16"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "diagnostic": {
+      "title": "Lekalo diagnostic item v1",
+      "description": "Closed wire schema for one stable machine-readable Lekalo diagnostic. The discriminator schema_version is lekalo/diagnostic/v0.2.16 and is independent of the product release, the Model/IR/protocol contract versions, the lock wire, and the diagnostic registry version. Every object is closed; unknown fields fail validation.",
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "lekalo/diagnostic/v0.2.16"
+        },
+        "registry_version": {
+          "$ref": "#/$defs/diagnostic/$defs/registryVersion"
+        },
+        "id": {
+          "$ref": "#/$defs/diagnostic/$defs/ruleId"
+        },
+        "code": {
+          "$ref": "#/$defs/diagnostic/$defs/diagnosticCode"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "category": {
+          "enum": [
+            "model",
+            "semantic",
+            "compatibility",
+            "adapter",
+            "infrastructure",
+            "security"
+          ]
+        },
+        "message_id": {
+          "$ref": "#/$defs/diagnostic/$defs/ruleId"
+        },
+        "message": {
+          "$ref": "#/$defs/diagnostic/$defs/boundedText"
+        },
+        "symbol": {
+          "$ref": "#/$defs/diagnostic/$defs/symbolId"
+        },
+        "source": {
+          "$ref": "#/$defs/diagnostic/$defs/source"
+        },
+        "data": {
+          "$ref": "#/$defs/diagnostic/$defs/dataObject"
+        },
+        "related_locations": {
+          "$ref": "#/$defs/diagnostic/$defs/relatedLocations"
+        },
+        "causes": {
+          "$ref": "#/$defs/diagnostic/$defs/causes"
+        },
+        "fixes": {
+          "$ref": "#/$defs/diagnostic/$defs/fixes"
+        },
+        "metadata": {
+          "$ref": "#/$defs/diagnostic/$defs/providerMetadata"
+        }
+      },
+      "required": [
+        "schema_version",
+        "registry_version",
+        "id",
+        "code",
+        "severity",
+        "category",
+        "message_id",
+        "message",
+        "data",
+        "related_locations",
+        "causes",
+        "fixes",
+        "metadata"
+      ],
+      "additionalProperties": false,
+      "unevaluatedProperties": false,
+      "$defs": {
+        "ruleId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "maxLength": 128
+        },
+        "diagnosticCode": {
+          "type": "string",
+          "pattern": "^LEK-[A-Z][A-Z0-9]{1,11}-[0-9]{3}$"
+        },
+        "registryVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "maxLength": 32
+        },
+        "symbolId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){1,2}$",
+          "maxLength": 256
+        },
+        "boundedText": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "logicalPath": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9._-]+)*$",
+          "maxLength": 1024,
+          "not": {
+            "pattern": "(^|/)\\.\\.?(/|$)"
+          }
+        },
+        "position": {
+          "type": "object",
+          "properties": {
+            "byte": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "line": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "column": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "byte",
+            "line",
+            "column"
+          ],
+          "additionalProperties": false
+        },
+        "range": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "$ref": "#/$defs/diagnostic/$defs/position"
+            },
+            "end": {
+              "$ref": "#/$defs/diagnostic/$defs/position"
+            }
+          },
+          "required": [
+            "start",
+            "end"
+          ],
+          "additionalProperties": false
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/diagnostic/$defs/logicalPath"
+            },
+            "range": {
+              "$ref": "#/$defs/diagnostic/$defs/range"
+            }
+          },
+          "additionalProperties": false,
+          "minProperties": 1
+        },
+        "dataObject": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/diagnostic/$defs/dataValue"
+          }
+        },
+        "dataValue": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 256
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "maxProperties": 16,
+              "propertyNames": {
+                "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "object",
+                    "maxProperties": 16,
+                    "propertyNames": {
+                      "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 256
+                        },
+                        {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "maxProperties": 16,
+                "propertyNames": {
+                  "pattern": "^[A-Za-z][A-Za-z0-9]{0,31}$"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "location": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "$ref": "#/$defs/diagnostic/$defs/logicalPath"
+            },
+            "range": {
+              "$ref": "#/$defs/diagnostic/$defs/range"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "relatedLocations": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "properties": {
+              "relation": {
+                "$ref": "#/$defs/diagnostic/$defs/ruleId"
+              },
+              "message_id": {
+                "$ref": "#/$defs/diagnostic/$defs/ruleId"
+              },
+              "location": {
+                "$ref": "#/$defs/diagnostic/$defs/location"
+              }
+            },
+            "required": [
+              "relation",
+              "message_id",
+              "location"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "causes": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/diagnostic/$defs/ruleId"
+              },
+              "code": {
+                "$ref": "#/$defs/diagnostic/$defs/diagnosticCode"
+              },
+              "message_id": {
+                "$ref": "#/$defs/diagnostic/$defs/ruleId"
+              },
+              "message": {
+                "$ref": "#/$defs/diagnostic/$defs/boundedText"
+              },
+              "data": {
+                "$ref": "#/$defs/diagnostic/$defs/dataObject"
+              },
+              "provider": {
+                "$ref": "#/$defs/diagnostic/$defs/providerMetadata"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "message_id",
+              "message",
+              "data"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "fixes": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "properties": {
+              "fix_id": {
+                "$ref": "#/$defs/diagnostic/$defs/ruleId"
+              },
+              "applicability": {
+                "enum": [
+                  "safe",
+                  "unsafe",
+                  "breaking"
+                ]
+              },
+              "message": {
+                "$ref": "#/$defs/diagnostic/$defs/boundedText"
+              },
+              "data": {
+                "$ref": "#/$defs/diagnostic/$defs/dataObject"
+              },
+              "target": {
+                "$ref": "#/$defs/diagnostic/$defs/location"
+              }
+            },
+            "required": [
+              "fix_id",
+              "applicability",
+              "message"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "providerMetadata": {
+          "type": "object",
+          "maxProperties": 8,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+:[0-9]+\\.[0-9]+\\.[0-9]+$",
+            "maxLength": 128
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "original_code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[\\x21-\\x7E]+$"
+              }
+            },
+            "required": [
+              "original_code"
+            ],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    "impact": {
+      "title": "Lekalo impact",
+      "description": "Closed contract of one deterministic impact and change-radius analysis (issue #16). The impact contract version is independent of the product release, of the Model/IR/graph/effect/diff contract versions, and of the diagnostic registry version. A canonical impact payload carries the contract identity, the exact input mode and roots, the direct, transitive, and mandatory-public radius, the closed risk vector, the affected target, scenario, test, and gate projections, bounded explanation paths, explicit evidence and completeness, and the canonical digest. No physical root, raw source, patch text, timestamp, runtime value, host, locale, repository identity, or adapter transcript may appear. Canonical bytes are compact UTF-8 JSON whose object keys follow this schema order; set-like arrays sort by unsigned UTF-8 of their typed keys; the digest is the SHA-256 of the canonical envelope bytes with the digest field set to the empty string.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "identity",
+        "algorithm",
+        "modelVersion",
+        "project",
+        "input",
+        "request",
+        "roots",
+        "direct",
+        "transitive",
+        "mandatoryPublic",
+        "risks",
+        "targets",
+        "artifacts",
+        "scenarios",
+        "tests",
+        "gates",
+        "explanations",
+        "evidence",
+        "completeness",
+        "diagnosticRefs",
+        "digest"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/impact/v0.2.16"
+        },
+        "identity": {
+          "const": "dev.lekalo.impact@0.2.16"
+        },
+        "algorithm": {
+          "const": "dev.lekalo.impact.algorithm@0.2.16"
+        },
+        "modelVersion": {
+          "enum": [
+            "0.2.16",
+            "0.2.16"
+          ]
+        },
+        "project": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/impact/$defs/semanticId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "baseRevisionRef",
+            "candidateRevisionRef",
+            "changedInputDigest"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "symbol",
+                "committed",
+                "index",
+                "worktree",
+                "mixed"
+              ]
+            },
+            "baseRevisionRef": {
+              "$ref": "#/$defs/impact/$defs/revisionRef"
+            },
+            "candidateRevisionRef": {
+              "$ref": "#/$defs/impact/$defs/revisionRef"
+            },
+            "changedInputDigest": {
+              "$ref": "#/$defs/impact/$defs/digest"
+            }
+          }
+        },
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "depth",
+            "relations",
+            "kinds",
+            "module",
+            "target",
+            "profile"
+          ],
+          "properties": {
+            "depth": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256
+            },
+            "relations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/relationKind"
+              }
+            },
+            "kinds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/nodeKind"
+              }
+            },
+            "module": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/impact/$defs/semanticId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/impact/$defs/boundedToken"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "profile": {
+              "$ref": "#/$defs/impact/$defs/profile"
+            }
+          }
+        },
+        "roots": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/impact/$defs/nodeRef"
+          }
+        },
+        "direct": {
+          "$ref": "#/$defs/impact/$defs/impactSection"
+        },
+        "transitive": {
+          "$ref": "#/$defs/impact/$defs/impactSection"
+        },
+        "mandatoryPublic": {
+          "$ref": "#/$defs/impact/$defs/impactSection"
+        },
+        "risks": {
+          "$ref": "#/$defs/impact/$defs/riskSection"
+        },
+        "targets": {
+          "$ref": "#/$defs/impact/$defs/targetSection"
+        },
+        "artifacts": {
+          "$ref": "#/$defs/impact/$defs/simpleSection"
+        },
+        "scenarios": {
+          "$ref": "#/$defs/impact/$defs/simpleSection"
+        },
+        "tests": {
+          "$ref": "#/$defs/impact/$defs/simpleSection"
+        },
+        "gates": {
+          "$ref": "#/$defs/impact/$defs/gateSection"
+        },
+        "explanations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/impact/$defs/explanationPath"
+          }
+        },
+        "evidence": {
+          "$ref": "#/$defs/impact/$defs/evidenceSection"
+        },
+        "completeness": {
+          "$ref": "#/$defs/impact/$defs/completenessSection"
+        },
+        "diagnosticRefs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/impact/$defs/ruleId"
+          }
+        },
+        "digest": {
+          "$ref": "#/$defs/impact/$defs/digest"
+        }
+      },
+      "$defs": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "semanticId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "boundedToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "nodeKind": {
+          "enum": [
+            "project",
+            "module",
+            "type",
+            "entity",
+            "operation",
+            "policy",
+            "event",
+            "effect",
+            "endpoint",
+            "scenario",
+            "target-binding",
+            "requirement"
+          ]
+        },
+        "relationKind": {
+          "enum": [
+            "requires",
+            "references",
+            "accepts",
+            "returns",
+            "reads",
+            "writes",
+            "emits",
+            "authorizes",
+            "exposes",
+            "implements",
+            "verifies",
+            "derived_from"
+          ]
+        },
+        "profile": {
+          "enum": [
+            "default",
+            "strict"
+          ]
+        },
+        "nodeRef": {
+          "type": "string",
+          "pattern": "^(project|module|type|entity|operation|policy|event|effect|endpoint|scenario|target-binding|requirement):[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revisionRef": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "ruleId": {
+          "type": "string",
+          "pattern": "^impact\\.[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]+)*$",
+          "maxLength": 64
+        },
+        "confidence": {
+          "enum": [
+            "canonical",
+            "verified",
+            "extracted",
+            "inferred",
+            "unknown"
+          ]
+        },
+        "evidenceState": {
+          "enum": [
+            "canonical",
+            "verified",
+            "extracted",
+            "inferred",
+            "stale",
+            "unknown"
+          ]
+        },
+        "sectionState": {
+          "enum": [
+            "complete",
+            "incomplete",
+            "stale",
+            "unknown",
+            "unsupported",
+            "conflicting"
+          ]
+        },
+        "scope": {
+          "enum": [
+            "direct",
+            "transitive",
+            "mandatory-public"
+          ]
+        },
+        "riskDimension": {
+          "enum": [
+            "public_contract",
+            "migration_data",
+            "transaction",
+            "authorization",
+            "portability",
+            "effects",
+            "bindings_artifacts",
+            "scenarios_tests"
+          ]
+        },
+        "gateState": {
+          "enum": [
+            "selected",
+            "not-required",
+            "unknown",
+            "blocked"
+          ]
+        },
+        "gateId": {
+          "type": "string",
+          "pattern": "^impact\\.gate\\.[a-z][a-z-]*$",
+          "maxLength": 64
+        },
+        "provenanceKind": {
+          "enum": [
+            "canonical-ir",
+            "evidence",
+            "derived"
+          ]
+        },
+        "edgeRef": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 420,
+          "pattern": "^(project|module|type|entity|operation|policy|event|effect|endpoint|scenario|target-binding|requirement):[A-Za-z0-9][A-Za-z0-9._:-]*\\|[a-z_]+\\|(project|module|type|entity|operation|policy|event|effect|endpoint|scenario|target-binding|requirement):[A-Za-z0-9][A-Za-z0-9._:-]*\\|[0-9]+$"
+        },
+        "pathId": {
+          "type": "string",
+          "pattern": "^impact\\.path\\.[0-9a-f]{16}$"
+        },
+        "sectionBase": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/impact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/ruleId"
+              }
+            }
+          }
+        },
+        "impactItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "subject",
+            "scope",
+            "distance",
+            "reasonRefs",
+            "pathRefs",
+            "evidenceState",
+            "confidence",
+            "riskRefs",
+            "requiredGateRefs"
+          ],
+          "properties": {
+            "subject": {
+              "$ref": "#/$defs/impact/$defs/nodeRef"
+            },
+            "scope": {
+              "$ref": "#/$defs/impact/$defs/scope"
+            },
+            "distance": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256
+            },
+            "reasonRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/impact/$defs/ruleId"
+              }
+            },
+            "pathRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/impact/$defs/pathId"
+              }
+            },
+            "evidenceState": {
+              "$ref": "#/$defs/impact/$defs/evidenceState"
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            },
+            "riskRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/riskDimension"
+              }
+            },
+            "requiredGateRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/gateId"
+              }
+            }
+          }
+        },
+        "impactSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/impact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/ruleId"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/impactItem"
+              }
+            }
+          }
+        },
+        "riskItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dimension",
+            "state",
+            "subjectRefs",
+            "reasonRefs",
+            "evidenceRefs",
+            "required",
+            "confidence"
+          ],
+          "properties": {
+            "dimension": {
+              "$ref": "#/$defs/impact/$defs/riskDimension"
+            },
+            "state": {
+              "$ref": "#/$defs/impact/$defs/sectionState"
+            },
+            "subjectRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/impact/$defs/nodeRef"
+              }
+            },
+            "reasonRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/impact/$defs/ruleId"
+              }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/boundedToken"
+              }
+            },
+            "required": {
+              "type": "boolean"
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            }
+          }
+        },
+        "riskSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/impact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/ruleId"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/riskItem"
+              }
+            }
+          }
+        },
+        "targetItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "binding",
+            "target",
+            "reasonRefs",
+            "confidence"
+          ],
+          "properties": {
+            "binding": {
+              "$ref": "#/$defs/impact/$defs/nodeRef"
+            },
+            "target": {
+              "$ref": "#/$defs/impact/$defs/boundedToken"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/impact/$defs/ruleId"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            }
+          }
+        },
+        "targetSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/impact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/ruleId"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/targetItem"
+              }
+            }
+          }
+        },
+        "namedItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "state",
+            "reasonRefs",
+            "confidence"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/impact/$defs/nodeRef"
+            },
+            "state": {
+              "$ref": "#/$defs/impact/$defs/evidenceState"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/impact/$defs/ruleId"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            }
+          }
+        },
+        "simpleSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/impact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/ruleId"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/namedItem"
+              }
+            }
+          }
+        },
+        "gateItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gateId",
+            "owner",
+            "reasonRefs",
+            "required",
+            "state",
+            "evidenceState",
+            "confidence"
+          ],
+          "properties": {
+            "gateId": {
+              "$ref": "#/$defs/impact/$defs/gateId"
+            },
+            "owner": {
+              "$ref": "#/$defs/impact/$defs/boundedToken"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/impact/$defs/ruleId"
+              }
+            },
+            "required": {
+              "type": "boolean"
+            },
+            "state": {
+              "$ref": "#/$defs/impact/$defs/gateState"
+            },
+            "evidenceState": {
+              "$ref": "#/$defs/impact/$defs/evidenceState"
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            }
+          }
+        },
+        "gateSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/impact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/ruleId"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/gateItem"
+              }
+            }
+          }
+        },
+        "explanationPath": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pathId",
+            "root",
+            "subject",
+            "orderedEdges",
+            "relationKinds",
+            "confidence",
+            "provenanceRefs"
+          ],
+          "properties": {
+            "pathId": {
+              "$ref": "#/$defs/impact/$defs/pathId"
+            },
+            "root": {
+              "$ref": "#/$defs/impact/$defs/nodeRef"
+            },
+            "subject": {
+              "$ref": "#/$defs/impact/$defs/nodeRef"
+            },
+            "orderedEdges": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/impact/$defs/edgeRef"
+              }
+            },
+            "relationKinds": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/impact/$defs/relationKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            },
+            "provenanceRefs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/impact/$defs/provenanceKind"
+              }
+            }
+          }
+        },
+        "evidenceSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/impact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/ruleId"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "surface",
+                  "state",
+                  "reasonRefs",
+                  "confidence"
+                ],
+                "properties": {
+                  "surface": {
+                    "enum": [
+                      "graph",
+                      "effects",
+                      "changed-inputs",
+                      "detected-evidence",
+                      "manifests",
+                      "scenarios",
+                      "tests"
+                    ]
+                  },
+                  "state": {
+                    "$ref": "#/$defs/impact/$defs/sectionState"
+                  },
+                  "reasonRefs": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/$defs/impact/$defs/ruleId"
+                    }
+                  },
+                  "confidence": {
+                    "$ref": "#/$defs/impact/$defs/confidence"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "completenessSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence",
+            "reasonRefs"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/impact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/impact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/impact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/impact/$defs/ruleId"
+              }
+            }
+          }
+        }
+      }
+    },
+    "successorImpact": {
+      "title": "Lekalo impact",
+      "description": "Closed contract of one deterministic impact and change-radius analysis (issue #16). The impact contract version is independent of the product release, of the Model/IR/graph/effect/diff contract versions, and of the diagnostic registry version. A canonical impact payload carries the contract identity, the exact input mode and roots, the direct, transitive, and mandatory-public radius, the closed risk vector, the affected target, scenario, test, and gate projections, bounded explanation paths, explicit evidence and completeness, and the canonical digest. No physical root, raw source, patch text, timestamp, runtime value, host, locale, repository identity, or adapter transcript may appear. Canonical bytes are compact UTF-8 JSON whose object keys follow this schema order; set-like arrays sort by unsigned UTF-8 of their typed keys; the digest is the SHA-256 of the canonical envelope bytes with the digest field set to the empty string. Issue #95: exact Model 0.8.0 successor input pin; unchanged deterministic impact algorithm and closed payload.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "identity",
+        "algorithm",
+        "modelVersion",
+        "project",
+        "input",
+        "request",
+        "roots",
+        "direct",
+        "transitive",
+        "mandatoryPublic",
+        "risks",
+        "targets",
+        "artifacts",
+        "scenarios",
+        "tests",
+        "gates",
+        "explanations",
+        "evidence",
+        "completeness",
+        "diagnosticRefs",
+        "digest"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/impact/v0.8.0"
+        },
+        "identity": {
+          "const": "dev.lekalo.impact@0.8.0"
+        },
+        "algorithm": {
+          "const": "dev.lekalo.impact.algorithm@0.2.16"
+        },
+        "modelVersion": {
+          "const": "0.8.0"
+        },
+        "project": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/successorImpact/$defs/semanticId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "baseRevisionRef",
+            "candidateRevisionRef",
+            "changedInputDigest"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "symbol",
+                "committed",
+                "index",
+                "worktree",
+                "mixed"
+              ]
+            },
+            "baseRevisionRef": {
+              "$ref": "#/$defs/successorImpact/$defs/revisionRef"
+            },
+            "candidateRevisionRef": {
+              "$ref": "#/$defs/successorImpact/$defs/revisionRef"
+            },
+            "changedInputDigest": {
+              "$ref": "#/$defs/successorImpact/$defs/digest"
+            }
+          }
+        },
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "depth",
+            "relations",
+            "kinds",
+            "module",
+            "target",
+            "profile"
+          ],
+          "properties": {
+            "depth": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256
+            },
+            "relations": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/relationKind"
+              }
+            },
+            "kinds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/nodeKind"
+              }
+            },
+            "module": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/successorImpact/$defs/semanticId"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/successorImpact/$defs/boundedToken"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "profile": {
+              "$ref": "#/$defs/successorImpact/$defs/profile"
+            }
+          }
+        },
+        "roots": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/successorImpact/$defs/nodeRef"
+          }
+        },
+        "direct": {
+          "$ref": "#/$defs/successorImpact/$defs/impactSection"
+        },
+        "transitive": {
+          "$ref": "#/$defs/successorImpact/$defs/impactSection"
+        },
+        "mandatoryPublic": {
+          "$ref": "#/$defs/successorImpact/$defs/impactSection"
+        },
+        "risks": {
+          "$ref": "#/$defs/successorImpact/$defs/riskSection"
+        },
+        "targets": {
+          "$ref": "#/$defs/successorImpact/$defs/targetSection"
+        },
+        "artifacts": {
+          "$ref": "#/$defs/successorImpact/$defs/simpleSection"
+        },
+        "scenarios": {
+          "$ref": "#/$defs/successorImpact/$defs/simpleSection"
+        },
+        "tests": {
+          "$ref": "#/$defs/successorImpact/$defs/simpleSection"
+        },
+        "gates": {
+          "$ref": "#/$defs/successorImpact/$defs/gateSection"
+        },
+        "explanations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/successorImpact/$defs/explanationPath"
+          }
+        },
+        "evidence": {
+          "$ref": "#/$defs/successorImpact/$defs/evidenceSection"
+        },
+        "completeness": {
+          "$ref": "#/$defs/successorImpact/$defs/completenessSection"
+        },
+        "diagnosticRefs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/successorImpact/$defs/ruleId"
+          }
+        },
+        "digest": {
+          "$ref": "#/$defs/successorImpact/$defs/digest"
+        }
+      },
+      "$defs": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "semanticId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "boundedToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "nodeKind": {
+          "enum": [
+            "project",
+            "module",
+            "type",
+            "entity",
+            "operation",
+            "policy",
+            "event",
+            "effect",
+            "endpoint",
+            "scenario",
+            "target-binding",
+            "requirement"
+          ]
+        },
+        "relationKind": {
+          "enum": [
+            "requires",
+            "references",
+            "accepts",
+            "returns",
+            "reads",
+            "writes",
+            "emits",
+            "authorizes",
+            "exposes",
+            "implements",
+            "verifies",
+            "derived_from"
+          ]
+        },
+        "profile": {
+          "enum": [
+            "default",
+            "strict"
+          ]
+        },
+        "nodeRef": {
+          "type": "string",
+          "pattern": "^(project|module|type|entity|operation|policy|event|effect|endpoint|scenario|target-binding|requirement):[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "revisionRef": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "ruleId": {
+          "type": "string",
+          "pattern": "^impact\\.[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]+)*$",
+          "maxLength": 64
+        },
+        "confidence": {
+          "enum": [
+            "canonical",
+            "verified",
+            "extracted",
+            "inferred",
+            "unknown"
+          ]
+        },
+        "evidenceState": {
+          "enum": [
+            "canonical",
+            "verified",
+            "extracted",
+            "inferred",
+            "stale",
+            "unknown"
+          ]
+        },
+        "sectionState": {
+          "enum": [
+            "complete",
+            "incomplete",
+            "stale",
+            "unknown",
+            "unsupported",
+            "conflicting"
+          ]
+        },
+        "scope": {
+          "enum": [
+            "direct",
+            "transitive",
+            "mandatory-public"
+          ]
+        },
+        "riskDimension": {
+          "enum": [
+            "public_contract",
+            "migration_data",
+            "transaction",
+            "authorization",
+            "portability",
+            "effects",
+            "bindings_artifacts",
+            "scenarios_tests"
+          ]
+        },
+        "gateState": {
+          "enum": [
+            "selected",
+            "not-required",
+            "unknown",
+            "blocked"
+          ]
+        },
+        "gateId": {
+          "type": "string",
+          "pattern": "^impact\\.gate\\.[a-z][a-z-]*$",
+          "maxLength": 64
+        },
+        "provenanceKind": {
+          "enum": [
+            "canonical-ir",
+            "evidence",
+            "derived"
+          ]
+        },
+        "edgeRef": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 420,
+          "pattern": "^(project|module|type|entity|operation|policy|event|effect|endpoint|scenario|target-binding|requirement):[A-Za-z0-9][A-Za-z0-9._:-]*\\|[a-z_]+\\|(project|module|type|entity|operation|policy|event|effect|endpoint|scenario|target-binding|requirement):[A-Za-z0-9][A-Za-z0-9._:-]*\\|[0-9]+$"
+        },
+        "pathId": {
+          "type": "string",
+          "pattern": "^impact\\.path\\.[0-9a-f]{16}$"
+        },
+        "sectionBase": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/successorImpact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/ruleId"
+              }
+            }
+          }
+        },
+        "impactItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "subject",
+            "scope",
+            "distance",
+            "reasonRefs",
+            "pathRefs",
+            "evidenceState",
+            "confidence",
+            "riskRefs",
+            "requiredGateRefs"
+          ],
+          "properties": {
+            "subject": {
+              "$ref": "#/$defs/successorImpact/$defs/nodeRef"
+            },
+            "scope": {
+              "$ref": "#/$defs/successorImpact/$defs/scope"
+            },
+            "distance": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256
+            },
+            "reasonRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/ruleId"
+              }
+            },
+            "pathRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/pathId"
+              }
+            },
+            "evidenceState": {
+              "$ref": "#/$defs/successorImpact/$defs/evidenceState"
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            },
+            "riskRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/riskDimension"
+              }
+            },
+            "requiredGateRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/gateId"
+              }
+            }
+          }
+        },
+        "impactSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/successorImpact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/ruleId"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/impactItem"
+              }
+            }
+          }
+        },
+        "riskItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dimension",
+            "state",
+            "subjectRefs",
+            "reasonRefs",
+            "evidenceRefs",
+            "required",
+            "confidence"
+          ],
+          "properties": {
+            "dimension": {
+              "$ref": "#/$defs/successorImpact/$defs/riskDimension"
+            },
+            "state": {
+              "$ref": "#/$defs/successorImpact/$defs/sectionState"
+            },
+            "subjectRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/nodeRef"
+              }
+            },
+            "reasonRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/ruleId"
+              }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/boundedToken"
+              }
+            },
+            "required": {
+              "type": "boolean"
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            }
+          }
+        },
+        "riskSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/successorImpact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/ruleId"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/riskItem"
+              }
+            }
+          }
+        },
+        "targetItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "binding",
+            "target",
+            "reasonRefs",
+            "confidence"
+          ],
+          "properties": {
+            "binding": {
+              "$ref": "#/$defs/successorImpact/$defs/nodeRef"
+            },
+            "target": {
+              "$ref": "#/$defs/successorImpact/$defs/boundedToken"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/ruleId"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            }
+          }
+        },
+        "targetSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/successorImpact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/ruleId"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/targetItem"
+              }
+            }
+          }
+        },
+        "namedItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "state",
+            "reasonRefs",
+            "confidence"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/successorImpact/$defs/nodeRef"
+            },
+            "state": {
+              "$ref": "#/$defs/successorImpact/$defs/evidenceState"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/ruleId"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            }
+          }
+        },
+        "simpleSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/successorImpact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/ruleId"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/namedItem"
+              }
+            }
+          }
+        },
+        "gateItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "gateId",
+            "owner",
+            "reasonRefs",
+            "required",
+            "state",
+            "evidenceState",
+            "confidence"
+          ],
+          "properties": {
+            "gateId": {
+              "$ref": "#/$defs/successorImpact/$defs/gateId"
+            },
+            "owner": {
+              "$ref": "#/$defs/successorImpact/$defs/boundedToken"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/ruleId"
+              }
+            },
+            "required": {
+              "type": "boolean"
+            },
+            "state": {
+              "$ref": "#/$defs/successorImpact/$defs/gateState"
+            },
+            "evidenceState": {
+              "$ref": "#/$defs/successorImpact/$defs/evidenceState"
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            }
+          }
+        },
+        "gateSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/successorImpact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/ruleId"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/gateItem"
+              }
+            }
+          }
+        },
+        "explanationPath": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pathId",
+            "root",
+            "subject",
+            "orderedEdges",
+            "relationKinds",
+            "confidence",
+            "provenanceRefs"
+          ],
+          "properties": {
+            "pathId": {
+              "$ref": "#/$defs/successorImpact/$defs/pathId"
+            },
+            "root": {
+              "$ref": "#/$defs/successorImpact/$defs/nodeRef"
+            },
+            "subject": {
+              "$ref": "#/$defs/successorImpact/$defs/nodeRef"
+            },
+            "orderedEdges": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/edgeRef"
+              }
+            },
+            "relationKinds": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/relationKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            },
+            "provenanceRefs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/provenanceKind"
+              }
+            }
+          }
+        },
+        "evidenceSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/successorImpact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/ruleId"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "surface",
+                  "state",
+                  "reasonRefs",
+                  "confidence"
+                ],
+                "properties": {
+                  "surface": {
+                    "enum": [
+                      "graph",
+                      "effects",
+                      "changed-inputs",
+                      "detected-evidence",
+                      "manifests",
+                      "scenarios",
+                      "tests"
+                    ]
+                  },
+                  "state": {
+                    "$ref": "#/$defs/successorImpact/$defs/sectionState"
+                  },
+                  "reasonRefs": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/$defs/successorImpact/$defs/ruleId"
+                    }
+                  },
+                  "confidence": {
+                    "$ref": "#/$defs/successorImpact/$defs/confidence"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "completenessSection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "complete",
+            "returned",
+            "omitted",
+            "frontier",
+            "provenance",
+            "confidence",
+            "reasonRefs"
+          ],
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/successorImpact/$defs/sectionState"
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "returned": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "omitted": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "frontier": {
+              "$ref": "#/$defs/successorImpact/$defs/count"
+            },
+            "provenance": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/provenanceKind"
+              }
+            },
+            "confidence": {
+              "$ref": "#/$defs/successorImpact/$defs/confidence"
+            },
+            "reasonRefs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/successorImpact/$defs/ruleId"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

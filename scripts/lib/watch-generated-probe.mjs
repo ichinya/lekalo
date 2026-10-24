@@ -35,18 +35,18 @@ export async function generatedProbe({root,binary,backend,validate,inventory}){
        expected=inventory(project);
        feedbackTimer=setTimeout(()=>{
         try{assert.equal(events.filter(e=>e.event==='run-started').length,1,'excluded writes cannot start a feedback run');writeFileSync(generated,'// synthetic orphan\n');expected=inventory(project);}
-        catch(error){failure=error;child.kill();}
+        catch(error){failure??=error;child.kill();}
        },700);
       }else if(completed.length===2){
        feedbackTimer=setTimeout(()=>{
         try{
          assert.equal(events.filter(e=>e.event==='run-started').length,2,'one generated save must remain quiet over multiple reconciliation intervals');
          unlinkSync(generated);expected=inventory(project);
-        }catch(error){failure=error;child.kill();}
+        }catch(error){failure??=error;child.kill();}
        },700);
       }
      }
-    }catch(error){failure=error;child.kill();}
+    }catch(error){failure??=error;child.kill();}
    });
    child.on('close',(code,signal)=>{
     clearTimeout(timer);clearTimeout(feedbackTimer);

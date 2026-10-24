@@ -124,7 +124,7 @@ pub struct WorkUnitWire {
     pub state: &'static str,
 }
 
-/// The closed per-run result document (`lekalo/watch-result/v0.8.0`).
+/// The closed per-run result document (`lekalo/watch-result/v0.8.14`).
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct WatchResult {
     #[serde(rename = "schemaVersion")]
@@ -1773,7 +1773,7 @@ fn stale_outcome(
 pub fn result_value_is_wellformed(value: &serde_json::Value) -> bool {
     static VALIDATOR: std::sync::LazyLock<jsonschema::Validator> = std::sync::LazyLock::new(|| {
         let schema: serde_json::Value = serde_json::from_slice(include_bytes!(
-            "../../../../contracts/watch-result.schema.v0.8.0.json"
+            "../../../../contracts/watch-result.schema.v0.8.14.json"
         ))
         .expect("watch result schema JSON");
         jsonschema::validator_for(&schema).expect("offline watch result schema")

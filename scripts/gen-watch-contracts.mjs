@@ -95,8 +95,23 @@ const event={
  $defs:{result:rewrite(nested,'#/$defs/result')}
 };
 assert(process.argv.slice(2).every(arg=>arg==='--check'),'only --check is supported');
-for(const [name,value] of [['watch-result',result],['watch-event',event]]) {
- const file=resolve(root,`contracts/${name}.schema.v0.8.0.json`), bytes=JSON.stringify(value,null,2)+'\n';
+// Product version is runtime provenance, not the watch wire generation.
+// Preserve the original exact-core schemas and publish an additive successor.
+function successor(value) {
+ if(Array.isArray(value))return value.map(successor);
+ if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,successor(item)]));
+ if(typeof value==='string')return value.replace(/(watch-(?:event|result))(\/v|@)0\.8\.0/g,(_,family,separator)=>`${family}${separator}0.8.14`);
+ return value;
+}
+const productVersion={type:'string',minLength:5,maxLength:64,pattern:'^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$',description:'Exact producing core product version; distinct from this wire contract and source Model/IR versions.'};
+const currentResult=successor(result),currentEvent=successor(event);
+currentResult.title=result.title.replace('v0.8.0','v0.8.14');
+currentEvent.title='Watch JSON Lines event v0.8.14';
+currentEvent.$defs.result.title=currentResult.title;
+currentResult.properties.pins.properties.versions.properties.core=productVersion;
+currentEvent.$defs.result.properties.pins.properties.versions.properties.core=productVersion;
+for(const [name,value,version] of [['watch-result',result,'0.8.0'],['watch-event',event,'0.8.0'],['watch-result',currentResult,'0.8.14'],['watch-event',currentEvent,'0.8.14']]) {
+ const file=resolve(root,`contracts/${name}.schema.v${version}.json`), bytes=JSON.stringify(value,null,2)+'\n';
  if(process.argv.includes('--check')) assert.equal(readFileSync(file,'utf8'),bytes,`${name}: stale generated schema`);
  else writeFileSync(file,bytes);
 }

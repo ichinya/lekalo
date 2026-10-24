@@ -15,7 +15,7 @@ const Ajv=require('ajv/dist/2020').default;
 assert.equal(require('ajv/package.json').version,'8.20.0','pinned independent validator');
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const binary=process.env.LEKALO_BIN??join(root,'target/debug',process.platform==='win32'?'lekalo.exe':'lekalo');
-const schema=JSON.parse(readFileSync(join(root,'contracts/watch-event.schema.v0.8.0.json'),'utf8'));
+const schema=JSON.parse(readFileSync(join(root,'contracts/watch-event.schema.v0.8.14.json'),'utf8'));
 const validate=new Ajv({strict:true,allErrors:true}).compile(schema);
 function inventory(dir,prefix=''){
   const rows=[];
@@ -76,7 +76,7 @@ async function probe(backend){
               if(revisions.length<=actions.length){actions[revisions.length-1]();expected=inventory(project);}
             }
           }
-        }catch(error){failure=error;child.kill();}
+        }catch(error){failure??=error;child.kill();}
       });
       child.on('close',(code,signal)=>{
         clearTimeout(timer);

@@ -19,6 +19,10 @@ Use `lekalo --help` for groups and `lekalo <command> --help` for the exact optio
 
 ### `lekalo watch` (experimental, issue #95)
 
+Current event/result wire contracts are `0.8.14`. Their producing-core
+product version is separate metadata; Model/IR and registry pins keep their
+own admitted versions. The original `0.8.0` schemas remain published unchanged.
+
 The implementation is a read-only incremental developer loop. Its functional
 successor-pin gap is implemented; native macOS qualification remains explicitly
 bounded by [the target protocol evidence boundary](target-protocol.md#issue-95-delivery-evidence-boundary). Bare `lekalo watch` selects validation. Explicit
@@ -41,7 +45,7 @@ emitted/reused graph source units, and the mandatory global graph assembly and
 cycle obligations. Selection uses old/new dependency closures; successful
 settled revisions replace the complete effective diagnostic set. Cancelled
 runs cannot commit. The closed event/result schemas are
-`dev.lekalo.watch-event@0.8.0` and `dev.lekalo.watch-result@0.8.0`.
+`dev.lekalo.watch-event@0.8.14` and `dev.lekalo.watch-result@0.8.14`.
 
 `--target` now runs ephemeral locked scan/validation against captured inputs,
 without an observed index or scan receipt. Legacy adapters receive the visible

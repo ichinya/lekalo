@@ -12,7 +12,7 @@ const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const binary=process.env.LEKALO_BIN??join(root,'target/debug',process.platform==='win32'?'lekalo.exe':'lekalo');
 const require=createRequire(import.meta.url);
 const Ajv=require('ajv/dist/2020').default;
-const validate=new Ajv({strict:true,allErrors:true}).compile(JSON.parse(readFileSync(join(root,'contracts/watch-event.schema.v0.8.0.json'),'utf8')));
+const validate=new Ajv({strict:true,allErrors:true}).compile(JSON.parse(readFileSync(join(root,'contracts/watch-event.schema.v0.8.14.json'),'utf8')));
 const env={...process.env};delete env.LEKALO_PROJECT;
 const work=mkdtempSync(join(tmpdir(),'lekalo-watch-boundaries-'));
 const project=join(work,'project');
