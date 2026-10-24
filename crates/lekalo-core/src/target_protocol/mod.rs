@@ -33,9 +33,12 @@ pub mod plan;
 pub mod scopes;
 pub mod selection;
 pub mod transport;
+mod verification_host;
 pub mod version;
 pub mod watch;
 pub mod wire;
+
+pub use verification_host::run_confined_verification;
 
 use std::sync::atomic::AtomicBool;
 

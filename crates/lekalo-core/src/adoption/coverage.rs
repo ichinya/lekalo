@@ -20,11 +20,10 @@ use crate::observed::types::{BindingStatus, ObservedIndex};
 use crate::result::DomainResult;
 
 /// The executed-verification provenance available to one coverage join:
-/// every completed apply/confirmation receipt recorded under the
-/// project's receipt home, as its content digest plus the exact write
-/// paths it installed. Real executions only — every entry names a
-/// persisted receipt document the rollback surface can still consume,
-/// and undecodable or non-completed files are not provenance.
+/// Retained apply transactions with a verification reference, validated
+/// through recovery's owner decoder and matched to the current bytes.
+/// Confirmation alone is not native verification. These are local
+/// transaction records, not signed remote execution attestations.
 struct ExecutedReceipt {
     digest: String,
     paths: BTreeSet<String>,
@@ -32,6 +31,9 @@ struct ExecutedReceipt {
 
 fn executed_receipts(ctx: &AdoptionContext) -> Vec<ExecutedReceipt> {
     let mut receipts = Vec::new();
+    let Ok(fs) = crate::project_fs::Fs::open(&ctx.root) else {
+        return receipts;
+    };
     let home = ctx.root.join(version::RECEIPTS_DIR);
     let Ok(heads) = std::fs::read_dir(&home) else {
         return receipts;
@@ -58,14 +60,19 @@ fn executed_receipts(ctx: &AdoptionContext) -> Vec<ExecutedReceipt> {
             {
                 continue;
             }
-            let Ok(bytes) = std::fs::read(tail.path()) else {
+            let Some(receipt) =
+                super::transaction::retained_completed_receipt(&ctx.root, &head_hex, hex)
+            else {
                 continue;
             };
-            let Ok(receipt) = wire::receipt_of_bytes(&bytes) else {
-                continue;
-            };
-            if receipt.outcome != "completed"
-                || (receipt.phase != "apply" && receipt.phase != "confirmation")
+            if receipt.phase != "apply"
+                || receipt.verification.is_none()
+                || ctx
+                    .model
+                    .project
+                    .as_ref()
+                    .map(|project| project.id.as_str())
+                    != Some(receipt.project.as_str())
             {
                 continue;
             }
@@ -74,6 +81,19 @@ fn executed_receipts(ctx: &AdoptionContext) -> Vec<ExecutedReceipt> {
                 paths: receipt
                     .writes
                     .iter()
+                    .filter(|write| {
+                        let (directory, name) =
+                            write.path.rsplit_once('/').unwrap_or(("", &write.path));
+                        match fs.read_file_opt(directory, name, version::COPY_TOTAL_BYTES) {
+                            Ok(Some(bytes)) => write.after.as_ref().is_some_and(|expected| {
+                                expected == &format!("sha256:{}", crate::digest::sha256_hex(&bytes))
+                            }),
+                            Ok(None) | Err(crate::project_fs::FsErrorKind::NotFound) => {
+                                write.after.is_none()
+                            }
+                            Err(_) => false,
+                        }
+                    })
                     .map(|write| write.path.clone())
                     .collect(),
             });

@@ -659,6 +659,10 @@ impl Sandbox {
         self.report
     }
 
+    pub(super) fn project_root(&self) -> &Path {
+        &self.project
+    }
+
     fn command(
         &self,
         command: &transport::AdapterCommand,
@@ -702,7 +706,7 @@ impl Sandbox {
         // future explicit runtime bundle contract, not an ambient fallback.
         if let Some(first) = args.first_mut() {
             let script = Path::new(first);
-            if script.is_file() {
+            if script.is_file() && !script.starts_with(&self.project) {
                 let script_name = script
                     .file_name()
                     .ok_or_else(|| refusal("sandbox-runtime"))?;

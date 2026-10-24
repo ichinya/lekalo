@@ -257,15 +257,25 @@ fn completed_receipt_resolves(
     tail: &str,
     journal: &Journal,
 ) -> bool {
+    read_completed_receipt(fs, home, head, tail, journal).is_some()
+}
+
+fn read_completed_receipt(
+    fs: &crate::project_fs::Fs,
+    home: &str,
+    head: &str,
+    tail: &str,
+    journal: &Journal,
+) -> Option<super::wire::AdoptionReceipt> {
     let Ok(Some(bytes)) = fs.read_file_opt(
         &format!("{}/{head}", version::RECEIPTS_DIR),
         &format!("{tail}.json"),
         4 * 1024 * 1024,
     ) else {
-        return false;
+        return None;
     };
     let Ok(receipt) = super::wire::receipt_of_bytes(&bytes) else {
-        return false;
+        return None;
     };
     let value = serde_json::to_value(&receipt).expect("receipt serializes");
     if receipt.plan != journal.plan
@@ -281,7 +291,7 @@ fn completed_receipt_resolves(
                 &super::wire::without_member(&value, "receipt"),
             )
     {
-        return false;
+        return None;
     }
     let state = if journal.phase == "rollback" {
         "restored"
@@ -294,7 +304,7 @@ fn completed_receipt_resolves(
         .filter(|step| step.state == state)
         .collect();
     let mut seen = std::collections::BTreeSet::new();
-    rows.len() == receipt.writes.len()
+    let resolved = rows.len() == receipt.writes.len()
         && rows.iter().all(|step| {
             seen.insert(&step.path)
                 && step
@@ -308,7 +318,32 @@ fn completed_receipt_resolves(
                                 && step.before == write.before
                                 && step.after == write.after))
                 })
-        })
+        });
+    resolved.then_some(receipt)
+}
+
+/// Coverage can join a retained transaction only through the same owner
+/// decoder and journal/digest/write-set checks used by recovery. A JSON
+/// file under the receipt directory alone establishes no provenance.
+pub(crate) fn retained_completed_receipt(
+    root: &Path,
+    head: &str,
+    tail: &str,
+) -> Option<super::wire::AdoptionReceipt> {
+    let plan = format!("sha256:{head}{tail}");
+    let (expected_head, expected_tail) = version::digest_dir(&plan)?;
+    if expected_head != head || expected_tail != tail {
+        return None;
+    }
+    let fs = crate::project_fs::Fs::open(root).ok()?;
+    let home = format!("{}/{head}/{tail}", version::RECOVERY_DIR);
+    let bytes = fs
+        .read_file_opt(&home, "journal.json", 4 * 1024 * 1024)
+        .ok()??;
+    let journal = decode_journal(&bytes, &plan, &format!("{home}/snapshots"), false).ok()?;
+    let receipt = read_completed_receipt(&fs, &home, head, tail, &journal)?;
+    (receipt.outcome == "completed" && matches!(receipt.phase.as_str(), "apply" | "confirmation"))
+        .then_some(receipt)
 }
 
 /// Recovery persists progress after EACH restore. Only an exact, duplicate-

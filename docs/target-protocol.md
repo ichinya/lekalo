@@ -215,31 +215,24 @@ comes from the exact-candidate hosted gates, never from Windows tests.
 ### Issue #95 delivery evidence boundary
 
 The committed [platform qualification golden](../tests/fixtures/watch/golden/platform-qualification.json)
-records delivery evidence, **not** automatic adapter/host support. Windows
-native/poll, immutable target cycles, cancellation/recovery and successor pin
-refusals are exercised locally. WSL2 Linux is available again in this dispatch;
-all six watch gates pass on Linux kernel `6.18.33.2-microsoft-standard-WSL2`
-with bubblewrap/prlimit, including native/poll events, cancellation/recovery,
-both Model versions, successor locked target cycles and output backpressure.
-The complete pass is retained as qualified evidence, not discarded because
-of a later environment failure. Subsequent reruns hit 30-second deadlines in
-clean non-watch `validate` and watch-oracle subprocesses, and a later WSL exec
-probe could not start its shell within its deadline. Revalidation is therefore
-**intermittently blocked by the WSL host environment**; no blanket stable-host
-or other-kernel claim is made. The golden pins both the full pass and this
-observable revalidation boundary, without weakening confinement or timeouts.
-No native macOS host is available here: macOS runtime behavior is **not
-qualified by this delivery**, and cross-compilation or Windows/Linux passes
-are never substituted for native evidence. The three-OS CI watch gate,
-including `test-watch-successor.mjs`, remains required before claiming native
-macOS qualification.
+retains the original delivery snapshot, including its local WSL/macOS
+qualification gaps. It is a historical fixture, not the current host verdict.
+
+The [2026-10-24 CI run](https://github.com/ichinya/lekalo/actions/runs/40067697049)
+at `715156dad7c22b7a5a137e33f1f062ec8c04b5ab` passed the watch gates on native
+Windows, Linux and macOS runners. The matrix executes contracts, native/poll
+platform behavior, boundaries, clean-command equivalence, fault/recovery,
+successor Model pins and consumer/backpressure checks. This supplies native
+macOS execution evidence; a cross-compile or a Windows/Linux pass alone does
+not. Reproduce through the same three-OS CI matrix when changing the lane.
+The earlier local WSL instability is not evidence of a current CI failure,
+and this run does not qualify other kernels, every adapter or production hosts.
 
 macOS admission still requires deny-default seatbelt, process-fork denial and
 working sampled resident-memory supervision. That supervision is degraded,
 not a hard allocation/RSS ceiling; absent or failed enforcement refuses or
-terminates/reaps the owned process, with no ambient fallback. The golden and
-contract gate pin this environmental boundary explicitly; they are not a
-successful macOS runtime test.
+terminates/reaps the owned process, with no ambient fallback. Successful CI
+execution does not strengthen sampled supervision into a hard resource cap.
 
 The executable and a first-argument script are copied into a private runtime.
 Additional external runtime assets/packages need an explicit bundle

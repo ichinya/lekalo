@@ -44,6 +44,30 @@ try {
   const formatHome = (project) => join(project, ".lekalo/cache/format");
   const modulePath = (project) => join(project, "lekalo/modules/scheduling/module.yaml");
 
+  // A formatter runtime directory is not authority over unrelated files.
+  // This real-binary regression fails on the suffix-only cleanup owner.
+  {
+    const project = seed("foreign-runtime", "planner-canonical");
+    const home = formatHome(project);
+    const foreign = [
+      "temps/user.lekalo-format-new",
+      "temps/BAD.lekalo-format-new",
+      "private-notes/sentinel.txt",
+      `${"a".repeat(47)}-1/sentinel.txt`,
+    ];
+    for (const relative of foreign) {
+      const file = join(home, relative);
+      mkdirSync(join(file, ".."), { recursive: true });
+      writeFileSync(file, "USER-OWNED-SENTINEL\n");
+    }
+    const applied = run(project, ["format"]);
+    assert.equal(applied.status, 0, applied.stdout + applied.stderr);
+    for (const relative of foreign) {
+      assert.equal(readFileSync(join(home, relative), "utf8"), "USER-OWNED-SENTINEL\n", relative);
+    }
+    passed += 1;
+  }
+
   // 1. An interrupted journal blocks every reader; check refuses and
   //    never recovers or creates anything.
   {
@@ -57,6 +81,8 @@ try {
     const check = run(project, ["format", "--check"]);
     assert.equal(check.status, 1);
     assert.match(check.stderr, /format\.recovery-required/);
+    const mutating = run(project, ["format"]);
+    assert.notEqual(mutating.status, 0, "an unrecognized journal cannot be bypassed by mutation");
     // The reader refusal is byte-facts: the journal is still there.
     assert.ok(existsSync(join(home, "journal.json")), "check never recovers");
     rmSync(project, { recursive: true, force: true });

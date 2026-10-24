@@ -1,6 +1,6 @@
 # Worklog and opt-in Changelog pilot
 
-Status: **Implemented** bounded pilot at product `0.8.0`. Owner: pilot contract and admission maintainers. The pilot composes independent task completion, private worklog, provider outbox/delivery and opt-in public Changelog operations. It does not publish to a real provider.
+Status: **Implemented** bounded pilot with contract family `0.8.0`. Owner: pilot contract and admission maintainers. The pilot composes independent task completion, private worklog, provider outbox/delivery and opt-in public Changelog operations. It does not publish to a real provider.
 
 ## Commands
 

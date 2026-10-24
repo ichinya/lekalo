@@ -57,138 +57,51 @@ const CHILD_ENV_ALLOWED: [&str; 6] = [
     "PROGRAMFILES",
 ];
 
-/// One bounded run: `(exit code, bounded stdout)`. Both pipes drain on
-/// dedicated threads for the whole child lifetime — a tool emitting
-/// more than the pipe buffer can never deadlock the deadline — the
-/// child gets its own process group on unix, teardown kills the whole
-/// process tree, and the child environment is cleared down to the
-/// bounded runtime allow-list. A timeout, a spawn failure, or a signal
-/// exit is measured, never invented.
+/// One OS-confined run: `(exit code, bounded stdout)`. The shared
+/// transport owns drained pipes, deadlines and process-tree teardown.
+/// Only private staging is writable. Missing confinement or an output
+/// overflow is a measured refusal, never an ambient-process fallback.
 fn execute_command(
     program: &std::path::Path,
     args: &[String],
     cwd: &std::path::Path,
 ) -> Result<(Option<i32>, String), String> {
-    use std::process::{Command, Stdio};
-    let mut command = Command::new(program);
-    command
-        .args(args)
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    // Cleared environment plus the bounded runtime allow-list; nothing
-    // else of the host — secrets, proxies, unrelated state — leaks in.
-    command.env_clear();
+    use lekalo_core::target_protocol::{
+        run_confined_verification,
+        transport::{AdapterCommand, TransportLimits},
+        TargetFailure,
+    };
+    let mut env = Vec::new();
     for name in CHILD_ENV_ALLOWED {
         if let Some(value) = std::env::var_os(name) {
-            command.env(name, value);
+            let value = value
+                .into_string()
+                .map_err(|_| "environment-invalid".to_owned())?;
+            env.push((name.to_owned(), value));
         }
     }
-    // The child gets its own process group on unix so the teardown
-    // reaps descendants.
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("spawn-refused:{}", error.kind()))?;
-    let stdout_handle = child.stdout.take();
-    let stderr_handle = child.stderr.take();
-    // Dedicated drain threads: both streams are consumed for the whole
-    // child lifetime (bounded capture, unbounded discard), so a chatty
-    // tool can never fill the OS pipe buffer and wedge the deadline.
-    let stdout_thread = std::thread::spawn(move || drain_bounded(stdout_handle));
-    let stderr_thread = std::thread::spawn(move || drain_bounded(stderr_handle));
-    let started = std::time::Instant::now();
-    let mut timed_out = false;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) => {
-                if started.elapsed() > std::time::Duration::from_millis(CHECK_TIMEOUT_MS) {
-                    timed_out = true;
-                    break None;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(25));
-            }
-            Err(_) => {
-                kill_tree(child.id());
-                let _ = child.wait();
-                return Err("spawn-failed".to_owned());
-            }
-        }
+    let command = AdapterCommand {
+        program: program.to_owned(),
+        args: args.to_vec(),
     };
-    if timed_out {
-        // Process-tree teardown: descendants never survive the deadline.
-        kill_tree(child.id());
-        let _ = child.wait();
-    }
-    let (stdout, _) = stdout_thread.join().unwrap_or_default();
-    let _ = stderr_thread.join();
-    if timed_out {
-        return Err("timeout".to_owned());
-    }
-    Ok((status.and_then(|status| status.code()), stdout))
-}
-
-/// Drain one pipe on a worker thread: capture up to the bounded output
-/// ceiling, then keep draining (and discarding) so the child never
-/// blocks on a full pipe while the run continues.
-fn drain_bounded(pipe: Option<impl std::io::Read + Send + 'static>) -> (String, bool) {
-    let mut pipe = match pipe {
-        Some(pipe) => pipe,
-        None => return (String::new(), false),
+    let limits = TransportLimits {
+        timeout_ms: CHECK_TIMEOUT_MS,
+        max_output_bytes: CHECK_OUTPUT_BYTES,
+        max_stderr_bytes: CHECK_OUTPUT_BYTES,
+        max_request_bytes: 1,
     };
-    let mut bytes = Vec::new();
-    let mut flooded = false;
-    let mut chunk = [0u8; 8192];
-    loop {
-        match pipe.read(&mut chunk) {
-            Ok(0) => break,
-            Ok(n) => {
-                let remaining = CHECK_OUTPUT_BYTES.saturating_sub(bytes.len());
-                if remaining == 0 {
-                    flooded = true;
-                    continue;
-                }
-                let take = n.min(remaining);
-                bytes.extend_from_slice(&chunk[..take]);
-                if take < n {
-                    flooded = true;
-                }
-            }
-            Err(_) => break,
+    let result = run_confined_verification(&command, cwd, &limits, &env).map_err(|error| {
+        match error {
+            TargetFailure::Timeout => "timeout",
+            TargetFailure::OutputLimit { .. } => "output-limit",
+            _ => "sandbox-refused",
         }
-    }
-    (String::from_utf8_lossy(&bytes).to_string(), flooded)
-}
-
-/// Process-tree teardown: the unix child sits in its own process group;
-/// Windows walks the tree with the platform tool.
-fn kill_tree(pid: u32) {
-    #[cfg(unix)]
-    {
-        if let Some(pid) = rustix::process::Pid::from_raw(pid as i32) {
-            if pid != rustix::process::Pid::INIT {
-                let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
-            }
-        }
-    }
-    #[cfg(windows)]
-    {
-        let _ = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        let _ = pid;
-    }
+        .to_owned()
+    })?;
+    Ok((
+        Some(result.exit_code),
+        String::from_utf8_lossy(&result.stdout).into_owned(),
+    ))
 }
 
 /// The `adoption` subcommands.

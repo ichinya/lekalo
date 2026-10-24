@@ -456,7 +456,6 @@ writeFileSync(entitiesPath, entitiesBytes);
 // path) refuses — the run is never laundered into a conclusion over a
 // tree it changed. The escape runner passes every check inside the
 // disposable copy while dropping a sentinel into the original tree.
-const escapeSentinel = join(project, "escape-marker.txt");
 const escapeRunner = [
   'import { writeFileSync } from "node:fs";',
   'import process from "node:process";',
@@ -470,36 +469,47 @@ writeFileSync(join(project, "tools/escape-verify.mjs"), escapeRunner);
 const escapeSpec = {
   ...JSON.parse(readFileSync(spec, "utf8")),
   verification: "escape-preservation",
-  tool: { program: "node", args: ["tools/escape-verify.mjs", escapeSentinel], digest: null },
+  tool: { program: "node", args: ["tools/escape-verify.mjs"], digest: null },
 };
-const escapeSpecPath = join(sandboxBase, "escape-spec.json");
-writeFileSync(escapeSpecPath, JSON.stringify(escapeSpec, null, 2));
-const escapeRefactor = run([
-  "--no-cache", "--json", "adoption", "refactor",
-  "--use-case", "complete_case", "--target", "node-typescript", "--profile", "default",
-  "--verification", escapeSpecPath, "--candidate", candidate, "--project", ".",
-]);
-if (escapeRefactor.status !== 0) fail("escape-refactor-exit", escapeRefactor.stderr);
-const escapePlanPath = save("escape-plan.json", escapeRefactor);
-const escapeVerify = run([
-  "--json", "adoption", "verify", "--plan", escapePlanPath, "--verification", escapeSpecPath,
-  "--candidate", candidate, "--project", ".",
-]);
-if (escapeVerify.status !== 3 || !parse(escapeVerify).diagnostics.some((item) => item.code === "LEK-ADOPT-003")) {
-  fail("escape-verify", { status: escapeVerify.status, diagnostics: parse(escapeVerify).diagnostics });
+const sourceBeforeEscapes = readFileSync(join(project, "src/tasks.mjs"));
+for (const [label, escapeSentinel] of [
+  ["source", join(project, "escape-marker.txt")],
+  ["runtime", join(project, ".lekalo", "escape-marker.txt")],
+  ["external", join(sandboxBase, "escape-marker.txt")],
+]) {
+  escapeSpec.verification = `escape-${label}`;
+  escapeSpec.tool.args = ["tools/escape-verify.mjs", escapeSentinel];
+  const escapeSpecPath = join(sandboxBase, "escape-spec.json");
+  writeFileSync(escapeSpecPath, JSON.stringify(escapeSpec, null, 2));
+  const escapeRefactor = run([
+    "--no-cache", "--json", "adoption", "refactor",
+    "--use-case", "complete_case", "--target", "node-typescript", "--profile", "default",
+    "--verification", escapeSpecPath, "--candidate", candidate, "--project", ".",
+  ]);
+  if (escapeRefactor.status !== 0) fail("escape-refactor-exit", escapeRefactor.stderr);
+  const escapePlanPath = save("escape-plan.json", escapeRefactor);
+  const escapeVerify = run([
+    "--json", "adoption", "verify", "--plan", escapePlanPath, "--verification", escapeSpecPath,
+    "--candidate", candidate, "--project", ".",
+  ]);
+  if (escapeVerify.status !== 0 || parse(escapeVerify).conclusion !== "failed") {
+    fail("escape-verify", { label, status: escapeVerify.status, document: parse(escapeVerify) });
+  }
+  // OS confinement prevents the write itself. The failed native check
+  // remains a failed measurement; no escaped artifact needs cleanup.
+  if (existsSync(escapeSentinel)) fail("escape-sentinel-created", { label, escapeSentinel });
+  // The escaped run never authorizes an apply either.
+  const escapeApply = run([
+    "--json", "adoption", "apply", "--plan", escapePlanPath, "--verification", escapeSpecPath,
+    "--candidate", candidate, "--confirm", parse(escapeRefactor).plan, "--project", ".",
+  ]);
+  if (escapeApply.status !== 1 || !parse(escapeApply).diagnostics.some((item) => item.code === "LEK-ADOPT-007")) {
+    fail("escape-apply", { label, status: escapeApply.status, document: parse(escapeApply) });
+  }
+  if (existsSync(escapeSentinel)) fail("escape-apply-sentinel-created", label);
+  if (!readFileSync(join(project, "src/tasks.mjs")).equals(sourceBeforeEscapes)) fail("escape-installed-source", label);
 }
-// The refusing boundary does not launder the escape: the run is denied
-// and the sentinel it dropped is never treated as evidence. Clean the
-// dropped marker so the walk continues from the pinned tree state.
-if (!existsSync(escapeSentinel)) fail("escape-sentinel-missing", "the probe must actually escape");
-rmSync(escapeSentinel, { force: true });
 rmSync(join(project, "tools/escape-verify.mjs"), { force: true });
-// The escaped run never authorizes an apply either.
-const escapeApply = run([
-  "--json", "adoption", "apply", "--plan", escapePlanPath, "--verification", escapeSpecPath,
-  "--candidate", candidate, "--confirm", parse(escapeRefactor).plan, "--project", ".",
-]);
-if (escapeApply.status === 0) fail("escape-apply", "a run that wrote the original tree must never install");
 
 // X2: a requested no-network confinement is refused as unenforceable —
 // never silently dropped while the run proceeds unconfined.

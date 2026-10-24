@@ -197,16 +197,16 @@ const floodRunner = [
   "",
   "let failed = false;",
   "",
-  'const testRun = spawnSync(process.execPath, ["--test", "test/tasks.test.mjs"], { encoding: "utf8" });',
-  'if (testRun.status !== 0 || !testRun.stdout.includes("TASK-TEST-OK")) {',
+  'const testRun = spawnSync(process.execPath, ["--preserve-symlinks", "--preserve-symlinks-main", "--test", "--test-isolation=none", "test/tasks.test.mjs"], { stdio: "inherit", timeout: 10000 });',
+  'if (testRun.status !== 0) {',
   "  failed = true;",
   '  process.stdout.write("native-test-failed" + String.fromCharCode(10));',
   "} else {",
   '  process.stdout.write("TASK-TEST-OK" + String.fromCharCode(10));',
   "}",
   "",
-  'const oracleRun = spawnSync(process.execPath, ["tools/oracle.mjs"], { encoding: "utf8" });',
-  'if (oracleRun.status !== 0 || !oracleRun.stdout.includes("ORACLE-OK")) {',
+  'const oracleRun = spawnSync(process.execPath, ["--preserve-symlinks", "--preserve-symlinks-main", "tools/oracle.mjs"], { stdio: "inherit", timeout: 10000 });',
+  'if (oracleRun.status !== 0) {',
   "  failed = true;",
   '  process.stdout.write("behavior-oracle-failed" + String.fromCharCode(10));',
   "} else {",
@@ -265,8 +265,11 @@ const floodVerify = run([
 const floodSeconds = (Date.now() - floodStarted) / 1000;
 if (floodVerify.status !== 0) fail("flood-verify-exit", floodVerify.stderr);
 const floodExecution = parse(floodVerify);
-if (floodExecution.conclusion !== "preserved") fail("flood-conclusion", floodExecution.conclusion);
-if (floodSeconds >= 55) fail("flood-false-timeout", `${floodSeconds}s for a drained run`);
+if (floodExecution.conclusion !== "unavailable") fail("flood-conclusion", floodExecution.conclusion);
+if (![...floodExecution.baseline.checks, ...floodExecution.candidate.checks].some((check) => check.detail === "output-limit")) {
+  fail("flood-not-bounded", floodExecution);
+}
+if (floodSeconds >= 55) fail("flood-false-timeout", `${floodSeconds}s for a bounded refusal`);
 
 // X2 (environment): a host-only canary never reaches a verification child.
 const envSpec = {
@@ -635,6 +638,29 @@ if (!driftedDoc.gaps.some((gap) => gap.subject === "taskboard.complete_task" && 
 // touched the row's recorded source path.
 if (!driftedRow.verification || !driftedRow.verification.split(",").includes(driftReceipt.receipt)) {
   fail("drift-provenance-join", { row: driftedRow, receipt: driftReceipt.receipt });
+}
+// A completed-looking JSON file is not a retained transaction. Neither
+// a wrong digest nor a genuine receipt replayed under a foreign plan
+// filename may enter coverage's verification provenance.
+for (const [key, mutate] of [
+  ["b".repeat(64), (receipt) => { receipt.receipt = `sha256:${"a".repeat(64)}`; }],
+  ["c".repeat(64), () => {}],
+]) {
+  const fake = structuredClone(driftReceipt);
+  mutate(fake);
+  const home = join(project, ".lekalo/import/adoption/receipts", key.slice(0, 32));
+  mkdirSync(home, { recursive: true });
+  const path = join(home, `${key.slice(32)}.json`);
+  writeFileSync(path, JSON.stringify(fake));
+  try {
+    const repeated = run(["--no-cache", "--json", "adoption", "coverage", "--module", "taskboard", "--project", "."]);
+    if (repeated.status !== 0) fail("forged-coverage-exit", repeated.stderr);
+    const rows = parse(repeated).rows.map((row) => [row.symbol, row.verification]);
+    const original = driftedDoc.rows.map((row) => [row.symbol, row.verification]);
+    if (JSON.stringify(rows) !== JSON.stringify(original)) fail("fabricated-receipt-provenance", { rows, original });
+  } finally {
+    rmSync(path, { force: true });
+  }
 }
 const driftedCoveragePath = save("coverage-drifted.json", driftedCoverage);
 const driftedStatus = runFrom(sandboxBase, ["--json", "status", "--adoption", "coverage-drifted.json", "--project", "proj"]);

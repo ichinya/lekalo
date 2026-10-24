@@ -89,13 +89,26 @@ const CUSTODY_ROOT_TOKEN: &str = "0lekalo-root";
 /// contract; the quarantine owner validates this version).
 const CUSTODY_SCHEMA: &str = "lekalo/format-legacy-custody/v0.8.0";
 
-/// The producer-accepted runtime temp spelling: a name ending in
-/// `.` + [`TEMP_SUFFIX`] (e.g.
-/// `...apply.module.yaml.lekalo-format-new`). The sweep and the emitter
-/// agree on this exact suffix (finding r3 3).
+/// Only the complete producer namespace is reclaimable. A suffix alone
+/// does not establish ownership of a user's runtime file.
 fn is_owned_temp_name(name: &str) -> bool {
-    name.strip_suffix(TEMP_SUFFIX)
-        .is_some_and(|stem| stem.ends_with('.'))
+    let Some(stem) = name.strip_suffix(&format!(".{TEMP_SUFFIX}")) else {
+        return false;
+    };
+    let mut parts = stem.split('.');
+    let namespace = parts.next().unwrap_or_default();
+    let pid = parts.next().unwrap_or_default();
+    let stage = parts.next().unwrap_or_default();
+    let document = parts.collect::<Vec<_>>().join(".");
+    (namespace == "recover" || valid_plan_id(namespace))
+        && pid
+            .parse::<u32>()
+            .is_ok_and(|value| value > 0 && value.to_string() == pid)
+        && matches!(stage, "apply" | "restore")
+        && (document == "project.yaml"
+            || crate::project_fs::MODULE_STEMS
+                .iter()
+                .any(|stem| document == format!("{stem}.yaml")))
 }
 
 /// The exact legacy fixed spelling: a dotfile whose stem ends in
@@ -729,6 +742,7 @@ fn plan_directories_from(write: &FormatWrite) -> Vec<String> {
         })
         .filter(|entry| entry.file_name() != TEMP_HOME_NAME)
         .filter_map(|entry| entry.file_name().to_str().map(str::to_owned))
+        .filter(|name| valid_plan_id(name))
         .collect();
     names.sort();
     names
@@ -741,11 +755,13 @@ fn valid_plan_id(text: &str) -> bool {
     let Some((base, attempt)) = text.rsplit_once('-') else {
         return false;
     };
-    let digits = base.len() == 47 && base.bytes().all(|byte| byte.is_ascii_hexdigit());
-    let count = !attempt.is_empty()
-        && attempt.len() <= 3
-        && attempt.bytes().all(|byte| byte.is_ascii_digit())
-        && attempt != "0";
+    let digits = base.len() == 47
+        && base
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+    let count = attempt
+        .parse::<usize>()
+        .is_ok_and(|value| (1..=ATTEMPT_BOUND).contains(&value) && value.to_string() == attempt);
     digits && count
 }
 
@@ -1023,12 +1039,17 @@ fn recover_plan(write: &FormatWrite, plan_id: &str) -> Result<(), RecoveryFailur
             }));
         }
         write
-            .replace_file(&file.path, &backup, "restore")
-            .map_err(|_| {
-                RecoveryFailure::Recovery(RecoveryError {
+            .replace_file(&file.path, &backup, "restore", &file.after_sha256)
+            .map_err(|error| match error {
+                ReplaceFailure::SourceChanged(current) => RecoveryFailure::Conflict {
+                    path: file.path.clone(),
+                    expected: file.before_sha256.clone(),
+                    current,
+                },
+                ReplaceFailure::Io => RecoveryFailure::Recovery(RecoveryError {
                     plan_id: plan_id.to_owned(),
                     reason: "restore-failed",
-                })
+                }),
             })?;
     }
     for file in &manifest.files {
@@ -1319,13 +1340,17 @@ fn apply_locked(
             Ok(bytes) => {
                 let digest = crate::digest::sha256_hex(&bytes);
                 if &digest != before {
-                    return Err(ApplyFailure::SourceChanged {
-                        path: path.clone(),
-                        expected: before.clone(),
-                        current: digest,
-                    });
+                    let outcome = restore_prefix(write, plan_id, &manifest, index);
+                    return Err(changed_source_failure(
+                        write,
+                        &journal_path,
+                        path,
+                        before,
+                        digest,
+                        outcome,
+                    ));
                 }
-                write.replace_file(path, &after_bytes[index], "apply")
+                write.replace_file(path, &after_bytes[index], "apply", before)
             }
             Err(_) => {
                 // A present-but-unreadable source (finding r7 1): its
@@ -1348,9 +1373,14 @@ fn apply_locked(
                 ));
             }
         };
-        if replaced.is_err() {
+        if let Err(error) = replaced {
             let outcome = restore_prefix(write, plan_id, &manifest, index);
-            return Err(rollback_failure(write, &journal_path, "replace", outcome));
+            return Err(match error {
+                ReplaceFailure::SourceChanged(current) => {
+                    changed_source_failure(write, &journal_path, path, before, current, outcome)
+                }
+                ReplaceFailure::Io => rollback_failure(write, &journal_path, "replace", outcome),
+            });
         }
     }
 
@@ -1511,11 +1541,18 @@ fn restore_prefix(
                 reason: "backup-mismatch",
             });
         }
-        if write.replace_file(&file.path, &backup, "restore").is_err() {
-            return Rollback::Failed(RecoveryError {
-                plan_id: plan_id.to_owned(),
-                reason: "restore-failed",
-            });
+        if let Err(error) = write.replace_file(&file.path, &backup, "restore", &file.after_sha256) {
+            return match error {
+                ReplaceFailure::SourceChanged(current) => Rollback::Conflict {
+                    path: file.path.clone(),
+                    expected: file.before_sha256.clone(),
+                    current,
+                },
+                ReplaceFailure::Io => Rollback::Failed(RecoveryError {
+                    plan_id: plan_id.to_owned(),
+                    reason: "restore-failed",
+                }),
+            };
         }
     }
     Rollback::Restored
@@ -1575,11 +1612,29 @@ fn unreadable_source_failure(
     expected: &str,
     outcome: Rollback,
 ) -> ApplyFailure {
+    changed_source_failure(
+        write,
+        journal_path,
+        path,
+        expected,
+        UNREADABLE_DIGEST.to_owned(),
+        outcome,
+    )
+}
+
+fn changed_source_failure(
+    write: &FormatWrite,
+    journal_path: &str,
+    path: &str,
+    expected: &str,
+    current: String,
+    outcome: Rollback,
+) -> ApplyFailure {
     match outcome {
         Rollback::Restored => ApplyFailure::SourceChanged {
             path: path.to_owned(),
             expected: expected.to_owned(),
-            current: UNREADABLE_DIGEST.to_owned(),
+            current,
         },
         other => rollback_failure(write, journal_path, "replace", other),
     }
@@ -1759,6 +1814,57 @@ struct FormatWrite {
     /// else a process-unique spelling. Temp rename files live under the
     /// runtime home with this prefix (finding r2 3).
     temp_namespace: Option<String>,
+}
+
+#[derive(Debug)]
+enum ReplaceFailure {
+    Io,
+    SourceChanged(String),
+}
+
+impl From<()> for ReplaceFailure {
+    fn from(_: ()) -> Self {
+        Self::Io
+    }
+}
+
+/// A flushed replacement is still only a proposal. Publication must
+/// revalidate the original file after all potentially slow preparation.
+struct PreparedReplacement {
+    temp: PathBuf,
+    target: PathBuf,
+    identity: (u64, u64),
+    expected: String,
+}
+
+impl Drop for PreparedReplacement {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.temp);
+    }
+}
+
+fn source_identity(file: &std::fs::File) -> Result<(u64, u64), ()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let metadata = file.metadata().map_err(|_| ())?;
+        Ok((metadata.dev(), metadata.ino()))
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+        };
+        let mut information: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+        if unsafe { GetFileInformationByHandle(file.as_raw_handle() as _, &mut information) } == 0 {
+            return Err(());
+        }
+        Ok((
+            u64::from(information.dwVolumeSerialNumber),
+            (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
+        ))
+    }
 }
 
 impl FormatWrite {
@@ -2125,19 +2231,75 @@ impl FormatWrite {
     /// r2 3). The target must be a reparse-free regular file; it is
     /// never truncated in place. `temp_key` distinguishes concurrent
     /// stages so temps never collide on a fixed name.
-    fn replace_file(&self, logical: &str, bytes: &[u8], temp_key: &str) -> Result<(), ()> {
-        let dir_path = self.parent(logical)?;
+    fn replace_file(
+        &self,
+        logical: &str,
+        bytes: &[u8],
+        temp_key: &str,
+        expected: &str,
+    ) -> Result<(), ReplaceFailure> {
+        let prepared = self.prepare_replacement(logical, bytes, temp_key, expected)?;
+        self.install_replacement(logical, &prepared)
+    }
+
+    fn source_snapshot(&self, logical: &str) -> Result<(Vec<u8>, (u64, u64)), ()> {
+        let path = self.physical(logical, true)?;
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(open_flags::NOFOLLOW | open_flags::CLOEXEC);
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+            options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+        }
+        let mut file = options.open(path).map_err(|_| ())?;
+        let metadata = file.metadata().map_err(|_| ())?;
+        if !metadata.is_file() {
+            return Err(());
+        }
+        #[cfg(windows)]
+        if reparse_point(&metadata) {
+            return Err(());
+        }
+        let identity = source_identity(&file)?;
+        let mut bytes = Vec::new();
+        use std::io::Read;
+        file.read_to_end(&mut bytes).map_err(|_| ())?;
+        Ok((bytes, identity))
+    }
+
+    fn prepare_replacement(
+        &self,
+        logical: &str,
+        bytes: &[u8],
+        temp_key: &str,
+        expected: &str,
+    ) -> Result<PreparedReplacement, ReplaceFailure> {
+        let changed = |_| ReplaceFailure::SourceChanged(UNREADABLE_DIGEST.to_owned());
+        let dir_path = self.parent(logical).map_err(changed)?;
         let (_, name) = split_logical(logical);
         let target = dir_path.join(name);
-        let metadata = std::fs::symlink_metadata(&target).map_err(|_| ())?;
+        let metadata = std::fs::symlink_metadata(&target).map_err(|_| changed(()))?;
         if metadata.file_type().is_symlink() || !metadata.is_file() {
-            return Err(());
+            return Err(changed(()));
         }
         #[cfg(windows)]
         {
             if reparse_point(&metadata) {
-                return Err(());
+                return Err(changed(()));
             }
+        }
+        let (before, identity) = self
+            .source_snapshot(logical)
+            .map_err(|_| ReplaceFailure::SourceChanged(UNREADABLE_DIGEST.to_owned()))?;
+        let digest = crate::digest::sha256_hex(&before);
+        if digest != expected {
+            return Err(ReplaceFailure::SourceChanged(digest));
         }
         // The rename-temp home lives inside the formatter runtime; the
         // exclusive owner creates it on first use (finding r2 3).
@@ -2147,32 +2309,53 @@ impl FormatWrite {
             "{}.{temp_key}.{name}.{TEMP_SUFFIX}",
             self.temp_namespace()
         ));
+        // Do not arm cleanup until exclusive creation has established
+        // ownership; an occupied name may contain somebody else's file.
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)
+            .map_err(|_| ())?;
+        let prepared = PreparedReplacement {
+            temp,
+            target,
+            identity,
+            expected: expected.to_owned(),
+        };
         {
-            let mut file = std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temp)
-                .map_err(|_| ())?;
             preserve_permissions(&metadata, &file)?;
             use std::io::Write;
-            file.write_all(bytes).map_err(|_| {
-                let _ = std::fs::remove_file(&temp);
-            })?;
-            file.sync_all().map_err(|_| {
-                let _ = std::fs::remove_file(&temp);
-            })?;
+            file.write_all(bytes).map_err(|_| ())?;
+            file.sync_all().map_err(|_| ())?;
         }
-        let renamed = std::fs::rename(&temp, &target);
-        if renamed.is_err() {
-            let _ = std::fs::remove_file(&temp);
+        drop(file);
+        Ok(prepared)
+    }
+
+    fn install_replacement(
+        &self,
+        logical: &str,
+        prepared: &PreparedReplacement,
+    ) -> Result<(), ReplaceFailure> {
+        let (current, identity) = self
+            .source_snapshot(logical)
+            .map_err(|_| ReplaceFailure::SourceChanged(UNREADABLE_DIGEST.to_owned()))?;
+        let digest = crate::digest::sha256_hex(&current);
+        if digest != prepared.expected || identity != prepared.identity {
+            return Err(ReplaceFailure::SourceChanged(digest));
         }
-        renamed.map_err(|_| ())?;
+        let target = self
+            .physical(logical, true)
+            .map_err(|_| ReplaceFailure::SourceChanged(UNREADABLE_DIGEST.to_owned()))?;
+        if target != prepared.target {
+            return Err(ReplaceFailure::SourceChanged(UNREADABLE_DIGEST.to_owned()));
+        }
+        let dir_path = self.parent(logical)?;
+        std::fs::rename(&prepared.temp, &target).map_err(|_| ())?;
         sync_dir(&dir_path);
         Ok(())
     }
 
-    /// The per-run temp namespace prefix: unique per process and plan
-    /// window, so orphan reclamation (below) never races a live writer's
     /// The per-run temp namespace prefix: unique per process and plan
     /// window, so orphan reclamation (below) never races a live writer's
     /// temps and two attempts never share a temp name. Recovery runs
@@ -2186,19 +2369,9 @@ impl FormatWrite {
             .unwrap_or_else(|| format!("recover.{}", std::process::id()))
     }
 
-    /// Reclaim orphaned temps inside the runtime temp home (finding r2
-    /// 3, r3 3): any plain file with the producer's exact temp suffix is
-    /// a crashed rename temp — the exclusive owner (this caller) is the
-    /// only legitimate writer of this home, so every orphan is
-    /// reclaimable custody. The suffix agrees with the emitter's
-    /// spelling (finding r3 3): the former `.new` matcher never matched
-    /// the emitted `*.lekalo-format-new` names, so a crashed run's
-    /// orphan survived every sweep and collided every retry of the next
-    /// recovery. A missing temp home is simply empty; links, hostile
-    /// home spellings, directories, and foreign names are left untouched
-    /// and never followed or removed. The quarantine home
-    /// (`temps/legacy`) is a directory here and never matches the
-    /// producer suffix, so custody is never swept (finding r5 3).
+    /// Reclaim only the closed producer namespace, process, stage and
+    /// admitted document spelling. Similar suffixes are foreign files.
+    /// The ownership lock excludes other formatter writers, not users.
     fn sweep_home_temps(&self) -> Result<(), ()> {
         let Ok(home) = self.physical(TEMP_HOME, false) else {
             return Ok(());
@@ -2709,13 +2882,247 @@ impl FormatWrite {
     /// partial attempt homes inside the runtime home (no journal, no
     /// manifest — never recovery material).
     fn remove_dir(&self, logical: &str) -> Result<(), ()> {
-        std::fs::remove_dir_all(self.physical(logical, false)?).map_err(|_| ())
+        let home = self.physical(logical, false)?;
+        if logical == CUSTODY_HOME {
+            return std::fs::remove_dir(home).map_err(|_| ());
+        }
+        let plan_id = logical.strip_prefix(&format!("{FORMAT_HOME}/")).ok_or(())?;
+        if !valid_plan_id(plan_id) || self.file_exists(&format!("{logical}/{JOURNAL}")) {
+            return Err(());
+        }
+        if self.file_exists(&format!("{logical}/{MANIFEST}")) {
+            let bytes = self.read_file_bounded(&format!("{logical}/{MANIFEST}"), RECORD_BOUND)?;
+            let manifest: Manifest = serde_json::from_slice(&bytes).map_err(|_| ())?;
+            manifest.validate(plan_id).map_err(|_| ())?;
+        }
+        // Preflight the entire closed backup layout before deleting one
+        // byte. A user file in even a valid-looking plan home is retained.
+        let mut directories = vec![String::new()];
+        let mut files = Vec::new();
+        let mut cursor = 0;
+        while cursor < directories.len() {
+            let directory = home.join(&directories[cursor]);
+            for entry in std::fs::read_dir(directory).map_err(|_| ())? {
+                let entry = entry.map_err(|_| ())?;
+                let metadata = std::fs::symlink_metadata(entry.path()).map_err(|_| ())?;
+                if metadata.file_type().is_symlink() {
+                    return Err(());
+                }
+                #[cfg(windows)]
+                if reparse_point(&metadata) {
+                    return Err(());
+                }
+                let name = entry.file_name().into_string().map_err(|_| ())?;
+                let relative = if directories[cursor].is_empty() {
+                    name
+                } else {
+                    format!("{}/{name}", directories[cursor])
+                };
+                if metadata.is_dir() {
+                    let valid = relative == "before"
+                        || relative == "before/modules"
+                        || relative
+                            .strip_prefix("before/modules/")
+                            .is_some_and(|module| {
+                                !module.contains('/')
+                                    && valid_plan_file(&format!(
+                                        "lekalo/modules/{module}/module.yaml"
+                                    ))
+                            });
+                    if !valid {
+                        return Err(());
+                    }
+                    directories.push(relative);
+                } else if metadata.is_file()
+                    && (relative == MANIFEST
+                        || relative
+                            .strip_prefix("before/")
+                            .is_some_and(|path| valid_plan_file(&format!("lekalo/{path}"))))
+                {
+                    files.push(relative);
+                } else {
+                    return Err(());
+                }
+                if files.len() + directories.len() > RECORD_MAX_FILES * 3 + 4 {
+                    return Err(());
+                }
+            }
+            cursor += 1;
+        }
+        for file in files {
+            self.remove_file(&format!("{logical}/{file}"))?;
+        }
+        for directory in directories.iter().rev() {
+            let path = if directory.is_empty() {
+                logical.to_owned()
+            } else {
+                format!("{logical}/{directory}")
+            };
+            std::fs::remove_dir(self.physical(&path, false)?).map_err(|_| ())?;
+        }
+        Ok(())
     }
 
     /// The validated parent directory path of one logical file path.
     fn parent(&self, logical: &str) -> Result<PathBuf, ()> {
         let (parent, _) = split_logical(logical);
         self.physical(parent, false)
+    }
+}
+
+#[cfg(test)]
+mod publication_tests {
+    use super::*;
+
+    const SOURCE: &str = "lekalo/modules/planner/module.yaml";
+
+    fn project() -> (tempfile::TempDir, FormatWrite) {
+        let root = tempfile::tempdir().expect("scratch project");
+        std::fs::create_dir_all(root.path().join("lekalo/modules/planner")).unwrap();
+        std::fs::write(root.path().join(SOURCE), b"original\n").unwrap();
+        let write = FormatWrite::new(root.path().to_owned());
+        (root, write)
+    }
+
+    #[test]
+    fn prepared_replacement_preserves_an_edit_after_preparation() {
+        let (root, write) = project();
+        let expected = crate::digest::sha256_hex(b"original\n");
+        let prepared = write
+            .prepare_replacement(SOURCE, b"formatted\n", "apply", &expected)
+            .unwrap();
+        let temp = prepared.temp.clone();
+        std::fs::write(root.path().join(SOURCE), b"concurrent user edit\n").unwrap();
+        assert!(matches!(
+            write.install_replacement(SOURCE, &prepared),
+            Err(ReplaceFailure::SourceChanged(_))
+        ));
+        assert_eq!(
+            std::fs::read(root.path().join(SOURCE)).unwrap(),
+            b"concurrent user edit\n"
+        );
+        drop(prepared);
+        assert!(!temp.exists(), "only the owned proposal is discarded");
+    }
+
+    #[test]
+    fn prepared_replacement_refuses_identity_swap_even_with_identical_bytes() {
+        let (root, write) = project();
+        let expected = crate::digest::sha256_hex(b"original\n");
+        let prepared = write
+            .prepare_replacement(SOURCE, b"formatted\n", "apply", &expected)
+            .unwrap();
+        let original = root.path().join(SOURCE);
+        std::fs::rename(&original, root.path().join("held-original")).unwrap();
+        std::fs::write(&original, b"original\n").unwrap();
+        assert!(matches!(
+            write.install_replacement(SOURCE, &prepared),
+            Err(ReplaceFailure::SourceChanged(_))
+        ));
+        assert_eq!(std::fs::read(original).unwrap(), b"original\n");
+    }
+
+    #[test]
+    fn prepared_replacement_never_recreates_a_deleted_destination() {
+        let (root, write) = project();
+        let expected = crate::digest::sha256_hex(b"original\n");
+        let prepared = write
+            .prepare_replacement(SOURCE, b"formatted\n", "restore", &expected)
+            .unwrap();
+        std::fs::remove_file(root.path().join(SOURCE)).unwrap();
+        assert!(matches!(
+            write.install_replacement(SOURCE, &prepared),
+            Err(ReplaceFailure::SourceChanged(_))
+        ));
+        assert!(!root.path().join(SOURCE).exists());
+    }
+
+    #[test]
+    fn unchanged_prepared_destination_is_published() {
+        let (root, write) = project();
+        let expected = crate::digest::sha256_hex(b"original\n");
+        write
+            .replace_file(SOURCE, b"formatted\n", "apply", &expected)
+            .unwrap();
+        assert_eq!(
+            std::fs::read(root.path().join(SOURCE)).unwrap(),
+            b"formatted\n"
+        );
+        assert_eq!(
+            std::fs::read_dir(root.path().join(TEMP_HOME))
+                .unwrap()
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn occupied_temp_is_never_adopted_or_removed() {
+        let (root, write) = project();
+        std::fs::create_dir_all(root.path().join(TEMP_HOME)).unwrap();
+        let temp = root.path().join(TEMP_HOME).join(format!(
+            "recover.{}.apply.module.yaml.{TEMP_SUFFIX}",
+            std::process::id()
+        ));
+        std::fs::write(&temp, b"foreign occupant").unwrap();
+        let expected = crate::digest::sha256_hex(b"original\n");
+        assert!(write
+            .prepare_replacement(SOURCE, b"formatted\n", "apply", &expected)
+            .is_err());
+        assert_eq!(std::fs::read(&temp).unwrap(), b"foreign occupant");
+    }
+
+    #[test]
+    fn orphan_sweep_requires_the_full_producer_grammar() {
+        let (root, write) = project();
+        let home = root.path().join(TEMP_HOME);
+        std::fs::create_dir_all(&home).unwrap();
+        let foreign = [
+            "user.lekalo-format-new",
+            "BAD.lekalo-format-new",
+            "recover.pid.apply.module.yaml.lekalo-format-new",
+            "recover.123.wrong.module.yaml.lekalo-format-new",
+            "recover.123.apply.private.txt.lekalo-format-new",
+        ];
+        for name in foreign {
+            std::fs::write(home.join(name), b"user bytes").unwrap();
+        }
+        let owned = "recover.123.restore.module.yaml.lekalo-format-new";
+        std::fs::write(home.join(owned), b"orphaned replacement").unwrap();
+        write.sweep_home_temps().unwrap();
+        for name in foreign {
+            assert_eq!(std::fs::read(home.join(name)).unwrap(), b"user bytes");
+        }
+        assert!(
+            !home.join(owned).exists(),
+            "a genuine producer spelling remains reclaimable"
+        );
+    }
+
+    #[test]
+    fn plan_cleanup_preserves_foreign_contents_before_removing_any_backup() {
+        let (root, write) = project();
+        let plan = format!("{}-1", "a".repeat(47));
+        let logical = format!("{FORMAT_HOME}/{plan}");
+        let home = root.path().join(&logical);
+        std::fs::create_dir_all(home.join("before/modules/planner")).unwrap();
+        std::fs::write(home.join("before/modules/planner/module.yaml"), b"backup").unwrap();
+        std::fs::write(home.join("user-notes.txt"), b"foreign").unwrap();
+        assert!(write.remove_dir(&logical).is_err());
+        assert_eq!(
+            std::fs::read(home.join("user-notes.txt")).unwrap(),
+            b"foreign"
+        );
+        assert_eq!(
+            std::fs::read(home.join("before/modules/planner/module.yaml")).unwrap(),
+            b"backup"
+        );
+        std::fs::remove_file(home.join("user-notes.txt")).unwrap();
+        write.remove_dir(&logical).unwrap();
+        assert!(
+            !home.exists(),
+            "a pure orphaned backup layout can still be reclaimed"
+        );
     }
 }
 
@@ -2797,7 +3204,7 @@ mod legacy_name_tests {
         ));
         // The owned temp (non-legacy) family stays intact.
         assert!(super::is_owned_temp_name(
-            "plan.pid.apply.module.yaml.lekalo-format-new"
+            "recover.123.apply.module.yaml.lekalo-format-new"
         ));
     }
 
