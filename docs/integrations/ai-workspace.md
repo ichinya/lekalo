@@ -3,11 +3,8 @@
 Status: implemented lekalo-side integration design and gates for the public
 [`lee-to/ai-workspace`](https://github.com/lee-to/ai-workspace) project used
 as an **external, optional, cross-project context and service-graph layer**
-around Lekalo. Research authority:
-[`docs/m7/issue-37-research.md`](../m7/issue-37-research.md) (surface
-inventory, boundary plan, and test plan; every command below was
-re-verified against the pinned upstream revision). Implementation report:
-[`docs/m7/issue-37-implementation.md`](../m7/issue-37-implementation.md).
+around Lekalo. This reference specifies the integration boundary and
+reproduction gates against a pinned upstream revision.
 
 Pinned upstream revision: `8fdf818fee757d24e723d657fc5d38614995e557`,
 package `ai-workspace` `1.5.0` (Rust 1.88+). Every upstream CLI/MCP fact in
@@ -320,7 +317,7 @@ What the hook guarantees:
    (`unavailable`), or when the routing manifest has not declared the send
    policy admitted. Production emission additionally requires the privacy
    authority admission of the workspace change-event artifact kind — an
-   open, documented prerequisite (see [Upstream and authority gaps](#upstream-and-authority-gaps)).
+   open, documented prerequisite (see [Upstream and authority gaps](#upstream-and-authority-gaps-honest-list)).
 
 Upstream receives a bounded serialized projection of the envelope as
 `--title`/`--body` (never a raw diff, private filename, or free user
@@ -434,32 +431,14 @@ database directly or by widening scopes:
 9. **No transitive-subscription ergonomics.** Consumers that must hear
    about changes register explicit direct links today.
 
-## Acceptance mapping (issue #37)
+## Context benchmark reproduction
 
-| Criterion | Status | Where proven |
-| --- | --- | --- |
-| AC1 recommended group/setup with role aliases | **Lekalo-side verified** — documented here; executed against the pinned binary by the integration gate (config-first registration, group scope) | this doc + `scripts/test-ai-workspace-hook.mjs` |
-| AC2 protocol change → explainable affected-project event | **Lekalo-side verified** — hook builds the envelope with typed role reasons; gate delivers a real upstream event, verifies the exact readback target set (no unreviewed recipients), and the event body carries the contract identities with old/new digests for consumer verification | hook gate phase F |
-| AC3 consumer agent reads shared schemas | **Lekalo-side verified** — group-scoped MCP from a consumer root reads exact approved schema bytes; wrong-group and single-project denials proven | hook gate |
-| AC4 fully functional without AI Workspace | **Lekalo-side verified** — no Rust dependency; hook reports `disabled`/`unavailable` without mutating Lekalo behavior | hook gate optionality phase |
-| AC5 MCP scope/sensitive policy never silently widened | **Lekalo-side verified** — forced-off flags, direct-call denial, sentinel unreadable, project-wide/write tools absent from tool list | hook gate |
-| AC6 CodeGraph context benchmark on core changes | **Run and reported** — pinned protocol over a real core change; results and limitations published; reproducible via `scripts/benchmark-ai-workspace-context.mjs` | `docs/m7/issue-37-benchmark.md` |
-| AC7 no canonical model duplicated in notes | **Documented boundary + gate inventory** — share/notes inventory checked; no model/IR content admitted | hook gate + authority rules |
-| AC8 public events/evidence reveal no private identity | **Lekalo-side verified** — closed schema, leak probes over all channels incl. failure paths and hostile env | contracts gate + hook gate |
+The manual [context benchmark](../../scripts/benchmark-ai-workspace-context.mjs) compares bounded file/grep retrieval with workspace context and CodeGraph on a pinned public core change. It measures cold/warm/changed/deleted phases, repeats retrieval per task and strategy, and asserts staleness and revoked-share refusal. Timing and context bytes do not establish AI answer quality; unavailable token counts remain unknown.
 
-Verifiability split: AC1–AC5 and AC8 are enforced by gates committed in
-this repository (runnable with the pinned upstream binary for the
-end-to-end phases; the envelope/privacy phases are dependency-free). AC6
-is evidenced by a completed, documented benchmark run. AC7 combines the
-gate inventory with the documented authority boundary; its
-runtime-attribution aspect (proving a negative about all future notes)
-remains a documented boundary owned by the authority/privacy review.
+Pass the pinned upstream executable and use a private output directory under ignored `target/`. Raw rows can include local paths; stdout is the privacy-confined aggregate. Historical benchmark reports are not retained as current acceptance evidence.
 
 ## Reference
 
-- Research: [`docs/m7/issue-37-research.md`](../m7/issue-37-research.md)
-- Implementation report: [`docs/m7/issue-37-implementation.md`](../m7/issue-37-implementation.md)
-- Benchmark: [`docs/m7/issue-37-benchmark.md`](../m7/issue-37-benchmark.md)
 - Envelope contract: `contracts/ai-workspace-event.schema.v0.6.3.json`
 - Hook: `scripts/ai-workspace-hook.mjs`; gates:
   `scripts/test-ai-workspace-contracts.mjs` (CI),

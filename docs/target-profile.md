@@ -1,7 +1,5 @@
 # Target profiles
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 Issue #29 replaces monolithic framework adapters with composable target
 profiles. A profile composes exactly one component per axis —
 `runtime`, `storage`, `transport`, `testing`, `analysis`, and

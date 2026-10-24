@@ -1,7 +1,5 @@
 # The generate and verify orchestration (issue #91)
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 Two unified core commands turn the accepted seams into the generation and
 verification pipelines: `lekalo generate` validates the Model, binds the
 exact lock and inputs, resolves the target profile and adapter

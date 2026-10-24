@@ -1,8 +1,5 @@
 # CI reports: the closed report surface (issue #103)
 
-> Версионирование обновлено: контракт при изменении получает текущую версию
-> проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены.
-
 Lekalo makes headless CI a first-class consumer: the four CI-surfaced
 commands emit one closed, versioned, deterministic machine-readable report
 per run, plus pure projections to the formats CI systems read. The report

@@ -1,14 +1,15 @@
 # Lekalo adoption (`lekalo init --adopt`)
 
-Issue #38 connects Lekalo to an existing repository: adoption never moves
+`lekalo init --adopt` connects Lekalo to an existing repository: adoption never moves
 sources, never generates beyond the minimal canonical skeleton, and never
 overwrites. Detection is evidence — every proposal carries its evidence
 path and a closed confidence — and never declares unconfirmed framework
 semantics. Nothing here executes a discovered script, package manager, or
 adapter; the issue #27 target protocol keeps that boundary.
 
-Product 0.2.3, Model 0.2.16, IR 0.2.16 and diagnostic registry 1.13.0 remain
-independent version lines.
+This page owns existing-repository detection and skeleton writes. Use
+[adoption](adoption.md) to choose an ownership workflow and
+[bootstrap](bootstrap.md) for a new empty project.
 
 ## Commands
 
@@ -21,10 +22,10 @@ lekalo init --adopt --project DIR
 lekalo init --adopt --project-id ID
 ```
 
-`init` without `--adopt` is the stable usage failure (exit 1, stderr,
-`cli.usage`): greenfield creation is a later issue with its own template
-semantics and shares the bootstrap configuration seam recorded in
-[ADR-0028](adr/0028-init-adopt.md).
+`init` without `--adopt` creates a new minimal project through
+[bootstrap](bootstrap.md); it does not perform repository detection. The
+two modes cannot be combined. [ADR-0028](adr/0028-init-adopt.md) records the
+shared configuration seam.
 
 ## Root selection
 

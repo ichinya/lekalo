@@ -1,7 +1,5 @@
 # Requirements: the OpenSpec traceability integration (issue #36)
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 One independent, closed, versioned attachment — `lekalo/requirements/v0.2.16`,
 identity `dev.lekalo.requirements@0.2.16`, contract
 [contracts/requirements.schema.v0.2.16.json](../contracts/requirements.schema.v0.2.16.json) —

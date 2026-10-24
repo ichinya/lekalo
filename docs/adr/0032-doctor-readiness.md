@@ -43,8 +43,9 @@ exit policy, and disclose no secret or environment values.
 
 `lekalo doctor`, `lekalo status`, and `lekalo readiness --phase PHASE`
 project one document
-([`contracts/doctor.schema.v0.2.16.json`](../../contracts/doctor.schema.v0.2.16.json),
-discriminator `lekalo/doctor/v0.2.16`). The report kind selects the
+([current doctor schema](../../contracts/doctor.schema.v0.3.2.json),
+discriminator `lekalo/doctor/v0.3.2`; the original decision used `v0.2.16`,
+superseded under the [version policy](../versioning.md)). The report kind selects the
 panel: `doctor` runs the full thirteen-check vocabulary, `status`
 runs the freshness quartet (lock, cache, bindings, artifacts) plus the
 revisions block, `readiness` runs the full panel and marks the

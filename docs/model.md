@@ -1,12 +1,12 @@
 # Lekalo Model and glossary
 
-Status: **Implemented** language-neutral Model/IR `0.2.16` at product `0.6.4`, source base `a56ee578`. Owner: semantic-contract maintainers. [#5](https://github.com/ichinya/lekalo/issues/5), [ADR-0004](adr/0004-model-v0.1.md), [ADR-0005](adr/0005-semantic-ids.md).
+Status: **Implemented** language-neutral Model profiles `0.2.16` and `0.8.0`. Owner: semantic-contract maintainers. [ADR-0004](adr/0004-model-v0.1.md), [ADR-0005](adr/0005-semantic-ids.md).
 
-The normative [Model schema](../contracts/model.schema.v0.2.16.json), [semantic-ID contract](../contracts/semantic-ids.v0.2.16.json) and real loader determine acceptance. Prose cannot broaden them. Model describes semantics shared across targets; it contains no framework class/package/runtime identity. Language-specific bindings and implementation evidence attach to those semantics.
+The selected [baseline schema](../contracts/model.schema.v0.2.16.json) or [successor schema](../contracts/model.schema.v0.8.0.json), [semantic-ID contract](../contracts/semantic-ids.v0.2.16.json) and real loader determine acceptance. Model describes semantics shared across targets, without framework class/package/runtime identity. Language-specific bindings and implementation evidence attach to those semantics.
 
 ## Documents and definition kinds
 
-Documents carry `schema_version: 0.2.16` and a closed `definitions` array. The real loader reads JSON and block YAML, applies imports and normalization, and retains source spans as metadata; see [loader](loader.md). Unknown/mixed versions, unknown keys, wrong file homes and unresolved references refuse.
+Documents carry an admitted `schema_version` and a closed `definitions` array. Bootstrap and the minimal tutorial use `0.2.16`; successor source uses `0.8.0`. The loader reads JSON and block YAML, applies imports and normalization, and retains source spans as metadata; see [loader](loader.md). Unknown/mixed source versions, unknown keys, wrong homes and unresolved references refuse.
 
 | Kind | Meaning | File in a module |
 | --- | --- | --- |
@@ -29,9 +29,9 @@ These are the fourteen Model kinds. Authorization, transactions, expressions, qu
 
 ## Identity, references and semantics
 
-Every definition has `id`, `kind` and positive integer `version`; optional description, requirement provenance, visibility, portability and kind-specific members follow the exact schema. Project/module IDs are one segment. A symbol is `module.name` or `module.kind_token.name`; an optional kind token must match the definition kind. The qualifier is the semantic module ID, independent of its directory name. See [stable IDs](model-1.0.md) and [ID rules](semantic-ids.md).
+Every definition has `id`, `kind` and positive integer `version`; optional description, provenance, visibility, portability and kind-specific members follow the selected schema. [Semantic IDs](semantic-ids.md) owns identity classes, module qualification, renames, tombstones and canonical-key rules.
 
-Only symbols can declare `renamed_from`; only the project can declare `id_registry`. History records renames/tombstones and prevents invalid convergence. Old IDs are not resolution aliases: references resolve against live definitions. Requirement IDs in `derived_from` record provenance, not symbol identity.
+References resolve against live definitions, not historical aliases. Requirement IDs in `derived_from` record provenance rather than symbol identity.
 
 Fields reference named scalar/enum/value-object/entity types, with bounded list/optional wrappers. Type dependencies must be acyclic. The loader assembles references; strict validation checks types, contracts and semantics; [IR](ir.md) normalizes them. Graph/effect/impact/context projections report what they know and preserve unknown/gap states. A model span identifies Model source, not native implementation coverage.
 

@@ -1,7 +1,5 @@
 # Lekalo typed expressions
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 Issue #66 makes planner conditions and field assignments
 first-class, machine-checkable contract data. One closed, versioned
 attachment —

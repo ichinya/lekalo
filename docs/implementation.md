@@ -1,7 +1,5 @@
 # Foreign and custom implementation escape hatches (issue #30)
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 One independent, closed, versioned attachment —
 `lekalo/implementation/v0.2.16`, identity
 `dev.lekalo.implementation@0.2.16` — lets complex or target-specific
@@ -15,10 +13,8 @@ closed kinds `generated`, `custom` (checked/custom files), `foreign`
 unsupported for that target). Absence of an entry stays the default
 generated path.
 
-The contract version is independent of the product release, of the
-Model/IR/protocol contract versions, of the target-profile family, and
-of the diagnostic registry. Owner decisions are recorded in
-[ADR-0033](adr/0033-foreign-implementation-escape-hatch.md).
+Owner decisions are recorded in [ADR-0033](adr/0033-foreign-implementation-escape-hatch.md).
+Contract changes follow [the shared version policy](versioning.md).
 
 ## The DSL boundary
 

@@ -1,6 +1,6 @@
 # Lekalo greenfield bootstrap (`lekalo init`, `lekalo module new`)
 
-Issue #97 creates a minimal greenfield Lekalo project: the canonical
+`lekalo init` creates a minimal greenfield Lekalo project: the canonical
 skeleton and nothing else — no full application generation, no target
 framework until an explicit selection, no package or tool installation,
 no adapter execution, no lock. The lock appears only after explicit
@@ -15,8 +15,10 @@ any-other-content conflict denial, the same target document bytes, and
 the same in-process load-and-validate gate. [ADR-0039](adr/0039-greenfield-init-bootstrap.md)
 records the greenfield decisions.
 
-Product 0.2.16, Model 0.2.16, IR 0.2.16 and diagnostic registry 0.2.16
-remain independent version lines.
+Bootstrap emits the baseline Model `0.2.16` template. This is a template
+pin, not the current product version or a restriction on every loader
+profile. [Model](model.md) owns admitted source shapes; [versioning](versioning.md)
+owns contract version policy.
 
 ## Commands
 
@@ -154,8 +156,8 @@ paths): `status`, `operation`, `mode`, `changed`, `rootBasis`,
 `writes[]`, `gate`, `templates[]`. Dispositions spell the acceptance
 vocabulary: `create`, `append`, `unchanged`, `conflict`.
 
-Failures are registered rules of the `init.*` family (diagnostic
-registry 1.24.0, `LEK-INIT-006..009`): `init.bootstrap-conflict`
+Failures are registered rules of the `init.*` family
+(`LEK-INIT-006..009`): `init.bootstrap-conflict`
 (denied), `init.bootstrap-id-required` (denied),
 `init.bootstrap-write-failed` (invalid), and
 `init.bootstrap-recovery-required` (invalid). Request grammar

@@ -1,7 +1,5 @@
 # Error contracts and typed results
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 Issue #62 makes operation errors a formal, versioned part of the
 behavior contract. The error-contract family (`lekalo/error-contract/
 v0.2.16`, `dev.lekalo.error-contract@0.2.16`) and the error-registry

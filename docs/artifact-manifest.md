@@ -1,7 +1,5 @@
 # Generated-artifact ownership manifest and drift detection (issue #21)
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 Every generated, scaffolded, checked, external, and custom artifact is
 recorded in one derived ownership manifest that binds the artifact to its
 semantic owner, the exact locked adapter and generator identity, the exact

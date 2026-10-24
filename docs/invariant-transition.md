@@ -1,7 +1,5 @@
 # Lekalo invariants and state transitions
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 Issue #63 makes domain invariants and state transitions first-class,
 machine-checkable contract data. One closed, versioned attachment —
 [`contracts/invariant-transition.schema.v0.2.16.json`](../contracts/invariant-transition.schema.v0.2.16.json)

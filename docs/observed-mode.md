@@ -1,7 +1,5 @@
 # Observed mode for existing code
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 Issue #39 lets Lekalo index, bind, and analyze existing code without
 declaring the semantic model the owner of the implementation. The mode
 semantics are fixed:

@@ -1,35 +1,36 @@
-# Status, roadmap and versioned documentation
+# Feature status
 
-Status: **Implemented** inventory and replay for product 0.6.4; release publication is **Planned** by the release owner. Owner: release/documentation maintainers. [Parent #1](https://github.com/ichinya/lekalo/issues/1), [#105](https://github.com/ichinya/lekalo/issues/105), [version policy](versioning.md).
+Status: **Implemented** inventory of supported profiles for the source checkout. Owner: release/documentation maintainers. Exact behavior belongs to the linked references; [versioning](versioning.md) owns version rules.
 
 ## Status legend
 
-- **Implemented:** the named bounded producer/handler and checks exist. Prerequisites, target subset and evidence limits still apply; this is not universal production qualification.
-- **Experimental:** a present path has explicit qualification gaps or contributor-only fallback. Its successful test does not pass a refused primary path.
-- **Planned:** no supported positive end-user path for the named feature at this revision. It must not appear as a working quickstart.
+- **Implemented:** a producer or handler and its checks exist within the documented profile; prerequisites and evidence limits apply.
+- **Experimental:** a present path has qualification gaps or a contributor-only fallback.
+- **Planned:** no supported positive end-user path is supplied by this checkout.
 
-Test results (passed/failed/skipped) are separate from these feature labels. Each advertised operation must preserve its actual status/exit and completeness.
+These labels describe availability. Passed, failed, ignored and unavailable describe one execution. A declaration or local pass does not qualify every adapter, host or production deployment.
 
-| Slice | Status | Evidence and limit |
+| Feature | Status | Scope and reference |
 | --- | --- | --- |
-| Model/IR/validation, projections, init/adopt, contracted checks, lock/ownership | **Implemented** | [Architecture](architecture.md), [Model](model.md), [adoption](adoption.md); no automatic application/toolchain creation. |
-| Registered target protocol and generate/check/verify | **Implemented** | [Protocol](target-protocol.md), [orchestration](orchestration.md); only declared capabilities/platform prerequisites. |
-| Context-budget, workflow-provider discovery, CI reports/local history | **Implemented** | [Budget](context-budget.md), [provider](provider-contract.md), [reports](ci-reports.md), [history](run-history.md); no empirical AI-quality or public aggregation claim. |
-| Synthetic Laravel backend/client and maintained Vue screen | **Implemented** | [Greenfield tutorial](tutorial-greenfield-planner.md); browser execution and screen generation are **Planned**. |
-| Synthetic Hono/MySQL runtime and declaration extraction | **Implemented** | [Brownfield tutorial](tutorial-brownfield-typescript.md); actual persistence and offline extraction are separately checked. |
-| Brownfield monorepo scan fallback | **Experimental** | Recorded protocol refusal plus direct-kernel contributor harness; not full public scan-wire qualification. |
-| Real external workflow/validation/workspace acceptance | **Experimental** | [Integrations](integrations.md); discovery/trace validity is not real delivery. Workspace production event admission remains unavailable by default. |
-| Production native-command execution | **Planned** | CLI currently refuses; native test harness execution is not production `native run` support. |
-| Public aggregated history metrics export | **Planned** | [#102](https://github.com/ichinya/lekalo/issues/102); generic privacy export does not implement aggregate preview/retention/invalidation. |
+| Model, loading, validation and projections | **Implemented** | [Model](model.md), [architecture](architecture.md), [inspect](inspect.md), [impact](impact.md), [context](context.md) |
+| Bootstrap and ownership modes | **Implemented** within declared profiles | [Adoption](adoption.md); observations never grant generation permission |
+| Adapter protocol and generate/check/verify | **Implemented** | [Protocol](target-protocol.md), [orchestration](orchestration.md); capabilities and platform prerequisites apply |
+| Change API, fixes, formatting and search | **Implemented** | [Change](change.md), [fixes](fixes.md), [format](format.md), [search](semantic-search.md); unsupported shapes refuse |
+| Watch | **Experimental** | [CLI](cli.md#lekalo-watch-experimental-issue-95), [delivery boundary](target-protocol.md#issue-95-delivery-evidence-boundary) |
+| MCP, provider discovery and evidence | **Implemented** local contracts | [MCP](mcp.md), [provider](provider-contract.md), [budget](context-budget.md), [reports](ci-reports.md), [history](run-history.md) |
+| Synthetic Laravel backend/client and maintained Vue screen | **Implemented** bounded fixture | [Greenfield tutorial](tutorial-greenfield-planner.md); browser execution is not demonstrated |
+| Synthetic TypeScript/MySQL runtime | **Implemented** bounded fixture | [Brownfield tutorial](tutorial-brownfield-typescript.md); HTTP and real persistence are separate lanes |
+| Brownfield scan fallback | **Experimental** | [Observed mode](observed-mode.md); the contributor fallback does not qualify the primary scan wire |
+| External workflow/workspace delivery | **Experimental** | [Integrations](integrations.md); discovery/trace validity is not real delivery |
+| Local aggregate metrics export | **Implemented** | [Metrics export](metrics-export.md); no uploader or measured Framework Lift outcome |
+| Worklog/Changelog and task links | **Implemented** pilot profiles | [Worklog/Changelog](worklog-changelog.md), [task links](task-external-links.md); no general provider qualification |
+| Native production command execution | **Planned** | [Native gates](native-gates.md); fixture execution is a separate path |
+| Automatic screen generation | **Planned** | [Greenfield tutorial](tutorial-greenfield-planner.md), [screen decision](adr/0046-no-screen-view-ir-kind.md) |
 
 ## Release documentation
 
-The working docs describe product `0.6.4` at source base `a56ee578` plus #105 documentation changes. Selected refs: Model/IR `0.2.16`, target protocol and authority/privacy `0.3.2`, active diagnostic registry/provider `0.6.4`, CI report `0.6.3`. Exact refs come from accepted manifests and the producing binary; do not choose the highest filename by convention.
-
-Stable release documentation is an immutable [Git tag snapshot](https://github.com/ichinya/lekalo/tags): select a tag, then that tag's README, `docs/`, fixture locks and replay registry. For example, [v0.6.4 docs](https://github.com/ichinya/lekalo/tree/v0.6.4/docs) are **archival/unverified for #105 replay**, which was not present in that historical tag. They are not substituted for this branch's evidence. A new release records tag, source commit, selected refs and the matching required replay results; hosted CI/release publication is not claimed by local checks.
-
-No historical tag is rewritten. A snapshot preserves documentation history without expanding runtime accepted versions or promising support/migrations for old data. [Versioning](versioning.md) remains authoritative: changed contracts take the changing commit's product version; unchanged exact contracts retain their version, subject to explicit frozen-restore rules. Documentation updates do not change domain contracts.
+Keep the installed binary's tag documentation separate from this checkout's source documentation. [Release snapshots](releases.md#release-snapshots) explains the relationship, including the older `v0.8.0` tag and later M8 completion on `main`.
 
 ## Contributor verification
 
-Build the locked CLI, use the exact fixture dependency setup, then run [the example gate](../scripts/test-docs-examples.mjs) and [ownership gate](../scripts/test-docs-ownership.mjs). CI requires portable replay on three OSes, the planner native lane and the dedicated MySQL lane. The implementation report records local gates and their limits; green local examples alone do not establish remote CI or production acceptance.
+Follow [contributing](contributing.md#choose-checks-for-the-change) for setup and checks. Required CI includes portable documentation replay, the planner native lane and MySQL validation. Bind receipts to the source revision and retain failures, ignored tests and unavailable prerequisites. A prose edit is not a new runtime result.

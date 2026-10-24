@@ -18,10 +18,9 @@ typed signatures, defaults, enum literals, relations and uniqueness facts.
 The manifest pins both payload owners and the describing schema explicitly.
 The predecessor 0.6.4 schema and golden remain published separately.
 The `validate`/`drift` describing schemas and `--no-cache` discipline retain
-their independent versions (see [issue-34-fix1.md](issue-34-fix1.md)). Per
-[versioning.md](versioning.md), this contract takes the product version
-of its implementation commit; the upstream contracts it pins keep
-their own independent family versions.
+their exact family versions. [Versioning](versioning.md) owns the shared
+version rule; this discovery contract lists the payload pins consumers
+must actually use.
 
 Issue #35 adds the read-only `trace.assess` operation and the exact `lekalo/trace-assessment/v0.6.4` and `lekalo/trace-validation-evidence/v0.6.4` pins. There are thirteen pins including both context owners, the context success describing schema and the neutral evidence input. See [trace-assessment.md](trace-assessment.md) for the mapping, digest domains, policy and external adapter obligations. The trace-manifest and generate-check pins retain their independent versions.
 

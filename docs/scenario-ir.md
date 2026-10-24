@@ -1,7 +1,5 @@
 # The Scenario IR (issue #23)
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 One portable behavioral scenario, written once and referenced by the
 native test backend of every target. The Scenario IR is a derived test
 contract — never canonical Model source, never runtime evidence — with

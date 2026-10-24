@@ -14,9 +14,9 @@ Issue #103 asks for the official GitHub Actions workflow entry:
     locked: true
 ```
 
-The research (docs/m7/issue-103-research.md) recommends a separate
-public JavaScript repository. This delivery consciously lands the
-**composite-action design** in this repository instead: the CLI already
+The original proposal recommended a separate public JavaScript
+repository. This decision instead specifies the
+**composite-action design** in this repository: the CLI already
 carries every decision (the closed report contract, the exit policy, the
 provenance capture), so the action is a thin, reviewed launcher, and a
 composite keeps the dogfooding loop inside the compiler repository until

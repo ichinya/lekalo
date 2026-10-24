@@ -5,8 +5,8 @@ Issue #93 adds one typed, offline search service with two entry points:
 deterministic lexical retrieval, optionally bounded-labeled fuzzy. The
 core owns every decision (projection, ranking, pagination, coverage,
 diagnostics); the binary only admits inputs, persists the cache-owned
-index store, renders, and maps exits. See
-`docs/m8/issue-93-research.md` for the implementation contract.
+index store, renders, and maps exits. The contracts and supported behavior
+are specified below.
 
 ## Contract
 

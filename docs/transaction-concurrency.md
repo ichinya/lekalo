@@ -1,7 +1,5 @@
 # Transaction and concurrency contracts (issue #24)
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 One independent, closed, versioned attachment —
 `lekalo/transaction-concurrency/v0.2.16`, identity
 `dev.lekalo.transaction-concurrency@0.2.16` — declaring how a project's

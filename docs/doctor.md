@@ -1,7 +1,5 @@
 # Doctor, status, and the readiness report (issue #92)
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 One command diagnoses the readiness of a Lekalo project — project
 root and layout, Model/schema/IR version compatibility, imports and
 references, lockfile freshness, installed adapter versions and
@@ -11,10 +9,10 @@ availability, optional OpenSpec/HLV/AI Factory integration evidence,
 filesystem permissions and path confinement, and platform limitations
 — before planning, implementation, generation, verification, or done.
 The contract is
-[`contracts/doctor.schema.v0.2.16.json`](../contracts/doctor.schema.v0.2.16.json)
-(discriminator `lekalo/doctor/v0.2.16`, identity
-`dev.lekalo.doctor@0.2.16`), independent of the product release and of
-every other contract family. The recorded owner decisions live in
+[`contracts/doctor.schema.v0.3.2.json`](../contracts/doctor.schema.v0.3.2.json)
+(discriminator `lekalo/doctor/v0.3.2`, identity
+`dev.lekalo.doctor@0.3.2`). This exact family pin is retained when the
+product version changes without changing this contract. The recorded owner decisions live in
 [ADR-0032](adr/0032-doctor-readiness.md).
 
 ## Commands

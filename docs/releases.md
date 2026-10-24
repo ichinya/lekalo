@@ -1,37 +1,25 @@
-# Установка и выпуск Lekalo CLI
+# Install Lekalo CLI
 
-При публикации GitHub Release workflow `Release binaries` собирает CLI из
-коммита указанного тега с `cargo build --release --locked`. После завершения
-всех пяти сборок архивы прикрепляются к этому релизу:
+Download a platform archive and `SHA256SUMS.txt` from the same [GitHub Release](https://github.com/ichinya/lekalo/releases). A ready binary does not require Rust or Node to start; adapter operations and native checks have their own prerequisites.
 
-| Платформа | Target | Архив |
+| Platform | Target | Archive |
 | --- | --- | --- |
-| Windows x64 | `x86_64-pc-windows-msvc` | `.zip` с `lekalo.exe` |
-| Linux x64 | `x86_64-unknown-linux-gnu` | `.tar.gz` с `lekalo` |
-| Linux ARM64 | `aarch64-unknown-linux-gnu` | `.tar.gz` с `lekalo` |
-| macOS Intel | `x86_64-apple-darwin` | `.tar.gz` с `lekalo` |
-| macOS Apple Silicon | `aarch64-apple-darwin` | `.tar.gz` с `lekalo` |
+| Windows x64 | `x86_64-pc-windows-msvc` | ZIP with `lekalo.exe` |
+| Linux x64 | `x86_64-unknown-linux-gnu` | tar.gz with `lekalo` |
+| Linux ARM64 | `aarch64-unknown-linux-gnu` | tar.gz with `lekalo` |
+| macOS Intel | `x86_64-apple-darwin` | tar.gz with `lekalo` |
+| macOS Apple Silicon | `aarch64-apple-darwin` | tar.gz with `lekalo` |
 
-Имена имеют вид `lekalo-v<VERSION>-<TARGET>.<EXTENSION>`. В каждом архиве
-одна папка с исполняемым файлом и README. Для Linux используются native
-Ubuntu 22.04 runners (glibc, не musl); macOS проверяется на macOS 14 ARM64
-и macOS 15 Intel; Windows — на Windows Server 2022 x64.
+Names follow `lekalo-v<VERSION>-<TARGET>.<EXTENSION>`. Each archive has one top-level directory containing the executable and README. Linux builds use glibc and are tested on Ubuntu 22.04; they are not musl binaries. [The release workflow](../.github/workflows/release.yml) records the build platforms.
 
-Релиз также содержит `SHA256SUMS.txt` и отдельный `.build.json` для каждого
-архива: commit исходников, target, версию Rust, SHA-256 lockfile, бинарника
-и архива, а также ссылку на запуск GitHub Actions. Эти записи являются
-метаданными сборки; криптографическая подпись и notarization не добавляются
-этим workflow.
+## Verify and install
 
-## Проверка и установка
-
-Скачайте соответствующий архив и `SHA256SUMS.txt` из **одного** релиза.
-Подставьте его версию в примеры. Команды проверяют checksum до распаковки.
+Download into an empty working directory, then run the matching block there. The examples use `0.8.0`; change the version to the release you downloaded. They select exactly one checksum row and verify it before extraction.
 
 ### Windows (PowerShell)
 
 ```powershell
-$version = '0.6.5'
+$version = '0.8.0'
 $archive = "lekalo-v$version-x86_64-pc-windows-msvc.zip"
 $entries = @(Get-Content -LiteralPath SHA256SUMS.txt | Where-Object { $_.EndsWith("  $archive") })
 if ($entries.Count -ne 1) { throw 'Checksum entry missing or duplicated' }
@@ -42,14 +30,13 @@ Expand-Archive -LiteralPath $archive -DestinationPath .
 & ".\lekalo-v$version-x86_64-pc-windows-msvc\lekalo.exe" --version
 ```
 
-Перенесите `lekalo.exe` в каталог из `PATH`, если нужен вызов `lekalo`
-из любого рабочего каталога.
+Move `lekalo.exe` to a directory on PATH for invocation from any working directory. Keep another version in a separate directory if you need it for rollback. [PowerShell archive](https://learn.microsoft.com/powershell/module/microsoft.powershell.archive/expand-archive) and [hash](https://learn.microsoft.com/powershell/module/microsoft.powershell.utility/get-filehash) references describe the commands used here.
 
-### Linux (bash)
+### Linux (Bash)
 
 ```bash
 set -euo pipefail
-version=0.6.5
+version=0.8.0
 target=x86_64-unknown-linux-gnu # aarch64-unknown-linux-gnu для ARM64
 archive="lekalo-v${version}-${target}.tar.gz"
 awk -v name="$archive" '$2 == name { print; found++ } END { if (found != 1) exit 1 }' SHA256SUMS.txt > selected-checksum.txt
@@ -60,13 +47,13 @@ install -m 755 "lekalo-v${version}-${target}/lekalo" "$HOME/.local/bin/lekalo"
 "$HOME/.local/bin/lekalo" --version
 ```
 
-Добавьте `$HOME/.local/bin` в `PATH`, если этого каталога там ещё нет.
+Add `$HOME/.local/bin` to PATH if needed. The install command replaces an existing binary at that destination; choose a version-specific destination to retain both.
 
-### macOS (bash)
+### macOS (Bash)
 
 ```bash
 set -euo pipefail
-version=0.6.5
+version=0.8.0
 target=aarch64-apple-darwin # x86_64-apple-darwin для Intel
 archive="lekalo-v${version}-${target}.tar.gz"
 awk -v name="$archive" '$2 == name { print; found++ } END { if (found != 1) exit 1 }' SHA256SUMS.txt > selected-checksum.txt
@@ -77,34 +64,18 @@ install -m 755 "lekalo-v${version}-${target}/lekalo" "$HOME/.local/bin/lekalo"
 "$HOME/.local/bin/lekalo" --version
 ```
 
-## Создание релиза
+Add `$HOME/.local/bin` to PATH if needed. Archives are not signed or notarized by this workflow. The install command replaces the destination binary.
 
-1. Убедитесь, что обычный CI прошёл для релизного коммита.
-2. Создайте тег `v<VERSION>` на нужном коммите. Версии `lekalo-cli` и
-   `lekalo-core` в Cargo должны совпадать с `<VERSION>`. Дождитесь CI
-   для этого тега: job `Release tag and Cargo version parity` блокирует
-   несовпадение до создания релизных артефактов.
-3. Опубликуйте GitHub Release для этого тега с названием `<VERSION>`
-   или `v<VERSION>`. Событие `release: published` запускает сборки,
-   включая prerelease.
-4. Дождитесь успешного завершения `Release binaries`: каждый бинарник
-   проверяется через `--version` и `--help` на своей ОС, затем ещё раз
-   запускается после распаковки архива. Команда `compatibility` проверяет
-   встроенный реестр контрактов вне checkout. Ошибка любой сборки блокирует
-   загрузку всего набора.
+Each archive also has a `.build.json` record with source commit, target, Rust version, lockfile/binary/archive SHA-256 and workflow URL. Checksums establish byte integrity; these records are build metadata, not a cryptographic publisher signature.
 
-Workflow должен уже находиться в коммите нового релизного тега. Для старого
-релиза, чей тег не содержит workflow, используйте ручной запуск:
-**Actions → Release binaries → Run workflow**, выберите ветку с workflow
-и передайте существующий опубликованный тег в поле `tag`.
-Исходники будут взяты из тега, а скрипты сборки — из коммита workflow.
-Если версия Cargo в старом теге отличается от версии релиза, ручной запуск
-тоже завершится отказом: нужен новый релиз с согласованными версиями.
+## Release snapshots
 
-Проверки блокируют несовпадение версии тега, названия релиза, Cargo packages
-или `lekalo --version`, грязные исходники, изменение тега во время сборки,
-неполный набор платформ и неверные SHA-256. После загрузки workflow скачивает
-свои release assets и сравнивает их с локальными файлами. Повторный запуск
-заменяет только файлы с теми же именами в указанном релизе; остальные релизы
-и их assets сохраняются. Обновление установленного CLI выполняется вручную
-с такой же проверкой checksum; предыдущую версию можно скачать для отката.
+A release archive is built from its tag commit. Read that tag's README, documentation, fixture locks and contracts when using the binary. Documentation on `main` follows later source changes.
+
+The published `v0.8.0` archive uses tag commit `70c11e9325af70820d609c23c5b29c13b5b85da4` from 2026-10-06. The remaining M8 implementation merged later in [PR #161](https://github.com/ichinya/lekalo/pull/161), on 2026-10-23, and is outside that tag. Matching product numbers alone do not make these source revisions identical.
+
+Update manually by downloading and verifying another release. To build the current source instead, follow [contributing](contributing.md#build-from-source). To create release assets, use the separate [maintainer guide](releasing.md).
+
+## Next step
+
+Run `lekalo --version` and `lekalo --help`, then [create a minimal project](project-layout.md#minimal-project) or [choose an adoption path](adoption.md).

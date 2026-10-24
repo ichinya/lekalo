@@ -1990,7 +1990,7 @@
       "helpDigest": "sha256:1a939abde287339d8416986c6abd5830b90e2bf6c232d713a44d1cf611661fbb",
       "summary": "Validate the issue #51 worklog-changelog pilot composition against its pinned project: the pure composition contract",
       "leaf": false,
-      "owner": "docs/m8/issue-51-implementation.md",
+      "owner": "docs/worklog-changelog.md",
       "status": "implemented"
     },
     {
@@ -2001,7 +2001,7 @@
       "helpDigest": "sha256:f00860fd1c7f30ba688fdcc1b9cc5a08fabaecc74dab194032e1ef946b1baa2f",
       "summary": "Admit one evidence report under the selected profile, bound to the exact composition document it pins: strict refuses any required unsupported or unknown row (exit 4) while keeping the report; permissive emits the degraded verdict",
       "leaf": true,
-      "owner": "docs/m8/issue-51-implementation.md",
+      "owner": "docs/worklog-changelog.md",
       "status": "implemented"
     },
     {
@@ -2012,7 +2012,7 @@
       "helpDigest": "sha256:f37a3ba0bba675ff5ce097b9f732afadc3a7c7acc1a1bdf7e012d5190ff0119e",
       "summary": "Validate one composition document against its pinned project: custody, role resolution, effect separation, approval binding, snapshot immutability, public allowlist, replay scopes, and capability coverage",
       "leaf": true,
-      "owner": "docs/m8/issue-51-implementation.md",
+      "owner": "docs/worklog-changelog.md",
       "status": "implemented"
     },
     {
@@ -3558,7 +3558,7 @@
       "id": "contract:contracts/explain-catalog.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/explain-catalog.v0.8.0.json",
-      "sourceDigest": "sha256:040cf5f39a0e1f25871e90fc1dd645e4c2848a3ba1640739a7d34d74cc58d90a",
+      "sourceDigest": "sha256:70681dae7be5aa73d3c28b0b6d2386589f73c293601305a421751974e5ccaa51",
       "owner": "docs/explain.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -5071,7 +5071,7 @@
       "kind": "contract",
       "source": "contracts/worklog-changelog-evidence.schema.v0.8.0.json",
       "sourceDigest": "sha256:39f5a82fafc6e94b4b968e46badd579521d434b92058fdb2bc3c357b0c8392e6",
-      "owner": "docs/m8/issue-51-implementation.md",
+      "owner": "docs/worklog-changelog.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
@@ -5080,7 +5080,7 @@
       "kind": "contract",
       "source": "contracts/worklog-changelog-pilot.schema.v0.8.0.json",
       "sourceDigest": "sha256:fcf2ba0b7bf8f6210a75f9821af993a88d4086933d0b5a5bb2c1858cd1333ae0",
-      "owner": "docs/m8/issue-51-implementation.md",
+      "owner": "docs/worklog-changelog.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

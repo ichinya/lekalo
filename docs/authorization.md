@@ -1,7 +1,5 @@
 # Lekalo authorization
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 Issue #25 makes authorization an explicit part of the semantic model: an
 operation cannot be generated or implemented without a declared actor,
 scope, and policy. The contract is an independent version family —

@@ -1,8 +1,8 @@
 # Diagnostics, results and exits
 
-Status: **Implemented** at product `0.6.4`, source base `a56ee578`. Owner: result/reporting maintainers. [ADR-0010](adr/0010-diagnostics.md), [#103](https://github.com/ichinya/lekalo/issues/103), [CI reports](ci-reports.md).
+Status: **Implemented** result and reporting contracts. Owner: result/reporting maintainers. [ADR-0010](adr/0010-diagnostics.md), [CI reports](ci-reports.md).
 
-The closed item schema is [diagnostic.v0.2.16](../contracts/diagnostic.schema.v0.2.16.json); the active embedded rule instance is [registry.v0.6.4](../contracts/diagnostic-registry.v0.6.4.json). Item and registry versions are separate pins. Historical registry files remain exact snapshots, not current selection by filename order.
+The item schema is [diagnostic.v0.2.16](../contracts/diagnostic.schema.v0.2.16.json). Producers bind a registry from the admitted `0.6.4`, `0.6.5` and `0.8.0` chain; ordinary and successor features retain their own pins. Item, registry and product versions are distinct. A newer file on disk does not select a registry; [versioning](versioning.md) defines the shared policy.
 
 ## Result status owns the exit
 

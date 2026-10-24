@@ -1,7 +1,7 @@
 # Privacy-safe public metrics export
 
-Status: **Implemented** local export pipeline for issue #102, product 0.6.4.
-Framework Lift evaluation execution remains owned by #100. Synthetic gates
+Status: **Implemented** local export pipeline with exact `0.6.4` contracts.
+[Framework Lift](framework-lift.md) owns evaluation execution. Synthetic gates
 validate the export pipeline; they are not measured Framework Lift evidence.
 
 `lekalo metrics export` consumes a named `evaluation-export-input@0.6.4`

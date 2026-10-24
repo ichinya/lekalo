@@ -1,6 +1,6 @@
 # Architecture
 
-Status: **Implemented** bounded services, checked against product 0.6.3 at base `a56ee578`. Owner: core and adapter-host maintainers. [Research](m7/issue-105-research.md), [IR ADR](adr/0007-ir.md), [orchestration ADR](adr/0038-generate-verify-orchestration.md), [issue #105](https://github.com/ichinya/lekalo/issues/105).
+Status: **Implemented** bounded services. Owner: core and adapter-host maintainers. [IR ADR](adr/0007-ir.md), [orchestration ADR](adr/0038-generate-verify-orchestration.md), [issue #105](https://github.com/ichinya/lekalo/issues/105). Feature availability and exact family pins are maintained in the [roadmap](roadmap.md) and owning reference pages.
 
 Lekalo describes one application model for multiple targets. The semantic model records application meaning; a target decides how its supported slice maps into a language/framework. A configured target is not proof that every operation is supported.
 

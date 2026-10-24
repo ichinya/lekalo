@@ -1,7 +1,5 @@
 # The committed `lekalo.lock` (issue #10)
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 `lekalo.lock` makes generation and verification reproducible: it freezes the
 exact product, contract, adapter, generator, profile, and capability
 identities that participated in a result. Two environments holding the same

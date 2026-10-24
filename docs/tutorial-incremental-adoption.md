@@ -1,6 +1,6 @@
 # Incremental adoption tutorial
 
-Status: **Implemented** selective adoption, verified refactoring, and hybrid mode. Owner: bootstrap/evidence maintainers. [Issue #136](https://github.com/ichinya/lekalo/issues/136), [research](m8/issue-136-research.md).
+Status: **Implemented** selective adoption, verified refactoring, and hybrid mode. Owner: bootstrap/evidence maintainers. [Issue #136](https://github.com/ichinya/lekalo/issues/136), [adoption reference](adoption.md).
 
 This tutorial walks one existing project from a read-only analysis through one selective confirmation, one contracted legacy command, one verified behavior-preserving refactor, and one new contracted feature — the exact incremental path the [adoption modes](adoption.md) page describes. Every command below runs verbatim in a POSIX shell with a built `lekalo` binary on `PATH`; [CI replays the same lines](../scripts/test-adoption-tutorial.mjs) against the [synthetic adoption fixture](../tests/fixtures/adoption/app/package.json). No real consumer repository is needed and no private code is read.
 

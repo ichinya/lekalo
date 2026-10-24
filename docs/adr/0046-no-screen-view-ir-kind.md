@@ -1,7 +1,7 @@
 # ADR 0046: no screen/view IR kind — the planning-screen pilot
 
-Issue #53. The research plan is `docs/m5/issue-53-research.md`; this
-ADR records the decision the pilot produced.
+Issue #53. This ADR records the decision the pilot produced. The maintained
+walkthrough is [the greenfield planner](../tutorial-greenfield-planner.md).
 
 ## Context
 

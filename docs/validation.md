@@ -94,9 +94,9 @@ invariant (cleaned, at most 256 bytes).
 
 ## Profiles
 
-A validation profile is a closed, independently versioned contract
-(`dev.lekalo.validation-profile@0.2.16`,
-[validation-profile.schema.v0.2.16.json](../contracts/validation-profile.schema.v0.2.16.json))
+A validation profile is a closed contract with an exact family pin
+(`dev.lekalo.validation-profile@0.6.4`,
+[validation-profile.schema.v0.6.4.json](../contracts/validation-profile.schema.v0.6.4.json))
 that lists rule selections — `enabled` plus an optional
 `severity_override` — for exactly the `semantic.*` and `validate.*`
 inventory, sorted by rule id, duplicates rejected. Every profile pins
@@ -108,6 +108,13 @@ malformed document all fail closed. The two built-ins are embedded from
 - `default` — every owned rule enabled at its registry severity, with the
   single recorded downgrade `semantic.portable-target-reference` at info.
 - `strict` — the same enabled set with no overrides, keeping the warning.
+
+The module-boundary successor selects separate exact `0.8.0` profile and
+registry pins through the typed parser in
+[`validator/profile.rs`](../crates/lekalo-core/src/validator/profile.rs), with
+embedded [default](../contracts/validation-profile.default.v0.8.0.json) and
+[strict](../contracts/validation-profile.strict.v0.8.0.json) documents. Those
+are not instances of the predecessor's `0.6.4` schema.
 
 Severity overrides are legal only when the registry default severity is
 not `error` and the override is strictly lower: P0 blockers are never

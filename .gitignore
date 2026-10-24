@@ -1,19 +1,26 @@
+# Rust build output, including standalone SDK and template workspaces.
 /target/
-/crates/*/target/
+/crates/**/target/
+/sdk/**/target/
+
+# Installed JavaScript dependencies and packaged release artifacts.
+node_modules/
+/dist/
+
+# Local agent state, scratch dependencies and generated project state.
 /.repowise/
 /.m3/
 /.m4/
 /.pi/
-node_modules/
 /.ai-workspace.local.json
+/.tmp-ajv/
+/.tmp-research/
 /.lekalo/
+
 # Generated pilot-fixture runtime residue: no CLI-produced cache or
 # state under the public fixture ever gets committed.
 tests/fixtures/pilot/worklog-changelog/model/.lekalo/
 
-# Independent SDK package build artifacts (issue #106)
-sdk/rust/target/
-sdk/templates/rust/*/target/
 # Compiled template binaries only: the template SOURCES (main.go,
 # go.mod, and any helper .go files beside them) stay tracked.
 sdk/templates/go/*/*.exe

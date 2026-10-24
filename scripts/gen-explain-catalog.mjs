@@ -1365,7 +1365,7 @@ const families = {
     before: `# hand-built changelog attachment`,
     after: `# regenerate via the pilot flow, then re-admit`,
     targets: "Pilot-scoped: ports must record their own evidence per target.",
-    docs: "docs/m8/issue-51-implementation.md",
+    docs: "docs/worklog-changelog.md",
     waiver: "Not waivable: pilot honesty is the deliverable.",
   },
 };

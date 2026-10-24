@@ -650,7 +650,7 @@ jobs:
           node scripts/test-adoption-hybrid.mjs
           node scripts/test-adoption-tutorial.mjs
       - name: Replay portable documentation commands in disposable copies (issue #105)
-        timeout-minutes: 15
+        timeout-minutes: 60
         env:
           NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         run: |

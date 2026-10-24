@@ -144,12 +144,20 @@ incomplete, never clean.
 
 ## Verification
 
+Provision exact Ajv `8.20.0`, TypeScript and `@vue/compiler-sfc` through
+the [CI setup](../.github/workflows/ci.yml) before these checks. Expose that
+dependency directory through `NODE_PATH` using your shell's environment
+syntax; see [contributing](contributing.md#dependencies-and-generated-files).
+
 ```sh
 cargo test --locked -p lekalo-core --lib client_sdk
 cargo test --locked -p lekalo-core --test client_sdk
 cargo test --locked -p lekalo-cli --test client_sdk
-NODE_PATH=… node scripts/test-client-sdk-contracts.mjs   # Ajv 8.20.0
-NODE_PATH=… node scripts/test-client-sdk-runtime.mjs     # pinned TS + @vue/compiler-sfc
+node scripts/test-client-sdk-contracts.mjs
+node scripts/test-client-sdk-runtime.mjs
 node scripts/test-node-client-sdk.mjs                    # adapter gate
-cargo run -p lekalo-core --example regen-client-sdk -- . # golden regen (explicit only)
 ```
+
+Golden regeneration is an explicit authoring operation, separate from the
+verification sequence: `cargo run -p lekalo-core --example regen-client-sdk -- .`.
+Review its diff and custody pins before accepting new outputs.

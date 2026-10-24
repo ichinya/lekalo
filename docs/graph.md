@@ -1,7 +1,5 @@
 # The dependency graph of semantic symbols
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 Issue #13 implements a read-only, deterministic dependency graph over the
 accepted #8 typed IR: direct edges with closed provenance and confidence,
 precomputed reverse indexes, relation-filtered traversal, bounded slices,

@@ -1,6 +1,6 @@
 # Project layout
 
-Status: **Implemented**, product 0.6.4. Owner: filesystem/reproducibility maintainers. Normative details: [canonical structure](canonical-structure.md), [ADR-0003](adr/0003-canonical-structure-and-path-safety.md), [issue #4](https://github.com/ichinya/lekalo/issues/4).
+Status: **Implemented**, product 0.8.0. Owner: filesystem/reproducibility maintainers. Normative details: [canonical structure](canonical-structure.md), [ADR-0003](adr/0003-canonical-structure-and-path-safety.md), [issue #4](https://github.com/ichinya/lekalo/issues/4).
 
 ```text illustrative
 project/
@@ -32,3 +32,9 @@ Expected: each exits 0/stdout. Init creates `lekalo/project.yaml`, the empty pla
 Canonical definitions and a resolved lock belong in version control. Caches/import drafts/local history under `.lekalo/` are derived or runtime artifacts with their own retention rules. Promotion is explicit; copying a draft into a canonical home is not automatic acceptance.
 
 Root selectors are invocation-relative and physically checked. Link/junction/traversal/case aliases and protected write homes are refused according to the current structure/protocol rules. Use [loader](loader.md), [lockfile](lockfile.md), [cache](cache.md) and [artifact manifest](artifact-manifest.md) for exact paths, limits, digests and ownership. Never add a new canonical home from a tutorial.
+
+## This repository
+
+Lekalo's own repository keeps Rust sources under `crates/`, adapter implementations under `adapters/`, public contracts under `contracts/`, SDK sources and templates under `sdk/`, and maintained synthetic examples and fixtures under `examples/` and `tests/fixtures/`. [Documentation](README.md) and [maintenance scripts](../scripts/README.md) have separate guides.
+
+Build output, dependency installations, local agent state and execution receipts belong in ignored directories such as `target/`, `node_modules/`, `.repowise/` and `.lekalo/`. Scratch milestone folders such as `.m4/` are local working state. Published schemas, reviewed goldens, provenance manifests and adapter runtime sources remain tracked inputs even when produced by an explicit generator.

@@ -129,5 +129,5 @@ Run `node scripts/test-framework-lift-contracts.mjs` with exact Ajv 8.20.0 on
 each family. It checks schema/Rust closure, independent arithmetic expectations,
 baseline mutation, source provenance, stale receipts, arm contamination, provider
 costs, lost slots and a hard failure with judge score 100. No external agent is
-invoked. The implementation/remaining AC evidence map is in
-[the issue report](m7/issue-100-implementation.md).
+invoked. The gate checks the supplied-record evaluator; it does not establish
+real agent outcomes, provider billing or production qualification.

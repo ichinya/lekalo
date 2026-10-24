@@ -1,7 +1,5 @@
 # Semantic diff and compatibility classification
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 Issue #18 gives Lekalo a way to compare two versions of a model **by
 meaning, not by lines of YAML**, and to classify the consequences for
 consumers, storage, and targets. The implementation is a pure, read-only,

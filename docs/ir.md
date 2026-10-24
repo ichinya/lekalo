@@ -1,13 +1,10 @@
 # Lekalo IR: typed, deterministic, target-neutral
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
-Status: implemented for issue #8 on product candidate 0.1.6. The IR consumes
-the accepted #7 loader output (#4 structure, #5 Model shapes, #6 semantic
-IDs) and never rewrites them. Migration (#9) and every downstream consumer
-are out of scope. The decision record is
-[ADR-0007](adr/0007-ir.md). If this prose and the implementation disagree,
-consumers stop; prose cannot broaden the code.
+Status: **Implemented** typed IR for the admitted Model profiles. The IR
+consumes normalized loader output and never rewrites source Model or
+semantic identities. [ADR-0007](adr/0007-ir.md) records the design;
+[loader](loader.md) owns source admission and [Model](model.md) owns source
+shapes. This page owns the compiled representation.
 
 ## Purpose and boundary
 

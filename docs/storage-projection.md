@@ -1,7 +1,5 @@
 # Lekalo domain relations and storage projections
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 Issue #65 separates the target-neutral domain model from target-namespaced
 storage projections. One closed, versioned attachment —
 [`contracts/storage-projection.schema.v0.2.16.json`](../contracts/storage-projection.schema.v0.2.16.json)

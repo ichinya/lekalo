@@ -1,7 +1,7 @@
 # ADR 0045: explicit PHP Laravel operations (commands, queries, policies)
 
-Issue #59. The research plan is `docs/m5/issue-59-research.md`; this ADR
-records the decisions that bind the implementation.
+Issue #59. This ADR records the decisions that bind the implementation;
+the maintained reference is [PHP operations](../php-laravel-operations.md).
 
 ## Decision
 

@@ -1,7 +1,5 @@
 # Binding registry (`lekalo scan`, `lekalo bindings`)
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 Issue #42 collects target evidence about existing code and relates native
 symbols, files, endpoints, and tests to Lekalo semantic ids without
 turning a heuristic into a fact. The observed index (issue #39) is the

@@ -1,6 +1,6 @@
 # Scoped, justified and expiring waivers
 
-Status: **Implemented** at product `0.6.5`. Owner: governance maintainers.
+Status: **Implemented** governance with exact `0.6.5` successor contracts. Owner: governance maintainers.
 The reviewed successor of [AI-lint waivers](ai-lint.md) is
 `contracts/ai-lint-waivers.schema.v0.6.5.json`. The frozen `0.6.4` family
 remains supported by `ai-lint --waivers`; its historical semantics are unchanged.
@@ -153,6 +153,8 @@ external approval or execution. Run-history contracts remain unchanged; no audit
 is silently written to cache or `.lekalo/history`. Store retention is version
 control; audit retention is an explicit consumer/CI responsibility.
 
-The implementation and acceptance evidence are mapped in
-[issue-88-implementation](m7/issue-88-implementation.md). Each new family has
-synthetic goldens and a live Ajv **8.20.0** gate after the workspace build in CI.
+Each family has synthetic goldens and a live Ajv **8.20.0** gate after the
+workspace build in CI: `test-waiver-audit-contracts.mjs` and
+`test-waiver-input-contracts.mjs` and `test-waivers-contracts.mjs`.
+These gates verify the local waiver pipeline;
+external approval and execution remain consumer responsibilities.

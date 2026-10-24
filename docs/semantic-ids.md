@@ -1,14 +1,14 @@
 # Stable semantic IDs
 
-Status: implementation candidate for issue #6. The prospective product
-candidate is 0.1.4 because issue #3 published product 0.1.3. Product releases,
-Model schema versions, and the semantic-ID contract version are independent.
+Status: **Implemented** semantic-ID grammar and identity rules. The accepted
+semantic-ID family remains `0.2.16`; it is used by admitted Model profiles.
+General contract version policy is defined in [versioning](versioning.md).
 
 The normative machine artifacts are
 [dev.lekalo.semantic-ids@0.2.16](../contracts/semantic-ids.v0.2.16.json) and
 [Model schema 0.2.16](../contracts/model.schema.v0.2.16.json). The design
 decision is [ADR-0005](adr/0005-semantic-ids.md), and
-[Model 1.0](model-1.0.md) describes the enclosing document contract. If these
+[Model](model.md) describes the enclosing document profiles. If these
 artifacts and prose disagree, consumers fail closed.
 
 ## Identity classes
@@ -139,13 +139,12 @@ canonical key and must never invent, derive, replace, rewrite, case-fold,
 translate, or synthesize the canonical ID. Target bindings may add
 target-side names only.
 
-Issue #6 is a contract-foundation issue. The reference checker is the one
-implemented canonical-key surface: the validation report emits live symbols
-verbatim and --check-id repeats the input as canonicalKey after validation.
-Every listed consumer is deferred to its owning issue and, once implemented,
-must consume the checker-verified key exactly. The list is closed: adding a
-canonical-key consumer requires a semantic-ID contract revision, not an
-adapter-local decision.
+The reference checker emits live symbols verbatim and `--check-id` repeats
+the validated input as `canonicalKey`. Downstream consumers retain the same
+key while applying their own evidence and version admission. Adding a
+canonical-key consumer requires a semantic-ID contract revision rather than
+an adapter-local naming rule. Consumer availability is described in its
+own reference; this identity rule does not qualify its execution.
 
 ## Validation and diagnostics
 
@@ -171,5 +170,6 @@ Run a grammar probe or validate a complete versioned project:
 
 The ID probe returns exit 0 and repeats the input as canonicalKey when valid.
 It returns exit 1 with semantic-id.* diagnostics when invalid. Complete model
-validation retains the structure-first exit protocol documented for Model
-0.1.
+validation retains the structure-first exit protocol: usage and Model/ID
+failures return exit `1` on stderr; a structure-policy denial returns exit
+`3` on stdout before Model documents are read. See [diagnostics](diagnostics.md).

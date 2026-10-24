@@ -51,3 +51,9 @@ Expected: exit 0 and all nine baseline legs pass: Model neutrality, observed bas
 The maintained screen is `tests/fixtures/php-laravel/routes/ui/src/PlannerBoard.vue`. UI evidence checks client/OpenAPI agreement, SFC compilation/typechecking and scenario/E2E-binding schemas. It does **not** execute a browser or generate the screen from Model. [Client SDK](client-sdk.md), [PHP operations](php-laravel-operations.md), [target protocol](target-protocol.md), [security](security.md).
 
 To replay exactly these displayed commands and assertions, run the documentation gate's `--lane planner` after setup. The gate requires this lane in CI; a portable-only run is not native tutorial acceptance. See [roadmap](roadmap.md) for release/version pins.
+
+## Backend comparison and removal boundary
+
+The digest-pinned Node implementation under `tests/fixtures/pilot/observed-baseline/` remains the observed baseline. The parity gate compares canonical `(step_id, observes, kind, outcome)` rows for the shared corpus, including declared unsupported outcomes. Equality over an unsupported row does not prove either backend implements that behavior. Laravel HTTP enforcement and the maintained Vue screen have separate target evidence.
+
+Removing an old backend surface requires fresh corpus equality, the shared lying-port negative control, current baseline pins, a reviewed inventory naming the exact removed surfaces, and no consumer coupling. Scanner, kernel, transport, SDK, Zod, scenario and native-gate fixtures retain their own roles. The comparison must not silently turn a narrow shared corpus into a claim of complete backend or UI equivalence. [The pilot architecture decision](adr/0047-laravel-vue-pilot-path.md) preserves this boundary.

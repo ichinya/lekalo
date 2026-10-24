@@ -1,7 +1,5 @@
 # Extended effect contracts (issue #26)
 
-> Версионирование обновлено: контракт при изменении получает текущую версию проекта. Исходная точка — 0.2.16; старые схемы и миграции удалены. Правило независимой нумерации версий ниже заменено этой политикой.
-
 One independent, closed, versioned attachment —
 `lekalo/extended-effects/v0.2.16`, identity
 `dev.lekalo.extended-effects@0.2.16` — declaring the non-database effect
@@ -16,12 +14,10 @@ and freshness), and publication contracts (destination, explicit opt-in
 and approval, sensitivity classification, immutable revisioned
 snapshots).
 
-The contract version is independent of the product release, of the Model
-and IR contract versions, of the effect graph, of the Scenario IR, of
-the error-contract family, and of the diagnostic registry. The
-attachment is pure declaration and validation data: nothing executes,
+The attachment is pure declaration and validation data: nothing executes,
 nothing writes, and nothing claims runtime enforcement. Owner decisions
-are recorded in [ADR-0023](adr/0023-extended-effects.md).
+are recorded in [ADR-0023](adr/0023-extended-effects.md); shared version rules
+are defined in [versioning](versioning.md).
 
 ## Document shape
 

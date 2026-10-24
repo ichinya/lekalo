@@ -45,7 +45,7 @@ Laravel-shaped?
    identical, with a shared negative control. The comparison artifact
    is deterministic and committed as evidence.
 5. **Removal of any old-backend surface is gate-gated.** The written
-   gate (`docs/m5/issue-114-equivalence-report.md` §4) requires corpus
+   gate ([backend comparison](../tutorial-greenfield-planner.md#backend-comparison-and-removal-boundary)) requires corpus
    equality, the negative control, baseline currency, a written
    surface inventory, and no consumer coupling. Absent any leg, the
    decision is "no". Big-bang removal is out of scope by definition.
@@ -67,8 +67,8 @@ Laravel-shaped?
   scenario/adapter machinery both targets share.
 - The portable corpus is the neutral behavior vocabulary; new
   target-specific enforcement proofs (HTTP authorization enforcement,
-  header idempotency) are documented as target legs in the equivalence
-  report rather than smuggled into the neutral comparison.
+  header idempotency) remain target-specific evidence rather than
+  being folded into the neutral comparison.
 - Declared-unsupported rows (the concurrent-focus leg) are honest
   evidence: a backend that cannot prove a leg says so in the same
   vocabulary, and a future race evaluator must be answered by both
