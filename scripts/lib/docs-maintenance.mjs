@@ -82,6 +82,7 @@ const families = {
 families["discovery-scope"]="adopt";
 families["discovery-scope-receipt"]="adopt";
 for (const family of ["native-execution-policy", "native-tool-catalog", "native-execution-plan", "native-command-output"]) families[family]="native-gates";
+for (const family of ["native-execution-report", "native-verify-report"]) families[family]="native-gates";
 export function contractRecords() {
   return readdirSync(join(ROOT,"contracts")).filter(x => x.endsWith(".json")).sort().map(name => {
     const family = name.replace(/(?:\.schema)?\.v\d.*$/, "").replace(/\.manifest\.json$/, "");

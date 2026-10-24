@@ -224,7 +224,10 @@ export function planNativeOperation(context, policyDocument) {
 export function readDeclaredPatterns(readView) {
   const WORKSPACE_FILE = "pnpm-workspace.yaml";
   const MAX_DOC = 1024 * 1024;
-  if (!readView.canRead(WORKSPACE_FILE)) return [];
+  if (!readView.canRead(WORKSPACE_FILE)) {
+    if(!readView.canRead("package.json"))return [];
+    try {const root=JSON.parse(readView.readFile("package.json",{files:4096,bytes:MAX_DOC}).toString("utf8"));return Array.isArray(root.workspaces)?root.workspaces:[];}catch{return [];}
+  }
   try {
     const parsed = parseWorkspaceYaml(
       readView.readFile(WORKSPACE_FILE, { files: 4096, bytes: MAX_DOC }).toString("utf8"),
@@ -276,6 +279,13 @@ export function listInventoryDirectories(readView, inclusionPatterns, out = {}) 
       .split("\u0000").join(".*");
     return new RegExp("^(?:" + regexText + ")$").test(name);
   };
+  const children = prefix => {
+    if (prefix && typeof readView.listDirectories === "function") {
+      // A parent may be outside an older profile's explicit leaf grants.
+      if ((readView.roots ?? []).some(root => root.kind === "tree" && (prefix === root.path || prefix.startsWith(root.path + "/")))) return readView.listDirectories(prefix);
+    }
+    return CHILD_VOCABULARY;
+  };
   const expand = (prefix, segments, depth) => {
     expansions += 1;
     if (expansions > MAX_EXPANSIONS
@@ -293,7 +303,7 @@ export function listInventoryDirectories(readView, inclusionPatterns, out = {}) 
     const segment = segments[0];
     if (segment === "**") {
       if (prefix !== "") expand(prefix, [], depth);
-      for (const name of CHILD_VOCABULARY) {
+      for (const name of children(prefix)) {
         const child = prefix === "" ? name : prefix + "/" + name;
         expand(child, segments, depth + 1);
       }
@@ -304,7 +314,7 @@ export function listInventoryDirectories(readView, inclusionPatterns, out = {}) 
       expand(child, segments.slice(1), depth + 1);
       return;
     }
-    for (const name of CHILD_VOCABULARY) {
+    for (const name of children(prefix)) {
       if (segmentAllows(segment, name)) {
         const child = prefix === "" ? name : prefix + "/" + name;
         expand(child, segments.slice(1), depth + 1);

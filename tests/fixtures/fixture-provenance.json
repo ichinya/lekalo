@@ -279,6 +279,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "node-native-tools",
+      "origin": "synthetic",
+      "note": "Authored npm domain/client workspace, exact public tool lock and actual production native verify acceptance. No private consumer input."
+    },
+    {
       "family": "node-typescript-drizzle",
       "origin": "synthetic"
     },

@@ -66,9 +66,23 @@ pub struct CatalogEntry {
 #[derive(Clone, Debug, Default)]
 pub struct RunnerCatalog {
     entries: BTreeMap<String, CatalogEntry>,
+    recipes: BTreeMap<String, ToolRecipe>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ToolRecipe {
+    pub entry: String,
+    pub entry_digest: String,
+    pub program_digest: String,
 }
 
 impl RunnerCatalog {
+    pub(crate) fn set_recipe(&mut self, id: String, recipe: ToolRecipe) {
+        self.recipes.insert(id, recipe);
+    }
+    pub(crate) fn recipe(&self, id: &str) -> Option<&ToolRecipe> {
+        self.recipes.get(id)
+    }
     pub fn new() -> Self {
         Self::default()
     }
@@ -139,20 +153,23 @@ pub type ConfirmedRunOutcome = Result<NativeRunResult, NativeGateFailure>;
 /// custody drift, or an unstageable snapshot each end the run with the
 /// typed failure before the first child process exists.
 pub fn run_confirmed_plan(run: &ConfirmedRun<'_>) -> ConfirmedRunOutcome {
-    run_inner(run, None)
+    run_inner(run, None, None)
 }
 
 pub(crate) fn run_confirmed_plan_in_sandbox(
     run: &ConfirmedRun<'_>,
     sandbox: crate::target_protocol::NativeSandbox,
+    outputs: &std::cell::RefCell<BTreeMap<String, serde_json::Value>>,
 ) -> ConfirmedRunOutcome {
-    run_inner(run, Some(sandbox))
+    run_inner(run, Some(sandbox), Some(outputs))
 }
 
 fn run_inner(
     run: &ConfirmedRun<'_>,
     mut sandbox: Option<crate::target_protocol::NativeSandbox>,
+    outputs: Option<&std::cell::RefCell<BTreeMap<String, serde_json::Value>>>,
 ) -> ConfirmedRunOutcome {
+    let production = sandbox.is_some();
     // 1. Approval preflight: the named digest must be this exact plan.
     if run.approved_plan_digest != run.plan.plan_digest {
         return Err(NativeGateFailure::ApprovalMissing);
@@ -324,7 +341,7 @@ fn run_inner(
             sandbox.as_ref(),
         );
         if sandbox.is_some() {
-            match snapshot_tree(&stage_root) {
+            match snapshot_tree_with(&stage_root, production) {
                 Ok(after) => {
                     let mut current = audit_writes(run.plan, &original_before, &after);
                     if enforce_write_bounds(run.plan, &stage_root, &mut current).is_err() {
@@ -480,7 +497,13 @@ fn run_inner(
                 )
             }
         };
-        results.push(command_result(measurement, output_digest));
+        results.push(command_result(measurement, |bytes| {
+            let digest = output_digest(bytes);
+            if let (Some(outputs), Ok(value)) = (outputs, serde_json::from_slice(bytes)) {
+                outputs.borrow_mut().insert(digest.clone(), value);
+            }
+            digest
+        }));
     }
     // 6. Mutation audit: the staged tree is diffed against the original
     // snapshot; the original root is verified unchanged.
@@ -497,7 +520,7 @@ fn run_inner(
         terminal = Terminal::Security;
         "mutated"
     };
-    let mut audit = match snapshot_tree(&stage_root) {
+    let mut audit = match snapshot_tree_with(&stage_root, production) {
         Ok(after) => audit_writes(run.plan, &original_before, &after),
         Err(failure) => {
             terminal = terminal.max(if failure == NativeGateFailure::SecurityViolation {
@@ -560,7 +583,12 @@ fn run_inner(
         .cloned()
         .collect();
     let mut receipt = NativeRunResult {
-        schema_version: RUN_SCHEMA_VERSION.to_owned(),
+        schema_version: if production {
+            "lekalo/native-gate-run/v1.0.0"
+        } else {
+            RUN_SCHEMA_VERSION
+        }
+        .to_owned(),
         kind: "native-run-result".to_owned(),
         plan_digest: run.plan.plan_digest.clone(),
         execution_policy_ref: run.plan.execution_policy_ref.clone(),
@@ -780,8 +808,13 @@ fn launch_command(
         .file_stem()
         .and_then(|stem| stem.to_str())
         .ok_or(LaunchFailure::Missing)?;
-    let family_matches =
-        resolved_argv0 == catalog_family || (catalog_family == "php" && resolved_argv0 == "php");
+    let family_matches = if run.catalog.recipe(&command.tool_ref).is_some() {
+        // A private asset recipe pins the logical package bin separately
+        // from its Node interpreter. It never resolves the bin via PATH.
+        resolved_argv0 == &command.tool_ref && sandbox.is_some()
+    } else {
+        resolved_argv0 == catalog_family || (catalog_family == "php" && resolved_argv0 == "php")
+    };
     if !family_matches {
         return Err(LaunchFailure::Missing);
     }
@@ -974,17 +1007,29 @@ fn launch_confined(
         TargetFailure,
     };
     let started = Instant::now();
-    let mut args: Vec<String> = command.argv.iter().skip(1).cloned().collect();
+    let recipe = run.catalog.recipe(&command.tool_ref);
+    let mut args: Vec<String> = if let Some(recipe) = recipe {
+        let script = sandbox
+            .tool_script(&recipe.entry, &recipe.entry_digest)
+            .map_err(|_| LaunchFailure::Security)?;
+        std::iter::once(script.to_string_lossy().into_owned())
+            .chain(command.argv.iter().skip(1).cloned())
+            .collect()
+    } else {
+        command.argv.iter().skip(1).cloned().collect()
+    };
     let script = args.first_mut().ok_or(LaunchFailure::Missing)?;
-    if script.starts_with('-') || Path::new(script).is_absolute() {
+    if recipe.is_none() && (script.starts_with('-') || Path::new(script).is_absolute()) {
         return Err(LaunchFailure::Security);
     }
     let candidate = cwd.join(&*script);
     let canonical = std::fs::canonicalize(&candidate).map_err(|_| LaunchFailure::Missing)?;
-    if !canonical.starts_with(stage) {
+    if recipe.is_none() && !canonical.starts_with(stage) {
         return Err(LaunchFailure::Security);
     }
-    *script = canonical.to_string_lossy().into_owned();
+    *script = crate::target_protocol::NativeSandbox::runtime_path(&canonical)
+        .to_string_lossy()
+        .into_owned();
     let mut env = Vec::new();
     for binding in &run.plan.env.bindings {
         if !command.env.contains(&binding.name) {
@@ -1019,7 +1064,9 @@ fn launch_confined(
                 args,
             },
             &command.cwd,
-            &entry.artifact_digest,
+            recipe
+                .map(|recipe| recipe.program_digest.as_str())
+                .unwrap_or(&entry.artifact_digest),
             &limits,
             run.cancellation,
             &env,
@@ -1106,8 +1153,15 @@ fn kill_tree(pid: u32) {
 
 /// The bounded staged-tree snapshot: relative logical paths to digests.
 fn snapshot_tree(root: &Path) -> Result<BTreeMap<String, String>, NativeGateFailure> {
+    snapshot_tree_with(root, false)
+}
+fn snapshot_tree_with(
+    root: &Path,
+    tool_outputs: bool,
+) -> Result<BTreeMap<String, String>, NativeGateFailure> {
     let mut map = BTreeMap::new();
     let mut stack = vec![root.to_path_buf()];
+    let mut seen = std::collections::BTreeSet::new();
     let mut files = 0usize;
     let mut entries_seen = 0usize;
     let mut total = 0usize;
@@ -1156,6 +1210,15 @@ fn snapshot_tree(root: &Path) -> Result<BTreeMap<String, String>, NativeGateFail
                 .map_err(|_| NativeGateFailure::RunInfrastructure)?
                 .to_string_lossy()
                 .replace('\\', "/");
+            if !seen.insert(relative.to_ascii_lowercase())
+                || !(if tool_outputs {
+                    super::execution::tool_output_path(&relative)
+                } else {
+                    crate::target_protocol::scopes::is_logical_path(&relative)
+                })
+            {
+                return Err(NativeGateFailure::SecurityViolation);
+            }
             let bytes = std::fs::read(&path).map_err(|_| NativeGateFailure::RunInfrastructure)?;
             map.insert(
                 relative,

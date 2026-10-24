@@ -494,7 +494,7 @@ pub struct NativeCommandResult {
 #[serde(deny_unknown_fields)]
 pub struct NativeCoverage {
     pub state: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub uncovered_gate_ids: Vec<String>,
 }
 
@@ -511,13 +511,13 @@ pub struct NativeMutation {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeMutationSummary {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub created: Vec<NativeMutation>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub modified: Vec<NativeMutation>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub deleted: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub unexpected: Vec<String>,
 }
 

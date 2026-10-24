@@ -828,6 +828,33 @@ jobs:
           node scripts/gen-native-execution-contracts.mjs --check
           cargo build --release -p lekalo-cli --locked
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-native-execution.mjs
+      - name: Execute declared workspace tools through production verify (issue #156)
+        timeout-minutes: 15
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+          LEKALO_NODE_TOOLS_HOME: ${{ runner.temp }}/lekalo-declared-node-tools
+          LEKALO_NATIVE_REPORTS_DIR: ${{ runner.temp }}/lekalo-native-acceptance
+        run: |
+          set -euo pipefail
+          node scripts/gen-node-native-contracts.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-node-native-tools.mjs --provision
+      - name: "Qualify the clean MVP user workflow (issue #1)"
+        timeout-minutes: 15
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+          LEKALO_NODE_TOOLS_HOME: ${{ runner.temp }}/lekalo-declared-node-tools
+          LEKALO_NATIVE_REPORTS_DIR: ${{ runner.temp }}/lekalo-mvp-acceptance
+        run: node scripts/test-mvp-workflow.mjs
+      - name: Retain native plans and measured verify reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-acceptance-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/lekalo-native-acceptance/
+            ${{ runner.temp }}/lekalo-mvp-acceptance/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Execute the native gate host suites (issue #48)
         run: cargo test --locked -p lekalo-core --lib native_gate
       - name: Run the applicable conformance battery against the kernel adapter (bare)

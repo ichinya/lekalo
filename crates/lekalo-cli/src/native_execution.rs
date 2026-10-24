@@ -71,7 +71,7 @@ pub(crate) enum NativeCommands {
     },
 }
 
-fn read_plan(path: &str) -> Result<Vec<u8>, NativeGateFailure> {
+pub(crate) fn read_plan(path: &str) -> Result<Vec<u8>, NativeGateFailure> {
     if path != "-" {
         return execution::read_execution_document(&PathBuf::from(path));
     }
@@ -141,8 +141,16 @@ pub(crate) fn run(command: NativeCommands, json: bool) -> u8 {
                 let outer = serde_json::from_slice::<serde_json::Value>(&bytes)
                     .ok()
                     .is_some_and(|value| {
-                        value.get("schema_version").and_then(|v| v.as_str())
-                            == Some("lekalo/native-execution-plan/v0.9.1")
+                        value
+                            .get("schema_version")
+                            .and_then(|v| v.as_str())
+                            .is_some_and(|version| {
+                                [
+                                    "lekalo/native-execution-plan/v0.9.1",
+                                    "lekalo/native-execution-plan/v0.9.2",
+                                ]
+                                .contains(&version)
+                            })
                     });
                 if outer {
                     let failure = execution::validate_execution_plan(&bytes)
@@ -164,40 +172,10 @@ pub(crate) fn run(command: NativeCommands, json: bool) -> u8 {
                 profile,
                 catalog,
             };
-            let installed = lekalo_core::watch::interrupt::install();
-            if !installed && cancel_file.is_none() {
-                return crate::emit(
-                    DomainResult::from(&NativeGateFailure::CapabilityMissing {
-                        detail: "native-cancellation-unavailable",
-                    }),
-                    json,
-                );
-            }
-            let cancellation = lekalo_core::watch::interrupt::cancellation_flag();
-            let stop = Arc::new(AtomicBool::new(false));
-            let monitor = cancel_file.map(|path| {
-                let stopped = Arc::clone(&stop);
-                std::thread::spawn(move || {
-                    while !stopped.load(Ordering::SeqCst) {
-                        match std::fs::symlink_metadata(&path) {
-                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                            _ => {
-                                cancellation.store(true, Ordering::SeqCst);
-                                break;
-                            }
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-                    }
-                })
-            });
             let result =
-                execution::run_execution_plan(&input, &bytes, &confirm, Some(cancellation));
-            stop.store(true, Ordering::SeqCst);
-            if let Some(monitor) = monitor {
-                let _ = monitor.join();
-            }
+                execute_report(input, &bytes, &confirm, cancel_file).map(|report| report.run);
             match result {
-                Err(failure) => crate::emit(DomainResult::from(&failure), json),
+                Err(failure) => crate::emit(failure, json),
                 Ok(receipt) => {
                     let exit = match receipt.outcome.as_str() {
                         "passed" if receipt.verdict == "passed" => 0,
@@ -230,4 +208,41 @@ pub(crate) fn run(command: NativeCommands, json: bool) -> u8 {
             }
         }
     }
+}
+
+pub(crate) fn execute_report(
+    input: execution::ExecutionInputs,
+    bytes: &[u8],
+    confirm: &str,
+    cancel_file: Option<PathBuf>,
+) -> Result<execution::ExecutionReport, DomainResult> {
+    let installed = lekalo_core::watch::interrupt::install();
+    if !installed && cancel_file.is_none() {
+        return Err(DomainResult::from(&NativeGateFailure::CapabilityMissing {
+            detail: "native-cancellation-unavailable",
+        }));
+    }
+    let cancellation = lekalo_core::watch::interrupt::cancellation_flag();
+    let stop = Arc::new(AtomicBool::new(false));
+    let monitor = cancel_file.map(|path| {
+        let stopped = Arc::clone(&stop);
+        std::thread::spawn(move || {
+            while !stopped.load(Ordering::SeqCst) {
+                match std::fs::symlink_metadata(&path) {
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    _ => {
+                        cancellation.store(true, Ordering::SeqCst);
+                        break;
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        })
+    });
+    let result = execution::run_execution_report(&input, bytes, confirm, Some(cancellation));
+    stop.store(true, Ordering::SeqCst);
+    if let Some(monitor) = monitor {
+        let _ = monitor.join();
+    }
+    result.map_err(|failure| DomainResult::from(&failure))
 }

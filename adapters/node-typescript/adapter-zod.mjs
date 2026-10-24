@@ -281,6 +281,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  opendirSync,
   fstatSync,
   readSync,
   readFileSync,
@@ -295,7 +296,7 @@ var PROTOCOL_TOKEN = "lekalo.target/v1";
 var VERSION = "0.3.2";
 var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0", "0.9.1"]);
 var ADAPTER_ID = "lekalo-target-node-typescript";
-var ADAPTER_VERSION = "0.6.0";
+var ADAPTER_VERSION = "0.6.1";
 var MAX_REQUEST_BYTES = 1024 * 1024;
 var MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 var MAX_JSON_DEPTH = 64;
@@ -2242,11 +2243,11 @@ function createReadView(permittedRoot, roots, profile) {
     return false;
   };
   const revalidate = (logicalPath, expectedKind) => {
-    const root = roots.find((candidate) => scopeCovers(candidate.scope, logicalPath) || candidate.kind === "file" && candidate.path === logicalPath);
+    const root = roots.find((candidate) => scopeCovers(candidate.scope, logicalPath) || candidate.path === logicalPath && (candidate.kind === "file" || expectedKind === "directory"));
     if (!root) {
       throw new RequestRefusal("read-denied", "path outside the resolved roots");
     }
-    if (excludedPath(logicalPath)) {
+    if (excludedPath(logicalPath) || expectedKind === "directory" && excludedPath(logicalPath + "/probe")) {
       throw new RequestRefusal("read-denied", "path is excluded");
     }
     const absolute = resolve(permittedRoot, ...logicalPath.split("/"));
@@ -2267,6 +2268,9 @@ function createReadView(permittedRoot, roots, profile) {
       }
     }
     const follow = statSync(absolute);
+    if (expectedKind === "directory" && !follow.isDirectory()) {
+      throw new RequestRefusal("read-denied", "kind");
+    }
     if (expectedKind === "file" && !follow.isFile()) {
       throw new RequestRefusal("read-denied", "kind");
     }
@@ -2281,6 +2285,30 @@ function createReadView(permittedRoot, roots, profile) {
       } catch {
         return false;
       }
+    },
+    // Bounded physical enumeration for declared workspace patterns. Never
+    // follow directory links or reveal names outside this read grant.
+    listDirectories(logicalPath) {
+      const absolute = revalidate(logicalPath, "directory");
+      const directory = opendirSync(absolute);
+      const result = [];
+      let count = 0;
+      try {
+        for (let entry; (entry = directory.readSync()) !== null; ) {
+          if (++count > 4096) throw new RequestRefusal("read-denied", "directory cap exhausted");
+          const child = logicalPath + "/" + entry.name;
+          if (!isLogicalPath(child) || protectedHomeViolation(child) || excludedPath(child) || excludedPath(child + "/probe")) continue;
+          if (entry.isSymbolicLink()) throw new RequestRefusal("read-denied", "link");
+          if (entry.isDirectory()) {
+            revalidate(child, "directory");
+            result.push(entry.name);
+          }
+        }
+      } finally {
+        directory.closeSync();
+      }
+      revalidate(logicalPath, "directory");
+      return result.sort();
     },
     readFile(logicalPath, limits = { files: 4096, bytes: 4 * 1024 * 1024 }) {
       if (filesRead >= limits.files) {

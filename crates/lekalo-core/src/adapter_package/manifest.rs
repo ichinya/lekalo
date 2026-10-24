@@ -1009,13 +1009,13 @@ mod committed_exemplar_tests {
         let document = super::ManifestDocument::from_bytes(bytes)
             .expect("the committed adapter manifest must parse");
         assert_eq!(document.adapter_id(), "lekalo-target-node-typescript");
-        assert_eq!(document.adapter_version().as_str(), "0.6.0");
+        assert_eq!(document.adapter_version().as_str(), "0.6.1");
         // The public scan successor changes the embedded artifact.
         // Keep the exemplar bound to the rebuilt package
         // digest independently verified by test-adapter-manifest-golden.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:e9bf583c775b19c330c18dd9945f5ae58ee406659adecc7f8a214b7e76c29c8c"
+            "sha256:7f1ee063c694f3d058ab9c4dd95edd18e8c17f60f94f4207296d429c1aa49209"
         );
     }
 

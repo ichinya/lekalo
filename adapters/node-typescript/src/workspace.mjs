@@ -251,7 +251,13 @@ export function buildWorkspaceInventory({ readView, directories, discoveryTrunca
       completeness: "unknown",
     };
   }
-  if (!readView.canRead(WORKSPACE_FILE)) {
+  const rootText = readView.readFile(PACKAGE_MANIFEST, {files:MAX_WORKSPACE_DOC_BYTES,bytes:MAX_WORKSPACE_DOC_BYTES}).toString("utf8");
+  let rootManifest;try {rootManifest=JSON.parse(rootText);}catch {rootManifest={};}
+  const npmWorkspace = Object.hasOwn(rootManifest,"workspaces");
+  if(npmWorkspace && (!Array.isArray(rootManifest.workspaces) || rootManifest.workspaces.length===0 || rootManifest.workspaces.length>128 || rootManifest.workspaces.some(p=>typeof p!=="string"||p.length>256))) throw new WorkspaceRefusal("workspace-pattern-unsupported","npm workspaces require bounded patterns");
+  if(npmWorkspace && readView.canRead(WORKSPACE_FILE)) throw new WorkspaceRefusal("workspace-manager-ambiguous","both npm and pnpm membership are declared");
+  if(npmWorkspace && rootManifest.packageManager && !rootManifest.packageManager.startsWith("npm@")) throw new WorkspaceRefusal("workspace-manager-ambiguous","npm membership conflicts with packageManager");
+  if (!readView.canRead(WORKSPACE_FILE) && !npmWorkspace) {
     // Standalone npm layout: root-only membership (plan §4.2).
     let manifest;
     try {
@@ -297,11 +303,13 @@ export function buildWorkspaceInventory({ readView, directories, discoveryTrunca
   }
   let workspaceText;
   try {
-    workspaceText = readView.readFile(WORKSPACE_FILE, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8");
+    workspaceText = npmWorkspace ? rootText : readView.readFile(WORKSPACE_FILE, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8");
   } catch (error) {
     throw new WorkspaceRefusal("workspace-read-denied", "the workspace document exists but cannot be read in scope");
   }
-  const parsed = parseWorkspaceYaml(workspaceText);
+  const parsed = npmWorkspace ? {packages:rootManifest.workspaces} : parseWorkspaceYaml(workspaceText);
+  const manager = npmWorkspace ? "npm-workspaces" : "pnpm-workspace";
+  const lockfile = npmWorkspace ? "package-lock.json" : LOCKFILE;
   const patterns = parsed.packages ?? [];
   const inclusions = [];
   const exclusions = [];
@@ -511,12 +519,12 @@ export function buildWorkspaceInventory({ readView, directories, discoveryTrunca
   edges.sort((left, right) =>
     utf8Compare(left.from, right.from) || utf8Compare(left.to, right.to) || utf8Compare(left.kind, right.kind));
   return {
-    manager: "pnpm-workspace",
+    manager,
     compatibilityPath: "supported",
     root: ".",
     workspaceManifestDigest: sha256Text(workspaceText),
-    lockDigestState: lockState(readView),
-    lockDigest: lockDigest(readView),
+    lockDigestState: lockState(readView,lockfile),
+    lockDigest: lockDigest(readView,lockfile),
     packages,
     edges,
     uncertainties: uncertainties.slice(0, MAX_UNCERTAINTIES),
@@ -530,15 +538,15 @@ export function buildWorkspaceInventory({ readView, directories, discoveryTrunca
  */
 const LOCKFILE = "pnpm-lock.yaml";
 
-function lockState(readView) {
-  if (!readView.canRead(LOCKFILE)) return "absent";
+function lockState(readView,lockfile=LOCKFILE) {
+  if (!readView.canRead(lockfile)) return "absent";
   return "present";
 }
 
-function lockDigest(readView) {
-  if (!readView.canRead(LOCKFILE)) return undefined;
+function lockDigest(readView,lockfile=LOCKFILE) {
+  if (!readView.canRead(lockfile)) return undefined;
   try {
-    return sha256Text(readView.readFile(LOCKFILE, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8"));
+    return sha256Text(readView.readFile(lockfile, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8"));
   } catch {
     return undefined;
   }

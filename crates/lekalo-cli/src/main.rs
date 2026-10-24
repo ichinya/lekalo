@@ -40,6 +40,7 @@ mod managed;
 mod mcp;
 mod metrics_export;
 mod native_execution;
+mod native_verify;
 use native_execution::NativeCommands;
 mod module_api;
 mod pilot_battery;
@@ -622,6 +623,8 @@ enum Commands {
     /// Run the read-only verification pipeline over a validated project:
     /// core validation, drift, per-target adapter validation, portable
     Verify {
+        #[command(flatten)]
+        native: Box<native_verify::NativeVerifyArgs>,
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
@@ -2801,6 +2804,7 @@ fn runtime() -> u8 {
                 )
             }
             Commands::Verify {
+                native,
                 project,
                 target,
                 module,
@@ -2822,6 +2826,26 @@ fn runtime() -> u8 {
                 };
                 if let Err(result) = request.validate() {
                     return emit(result, json_requested);
+                }
+                if native.native_plan.is_some() {
+                    let root =
+                        match lekalo_core::orchestration::project_root(&selection_for(&project)) {
+                            Ok(root) => root,
+                            Err(result) => return emit(result, json_requested),
+                        };
+                    return native_verify::run(*native, root, json_requested, || {
+                        run_verify(
+                            project.clone(),
+                            target.clone(),
+                            module.clone(),
+                            changed,
+                            locked,
+                            trace.clone(),
+                            program_args.clone(),
+                            timeout_ms,
+                            &request,
+                        )
+                    });
                 }
                 run_verify(
                     project,

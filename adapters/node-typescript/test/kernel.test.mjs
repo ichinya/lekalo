@@ -61,9 +61,9 @@ test("identity constants are the frozen #43 values", () => {
   assert.deepEqual(SUPPORTED_VERSIONS, ["0.3.2", "0.6.4", "0.9.0", "0.9.1"]);
   assert.equal(VERSION, "0.3.2");
   assert.equal(ADAPTER_ID, "lekalo-target-node-typescript");
-  // The release constant is the adapter package version (0.6.0),
+  // The release constant is the adapter package version (0.6.1),
   // not a protocol version.
-  assert.equal(ADAPTER_VERSION, "0.6.0");
+  assert.equal(ADAPTER_VERSION, "0.6.1");
   assert.match(entryDigest(), /^sha256:[0-9a-f]{64}$/);
 });
 

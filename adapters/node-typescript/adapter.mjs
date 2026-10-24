@@ -221235,6 +221235,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  opendirSync,
   fstatSync,
   readSync,
   readFileSync,
@@ -221249,7 +221250,7 @@ var PROTOCOL_TOKEN = "lekalo.target/v1";
 var VERSION = "0.3.2";
 var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0", "0.9.1"]);
 var ADAPTER_ID = "lekalo-target-node-typescript";
-var ADAPTER_VERSION = "0.6.0";
+var ADAPTER_VERSION = "0.6.1";
 var MAX_REQUEST_BYTES = 1024 * 1024;
 var MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 var MAX_JSON_DEPTH = 64;
@@ -223196,11 +223197,11 @@ function createReadView(permittedRoot, roots, profile) {
     return false;
   };
   const revalidate = (logicalPath, expectedKind) => {
-    const root = roots.find((candidate) => scopeCovers(candidate.scope, logicalPath) || candidate.kind === "file" && candidate.path === logicalPath);
+    const root = roots.find((candidate) => scopeCovers(candidate.scope, logicalPath) || candidate.path === logicalPath && (candidate.kind === "file" || expectedKind === "directory"));
     if (!root) {
       throw new RequestRefusal("read-denied", "path outside the resolved roots");
     }
-    if (excludedPath(logicalPath)) {
+    if (excludedPath(logicalPath) || expectedKind === "directory" && excludedPath(logicalPath + "/probe")) {
       throw new RequestRefusal("read-denied", "path is excluded");
     }
     const absolute = resolve(permittedRoot, ...logicalPath.split("/"));
@@ -223221,6 +223222,9 @@ function createReadView(permittedRoot, roots, profile) {
       }
     }
     const follow = statSync(absolute);
+    if (expectedKind === "directory" && !follow.isDirectory()) {
+      throw new RequestRefusal("read-denied", "kind");
+    }
     if (expectedKind === "file" && !follow.isFile()) {
       throw new RequestRefusal("read-denied", "kind");
     }
@@ -223235,6 +223239,30 @@ function createReadView(permittedRoot, roots, profile) {
       } catch {
         return false;
       }
+    },
+    // Bounded physical enumeration for declared workspace patterns. Never
+    // follow directory links or reveal names outside this read grant.
+    listDirectories(logicalPath) {
+      const absolute = revalidate(logicalPath, "directory");
+      const directory = opendirSync(absolute);
+      const result = [];
+      let count = 0;
+      try {
+        for (let entry; (entry = directory.readSync()) !== null; ) {
+          if (++count > 4096) throw new RequestRefusal("read-denied", "directory cap exhausted");
+          const child = logicalPath + "/" + entry.name;
+          if (!isLogicalPath(child) || protectedHomeViolation(child) || excludedPath(child) || excludedPath(child + "/probe")) continue;
+          if (entry.isSymbolicLink()) throw new RequestRefusal("read-denied", "link");
+          if (entry.isDirectory()) {
+            revalidate(child, "directory");
+            result.push(entry.name);
+          }
+        }
+      } finally {
+        directory.closeSync();
+      }
+      revalidate(logicalPath, "directory");
+      return result.sort();
     },
     readFile(logicalPath, limits = { files: 4096, bytes: 4 * 1024 * 1024 }) {
       if (filesRead >= limits.files) {
@@ -230768,7 +230796,18 @@ function buildWorkspaceInventory({ readView, directories, discoveryTruncated = f
       completeness: "unknown"
     };
   }
-  if (!readView.canRead(WORKSPACE_FILE)) {
+  const rootText = readView.readFile(PACKAGE_MANIFEST, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8");
+  let rootManifest;
+  try {
+    rootManifest = JSON.parse(rootText);
+  } catch {
+    rootManifest = {};
+  }
+  const npmWorkspace = Object.hasOwn(rootManifest, "workspaces");
+  if (npmWorkspace && (!Array.isArray(rootManifest.workspaces) || rootManifest.workspaces.length === 0 || rootManifest.workspaces.length > 128 || rootManifest.workspaces.some((p) => typeof p !== "string" || p.length > 256))) throw new WorkspaceRefusal("workspace-pattern-unsupported", "npm workspaces require bounded patterns");
+  if (npmWorkspace && readView.canRead(WORKSPACE_FILE)) throw new WorkspaceRefusal("workspace-manager-ambiguous", "both npm and pnpm membership are declared");
+  if (npmWorkspace && rootManifest.packageManager && !rootManifest.packageManager.startsWith("npm@")) throw new WorkspaceRefusal("workspace-manager-ambiguous", "npm membership conflicts with packageManager");
+  if (!readView.canRead(WORKSPACE_FILE) && !npmWorkspace) {
     let manifest;
     try {
       manifest = JSON.parse(readView.readFile(PACKAGE_MANIFEST, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8"));
@@ -230811,11 +230850,13 @@ function buildWorkspaceInventory({ readView, directories, discoveryTruncated = f
   }
   let workspaceText;
   try {
-    workspaceText = readView.readFile(WORKSPACE_FILE, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8");
+    workspaceText = npmWorkspace ? rootText : readView.readFile(WORKSPACE_FILE, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8");
   } catch (error) {
     throw new WorkspaceRefusal("workspace-read-denied", "the workspace document exists but cannot be read in scope");
   }
-  const parsed = parseWorkspaceYaml(workspaceText);
+  const parsed = npmWorkspace ? { packages: rootManifest.workspaces } : parseWorkspaceYaml(workspaceText);
+  const manager = npmWorkspace ? "npm-workspaces" : "pnpm-workspace";
+  const lockfile = npmWorkspace ? "package-lock.json" : LOCKFILE;
   const patterns = parsed.packages ?? [];
   const inclusions = [];
   const exclusions = [];
@@ -231003,12 +231044,12 @@ function buildWorkspaceInventory({ readView, directories, discoveryTruncated = f
   }
   edges.sort((left, right) => utf8Compare2(left.from, right.from) || utf8Compare2(left.to, right.to) || utf8Compare2(left.kind, right.kind));
   return {
-    manager: "pnpm-workspace",
+    manager,
     compatibilityPath: "supported",
     root: ".",
     workspaceManifestDigest: sha256Text(workspaceText),
-    lockDigestState: lockState(readView),
-    lockDigest: lockDigest(readView),
+    lockDigestState: lockState(readView, lockfile),
+    lockDigest: lockDigest(readView, lockfile),
     packages,
     edges,
     uncertainties: uncertainties.slice(0, MAX_UNCERTAINTIES),
@@ -231016,14 +231057,14 @@ function buildWorkspaceInventory({ readView, directories, discoveryTruncated = f
   };
 }
 var LOCKFILE = "pnpm-lock.yaml";
-function lockState(readView) {
-  if (!readView.canRead(LOCKFILE)) return "absent";
+function lockState(readView, lockfile = LOCKFILE) {
+  if (!readView.canRead(lockfile)) return "absent";
   return "present";
 }
-function lockDigest(readView) {
-  if (!readView.canRead(LOCKFILE)) return void 0;
+function lockDigest(readView, lockfile = LOCKFILE) {
+  if (!readView.canRead(lockfile)) return void 0;
   try {
-    return sha256Text(readView.readFile(LOCKFILE, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8"));
+    return sha256Text(readView.readFile(lockfile, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8"));
   } catch {
     return void 0;
   }
@@ -231198,9 +231239,9 @@ function parseConfirmedScript(scriptText, confirmedArgv) {
     return { ok: false, reason: "script-assignment-prefix" };
   }
   const parsed = scriptText.split(" ");
-  for (const element of parsed) {
+  for (const [index, element] of parsed.entries()) {
     if (!isSafeLiteral(element)) return { ok: false, reason: "script-unsafe-element" };
-    if (FORBIDDEN_ARG_EXACT.has(element)) return { ok: false, reason: "script-node-flag" };
+    if (FORBIDDEN_ARG_EXACT.has(element) && !(parsed[0] === "tsc" && index > 0 && element === "-p")) return { ok: false, reason: "script-node-flag" };
     for (const prefix of FORBIDDEN_ARG_PREFIXES) {
       if (element === prefix || element.startsWith(prefix)) {
         return { ok: false, reason: "script-node-flag" };
@@ -231685,7 +231726,15 @@ function planNativeOperation(context, policyDocument) {
 function readDeclaredPatterns(readView) {
   const WORKSPACE_FILE2 = "pnpm-workspace.yaml";
   const MAX_DOC = 1024 * 1024;
-  if (!readView.canRead(WORKSPACE_FILE2)) return [];
+  if (!readView.canRead(WORKSPACE_FILE2)) {
+    if (!readView.canRead("package.json")) return [];
+    try {
+      const root = JSON.parse(readView.readFile("package.json", { files: 4096, bytes: MAX_DOC }).toString("utf8"));
+      return Array.isArray(root.workspaces) ? root.workspaces : [];
+    } catch {
+      return [];
+    }
+  }
   try {
     const parsed = parseWorkspaceYaml(
       readView.readFile(WORKSPACE_FILE2, { files: 4096, bytes: MAX_DOC }).toString("utf8")
@@ -231719,6 +231768,12 @@ function listInventoryDirectories(readView, inclusionPatterns, out = {}) {
     const regexText = segment.replace(/[.+^${}()|[\\]\\\\]/g, "\\\\$&").split("**").join("\0").split("*").join("[^/]*").split("?").join("[^/]").split("\0").join(".*");
     return new RegExp("^(?:" + regexText + ")$").test(name);
   };
+  const children = (prefix) => {
+    if (prefix && typeof readView.listDirectories === "function") {
+      if ((readView.roots ?? []).some((root) => root.kind === "tree" && (prefix === root.path || prefix.startsWith(root.path + "/")))) return readView.listDirectories(prefix);
+    }
+    return CHILD_VOCABULARY;
+  };
   const expand = (prefix, segments, depth) => {
     expansions += 1;
     if (expansions > MAX_EXPANSIONS || candidates.size >= MAX_CANDIDATES || depth > MAX_DEPTH) {
@@ -231734,7 +231789,7 @@ function listInventoryDirectories(readView, inclusionPatterns, out = {}) {
     const segment = segments[0];
     if (segment === "**") {
       if (prefix !== "") expand(prefix, [], depth);
-      for (const name of CHILD_VOCABULARY) {
+      for (const name of children(prefix)) {
         const child = prefix === "" ? name : prefix + "/" + name;
         expand(child, segments, depth + 1);
       }
@@ -231745,7 +231800,7 @@ function listInventoryDirectories(readView, inclusionPatterns, out = {}) {
       expand(child, segments.slice(1), depth + 1);
       return;
     }
-    for (const name of CHILD_VOCABULARY) {
+    for (const name of children(prefix)) {
       if (segmentAllows(segment, name)) {
         const child = prefix === "" ? name : prefix + "/" + name;
         expand(child, segments.slice(1), depth + 1);

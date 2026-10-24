@@ -1,0 +1,14 @@
+{
+  "name": "@native/workspace",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vitest": "5.0.5",
+    "vite": "8.3.5"
+  }
+}

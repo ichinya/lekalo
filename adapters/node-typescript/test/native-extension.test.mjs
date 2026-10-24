@@ -7,7 +7,8 @@
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -185,4 +186,27 @@ test("the production pipeline reproduces the committed golden plan byte-exact", 
   expected.tool_catalog_digest = computeToolCatalogDigest(expected.tools);
   expected.plan_digest = planDigest(expected);
   assert.deepEqual(plan, expected, "the golden must be the production pipeline output modulo host platform");
+});
+
+test("physical wildcard membership finds arbitrary names, prunes exclusions and refuses links", () => {
+  const root=mkdtempSync(join(realpathSync(tmpdir()),"lekalo-workspace-read-"));
+  try {
+    mkdirSync(join(root,"packages/core"),{recursive:true});
+    mkdirSync(join(root,"packages/web"));
+    mkdirSync(join(root,"packages/excluded"));
+    writeFileSync(join(root,"package.json"),JSON.stringify({name:"root",workspaces:["packages/*"]}));
+    for(const name of ["core","web","excluded"])writeFileSync(join(root,"packages",name,"package.json"),JSON.stringify({name}));
+    const profile={exclusions:["packages/excluded/**"]};
+    const view=createReadView(root,[{path:"package.json",kind:"file",scope:"package.json"},{path:"packages",kind:"tree",scope:"packages/**"}],profile);
+    assert.deepEqual(view.listDirectories("packages"),["core","web"]);
+    assert.throws(()=>view.listDirectories("packages/excluded"));
+    assert.throws(()=>view.listDirectories("outside"));
+    const discovery={};
+    const directories=listInventoryDirectories(view,readDeclaredPatterns(view),discovery);
+    assert.equal(discovery.truncated,false);
+    assert.deepEqual(buildWorkspaceInventory({readView:view,directories}).packages.map(pkg=>pkg.root),[".","packages/core","packages/web"]);
+    mkdirSync(join(root,"outside"));
+    symlinkSync(join(root,"outside"),join(root,"packages/link"),process.platform==="win32"?"junction":"dir");
+    assert.throws(()=>view.listDirectories("packages"));
+  } finally { rmSync(root,{recursive:true,force:true}); }
 });

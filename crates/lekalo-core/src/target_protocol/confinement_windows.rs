@@ -641,6 +641,7 @@ fn run_profile(
     for (key, value) in [
         ("APPDATA", private.as_ref()),
         ("LOCALAPPDATA", private.as_ref()),
+        ("NODE_DISABLE_COMPILE_CACHE", "1"),
         ("SystemDrive", "C:"),
         ("SystemRoot", system.to_str().ok_or(Failure::Spawn)?),
         ("TEMP", private.as_ref()),

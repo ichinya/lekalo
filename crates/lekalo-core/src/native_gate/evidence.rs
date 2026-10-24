@@ -145,6 +145,11 @@ pub fn redact_stream(
             scrubbed = scrubbed.replace(path.as_str(), "[host-path]");
             let plain = path.strip_prefix(r"\\?\").unwrap_or(path);
             scrubbed = scrubbed.replace(plain, "[host-path]");
+            // Node inspect/JSON diagnostics can print doubled Windows separators.
+            // Scrub that spelling too before retaining either output stream.
+            if let Ok(escaped) = serde_json::to_string(plain) {
+                scrubbed = scrubbed.replace(&escaped[1..escaped.len() - 1], "[host-path]");
+            }
             scrubbed = scrubbed.replace(&plain.replace('\\', "/"), "[host-path]");
         }
     }
@@ -192,6 +197,16 @@ fn command_output(
 #[cfg(test)]
 mod output_artifact_tests {
     use super::*;
+    #[test]
+    fn json_escaped_host_paths_do_not_survive_tool_diagnostics() {
+        let path = ["C:", "Users", "private", "native-stage"].join(&char::from(92).to_string());
+        let escaped = serde_json::to_string(&path).unwrap();
+        let raw = format!("Require stack: [{escaped}]");
+        let result = redact_stream(raw.as_bytes(), 4096, &[], &[path]);
+        let text = String::from_utf8(result.bytes).unwrap();
+        assert!(text.contains("[host-path]"));
+        assert!(!text.contains("private"));
+    }
     #[test]
     fn changing_only_stderr_changes_the_output_reference_and_unknown_stays_unknown() {
         let stream = |text: &str| RedactedOutput {

@@ -192,3 +192,9 @@ test("plan build: the committed plan golden rebuilds byte-identically", () => {
   // The golden was produced by this builder; the digest must still verify.
   assert.equal(planDigest(golden), golden.plan_digest);
 });
+
+test("declared tsc project option is tool syntax while Node print stays denied", () => {
+  assert.equal(parseConfirmedScript("tsc -p tsconfig.json", ["tsc", "-p", "tsconfig.json"]).ok, true);
+  assert.equal(parseConfirmedScript("node -p process.env", undefined).ok, false);
+  assert.equal(parseConfirmedScript("tsc -p tsconfig.json; npm run steal", undefined).ok, false);
+});

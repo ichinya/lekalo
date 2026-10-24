@@ -9,6 +9,7 @@ pub(crate) struct NativeSandbox {
     #[cfg(windows)]
     sandbox: super::confinement::Sandbox,
     qualified: bool,
+    assets: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -28,19 +29,67 @@ fn unavailable() -> TargetFailure {
 }
 
 impl NativeSandbox {
-    pub(crate) fn prepare(pinned_private_root: &Path) -> Result<Self, TargetFailure> {
+    /// Use the ordinary drive spelling for Node/Vite while physical checks
+    /// continue using canonical paths. A verbatim cwd leaks '?' into tool roots.
+    pub(crate) fn runtime_path(path: &Path) -> PathBuf {
+        #[cfg(windows)]
+        {
+            use std::path::{Component, Prefix};
+            let mut parts = path.components();
+            if let Some(Component::Prefix(prefix)) = parts.next() {
+                if let Prefix::VerbatimDisk(letter) = prefix.kind() {
+                    let mut ordinary = PathBuf::from(format!("{}:", char::from(letter)));
+                    ordinary.extend(parts);
+                    return ordinary;
+                }
+            }
+        }
+        path.to_path_buf()
+    }
+
+    pub(crate) fn prepare_assets(
+        pinned_private_root: &Path,
+        assets: Option<&Path>,
+    ) -> Result<Self, TargetFailure> {
         #[cfg(windows)]
         {
             Ok(Self {
-                sandbox: super::confinement::Sandbox::native_stage(pinned_private_root)?,
+                sandbox: super::confinement::Sandbox::native_stage(pinned_private_root, assets)?,
                 qualified: false,
+                assets: assets.is_some(),
             })
         }
         #[cfg(not(windows))]
         {
-            let _ = pinned_private_root;
+            let _ = (pinned_private_root, assets);
             Err(unavailable())
         }
+    }
+
+    pub(crate) fn tool_script(&self, entry: &str, digest: &str) -> Result<PathBuf, TargetFailure> {
+        if !self.qualified
+            || !self.assets
+            || entry
+                .split('/')
+                .any(|p| p.is_empty() || p == "." || p == "..")
+        {
+            return Err(unavailable());
+        }
+        let project = self.project_root()?;
+        let assets = project
+            .parent()
+            .ok_or_else(unavailable)?
+            .join("node_modules");
+        let (dir, name) = entry.rsplit_once('/').unwrap_or(("", entry));
+        let bytes = crate::project_fs::Fs::open(&assets)
+            .map_err(|_| unavailable())?
+            .read_file_opt(dir, name, 32 * 1024 * 1024)
+            .map_err(|_| unavailable())?
+            .ok_or_else(unavailable)?;
+        if format!("sha256:{}", crate::digest::sha256_hex(&bytes)) != digest {
+            return Err(unavailable());
+        }
+        Ok(assets.join(entry))
     }
 
     /// A fixed runtime probe, performed after custody/approval preflight.
@@ -153,7 +202,13 @@ impl NativeSandbox {
             let script = std::fs::canonicalize(first).map_err(|_| unavailable())?;
             let project =
                 std::fs::canonicalize(self.sandbox.project_root()).map_err(|_| unavailable())?;
-            if !script.starts_with(project) {
+            let asset_root = project
+                .parent()
+                .ok_or_else(unavailable)?
+                .join("node_modules");
+            let admitted_asset = self.assets
+                && std::fs::canonicalize(asset_root).is_ok_and(|root| script.starts_with(root));
+            if !script.starts_with(project) && !admitted_asset {
                 return Err(unavailable());
             }
             self.sandbox
@@ -175,5 +230,21 @@ impl NativeSandbox {
         {
             Ok(())
         }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod path_tests {
+    use super::*;
+    #[test]
+    fn node_paths_use_drive_spelling_without_changing_physical_identity() {
+        use std::path::{Component, Prefix};
+        let root = tempfile::tempdir().unwrap();
+        let canonical = std::fs::canonicalize(root.path()).unwrap();
+        let ordinary = NativeSandbox::runtime_path(&canonical);
+        assert!(
+            matches!(ordinary.components().next(),Some(Component::Prefix(p)) if matches!(p.kind(),Prefix::Disk(_)))
+        );
+        assert_eq!(std::fs::canonicalize(ordinary).unwrap(), canonical);
     }
 }

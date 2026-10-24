@@ -24,6 +24,7 @@ const require=createRequire((process.env.LEKALO_AJV_NODE_PATH ?? repo)+'/');
 assert.equal(require('ajv/package.json').version,'8.20.0');
 const Ajv=require('ajv/dist/2020').default;
 const validators=Object.fromEntries(['execution-plan','execution-policy','tool-catalog'].map(name=>[name,new Ajv({strict:true,allErrors:true}).compile(JSON.parse(fs.readFileSync(join(repo,`contracts/native-${name}.schema.v0.9.1.json`),'utf8')))]));
+const runValidator=new Ajv({strict:true,allErrors:true}).compile(JSON.parse(fs.readFileSync(join(repo,'contracts/native-gate-run.schema.v1.0.0.json'),'utf8')));
 const results=[];
 const save=(path,value)=>fs.writeFileSync(path,JSON.stringify(value,null,2)+'\n');
 const inventory=(root,prefix='')=>fs.readdirSync(join(root,prefix),{withFileTypes:true}).sort((a,b)=>a.name<b.name?-1:1).flatMap(entry=>{
@@ -125,7 +126,8 @@ function actual(receipt) {
   assert.equal(receipt.capability_evidence.process_containment,'enforced');
   assert.equal(receipt.capability_evidence.backend,'windows-lpac-job');
   assert.match(receipt.capability_evidence.receipt_digest,/^sha256:[a-f0-9]{64}$/);
-  assert.match(receipt.provenance,/^native-execution-plan@0.9.1:sha256:/);
+  assert.match(receipt.provenance,/^sha256:[a-f0-9]{64}$/);
+  assert.ok(runValidator(receipt),JSON.stringify(runValidator.errors));
   assert.equal(receipt.commands.length,1);
 }
 function refusal(document,rule) {assert.ok(document.reasonCodes?.includes(rule),JSON.stringify(document));}

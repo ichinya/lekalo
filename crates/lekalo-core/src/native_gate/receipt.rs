@@ -135,8 +135,31 @@ pub fn rollup_verdict(result: &NativeRunResult) -> String {
 pub fn validate_run_result(bytes: &[u8]) -> Result<NativeRunResult, PlanRejection> {
     let result: NativeRunResult =
         serde_json::from_slice(bytes).map_err(|_| PlanRejection::Malformed)?;
-    if result.schema_version != RUN_SCHEMA_VERSION || result.kind != "native-run-result" {
+    let tool_outputs = result.schema_version == "lekalo/native-gate-run/v1.0.0";
+    if tool_outputs
+        && !super::execution_schema::valid(bytes, super::execution_schema::Document::RunTools)
+    {
+        return Err(PlanRejection::Shape("tool-run-schema"));
+    }
+    if (result.schema_version != RUN_SCHEMA_VERSION && !tool_outputs)
+        || result.kind != "native-run-result"
+    {
         return Err(PlanRejection::Shape("schema-version"));
+    }
+    if tool_outputs {
+        for path in result
+            .mutation_summary
+            .created
+            .iter()
+            .chain(&result.mutation_summary.modified)
+            .map(|entry| &entry.path)
+            .chain(&result.mutation_summary.deleted)
+            .chain(&result.mutation_summary.unexpected)
+        {
+            if !super::execution::tool_output_path(path) {
+                return Err(PlanRejection::Shape("tool-output-path"));
+            }
+        }
     }
     if !OUTCOMES.contains(&result.outcome.as_str()) {
         return Err(PlanRejection::Shape("outcome"));
@@ -225,6 +248,30 @@ mod tests {
         serde_json::from_slice(bytes).expect("golden run decodes")
     }
 
+    #[test]
+    fn declared_tool_receipts_keep_real_cache_names_and_refuse_escaping_paths() {
+        let mut run = golden_run();
+        run.schema_version = "lekalo/native-gate-run/v1.0.0".into();
+        run.mutation_summary
+            .created
+            .push(super::super::types::NativeMutation {
+                path: "packages/core/cache/CACHEDIR.TAG".into(),
+                digest: Some(format!("sha256:{}", "a".repeat(64))),
+            });
+        assert!(validate_run_result(&serde_json::to_vec(&run).unwrap()).is_ok());
+        for path in [
+            "../outside",
+            "cache/.env",
+            "cache/CON.txt",
+            "cache/../../outside",
+        ] {
+            run.mutation_summary.created[0].path = path.into();
+            assert!(
+                validate_run_result(&serde_json::to_vec(&run).unwrap()).is_err(),
+                "{path}"
+            );
+        }
+    }
     #[test]
     fn the_golden_run_receipt_validates() {
         assert!(validate_run_result(include_bytes!(

@@ -15,15 +15,39 @@ impl Retrieve for EmbeddedOnly {
 
 pub(super) enum Document {
     Plan,
+    PlanTools,
     Policy,
     Catalog,
+    CatalogTools,
+    Report,
+    RunTools,
 }
 
 pub(super) fn valid(bytes: &[u8], document: Document) -> bool {
     static PLAN: OnceLock<Result<Validator, ()>> = OnceLock::new();
     static POLICY: OnceLock<Result<Validator, ()>> = OnceLock::new();
     static CATALOG: OnceLock<Result<Validator, ()>> = OnceLock::new();
+    static PLAN_TOOLS: OnceLock<Result<Validator, ()>> = OnceLock::new();
+    static CATALOG_TOOLS: OnceLock<Result<Validator, ()>> = OnceLock::new();
+    static RUN_TOOLS: OnceLock<Result<Validator, ()>> = OnceLock::new();
+    static REPORT: OnceLock<Result<Validator, ()>> = OnceLock::new();
     let (cache, schema): (_, &[u8]) = match document {
+        Document::RunTools => (
+            &RUN_TOOLS,
+            include_bytes!("../../../../contracts/native-gate-run.schema.v1.0.0.json"),
+        ),
+        Document::PlanTools => (
+            &PLAN_TOOLS,
+            include_bytes!("../../../../contracts/native-execution-plan.schema.v1.0.0.json"),
+        ),
+        Document::CatalogTools => (
+            &CATALOG_TOOLS,
+            include_bytes!("../../../../contracts/native-tool-catalog.schema.v1.0.0.json"),
+        ),
+        Document::Report => (
+            &REPORT,
+            include_bytes!("../../../../contracts/native-execution-report.schema.v1.0.0.json"),
+        ),
         Document::Plan => (
             &PLAN,
             include_bytes!("../../../../contracts/native-execution-plan.schema.v0.9.1.json"),

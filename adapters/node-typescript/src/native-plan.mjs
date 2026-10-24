@@ -154,9 +154,11 @@ export function parseConfirmedScript(scriptText, confirmedArgv) {
     return { ok: false, reason: "script-assignment-prefix" };
   }
   const parsed = scriptText.split(" ");
-  for (const element of parsed) {
+  for (const [index, element] of parsed.entries()) {
     if (!isSafeLiteral(element)) return { ok: false, reason: "script-unsafe-element" };
-    if (FORBIDDEN_ARG_EXACT.has(element)) return { ok: false, reason: "script-node-flag" };
+    // tsc consumes its own -p after the pinned entry script; it is not
+    // passed to Node as the runtime print/eval option.
+    if (FORBIDDEN_ARG_EXACT.has(element) && !(parsed[0] === "tsc" && index > 0 && element === "-p")) return { ok: false, reason: "script-node-flag" };
     for (const prefix of FORBIDDEN_ARG_PREFIXES) {
       if (element === prefix || element.startsWith(prefix)) {
         return { ok: false, reason: "script-node-flag" };

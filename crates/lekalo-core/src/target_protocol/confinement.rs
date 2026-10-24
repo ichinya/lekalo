@@ -379,9 +379,10 @@ fn prlimit_available() -> bool {
 /// (pointing at the per-exchange staging paths). They are provided
 /// unconditionally so the runtime can locate system directories
 /// without inheriting the host environment.
-pub(super) const WINDOWS_PRIVATE_ENV_NAMES: [&str; 8] = [
+pub(super) const WINDOWS_PRIVATE_ENV_NAMES: [&str; 9] = [
     "APPDATA",
     "LOCALAPPDATA",
+    "NODE_DISABLE_COMPILE_CACHE",
     "SystemDrive",
     "SystemRoot",
     "TEMP",
@@ -449,13 +450,20 @@ impl Sandbox {
     /// A private, already pinned native input tree. Only the Windows
     /// LPAC/job lane currently qualifies its mandatory hard resource cap.
     #[cfg(windows)]
-    pub(super) fn native_stage(root: &Path) -> Result<Self, TargetFailure> {
+    pub(super) fn native_stage(root: &Path, assets: Option<&Path>) -> Result<Self, TargetFailure> {
         let mut policy = SandboxPolicy::strict();
         policy.children_denied = false;
         policy.native_execution = true;
         let mut sandbox = Self::new(root, &[], &[], false, policy)?;
         crate::native_gate::copy_execution_tree(root, &sandbox.project)
             .map_err(|_| refusal("native-snapshot"))?;
+        if let Some(assets) = assets {
+            crate::native_gate::copy_execution_tree(
+                assets,
+                &sandbox.owned.path().join("node_modules"),
+            )
+            .map_err(|_| refusal("native-assets"))?;
+        }
         sandbox.write_roots.push(sandbox.project.clone());
         std::fs::create_dir_all(sandbox.project.join(".lekalo-temp"))
             .map_err(|_| refusal("native-temp"))?;
@@ -502,8 +510,16 @@ impl Sandbox {
         if remaining.timeout_ms == 0 {
             return Err(TargetFailure::Timeout);
         }
-        windows::run_at(&command, b"", &remaining, self, &cwd, cancel, env)
-            .map_err(super::transport_failure)
+        windows::run_at(
+            &command,
+            b"",
+            &remaining,
+            self,
+            &super::native_host::NativeSandbox::runtime_path(&cwd),
+            cancel,
+            env,
+        )
+        .map_err(super::transport_failure)
     }
 
     #[cfg(windows)]
@@ -791,7 +807,17 @@ impl Sandbox {
         // future explicit runtime bundle contract, not an ambient fallback.
         if let Some(first) = args.first_mut() {
             let script = Path::new(first);
-            if script.is_file() && !script.starts_with(&self.project) {
+            let canonical = std::fs::canonicalize(script).ok();
+            let in_project = canonical
+                .as_ref()
+                .zip(std::fs::canonicalize(&self.project).ok())
+                .is_some_and(|(script, root)| script.starts_with(root));
+            let in_assets = self.policy.native_execution
+                && canonical
+                    .as_ref()
+                    .zip(std::fs::canonicalize(self.owned.path().join("node_modules")).ok())
+                    .is_some_and(|(script, root)| script.starts_with(root));
+            if script.is_file() && !in_project && !in_assets {
                 let script_name = script
                     .file_name()
                     .ok_or_else(|| refusal("sandbox-runtime"))?;

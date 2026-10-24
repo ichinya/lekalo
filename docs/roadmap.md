@@ -24,7 +24,7 @@ These labels describe availability. Passed, failed, ignored and unavailable desc
 | External workflow/workspace delivery | **Experimental** | [Integrations](integrations.md); discovery/trace validity is not real delivery |
 | Local aggregate metrics export | **Implemented** | [Metrics export](metrics-export.md); no uploader or measured Framework Lift outcome |
 | Worklog/Changelog and task links | **Implemented** pilot profiles | [Worklog/Changelog](worklog-changelog.md), [task links](task-external-links.md); no general provider qualification |
-| Native production command execution | **Planned** | [Native gates](native-gates.md); fixture execution is a separate path |
+| Native production command execution | **Implemented** Windows x64 / pinned Node 24 | [Native gates](native-gates.md); approved source-bound plans, read-only tools, measured results and typed unsupported hosts |
 | Automatic screen generation | **Planned** | [Greenfield tutorial](tutorial-greenfield-planner.md), [screen decision](adr/0046-no-screen-view-ir-kind.md) |
 
 ## Release documentation

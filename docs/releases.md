@@ -14,12 +14,12 @@ Names follow `lekalo-v<VERSION>-<TARGET>.<EXTENSION>`. Each archive has one top-
 
 ## Verify and install
 
-Download into an empty working directory, then run the matching block there. The examples use `0.8.15`; change the version to the release you downloaded. They select exactly one checksum row and verify it before extraction.
+Download into an empty working directory, then run the matching block there. The examples use `1.0.0`; change the version to the release you downloaded. They select exactly one checksum row and verify it before extraction.
 
 ### Windows (PowerShell)
 
 ```powershell
-$version = '0.8.15'
+$version = '1.0.0'
 $archive = "lekalo-v$version-x86_64-pc-windows-msvc.zip"
 $entries = @(Get-Content -LiteralPath SHA256SUMS.txt | Where-Object { $_.EndsWith("  $archive") })
 if ($entries.Count -ne 1) { throw 'Checksum entry missing or duplicated' }
@@ -36,7 +36,7 @@ Move `lekalo.exe` to a directory on PATH for invocation from any working directo
 
 ```bash
 set -euo pipefail
-version=0.8.15
+version=1.0.0
 target=x86_64-unknown-linux-gnu # aarch64-unknown-linux-gnu для ARM64
 archive="lekalo-v${version}-${target}.tar.gz"
 awk -v name="$archive" '$2 == name { print; found++ } END { if (found != 1) exit 1 }' SHA256SUMS.txt > selected-checksum.txt
@@ -53,7 +53,7 @@ Add `$HOME/.local/bin` to PATH if needed. The install command replaces an existi
 
 ```bash
 set -euo pipefail
-version=0.8.15
+version=1.0.0
 target=aarch64-apple-darwin # x86_64-apple-darwin для Intel
 archive="lekalo-v${version}-${target}.tar.gz"
 awk -v name="$archive" '$2 == name { print; found++ } END { if (found != 1) exit 1 }' SHA256SUMS.txt > selected-checksum.txt

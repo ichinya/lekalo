@@ -24,6 +24,11 @@ const POLICY_VERSION: &str = "lekalo/native-execution-policy/v0.9.1";
 const CATALOG_VERSION: &str = "lekalo/native-tool-catalog/v0.9.1";
 const RUNTIME_PROFILE: &str = "windows-node-lpac-job-v1";
 const DOMAIN: &str = "lekalo.native-execution-plan.v0.9.1";
+const TOOLS_PLAN_VERSION: &str = "lekalo/native-execution-plan/v1.0.0";
+#[path = "execution_tools.rs"]
+mod tools;
+pub(super) use tools::asset_path as tool_output_path;
+pub use tools::AssetPin;
 const MAX_DOCUMENT: usize = 1024 * 1024;
 const MAX_FILES: usize = 4096;
 const MAX_SOURCE_BYTES: usize = 64 * 1024 * 1024;
@@ -52,6 +57,10 @@ pub struct ExecutionTool {
     pub artifact_digest: String,
     pub program_digest: String,
     pub version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_digest: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -77,6 +86,25 @@ pub struct ExecutionPlan {
     pub custody: ExecutionCustody,
     pub inputs: Vec<ExecutionInput>,
     pub tools: Vec<ExecutionTool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assets: Option<AssetPin>,
+}
+
+/// Produced in this invocation; never accepted as a substitute for execution.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionReport {
+    pub schema_version: String,
+    pub kind: String,
+    pub run: NativeRunResult,
+    pub outputs: Vec<CommandOutput>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CommandOutput {
+    pub digest: String,
+    pub output: Value,
 }
 
 #[derive(Deserialize)]
@@ -89,14 +117,14 @@ struct Policy {
     planning_policy: Value,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Catalog {
     schema_version: String,
     tools: Vec<CatalogTool>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CatalogTool {
     id: String,
@@ -195,7 +223,11 @@ fn execution_digest(plan: &ExecutionPlan) -> Result<String, Failure> {
         .as_object_mut()
         .ok_or_else(|| invalid("execution-plan"))?
         .remove("plan_digest");
-    let mut bytes = DOMAIN.as_bytes().to_vec();
+    let mut bytes = if plan.schema_version == TOOLS_PLAN_VERSION {
+        b"lekalo.native-execution-plan.v1.0.0".to_vec()
+    } else {
+        DOMAIN.as_bytes().to_vec()
+    };
     bytes.extend(canonical(&value)?);
     Ok(hash(&bytes))
 }
@@ -204,11 +236,22 @@ pub fn validate_execution_plan(bytes: &[u8]) -> Result<ExecutionPlan, Failure> {
     if bytes.len() > MAX_DOCUMENT {
         return Err(invalid("execution-document-limit"));
     }
-    if !super::execution_schema::valid(bytes, super::execution_schema::Document::Plan) {
+    let successor = decode::<Value>(bytes)?
+        .get("schema_version")
+        .and_then(Value::as_str)
+        == Some(TOOLS_PLAN_VERSION);
+    if !super::execution_schema::valid(
+        bytes,
+        if successor {
+            super::execution_schema::Document::PlanTools
+        } else {
+            super::execution_schema::Document::Plan
+        },
+    ) {
         return Err(invalid("execution-plan-schema"));
     }
     let plan: ExecutionPlan = decode(bytes)?;
-    if plan.schema_version != PLAN_VERSION
+    if ![PLAN_VERSION, TOOLS_PLAN_VERSION].contains(&plan.schema_version.as_str())
         || plan.kind != "native-execution-plan"
         || plan.inputs.is_empty()
         || plan.inputs.len() > MAX_FILES
@@ -232,6 +275,7 @@ pub fn validate_execution_plan(bytes: &[u8]) -> Result<ExecutionPlan, Failure> {
                 pin.id == tool.id
                     && pin.artifact_digest == tool.artifact_digest
                     && tool.version.as_deref() == Some(pin.version.as_str())
+                    && (!successor || tool.entry_digest == pin.entry_digest)
             })
         })
     {
@@ -435,13 +479,6 @@ fn checked_policy(bytes: &[u8]) -> Result<(Policy, super::policy::ExecutionPolic
     if planning.env_recipe != json!({"allowed_names":[],"bindings":[]}) {
         return Err(invalid("execution-environment-profile"));
     }
-    if planning
-        .confirmations
-        .iter()
-        .any(|confirmation| confirmation.tool_ref.entry_digest.is_some())
-    {
-        return Err(invalid("execution-tool-entry-profile"));
-    }
     Ok((policy, planning))
 }
 
@@ -451,6 +488,8 @@ struct Prepared {
     source_root: PathBuf,
     catalog: super::RunnerCatalog,
     catalog_tools: Vec<CatalogTool>,
+    assets_root: Option<PathBuf>,
+    runtime_version: String,
 }
 
 fn prepare(
@@ -462,16 +501,47 @@ fn prepare(
     let (policy_bytes, profile_bytes, catalog_bytes) = controls(input)?;
     let (policy, planning_policy) = checked_policy(&policy_bytes)?;
     let profile = profile(&profile_bytes)?;
-    if !super::execution_schema::valid(&catalog_bytes, super::execution_schema::Document::Catalog) {
+    let successor = decode::<Value>(&catalog_bytes)?
+        .get("schema_version")
+        .and_then(Value::as_str)
+        == Some(tools::TOOLS_CATALOG_VERSION);
+    if !super::execution_schema::valid(
+        &catalog_bytes,
+        if successor {
+            super::execution_schema::Document::CatalogTools
+        } else {
+            super::execution_schema::Document::Catalog
+        },
+    ) {
         return Err(invalid("execution-catalog-schema"));
     }
-    let mut catalog: Catalog = decode(&catalog_bytes)?;
-    if catalog.schema_version != CATALOG_VERSION
+    let captured_tools = if successor {
+        Some(tools::capture(&catalog_bytes)?)
+    } else {
+        None
+    };
+    let mut catalog: Catalog = match &captured_tools {
+        Some(tools) => tools.catalog.clone(),
+        None => decode(&catalog_bytes)?,
+    };
+    if ![CATALOG_VERSION, tools::TOOLS_CATALOG_VERSION].contains(&catalog.schema_version.as_str())
         || catalog.tools.is_empty()
         || catalog.tools.len() > 32
     {
         return Err(invalid("execution-catalog"));
     }
+    if !successor
+        && planning_policy
+            .confirmations
+            .iter()
+            .any(|c| c.tool_ref.entry_digest.is_some())
+    {
+        return Err(invalid("execution-tool-entry-profile"));
+    }
+    let runtime_version = captured_tools
+        .as_ref()
+        .map(|tools| tools.pin.runtime_version.clone())
+        .unwrap_or_else(|| catalog.tools[0].version.clone());
     let mut tools = Vec::new();
     let mut runner_catalog = super::RunnerCatalog::new();
     let mut tool_ids = BTreeSet::new();
@@ -481,11 +551,11 @@ fn prepare(
             || !tool_ids.insert(&tool.id)
             || !tool.program.is_absolute()
             || tool.program.file_stem().and_then(|n| n.to_str()) != Some("node")
-            || !tool.version.starts_with("24.")
+            || !runtime_version.starts_with("24.")
             || tool.version == "unknown"
             || tool.version.is_empty()
             || tool.version.len() > 32
-            || tool.artifact_digest != tool.program_digest
+            || (!successor && tool.artifact_digest != tool.program_digest)
         {
             return Err(invalid("execution-tool"));
         }
@@ -509,7 +579,7 @@ fn prepare(
         if runtime_bytes.is_empty() {
             runtime_bytes = bytes;
         } else if tool.program_digest != catalog.tools[0].program_digest
-            || tool.version != catalog.tools[0].version
+            || (!successor && tool.version != catalog.tools[0].version)
         {
             return Err(invalid("execution-runtime-profile"));
         }
@@ -518,6 +588,14 @@ fn prepare(
             artifact_digest: tool.artifact_digest.clone(),
             program_digest: tool.program_digest.clone(),
             version: tool.version.clone(),
+            entry: captured_tools
+                .as_ref()
+                .and_then(|tools| tools.entries.get(&tool.id))
+                .map(|(entry, _)| entry.clone()),
+            entry_digest: captured_tools
+                .as_ref()
+                .and_then(|tools| tools.entries.get(&tool.id))
+                .map(|(_, digest)| digest.clone()),
         });
         runner_catalog.insert(
             tool.id.clone(),
@@ -565,7 +643,11 @@ fn prepare(
         return Err(Failure::PlanStale);
     }
     if let Some(expected) = expected {
-        if expected.custody != custody || expected.inputs != inputs || expected.tools != tools {
+        if expected.custody != custody
+            || expected.inputs != inputs
+            || expected.tools != tools
+            || expected.assets != captured_tools.as_ref().map(|tools| tools.pin.clone())
+        {
             return Err(Failure::PlanStale);
         }
     }
@@ -596,7 +678,27 @@ fn prepare(
                 version: Some(tool.version.clone()),
             },
         );
+        if let Some((entry, entry_digest)) = captured_tools
+            .as_ref()
+            .and_then(|tools| tools.entries.get(&tool.id))
+        {
+            runner_catalog.set_recipe(
+                tool.id.clone(),
+                super::runner::ToolRecipe {
+                    entry: entry.clone(),
+                    entry_digest: entry_digest.clone(),
+                    program_digest: tool.program_digest.clone(),
+                },
+            );
+        }
     }
+    let assets_root = if let Some(tools) = &captured_tools {
+        let root = stage.path().join("node_modules");
+        tools.stage(&root)?;
+        Some(root)
+    } else {
+        None
+    };
     let source_root = stage.path().join("project");
     std::fs::create_dir(&source_root).map_err(|_| Failure::RunInfrastructure)?;
     for (path, bytes) in &files {
@@ -684,21 +786,64 @@ fn prepare(
         .and_then(|result| result.native_plan)
         .and_then(|result| result.plan)
         .ok_or_else(|| invalid("execution-native-plan"))?;
-    if native_plan.adapter.id != discovered.adapter.id
-        || native_plan.adapter.version != discovered.adapter.version
-        || native_plan.input_manifest_digest != custody.source_manifest_digest
-        || native_plan.tool_catalog_digest != catalog_digest
-        || native_plan.capability_snapshot_digest != discovered.capability_digest
-        || native_plan.commands.is_empty()
-        || native_plan.workspace.completeness != "complete"
-    {
-        return Err(invalid("execution-native-custody"));
+    for (mismatch, detail) in [
+        (
+            native_plan.adapter.id != discovered.adapter.id
+                || native_plan.adapter.version != discovered.adapter.version,
+            "execution-adapter-identity",
+        ),
+        (
+            native_plan.input_manifest_digest != custody.source_manifest_digest,
+            "execution-source-manifest",
+        ),
+        (
+            native_plan.tool_catalog_digest != catalog_digest,
+            "execution-logical-tool-catalog",
+        ),
+        (
+            native_plan.capability_snapshot_digest != discovered.capability_digest,
+            "execution-capability-snapshot",
+        ),
+        (native_plan.commands.is_empty(), "execution-no-commands"),
+        (
+            native_plan.workspace.completeness != "complete",
+            "execution-workspace-incomplete",
+        ),
+    ] {
+        if mismatch {
+            return Err(invalid(detail));
+        }
     }
     if !matches!(
         native_plan.workspace.manager.as_str(),
-        "pnpm-workspace" | "npm-standalone"
+        "pnpm-workspace" | "npm-standalone" | "npm-workspaces"
     ) {
         return Err(Failure::ManagerUnsupported);
+    }
+    if native_plan.workspace.manager == "npm-workspaces" && !successor {
+        return Err(Failure::ManagerUnsupported);
+    }
+    if native_plan.workspace.manager == "npm-workspaces" {
+        let root = captured_package(&files, ".")?;
+        let patterns = root
+            .get("workspaces")
+            .and_then(Value::as_array)
+            .ok_or(Failure::ManagerUnsupported)?;
+        for pattern in patterns {
+            let pattern = pattern.as_str().ok_or(Failure::ManagerUnsupported)?;
+            let prefix = pattern.strip_suffix("/*").unwrap_or(pattern);
+            if !source_path(prefix)
+                || prefix.contains(['*', '?', '!'])
+                || !profile.read_roots.iter().any(|root| {
+                    root.kind == "tree"
+                        && (root.path == prefix || prefix.starts_with(&format!("{}/", root.path)))
+                })
+            {
+                return Err(Failure::CapabilityMissing {
+                    detail: "native-workspace-scope",
+                });
+            }
+        }
     }
     if native_plan.required_capabilities != ["plan.native-gates"] {
         return Err(Failure::CapabilityMissing {
@@ -731,6 +876,27 @@ fn prepare(
             || package.id != format!("{}={}", package.root, name.unwrap_or("(unnamed)"))
         {
             return Err(Failure::TrustInsufficient);
+        }
+    }
+    if successor
+        && planning_policy
+            .fallback_rule
+            .get("mode")
+            .and_then(Value::as_str)
+            == Some("release-full")
+    {
+        for confirmation in &planning_policy.confirmations {
+            if captured_package(&files, &confirmation.cwd).is_ok()
+                && planning_policy
+                    .allowed_gate_kinds
+                    .contains(&confirmation.gate)
+                && !native_plan.commands.iter().any(|command| {
+                    command.gate_id == confirmation.gate_id
+                        && command.package_id == confirmation.package_id
+                })
+            {
+                return Err(invalid("execution-required-confirmation-omitted"));
+            }
         }
     }
     for command in &native_plan.commands {
@@ -775,12 +941,24 @@ fn prepare(
             .iter()
             .find(|recorded| recorded.id == tool.id)
             .ok_or_else(|| invalid("execution-tool-missing"))?;
-        if command.argv.first().map(String::as_str) != Some("node")
+        let recipe = runner_catalog.recipe(&command.tool_ref);
+        if command.argv.first().map(String::as_str)
+            != Some(if successor {
+                command.tool_ref.as_str()
+            } else {
+                "node"
+            })
             || recorded.artifact_digest != tool.artifact_digest
             || recorded.version.as_deref() != Some(tool.version.as_str())
+            || recorded.entry_digest.as_deref() != recipe.map(|recipe| recipe.entry_digest.as_str())
+            || confirmation.tool_ref.entry_digest.as_deref()
+                != recipe.map(|recipe| recipe.entry_digest.as_str())
             || command.argv.len() < 2
         {
             return Err(invalid("execution-tool-recipe"));
+        }
+        if successor {
+            continue;
         }
         let script = &command.argv[1];
         let path = if command.cwd == "." {
@@ -795,13 +973,19 @@ fn prepare(
         }
     }
     let mut plan = ExecutionPlan {
-        schema_version: PLAN_VERSION.into(),
+        schema_version: if successor {
+            TOOLS_PLAN_VERSION
+        } else {
+            PLAN_VERSION
+        }
+        .into(),
         kind: "native-execution-plan".into(),
         plan_digest: String::new(),
         native_plan: *native_plan,
         custody,
         inputs,
         tools,
+        assets: captured_tools.as_ref().map(|tools| tools.pin.clone()),
     };
     plan.plan_digest = execution_digest(&plan)?;
     validate_execution_plan(&canonical(&plan)?)?;
@@ -811,6 +995,8 @@ fn prepare(
         source_root,
         catalog: runner_catalog,
         catalog_tools: catalog.tools,
+        assets_root,
+        runtime_version,
     })
 }
 
@@ -882,7 +1068,18 @@ fn execution_fence(input: &ExecutionInputs, plan: &ExecutionPlan) -> Result<(), 
     if manifest(&current) != plan.inputs {
         return Err(Failure::PlanStale);
     }
-    let catalog: Catalog = decode(&catalog_bytes)?;
+    let captured = if plan.assets.is_some() {
+        Some(tools::capture(&catalog_bytes)?)
+    } else {
+        None
+    };
+    if captured.as_ref().map(|tools| &tools.pin) != plan.assets.as_ref() {
+        return Err(Failure::PlanStale);
+    }
+    let catalog: Catalog = match captured {
+        Some(tools) => tools.catalog,
+        None => decode(&catalog_bytes)?,
+    };
     for tool in catalog.tools {
         let parent = tool
             .program
@@ -926,6 +1123,16 @@ pub fn run_execution_plan(
     approved_digest: &str,
     cancellation: Option<&AtomicBool>,
 ) -> Result<NativeRunResult, Failure> {
+    run_execution_report(input, bytes, approved_digest, cancellation).map(|report| report.run)
+}
+
+/// Execute with bounded redacted artifacts retained alongside their references.
+pub fn run_execution_report(
+    input: &ExecutionInputs,
+    bytes: &[u8],
+    approved_digest: &str,
+    cancellation: Option<&AtomicBool>,
+) -> Result<ExecutionReport, Failure> {
     let plan = validate_execution_plan(bytes)?;
     if approved_digest != plan.plan_digest {
         return Err(Failure::ApprovalMissing);
@@ -957,15 +1164,16 @@ pub fn run_execution_plan(
     }
     execution_fence(input, &plan)?;
     let mut sandbox =
-        NativeSandbox::prepare(&prepared.source_root).map_err(|_| Failure::CapabilityMissing {
-            detail: "native-execution-confinement",
-        })?;
+        NativeSandbox::prepare_assets(&prepared.source_root, prepared.assets_root.as_deref())
+            .map_err(|_| Failure::CapabilityMissing {
+                detail: "native-execution-confinement",
+            })?;
     let runtime = &prepared.catalog_tools[0];
     let proof = sandbox
         .qualify(
             &runtime.program,
             &runtime.program_digest,
-            Some(&runtime.version),
+            Some(&prepared.runtime_version),
         )
         .map_err(|_| Failure::CapabilityMissing {
             detail: "native-execution-confinement",
@@ -981,6 +1189,8 @@ pub fn run_execution_plan(
         process_containment: proof.processes.into(),
         backend: proof.backend.into(),
     };
+    let execution_started = std::time::Instant::now();
+    let outputs = std::cell::RefCell::new(BTreeMap::new());
     let mut receipt = super::runner::run_confirmed_plan_in_sandbox(
         &super::ConfirmedRun {
             plan: &plan.native_plan,
@@ -999,8 +1209,9 @@ pub fn run_execution_plan(
             secrets: Vec::new(),
         },
         sandbox,
+        &outputs,
     )?;
-    receipt.provenance = Some(format!("native-execution-plan@0.9.1:{}", plan.plan_digest));
+    receipt.provenance = Some(plan.plan_digest.clone());
     receipt.capability_evidence.receipt_digest = Some(proof.digest);
     let unchanged = (|| {
         let (a, b, c) = controls(input)?;
@@ -1034,8 +1245,47 @@ pub fn run_execution_plan(
         }
         receipt.reason_codes.push("cleanup-failed".into());
     }
+    // Include original custody verification and outer stage cleanup in the
+    // terminal budget. No late cleanup/verification may turn into PASS.
+    let late_reason = if cancellation.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        Some(super::evidence::reasons::CANCELLED)
+    } else if execution_started.elapsed().as_millis()
+        >= u128::from(plan.native_plan.limits.timeout_ms_per_run)
+    {
+        Some(super::evidence::reasons::RUN_DEADLINE)
+    } else {
+        None
+    };
+    if let Some(reason) = late_reason {
+        if receipt.outcome != "security" {
+            receipt.outcome = "infrastructure".into();
+        }
+        if !receipt.reason_codes.iter().any(|value| value == reason) {
+            receipt.reason_codes.push(reason.into());
+        }
+    }
     receipt.verdict = super::evidence::rollup(&receipt);
-    super::validate_run_result(&canonical(&receipt)?).map_err(|_| invalid("execution-result"))
+    let run = super::validate_run_result(&canonical(&receipt)?)
+        .map_err(|_| invalid("execution-result"))?;
+    let outputs: Vec<_> = outputs
+        .into_inner()
+        .into_iter()
+        .map(|(digest, output)| CommandOutput { digest, output })
+        .collect();
+    if run.commands.iter().any(|command|matches!(&command.output_ref,Some(super::types::NativeOutputRef::Digest(digest)) if !outputs.iter().any(|output|&output.digest==digest))) {return Err(Failure::RunInfrastructure);}
+    let report = ExecutionReport {
+        schema_version: "lekalo/native-execution-report/v1.0.0".into(),
+        kind: "native-execution-report".into(),
+        run,
+        outputs,
+    };
+    if !super::execution_schema::valid(
+        &canonical(&report)?,
+        super::execution_schema::Document::Report,
+    ) {
+        return Err(invalid("execution-report"));
+    }
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -1069,6 +1319,8 @@ mod tests {
                 artifact_digest: runtime_digest.into(),
                 program_digest: runtime_digest.into(),
                 version: "24.0.0".into(),
+                entry: None,
+                entry_digest: None,
             })
             .collect();
         let mut plan = ExecutionPlan {
@@ -1079,6 +1331,7 @@ mod tests {
             custody,
             inputs,
             tools,
+            assets: None,
         };
         plan.plan_digest = execution_digest(&plan).unwrap();
         validate_execution_plan(&canonical(&plan).unwrap()).unwrap()

@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.9.0",
-  "cliSourceDigest": "sha256:ba7ab423bb2916592de5338db5bc91dea09541e0ccd1f749bd9872332810646d",
+  "productVersion": "1.0.0",
+  "cliSourceDigest": "sha256:4219d7171eaa2b1175fe006ebcb2657a8155db3f8f03d9faf1e178e702545f25",
   "p0Pages": [
     {
       "page": "README.md",
@@ -2746,7 +2746,7 @@
       "kind": "command",
       "command": "verify",
       "usage": "lekalo verify [OPTIONS] [PROGRAM_ARGS]...",
-      "helpDigest": "sha256:604250b14735736f2d9542c12a1d6f1951a2f1b674cd79fcf8ca025356956f91",
+      "helpDigest": "sha256:70a2aa689b02209d753b148bc31cbc6dee86903c13d416da28f92a9221fbae60",
       "summary": "Run the read-only verification pipeline over a validated project: core validation, drift, per-target adapter validation, portable",
       "leaf": true,
       "owner": "docs/orchestration.md",
@@ -4245,10 +4245,28 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/native-execution-plan.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/native-execution-plan.schema.v1.0.0.json",
+      "sourceDigest": "sha256:e183544b4d1009649bbb63ed0a3e258b7a0586136540e54bd9f5e194c53593ef",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/native-execution-policy.schema.v0.9.1.json",
       "kind": "contract",
       "source": "contracts/native-execution-policy.schema.v0.9.1.json",
       "sourceDigest": "sha256:f179e0ea576d1951aeacbdee05e1f991c1198eb597ae542a47300c1702cfaf6d",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-execution-report.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/native-execution-report.schema.v1.0.0.json",
+      "sourceDigest": "sha256:5994fe0bc05655aed58816771ebac2b3f9d0f4d1cac03af125fae96387701dcc",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4281,6 +4299,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/native-gate-run.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/native-gate-run.schema.v1.0.0.json",
+      "sourceDigest": "sha256:97179bad949fc3f1c3191ab40bb38045c4312b6de00fcc4f9094dd5996fdbead",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/native-gate-view.schema.v0.4.0.json",
       "kind": "contract",
       "source": "contracts/native-gate-view.schema.v0.4.0.json",
@@ -4294,6 +4321,24 @@
       "kind": "contract",
       "source": "contracts/native-tool-catalog.schema.v0.9.1.json",
       "sourceDigest": "sha256:cb5869bd06886e9592f45025dc9141422d13d71708cb64ac7954d1c6a8ade7f0",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-tool-catalog.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/native-tool-catalog.schema.v1.0.0.json",
+      "sourceDigest": "sha256:fa6e27873fa20bdc517ff3c657e69878eb7708d96a224c085f542d8723759067",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-verify-report.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/native-verify-report.schema.v1.0.0.json",
+      "sourceDigest": "sha256:e1fb818e72a6c4a66b39fef21e77002bbfffc867684dcaea873d321a92f2ad7a",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
