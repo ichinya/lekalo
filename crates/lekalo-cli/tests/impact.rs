@@ -265,12 +265,18 @@ fn version_probe_prints_the_prospective_product() {
     let dir = std::env::temp_dir();
     let output = lekalo_in(&dir, &["--version"]);
     assert_eq!(exit_code(&output), 0);
-    assert_eq!(stdout_text(&output).trim_end(), "lekalo 0.8.0");
+    assert_eq!(
+        stdout_text(&output).trim_end(),
+        format!("lekalo {}", env!("CARGO_PKG_VERSION"))
+    );
     let json = lekalo_in(&dir, &["--json", "--version"]);
     assert_eq!(exit_code(&json), 0);
     assert_eq!(
         stdout_text(&json).trim_end(),
-        "{\n  \"status\": \"valid\",\n  \"version\": \"0.8.0\"\n}"
+        format!(
+            "{{\n  \"status\": \"valid\",\n  \"version\": \"{}\"\n}}",
+            env!("CARGO_PKG_VERSION")
+        )
     );
 }
 

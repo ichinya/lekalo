@@ -298,12 +298,18 @@ fn version_reports_the_prospective_product_version() {
     let project = fixture_path();
     let human = lekalo_in(&project, &["--version"]);
     assert_eq!(exit_code(&human), 0);
-    assert_eq!(stdout_text(&human).trim(), "lekalo 0.8.0");
+    assert_eq!(
+        stdout_text(&human).trim(),
+        format!("lekalo {}", env!("CARGO_PKG_VERSION"))
+    );
     let json = lekalo_in(&project, &["--json", "--version"]);
     assert_eq!(exit_code(&json), 0);
     assert_eq!(
         stdout_text(&json).trim(),
-        "{\n  \"status\": \"valid\",\n  \"version\": \"0.8.0\"\n}"
+        format!(
+            "{{\n  \"status\": \"valid\",\n  \"version\": \"{}\"\n}}",
+            env!("CARGO_PKG_VERSION")
+        )
     );
 }
 
