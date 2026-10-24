@@ -55,6 +55,8 @@ pub struct ScanReceipt {
     pub profile: Option<String>,
     pub adapter: String,
     pub revision: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_digest: Option<String>,
     pub symbols: usize,
     pub endpoints: usize,
     pub schemas: usize,
@@ -348,6 +350,7 @@ pub fn run(
         profile: request.profile.map(str::to_owned),
         adapter: receipt.adapter,
         revision: receipt.revision,
+        profile_digest: outcome.response.evidence.scan_profile_digest.clone(),
         symbols: receipt.symbols,
         endpoints: receipt.endpoints,
         schemas: receipt.schemas,
@@ -576,6 +579,15 @@ fn build_document(
         if crate::project_fs::path_violation(&entry.path).is_some() {
             return Err(invalid_set("entry-path"));
         }
+        if let Some(expected) = entry
+            .evidence
+            .as_ref()
+            .and_then(|e| e.source_digest.as_ref())
+        {
+            if file_fingerprint(&fs, &entry.path).as_ref() != Some(expected) {
+                return Err(invalid_set("entry-custody"));
+            }
+        }
         if super::types::SymbolKind::parse(&entry.kind).is_none() {
             return Err(invalid_set("entry-kind"));
         }
@@ -703,8 +715,16 @@ fn build_document(
         adapter.digest.as_str(),
         outcome.response.request_id.as_str(),
     );
+    // Preserve predecessor revision bytes. The explicitly negotiated
+    // successor also binds the exact normalized launch policy, including
+    // exclusions and provenance, rather than merely the profile id.
     let revision_bytes =
-        serde_json::to_vec(&revision_payload).map_err(|_| invalid_set("document-shape"))?;
+        if let Some(profile_digest) = &outcome.response.evidence.scan_profile_digest {
+            serde_json::to_vec(&(revision_payload, profile_digest))
+        } else {
+            serde_json::to_vec(&revision_payload)
+        }
+        .map_err(|_| invalid_set("document-shape"))?;
     let revision = format!("sha256:{}", crate::digest::sha256_hex(&revision_bytes));
 
     let mut document = serde_json::Map::new();
@@ -747,6 +767,7 @@ mod envelope_tests {
             profile: None,
             adapter: "a".to_owned(),
             revision: "r".to_owned(),
+            profile_digest: None,
             symbols: 0,
             endpoints: 0,
             schemas: 0,

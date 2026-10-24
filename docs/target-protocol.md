@@ -1,12 +1,19 @@
 # Target adapter process protocol
 
-Status: **Implemented** host protocol `lekalo.target/v1` with bootstrap contract `0.3.2` and explicitly negotiated successors `0.6.4` (lint) and `0.8.0` (watch selection), product `0.8.0`. Owner: adapter-host maintainers. [ADR-0025](adr/0025-target-protocol.md). Source-bound Model/IR pairs are `0.2.16` and `0.8.0`; ordinary operations retain their predecessor admission, and watch requires the explicit pins below. The ordinary diagnostic registry is `0.6.4`; watch emits the merged `0.8.0` union. Supported operations are describe, scan, bind, validate, generate, verify, plan-clean, clean and the read-only native-plan extension. Operation availability depends on the adapter and profile; declaration is not successful execution.
+Status: **Implemented** host protocol `lekalo.target/v1` with bootstrap contract `0.3.2` and explicitly negotiated successors `0.6.4` (lint), `0.8.0` (watch selection) and `0.9.0` (ordinary public scan custody), product `0.9.0`. Owner: adapter-host maintainers. [ADR-0025](adr/0025-target-protocol.md). Source-bound Model/IR pairs are `0.2.16` and `0.8.0`; ordinary operations retain their predecessor admission, and watch requires the explicit pins below. The ordinary diagnostic registry is `0.6.4`; watch emits the merged `0.8.0` union. Supported operations are describe, scan, bind, validate, generate, verify, plan-clean, clean and the read-only native-plan extension. Operation availability depends on the adapter and profile; declaration is not successful execution.
 
 The exact [current schema](../contracts/target-protocol.schema.v0.3.2.json) and production decoder govern this checkout. Historical base/extension paragraphs below describe negotiation history; they do not admit a historical contract absent from the current registry. [Workflow provider discovery](provider-contract.md) is separate. [Native gates](native-gates.md) document planning; production native execution is **Planned**. [Architecture](architecture.md), [security](security.md), [Node adapter](../adapters/node-typescript/README.md), [PHP adapter](../adapters/php-laravel/README.md).
 
 ## Version negotiation and capability discovery
 
-This checkout probes at **exactly `0.3.2`** (`BASE_VERSION`/`VERSION`) and upgrades only to a supported version the adapter explicitly declares and proves through a second describe at that exact version. The ascending `SUPPORTED_VERSIONS` set in `crates/lekalo-core/src/target_protocol/version.rs` admits 0.3.2, 0.6.4 and 0.8.0. The frozen predecessor schemas retain their exact members and bytes; arbitrary newer/older strings are refused.
+This checkout probes at **exactly `0.3.2`** (`BASE_VERSION`/`VERSION`) and upgrades only to a supported version the adapter explicitly declares and proves through a second describe at that exact version. The ascending `SUPPORTED_VERSIONS` set in `crates/lekalo-core/src/target_protocol/version.rs` admits 0.3.2, 0.6.4, 0.8.0 and 0.9.0. The frozen predecessor schemas retain their exact members and bytes; arbitrary newer/older strings are refused.
+
+Protocol `0.9.0` retains the `0.8.0` wire surface and adds exact
+source/profile custody for successful scans, with scan detail capacity of
+2048 Unicode code points. Other detail limits remain 128. Optional watch work still requires the adapter to declare that capability. The
+[public scan recipe](public-typescript-scan.md) describes required
+`source_digest`, `scan_profile_digest`, typed refusals and the qualifying
+manifested standalone/workspace subset.
 
 Describe reports exact adapter identity/digest, protocol versions, operations, transports, target/profile choices, read/write scopes and capabilities. The closed capability object includes exact `ir_versions`, a bounded map of named support states (`full`, `partial`, `unsupported`, `unknown`) and optional declared constraints. Names must resolve in the embedded capability-definition registry. Missing or unknown evidence does not mean supported.
 

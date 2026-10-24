@@ -134,7 +134,7 @@ impl WatchSelection {
 
 pub(super) fn validate(request: &wire::RequestEnvelope) -> Result<(), TargetFailure> {
     if let Some(selection) = &request.watch_request {
-        if request.protocol_version != version::WATCH_VERSION
+        if !version::supports_watch(&request.protocol_version)
             || !matches!(
                 request.operation,
                 wire::Operation::Scan | wire::Operation::Validate
@@ -183,6 +183,9 @@ mod tests {
         request.target = Some("fixture".into());
         request.ir_path = Some("ir/project.json".into());
         request.watch_request = Some(selection());
+        request.request_id = wire::request_id(&request);
+        assert!(wire::decode_request(&serde_json::to_vec(&request).unwrap()).is_ok());
+        request.protocol_version = version::SCAN_VERSION.into();
         request.request_id = wire::request_id(&request);
         assert!(wire::decode_request(&serde_json::to_vec(&request).unwrap()).is_ok());
         for version in ["0.3.2", "0.6.4"] {

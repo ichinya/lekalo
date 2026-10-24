@@ -476,7 +476,7 @@ impl TargetClient {
         }
         let capabilities = described.capabilities.clone();
         if selection.is_some()
-            && (described.negotiated_version != version::WATCH_VERSION
+            && (!version::supports_watch(described.negotiated_version)
                 || !capabilities.watch.as_ref().is_some_and(|s| s.selection))
         {
             return Err(TargetFailure::CapabilityUnsupported {

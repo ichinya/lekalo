@@ -10,6 +10,11 @@ physical file.
 
 ## Invocation
 
+The supported standalone/workspace public CLI recipe and its custody and
+refusal gates are documented in [Public TypeScript observed scan](../../docs/public-typescript-scan.md).
+Package `0.5.0` explicitly declares ordinary scan protocol `0.9.0`; the
+separate contributor framework pilots keep their documented limitations.
+
 ```sh
 # production protocol process: exactly one request, exactly one response
 node adapters/node-typescript/adapter.mjs

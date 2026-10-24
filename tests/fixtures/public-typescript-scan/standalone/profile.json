@@ -1,0 +1,8 @@
+{
+  "id": "standalone",
+  "mode": "observed",
+  "target": "node-typescript",
+  "readRoots": [{"kind":"file","path":"package.json"},{"kind":"file","path":"tsconfig.json"},{"kind":"tree","path":"src"}],
+  "exclusions": [],
+  "provenance": {"origin":"declared","revision":"public-scan-v1","disposition":"public-fixture"}
+}

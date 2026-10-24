@@ -325,6 +325,11 @@
       "origin": "synthetic"
     },
     {
+      "family": "public-typescript-scan",
+      "origin": "synthetic",
+      "note": "Issue #150: authored standalone and workspace TypeScript sources and explicit public scan profiles; no private consumer material."
+    },
+    {
       "family": "query-model",
       "origin": "synthetic"
     },

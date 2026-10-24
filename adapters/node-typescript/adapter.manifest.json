@@ -4,7 +4,7 @@
   "adapter": {
     "id": "lekalo-target-node-typescript",
     "name": "Node/TypeScript target adapter",
-    "version": "0.4.0"
+    "version": "0.5.0"
   },
   "publisher": {
     "id": "lekalo",
@@ -24,7 +24,8 @@
   "compatibility": {
     "protocolVersions": [
       "0.3.2",
-      "0.6.4"
+      "0.6.4",
+      "0.9.0"
     ],
     "irVersions": [
       "0.2.16"
@@ -62,7 +63,11 @@
     "constraints": {},
     "readScopes": [
       ".lekalo/ir/**",
-      "src/**"
+      "package.json",
+      "packages/**",
+      "pnpm-workspace.yaml",
+      "src/**",
+      "tsconfig.json"
     ],
     "writeScopes": [
       "docs/**",
@@ -92,12 +97,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:71ab8bd6dadb2a49cc6f85ea1323272ac239c1787f655fc330752c5611bd7544",
+    "packageDigest": "sha256:d090b6f0ca548448c9b6b19bb19da6871f53c40938642e8a7bd848474134cae2",
     "files": [
       {
         "path": "adapter.mjs",
-        "digest": "sha256:8811b186d13b1214b68b75f70d21a675eca2e2ae7318de6e87095c0ea7f9f935",
-        "bytes": 14771283
+        "digest": "sha256:375c1592c77715ca16a2fec7eccacf3641d25ba5f6ad8d0b47aa8b8b43eb2552",
+        "bytes": 14773027
       }
     ],
     "signaturePolicy": "unsigned",
@@ -107,7 +112,11 @@
     "filesystem": {
       "readScopes": [
         ".lekalo/ir/**",
-        "src/**"
+        "package.json",
+        "packages/**",
+        "pnpm-workspace.yaml",
+        "src/**",
+        "tsconfig.json"
       ],
       "writeScopes": [
         "docs/**",

@@ -7,6 +7,12 @@ binding registry: `lekalo scan` fills it through a target adapter, and
 `lekalo bindings` proposes, confirms, lists, and audits its rows. The
 design decision is [ADR-0035](adr/0035-bindings-registry.md).
 
+The shipped Node adapter's supported end-user path is
+[Public TypeScript observed scan](public-typescript-scan.md): explicit
+standalone/workspace profiles, the committed manifest, and negotiated
+protocol `0.9.0` custody evidence. It is checked through the actual CLI on
+each supported host; contributor kernel-only results have a separate scope.
+
 The wire extensions are additive successors of the frozen issue #39
 contracts: [`contracts/observed-scan.schema.v0.2.16.json`](../contracts/observed-scan.schema.v0.2.16.json)
 and [`contracts/observed-index.schema.v0.2.16.json`](../contracts/observed-index.schema.v0.2.16.json).

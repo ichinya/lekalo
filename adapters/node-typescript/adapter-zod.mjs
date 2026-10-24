@@ -106,7 +106,7 @@ function validateLintRequest(request) {
   const l = request.lint_request;
   if (request.operation === "lint" !== (l !== void 0)) throw new Error("lint-request-pairing");
   if (!l) return;
-  if (request.protocol_version !== "0.6.4" || !request.target || ["dry_run", "plan_id", "native_request", "ir_path", "profile", "profile_digest", "profile_capabilities"].some((k) => request[k] !== void 0)) throw new Error("lint-request-version-members");
+  if (!["0.6.4", "0.9.0"].includes(request.protocol_version) || !request.target || ["dry_run", "plan_id", "native_request", "ir_path", "profile", "profile_digest", "profile_capabilities"].some((k) => request[k] !== void 0)) throw new Error("lint-request-version-members");
   if (!l || Object.keys(l).sort().join() !== "bindings,files,pins,scope" || !Array.isArray(l.scope) || !l.scope.length || l.scope.length > 1e4 || !Array.isArray(l.files) || l.files.length > 4096 || !Array.isArray(l.bindings) || l.bindings.length > 1e4) throw new Error("lint-request-shape");
   const token = (s) => typeof s === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:/#@\\-]{0,255}$/.test(s);
   const sha = (s) => typeof s === "string" && /^sha256:[a-f0-9]{64}$/.test(s);
@@ -293,14 +293,14 @@ import { dirname, isAbsolute, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 var PROTOCOL_TOKEN = "lekalo.target/v1";
 var VERSION = "0.3.2";
-var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4"]);
+var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0"]);
 var ADAPTER_ID = "lekalo-target-node-typescript";
-var ADAPTER_VERSION = "0.4.0";
+var ADAPTER_VERSION = "0.5.0";
 var MAX_REQUEST_BYTES = 1024 * 1024;
 var MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 var MAX_JSON_DEPTH = 64;
 var MAX_PROFILE_JSON_BYTES = 16 * 1024;
-var SCAN_ENTRY_EVIDENCE_KEYS = Object.freeze(["references", "signature"]);
+var SCAN_ENTRY_EVIDENCE_KEYS = Object.freeze(["references", "signature", "source_digest"]);
 var SCAN_ENTRY_REFERENCE_KEYS = Object.freeze(["confidence", "role", "target"]);
 var SCAN_ENTRY_ROLES = Object.freeze([
   "read",
@@ -1969,10 +1969,11 @@ function createKernel(options = {}) {
         };
       }
       recordSink(sink, validatedRequest, outcome, profile);
-      return {
-        response: projectOutcome(validatedRequest, outcome),
-        internal: outcome
-      };
+      const response = projectOutcome(validatedRequest, outcome);
+      if (validatedRequest.protocol_version === "0.9.0" && operation === "scan" && response.status === "ok") {
+        response.evidence.scan_profile_digest = `sha256:${createHash2("sha256").update(canonicalJson(profile), "utf8").digest("hex")}`;
+      }
+      return { response, internal: outcome };
     }
   };
 }
@@ -2042,7 +2043,7 @@ function projectOutcome(request, outcome) {
         }
       });
     }
-    const result = projectResult(outcome.data);
+    const result = projectResult(outcome.data, request);
     if (result) {
       return buildResponse(request, { result });
     }
@@ -2118,7 +2119,7 @@ function projectVerifyFindings(request, data) {
   }
   return findings.length > 0 ? { ok: true, findings } : { ok: true };
 }
-function projectResult(data) {
+function projectResult(data, request) {
   if (data === void 0 || data === null || typeof data !== "object") {
     return void 0;
   }
@@ -2137,7 +2138,7 @@ function projectResult(data) {
   }
   const entries = [];
   for (const entry of data.entries) {
-    if (typeof entry !== "object" || entry === null || !isLogicalPath(entry.path) || typeof entry.kind !== "string" || [...entry.kind].length > 128 || entry.detail !== void 0 && (typeof entry.detail !== "string" || [...entry.detail].length > 128)) {
+    if (typeof entry !== "object" || entry === null || !isLogicalPath(entry.path) || typeof entry.kind !== "string" || [...entry.kind].length > 128 || entry.detail !== void 0 && (typeof entry.detail !== "string" || [...entry.detail].length > (request.protocol_version === "0.9.0" && request.operation === "scan" ? 2048 : 128))) {
       return void 0;
     }
     const projected = entry.detail === void 0 ? { path: entry.path, kind: entry.kind } : { path: entry.path, kind: entry.kind, detail: entry.detail };
@@ -2148,6 +2149,9 @@ function projectResult(data) {
       }
       projected.evidence = evidence;
     }
+    if (request.protocol_version === "0.9.0" && request.operation === "scan") {
+      if (!isSha256Digest(projected.evidence?.source_digest)) return void 0;
+    } else if (projected.evidence?.source_digest !== void 0) return void 0;
     entries.push(projected);
   }
   const result = { entries };
@@ -2166,6 +2170,10 @@ function projectScanEntryEvidence(evidence) {
     }
   }
   const projected = {};
+  if (evidence.source_digest !== void 0) {
+    if (!isSha256Digest(evidence.source_digest)) return void 0;
+    projected.source_digest = evidence.source_digest;
+  }
   if (evidence.signature !== void 0) {
     if (evidence.signature !== null && !isSha256Digest(evidence.signature)) {
       return void 0;

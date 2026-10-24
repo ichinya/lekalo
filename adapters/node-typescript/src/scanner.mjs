@@ -1838,6 +1838,13 @@ export function scanOperation(context) {
   if (index.state !== "complete") {
     return { state: "partial", diagnostics: [{ reason: "scan-incomplete" }] };
   }
+  if (context.request?.protocol_version === "0.9.0"
+    && (index.symbols.some((symbol) => symbol.memberOf !== null) || index.routes.length > 0)) {
+    // The ordinary public inventory carries top-level mappings, not
+    // nested member definitions or endpoint projections. Never call a
+    // projection complete after dropping known unrepresentable facts.
+    return { state: "partial", diagnostics: [{ reason: "public-scan-surface-unrepresentable" }] };
+  }
   const entries = [];
   // Issue #47 (plan S8): native tests claiming a scenario identity via
   // the `lekalo:<id>` title convention ride the FIRST top-level symbol
@@ -1859,6 +1866,11 @@ export function scanOperation(context) {
   const moduleSeen = new Set();
   for (const symbol of index.symbols) {
     if (symbol.memberOf !== null) continue; // members ride their owner
+    // The closed evidence slot holds eight rows. Losing further rows
+    // cannot qualify as a complete public scan.
+    if (index.references.filter((row) => row.from === symbol.module).length > 8) {
+      index.anyUncertainty.push({path: symbol.module, kind: "reference-evidence-overflow", detail: "wire-reference-bound", line: symbol.line});
+    }
     const detail = {
       s: semanticProposalFor(symbol, index),
       n: symbol.native,
@@ -1877,11 +1889,16 @@ export function scanOperation(context) {
         detail.t = `${symbol.module}#${ids.map((id) => `lekalo:${id}`).join(",")}`;
       }
     }
+    const evidence = buildEntryEvidence(symbol, index) ?? {};
+    if (context.request?.protocol_version === "0.9.0") {
+      const source = index.inputManifest.files.find((file) => file.path === symbol.module);
+      if (source) evidence.source_digest = `sha256:${source.digest}`;
+    }
     entries.push({
       path: symbol.module,
       kind: "entity",
       detail: JSON.stringify(detail),
-      evidence: buildEntryEvidence(symbol, index),
+      ...(Object.keys(evidence).length > 0 ? {evidence} : {}),
     });
   }
   // Review R-4: a claiming module with no top-level symbol has no
@@ -2027,8 +2044,7 @@ export function lekaloTestIdsByModule(tests) {
 
 /** The semantic id proposal of one symbol: package-scoped dotted name. */
 function semanticProposalFor(symbol, index) {
-  const pkg = index.packages.find((candidate) =>
-    symbol.module === candidate.root || symbol.module.startsWith(candidate.root + "/"));
+  const pkg = owningPackage(symbol.module, index);
   // The observed scan document derives the owning module from the id
   // prefix before the first dot, so the scope token is a sanitized
   // snake_case module id; ambiguity keeps the full proposal in the
@@ -2043,7 +2059,7 @@ function semanticProposalFor(symbol, index) {
     .split(".")
     .map((part) => part)
     .join(".");
-  return (scope + "." + name).slice(0, 192);
+  return scope + "." + name;
 }
 
 /** Typed evidence rows of one symbol entry (signature + references). */
@@ -2070,8 +2086,7 @@ function buildEntryEvidence(symbol, index) {
  * deterministic; matches no slashes, so it satisfies the wire grammar.
  */
 function moduleSemanticAnchor(modulePath, index) {
-  const pkg = index.packages.find((candidate) =>
-    modulePath === candidate.root || modulePath.startsWith(candidate.root + "/"));
+  const pkg = owningPackage(modulePath, index);
   const scope = (pkg?.name ?? "project")
     .replace(/^@/, "")
     .split(/[\\/._-]+/)
@@ -2082,5 +2097,15 @@ function moduleSemanticAnchor(modulePath, index) {
     .replace(/\.(ts|tsx|mts|cts|d\.ts|d\.mts|d\.cts)$/i, "")
     .split("/")
     .join(".");
-  return (scope + "." + suffix).slice(0, 192);
+  return scope + "." + suffix;
+}
+
+function owningPackage(modulePath, index) {
+  let best = null;
+  for (const candidate of index.packages) {
+    if (candidate.root === "." || candidate.root === "" || modulePath === candidate.root || modulePath.startsWith(candidate.root + "/")) {
+      if (best === null || candidate.root.length > best.root.length) best = candidate;
+    }
+  }
+  return best;
 }

@@ -74,11 +74,11 @@ export const PROTOCOL_TOKEN = "lekalo.target/v1";
 /** The sole protocol version this kernel speaks (the current contract). */
 export const VERSION = "0.3.2";
 /** The closed supported-version set: exact membership, never ranges. */
-export const SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4"]);
+export const SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0"]);
 /** The adapter identity token. */
 export const ADAPTER_ID = "lekalo-target-node-typescript";
 /** The adapter release version (the reserved product version). */
-export const ADAPTER_VERSION = "0.4.0";
+export const ADAPTER_VERSION = "0.5.0";
 /** The maximum request size this kernel reads (mirrors the core bound). */
 export const MAX_REQUEST_BYTES = 1024 * 1024;
 /** The maximum response size this kernel writes (mirrors the core cap). */
@@ -100,7 +100,7 @@ export const MAX_PROFILE_JSON_BYTES = 16 * 1024;
  * observed reference rows `{target, role, confidence}` as typed data —
  * never arbitrary JSON.
  */
-const SCAN_ENTRY_EVIDENCE_KEYS = Object.freeze(["references", "signature"]);
+const SCAN_ENTRY_EVIDENCE_KEYS = Object.freeze(["references", "signature", "source_digest"]);
 const SCAN_ENTRY_REFERENCE_KEYS = Object.freeze(["confidence", "role", "target"]);
 const SCAN_ENTRY_ROLES = Object.freeze([
   "read", "create", "update", "delete", "emit", "call", "reference",
@@ -2135,10 +2135,11 @@ export function createKernel(options = {}) {
         };
       }
       recordSink(sink, validatedRequest, outcome, profile);
-      return {
-        response: projectOutcome(validatedRequest, outcome),
-        internal: outcome,
-      };
+      const response = projectOutcome(validatedRequest, outcome);
+      if (validatedRequest.protocol_version === "0.9.0" && operation === "scan" && response.status === "ok") {
+        response.evidence.scan_profile_digest = `sha256:${createHash("sha256").update(canonicalJson(profile), "utf8").digest("hex")}`;
+      }
+      return { response, internal: outcome };
     },
   };
 }
@@ -2235,7 +2236,7 @@ function projectOutcome(request, outcome) {
         },
       });
     }
-    const result = projectResult(outcome.data);
+    const result = projectResult(outcome.data, request);
     if (result) {
       return buildResponse(request, { result });
     }
@@ -2344,7 +2345,7 @@ function projectVerifyFindings(request, data) {
   return findings.length > 0 ? { ok: true, findings } : { ok: true };
 }
 
-function projectResult(data) {
+function projectResult(data, request) {
   if (data === undefined || data === null || typeof data !== "object") {
     return undefined;
   }
@@ -2371,7 +2372,8 @@ function projectResult(data) {
       || !isLogicalPath(entry.path)
       || typeof entry.kind !== "string"
       || [...entry.kind].length > 128
-      || (entry.detail !== undefined && (typeof entry.detail !== "string" || [...entry.detail].length > 128))) {
+      || (entry.detail !== undefined && (typeof entry.detail !== "string" || [...entry.detail].length >
+        (request.protocol_version === "0.9.0" && request.operation === "scan" ? 2048 : 128)))) {
       return undefined;
     }
     const projected = entry.detail === undefined
@@ -2384,6 +2386,9 @@ function projectResult(data) {
       }
       projected.evidence = evidence;
     }
+    if (request.protocol_version === "0.9.0" && request.operation === "scan") {
+      if (!isSha256Digest(projected.evidence?.source_digest)) return undefined;
+    } else if (projected.evidence?.source_digest !== undefined) return undefined;
     entries.push(projected);
   }
   const result = { entries };
@@ -2411,6 +2416,10 @@ function projectScanEntryEvidence(evidence) {
     }
   }
   const projected = {};
+  if (evidence.source_digest !== undefined) {
+    if (!isSha256Digest(evidence.source_digest)) return undefined;
+    projected.source_digest = evidence.source_digest;
+  }
   if (evidence.signature !== undefined) {
     if (evidence.signature !== null && !isSha256Digest(evidence.signature)) {
       return undefined;

@@ -221060,7 +221060,7 @@ function validateLintRequest(request) {
   const l = request.lint_request;
   if (request.operation === "lint" !== (l !== void 0)) throw new Error("lint-request-pairing");
   if (!l) return;
-  if (request.protocol_version !== "0.6.4" || !request.target || ["dry_run", "plan_id", "native_request", "ir_path", "profile", "profile_digest", "profile_capabilities"].some((k) => request[k] !== void 0)) throw new Error("lint-request-version-members");
+  if (!["0.6.4", "0.9.0"].includes(request.protocol_version) || !request.target || ["dry_run", "plan_id", "native_request", "ir_path", "profile", "profile_digest", "profile_capabilities"].some((k) => request[k] !== void 0)) throw new Error("lint-request-version-members");
   if (!l || Object.keys(l).sort().join() !== "bindings,files,pins,scope" || !Array.isArray(l.scope) || !l.scope.length || l.scope.length > 1e4 || !Array.isArray(l.files) || l.files.length > 4096 || !Array.isArray(l.bindings) || l.bindings.length > 1e4) throw new Error("lint-request-shape");
   const token = (s) => typeof s === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:/#@\\-]{0,255}$/.test(s);
   const sha = (s) => typeof s === "string" && /^sha256:[a-f0-9]{64}$/.test(s);
@@ -221247,14 +221247,14 @@ import { dirname, isAbsolute, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 var PROTOCOL_TOKEN = "lekalo.target/v1";
 var VERSION = "0.3.2";
-var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4"]);
+var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0"]);
 var ADAPTER_ID = "lekalo-target-node-typescript";
-var ADAPTER_VERSION = "0.4.0";
+var ADAPTER_VERSION = "0.5.0";
 var MAX_REQUEST_BYTES = 1024 * 1024;
 var MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 var MAX_JSON_DEPTH = 64;
 var MAX_PROFILE_JSON_BYTES = 16 * 1024;
-var SCAN_ENTRY_EVIDENCE_KEYS = Object.freeze(["references", "signature"]);
+var SCAN_ENTRY_EVIDENCE_KEYS = Object.freeze(["references", "signature", "source_digest"]);
 var SCAN_ENTRY_REFERENCE_KEYS = Object.freeze(["confidence", "role", "target"]);
 var SCAN_ENTRY_ROLES = Object.freeze([
   "read",
@@ -222923,10 +222923,11 @@ function createKernel(options = {}) {
         };
       }
       recordSink(sink, validatedRequest, outcome, profile);
-      return {
-        response: projectOutcome(validatedRequest, outcome),
-        internal: outcome
-      };
+      const response = projectOutcome(validatedRequest, outcome);
+      if (validatedRequest.protocol_version === "0.9.0" && operation === "scan" && response.status === "ok") {
+        response.evidence.scan_profile_digest = `sha256:${createHash2("sha256").update(canonicalJson(profile), "utf8").digest("hex")}`;
+      }
+      return { response, internal: outcome };
     }
   };
 }
@@ -222996,7 +222997,7 @@ function projectOutcome(request, outcome) {
         }
       });
     }
-    const result = projectResult(outcome.data);
+    const result = projectResult(outcome.data, request);
     if (result) {
       return buildResponse(request, { result });
     }
@@ -223072,7 +223073,7 @@ function projectVerifyFindings(request, data) {
   }
   return findings.length > 0 ? { ok: true, findings } : { ok: true };
 }
-function projectResult(data) {
+function projectResult(data, request) {
   if (data === void 0 || data === null || typeof data !== "object") {
     return void 0;
   }
@@ -223091,7 +223092,7 @@ function projectResult(data) {
   }
   const entries = [];
   for (const entry of data.entries) {
-    if (typeof entry !== "object" || entry === null || !isLogicalPath(entry.path) || typeof entry.kind !== "string" || [...entry.kind].length > 128 || entry.detail !== void 0 && (typeof entry.detail !== "string" || [...entry.detail].length > 128)) {
+    if (typeof entry !== "object" || entry === null || !isLogicalPath(entry.path) || typeof entry.kind !== "string" || [...entry.kind].length > 128 || entry.detail !== void 0 && (typeof entry.detail !== "string" || [...entry.detail].length > (request.protocol_version === "0.9.0" && request.operation === "scan" ? 2048 : 128))) {
       return void 0;
     }
     const projected = entry.detail === void 0 ? { path: entry.path, kind: entry.kind } : { path: entry.path, kind: entry.kind, detail: entry.detail };
@@ -223102,6 +223103,9 @@ function projectResult(data) {
       }
       projected.evidence = evidence;
     }
+    if (request.protocol_version === "0.9.0" && request.operation === "scan") {
+      if (!isSha256Digest(projected.evidence?.source_digest)) return void 0;
+    } else if (projected.evidence?.source_digest !== void 0) return void 0;
     entries.push(projected);
   }
   const result = { entries };
@@ -223120,6 +223124,10 @@ function projectScanEntryEvidence(evidence) {
     }
   }
   const projected = {};
+  if (evidence.source_digest !== void 0) {
+    if (!isSha256Digest(evidence.source_digest)) return void 0;
+    projected.source_digest = evidence.source_digest;
+  }
   if (evidence.signature !== void 0) {
     if (evidence.signature !== null && !isSha256Digest(evidence.signature)) {
       return void 0;
@@ -230367,6 +230375,9 @@ function scanOperation(context) {
   if (index.state !== "complete") {
     return { state: "partial", diagnostics: [{ reason: "scan-incomplete" }] };
   }
+  if (context.request?.protocol_version === "0.9.0" && (index.symbols.some((symbol) => symbol.memberOf !== null) || index.routes.length > 0)) {
+    return { state: "partial", diagnostics: [{ reason: "public-scan-surface-unrepresentable" }] };
+  }
   const entries = [];
   const lekaloIdsByModule = lekaloTestIdsByModule(index.tests);
   for (const module of lekaloIdsByModule.truncated) {
@@ -230380,6 +230391,9 @@ function scanOperation(context) {
   const moduleSeen = /* @__PURE__ */ new Set();
   for (const symbol of index.symbols) {
     if (symbol.memberOf !== null) continue;
+    if (index.references.filter((row) => row.from === symbol.module).length > 8) {
+      index.anyUncertainty.push({ path: symbol.module, kind: "reference-evidence-overflow", detail: "wire-reference-bound", line: symbol.line });
+    }
     const detail = {
       s: semanticProposalFor(symbol, index),
       n: symbol.native,
@@ -230393,11 +230407,16 @@ function scanOperation(context) {
         detail.t = `${symbol.module}#${ids.map((id) => `lekalo:${id}`).join(",")}`;
       }
     }
+    const evidence = buildEntryEvidence(symbol, index) ?? {};
+    if (context.request?.protocol_version === "0.9.0") {
+      const source = index.inputManifest.files.find((file3) => file3.path === symbol.module);
+      if (source) evidence.source_digest = `sha256:${source.digest}`;
+    }
     entries.push({
       path: symbol.module,
       kind: "entity",
       detail: JSON.stringify(detail),
-      evidence: buildEntryEvidence(symbol, index)
+      ...Object.keys(evidence).length > 0 ? { evidence } : {}
     });
   }
   for (const absent of lekaloCarrierlessModules(lekaloIdsByModule.byModule, moduleSeen)) {
@@ -230501,10 +230520,10 @@ function lekaloTestIdsByModule(tests) {
   return { byModule, truncated };
 }
 function semanticProposalFor(symbol, index) {
-  const pkg = index.packages.find((candidate) => symbol.module === candidate.root || symbol.module.startsWith(candidate.root + "/"));
+  const pkg = owningPackage(symbol.module, index);
   const scope = (pkg?.name ?? "project").replace(/^@/, "").split(/[\\/._-]+/).filter((part) => /^[a-z0-9]+$/i.test(part)).join("_").toLowerCase() || "project";
   const name = symbol.qualifiedName.split(".").map((part) => part).join(".");
-  return (scope + "." + name).slice(0, 192);
+  return scope + "." + name;
 }
 function buildEntryEvidence(symbol, index) {
   const references = index.references.filter((row) => row.from === symbol.module).slice(0, 8).map((row) => ({
@@ -230520,10 +230539,19 @@ function buildEntryEvidence(symbol, index) {
   return Object.keys(evidence).length > 0 ? evidence : void 0;
 }
 function moduleSemanticAnchor(modulePath, index) {
-  const pkg = index.packages.find((candidate) => modulePath === candidate.root || modulePath.startsWith(candidate.root + "/"));
+  const pkg = owningPackage(modulePath, index);
   const scope = (pkg?.name ?? "project").replace(/^@/, "").split(/[\\/._-]+/).filter((part) => /^[a-z0-9]+$/i.test(part)).join("_").toLowerCase() || "project";
   const suffix = modulePath.replace(/\.(ts|tsx|mts|cts|d\.ts|d\.mts|d\.cts)$/i, "").split("/").join(".");
-  return (scope + "." + suffix).slice(0, 192);
+  return scope + "." + suffix;
+}
+function owningPackage(modulePath, index) {
+  let best = null;
+  for (const candidate of index.packages) {
+    if (candidate.root === "." || candidate.root === "" || modulePath === candidate.root || modulePath.startsWith(candidate.root + "/")) {
+      if (best === null || candidate.root.length > best.root.length) best = candidate;
+    }
+  }
+  return best;
 }
 
 // src/workspace.mjs

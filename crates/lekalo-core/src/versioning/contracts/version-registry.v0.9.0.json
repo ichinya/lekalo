@@ -1,0 +1,75 @@
+{
+  "registry": "dev.lekalo.version-registry",
+  "registryVersion": "0.9.0",
+  "families": {
+    "model": {
+      "current": "0.8.0",
+      "aliases": [],
+      "versions": [
+        {
+          "version": "0.2.16",
+          "state": "supported",
+          "classification": "breaking",
+          "reason": "Development baseline at product 0.2.16. Remains fully supported: its documents never carry the successor's relation or uniqueness constructs, and its compiled IR stays dev.lekalo.ir@0.2.16 with byte-identical canonical output."
+        },
+        {
+          "version": "0.8.0",
+          "state": "supported",
+          "classification": "additive",
+          "reason": "Issue #52 adds optional entity relations and unique_constraints (typed cardinality including max, ownership, detach/delete semantics, ordered secondary uniqueness). No alias under 0.2.16 exists; both versions stay supported."
+        }
+      ],
+      "migrations": []
+    },
+    "ir": {
+      "current": "0.8.0",
+      "aliases": [],
+      "versions": [
+        {
+          "version": "0.2.16",
+          "state": "supported",
+          "classification": "breaking",
+          "reason": "Development baseline at product 0.2.16. One compiled IR binds the exact source Model version; 0.2.16 sources keep this contract and byte-identical canonical bytes."
+        },
+        {
+          "version": "0.8.0",
+          "state": "supported",
+          "classification": "additive",
+          "reason": "Issue #52 compiles Model 0.8.0 sources to this contract: entity definitions carry typed relations and secondary uniqueness in the canonical IR. No alias under 0.2.16 exists."
+        }
+      ],
+      "migrations": []
+    },
+    "protocol": {
+      "current": "0.3.2",
+      "aliases": [],
+      "versions": [
+        {
+          "version": "0.3.2",
+          "state": "supported",
+          "classification": "breaking",
+          "reason": "Issue #48 native gates: the read-only plan-native operation with typed native_request/native_plan members at product 0.3.2. Only the current contract is supported."
+        },
+        {
+          "version": "0.6.4",
+          "state": "supported",
+          "classification": "additive",
+          "reason": "Issue #76 adds read-only lint with closed lint_request/lint_evidence and capability lint.ai-readability. Protocol 0.3.2 retains its frozen members."
+        },
+        {
+          "version": "0.8.0",
+          "state": "supported",
+          "classification": "additive",
+          "reason": "Issue #95 adds an explicit watch selection declaration, closed snapshot-bound module/global partition requests, and echoed selection digests. Frozen 0.3.2/0.6.4 remain unchanged; legacy adapters receive complete full-scope fallback, never unnegotiated selection members."
+        },
+        {
+          "version": "0.9.0",
+          "state": "supported",
+          "classification": "additive",
+          "reason": "Issue #150: public scan preserves the 0.8.0 wire surface and adds a 2048-code-point scan detail bound plus exact source/profile custody. Frozen predecessors retain their original bounds; optional watch selection still requires an explicit adapter capability declaration."
+        }
+      ],
+      "migrations": []
+    }
+  }
+}

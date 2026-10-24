@@ -4,6 +4,11 @@ Status: **Implemented** MySQL fixture/runtime tests; the observed contributor ha
 
 The `brownfield-consumer` is the NEW synthetic [brownfield-mysql fixture](../tests/fixtures/pilot/brownfield-mysql/README.md). It uses Hono `4.13.12`, Drizzle `0.45.4`, mysql2 `3.24.5`, a `mysqlTable` schema and a real runtime persistence entrypoint. Every package/name/record is fictional. The existing `brownfield-ts` fixture uses SQLite and is not this tutorial.
 
+For the supported public CLI subset without a contributor fallback, follow
+[Public TypeScript observed scan](public-typescript-scan.md). It covers
+standalone and workspace TypeScript sources with explicit semantic intent;
+it does not upgrade this framework/persistence pilot's Experimental scan status.
+
 ## Native setup and offline HTTP checks
 
 Use Node 24. In a disposable copy of the new fixture, provision the committed package lock explicitly:

@@ -28,7 +28,22 @@ pub const WATCH_VERSION: &str = "0.8.0";
 /// Exact source Model/IR pairs admitted by the negotiated watch seam.
 /// A protocol upgrade never implies admission of another Model version.
 pub const WATCH_MODEL_VERSIONS: [&str; 2] = ["0.2.16", "0.8.0"];
-pub const SUPPORTED_VERSIONS: [&str; 3] = ["0.3.2", LINT_VERSION, WATCH_VERSION];
+/// Ordinary public scan exchange with lossless bounded binding details.
+/// Optional watch partition work still requires an adapter capability claim.
+pub const SCAN_VERSION: &str = "0.9.0";
+pub const SUPPORTED_VERSIONS: [&str; 4] = ["0.3.2", LINT_VERSION, WATCH_VERSION, SCAN_VERSION];
+
+pub fn supports_watch(protocol: &str) -> bool {
+    matches!(protocol, WATCH_VERSION | SCAN_VERSION)
+}
+
+pub fn scan_detail_limit(protocol: &str, operation: super::wire::Operation) -> usize {
+    if protocol == SCAN_VERSION && operation == super::wire::Operation::Scan {
+        2048
+    } else {
+        128
+    }
+}
 
 /// The identity of the schema artifact for the current protocol version.
 pub const IDENTITY: &str = "dev.lekalo.target-protocol@0.3.2";
@@ -121,7 +136,7 @@ mod tests {
         };
         assert_eq!(negotiate(&[]), None);
         assert_eq!(
-            declared(&["0.9.0", "2.0.0"]).as_deref(),
+            declared(&["0.9.1", "2.0.0"]).as_deref(),
             None,
             "unsupported spellings never negotiate"
         );

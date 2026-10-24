@@ -62,7 +62,9 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
     if let Some(lint) = &request.lint_request {
         if !matches!(
             request.protocol_version.as_str(),
-            super::version::LINT_VERSION | super::version::WATCH_VERSION
+            super::version::LINT_VERSION
+                | super::version::WATCH_VERSION
+                | super::version::SCAN_VERSION
         ) || request.target.is_none()
             || request.profile.is_some()
             || request.profile_digest.is_some()
@@ -371,13 +373,35 @@ fn constraints_bounded(constraints: Option<&AdapterConstraints>) -> bool {
 /// shared decoder in the client; no test-only parser owns these decisions.
 fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity> {
     let invalid = Err(ResponseInvalidity::Shape);
+    let public_scan = response.protocol_version == super::version::SCAN_VERSION
+        && response.operation == Operation::Scan
+        && response.status == ResponseStatus::Ok;
+    if public_scan {
+        if response
+            .evidence
+            .scan_profile_digest
+            .as_deref()
+            .map_or(true, |v| !is_sha256_digest(v))
+            || response
+                .result
+                .as_ref()
+                .and_then(|v| v.entries.as_ref())
+                .is_none()
+        {
+            return invalid;
+        }
+    } else if response.evidence.scan_profile_digest.is_some() {
+        return invalid;
+    }
     if response
         .result
         .as_ref()
         .is_some_and(|r| r.lint_evidence.is_some())
         && (!matches!(
             response.protocol_version.as_str(),
-            super::version::LINT_VERSION | super::version::WATCH_VERSION
+            super::version::LINT_VERSION
+                | super::version::WATCH_VERSION
+                | super::version::SCAN_VERSION
         ) || response.operation != Operation::Lint)
     {
         return invalid;
@@ -402,14 +426,14 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
         .watch_digest
         .as_ref()
         .is_some_and(|digest| {
-            response.protocol_version != super::version::WATCH_VERSION || !is_sha256_digest(digest)
+            !super::version::supports_watch(&response.protocol_version) || !is_sha256_digest(digest)
         })
     {
         return invalid;
     }
     if let Some(c) = &response.capabilities {
         if c.watch.as_ref().is_some_and(|support| {
-            response.protocol_version != super::version::WATCH_VERSION || !support.valid()
+            !super::version::supports_watch(&response.protocol_version) || !support.valid()
         }) {
             return invalid;
         }
@@ -421,7 +445,9 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                 1,
                 if matches!(
                     response.protocol_version.as_str(),
-                    super::version::LINT_VERSION | super::version::WATCH_VERSION
+                    super::version::LINT_VERSION
+                        | super::version::WATCH_VERSION
+                        | super::version::SCAN_VERSION
                 ) {
                     10
                 } else {
@@ -430,7 +456,9 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
             )
             || (!matches!(
                 response.protocol_version.as_str(),
-                super::version::LINT_VERSION | super::version::WATCH_VERSION
+                super::version::LINT_VERSION
+                    | super::version::WATCH_VERSION
+                    | super::version::SCAN_VERSION
             ) && c.operations.contains(&Operation::Lint))
             || !unique(&c.transports, 1, 2)
             || !unique(&c.targets, 0, 64)
@@ -487,8 +515,12 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
             entries.len() > 10000
                 || entries.iter().any(|e| {
                     !scopes::is_logical_path(&e.path)
+                        || (public_scan && e.evidence.as_ref().and_then(|v| v.source_digest.as_deref()).map_or(true, |v| !is_sha256_digest(v)))
+                        || (!public_scan && e.evidence.as_ref().is_some_and(|v| v.source_digest.is_some()))
                         || !bounded(&e.kind, 128)
-                        || e.detail.as_ref().is_some_and(|v| !bounded(v, 128))
+                        || e.detail.as_ref().is_some_and(|v| {
+                            !bounded(v, super::version::scan_detail_limit(&response.protocol_version, response.operation))
+                        })
                         // Issue #44: the typed evidence member is
                         // bounded exactly as the 0.3.1 schema declares
                         // (references maxItems 8, sha256 signature,
@@ -903,6 +935,13 @@ pub struct Evidence {
         skip_serializing_if = "Option::is_none"
     )]
     pub watch_digest: Option<String>,
+    /// Exact normalized trusted launch profile, public scan protocol 0.9.0 only.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub scan_profile_digest: Option<String>,
 }
 
 /// One optional structured progress step.
@@ -982,6 +1021,12 @@ pub enum ScanEntryConfidence {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScanEntryEvidence {
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub source_digest: Option<String>,
     #[serde(
         default,
         deserialize_with = "present",
@@ -1530,6 +1575,78 @@ pub fn negotiated(capabilities: &Capabilities) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn public_scan_requires_custody_and_keeps_predecessor_detail_bounds() {
+        let digest = format!("sha256:{}", "a".repeat(64));
+        let valid = serde_json::json!({
+            "protocol": PROTOCOL_TOKEN,
+            "protocol_version": super::super::version::SCAN_VERSION,
+            "operation": "scan", "status": "ok",
+            "request_id": format!("req-{}", "0".repeat(64)),
+            "evidence": {"adapter": {"id":"example", "version":"1.0.0", "digest":digest}, "scan_profile_digest":digest},
+            "result": {"entries": [{"path":"src/score.ts", "kind":"entity", "detail":"x".repeat(200), "evidence":{"source_digest":digest}}]}
+        });
+        let check = |value: &serde_json::Value| {
+            let response: ResponseEnvelope = serde_json::from_value(value.clone())?;
+            Ok::<_, serde_json::Error>(validate_bounds(&response).is_ok())
+        };
+        assert!(check(&valid).unwrap());
+        for key in [
+            "source_digest",
+            "all-entry-evidence",
+            "scan_profile_digest",
+            "oversize",
+            "unknown-member",
+        ] {
+            let mut bad = valid.clone();
+            match key {
+                "source_digest" => {
+                    bad["result"]["entries"][0]["evidence"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("source_digest");
+                }
+                "all-entry-evidence" => {
+                    bad["result"]["entries"][0]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("evidence");
+                }
+                "scan_profile_digest" => {
+                    bad["evidence"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("scan_profile_digest");
+                }
+                "oversize" => {
+                    bad["result"]["entries"][0]["detail"] = serde_json::json!("x".repeat(2049));
+                }
+                _ => {
+                    bad["result"]["entries"][0]["evidence"]["invented"] = serde_json::json!(true);
+                }
+            }
+            assert!(!check(&bad).unwrap_or(false), "{key}");
+        }
+        for version in ["0.3.2", "0.6.4", "0.8.0"] {
+            let mut old = valid.clone();
+            old["protocol_version"] = serde_json::json!(version);
+            old["evidence"]
+                .as_object_mut()
+                .unwrap()
+                .remove("scan_profile_digest");
+            old["result"]["entries"][0]["evidence"]
+                .as_object_mut()
+                .unwrap()
+                .remove("source_digest");
+            assert!(!check(&old).unwrap(), "{version} retains its 128 bound");
+            old["result"]["entries"][0]["detail"] = serde_json::json!("x".repeat(128));
+            assert!(check(&old).unwrap());
+        }
+        let mut wrong_operation = valid;
+        wrong_operation["operation"] = serde_json::json!("validate");
+        assert!(!check(&wrong_operation).unwrap());
+    }
     use crate::target_protocol::version::VERSION;
 
     fn base_request() -> RequestEnvelope {
