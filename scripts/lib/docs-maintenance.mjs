@@ -44,6 +44,7 @@ export function discoverCommands(bin) {
   return rows.sort((a,b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 const commandOwners = {
+  install:"agent-instructions",
   watch:"cli",
   explain:"explain",
   search:"semantic-search", find:"semantic-search", "search-index":"semantic-search",

@@ -35,6 +35,7 @@ mod explain;
 mod fix;
 mod format;
 mod git_input;
+mod install_prompt;
 mod managed;
 mod mcp;
 mod metrics_export;
@@ -850,14 +851,16 @@ enum Commands {
         #[command(subcommand)]
         command: ContractCommands,
     },
-    /// Plan native build/test gates over a Node workspace (issue #48).
-    /// Planning is read-only: it produces the immutable proposed plan
-    /// with its digest. Execution of trusted synthetic fixtures is
-    /// owned by the test-only harness — the production binary never
-    /// launches a gate command and answers with a typed refusal.
+    /// Plan existing Node gates or execute an exact approved plan.
+    /// Execution requires explicit controls and a qualified OS sandbox.
     Native {
         #[command(subcommand)]
         command: Box<NativeCommands>,
+    },
+    /// Install explicitly managed project instructions.
+    Install {
+        #[command(subcommand)]
+        command: install_prompt::InstallCommands,
     },
     /// Resolve NFR constraints against their measured evidence
     /// (issue #85): the gate, the derived report, and the closed
@@ -2890,6 +2893,7 @@ fn runtime() -> u8 {
             }
             Commands::Contract { command } => run_contract(command),
             Commands::Native { command } => return native_execution::run(*command, json_requested),
+            Commands::Install { command } => install_prompt::run(command),
             Commands::Nfr { command } => run_nfr(command),
             Commands::Classification { command } => run_classification(command),
             Commands::Dataflow { command } => run_dataflow(command),

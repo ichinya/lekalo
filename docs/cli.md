@@ -15,6 +15,9 @@ Status: **Implemented** handlers for this checkout; watch remains experimental a
 
 ## Commands
 
+Use [`lekalo install prompt`](agent-instructions.md) to explicitly install or
+check the project's managed agent instruction.
+
 Use `lekalo --help` for groups and `lekalo <command> --help` for the exact options supported by your binary. The [command index](#command-index) maps every registered command to one reference. The sections below preserve navigation links; detailed behavior and runnable workflows live in their owners.
 
 ### `lekalo watch` (experimental, issue #95)
@@ -409,6 +412,8 @@ Status: **Implemented** command handlers for product 0.9.0. Handler existence do
 | `lekalo impact` | `lekalo impact [OPTIONS] [SYMBOL]` | [reference](impact.md) |
 | `lekalo init` | `lekalo init [OPTIONS]` | [reference](bootstrap.md) |
 | `lekalo inspect` | `lekalo inspect [OPTIONS] <SYMBOL>` | [reference](inspect.md) |
+| `lekalo install` | `lekalo install [OPTIONS] <COMMAND>` | [reference](agent-instructions.md) |
+| `lekalo install prompt` | `lekalo install prompt [OPTIONS]` | [reference](agent-instructions.md) |
 | `lekalo load` | `lekalo load [OPTIONS]` | [reference](loader.md) |
 | `lekalo lock` | `lekalo lock [OPTIONS] [PROGRAM_ARGS]...` | [reference](lockfile.md) |
 | `lekalo managed` | `lekalo managed [OPTIONS] <COMMAND>` | [reference](managed-mode.md) |

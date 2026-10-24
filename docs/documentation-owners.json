@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.9.0",
-  "cliSourceDigest": "sha256:bbdf5e4ab24fa837dbb1391aaab7f7e53321481bfa575b881c737c069741db3d",
+  "cliSourceDigest": "sha256:ba7ab423bb2916592de5338db5bc91dea09541e0ccd1f749bd9872332810646d",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1400,6 +1400,28 @@
       "status": "implemented"
     },
     {
+      "id": "cli:install",
+      "kind": "command",
+      "command": "install",
+      "usage": "lekalo install [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:de220d4c2e7646670d6706b28a0944e2c455d0ed0b4b0d6df58d29816239e541",
+      "summary": "Install explicitly managed project instructions",
+      "leaf": false,
+      "owner": "docs/agent-instructions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:install prompt",
+      "kind": "command",
+      "command": "install prompt",
+      "usage": "lekalo install prompt [OPTIONS]",
+      "helpDigest": "sha256:59d2bea318f2df182f5ff37eebd8ddde41b82fcc2d55f7d32e78de3555b12111",
+      "summary": "Install or explicitly update the embedded Lekalo agent instruction",
+      "leaf": true,
+      "owner": "docs/agent-instructions.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:load",
       "kind": "command",
       "command": "load",
@@ -1723,8 +1745,8 @@
       "kind": "command",
       "command": "native",
       "usage": "lekalo native [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:e490ce678de72d94634bf3c953d0a90d653df3829accc98cf443a0d5cd815478",
-      "summary": "Plan native build/test gates over a Node workspace (issue #48). Planning is read-only: it produces the immutable proposed plan with its digest. Execution of trusted synthetic fixtures is owned by the test-only harness — the production binary never launches a gate command and answers with a typed refusal",
+      "helpDigest": "sha256:0268464e871cf39ec8ab04746c843497fc1c190b1c080613866419beaf7d2d28",
+      "summary": "Plan existing Node gates or execute an exact approved plan. Execution requires explicit controls and a qualified OS sandbox",
       "leaf": false,
       "owner": "docs/native-gates.md",
       "status": "implemented"

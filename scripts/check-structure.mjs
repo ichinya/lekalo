@@ -55,6 +55,22 @@ export const RUNTIME_AUTHORITY_HOMES = Object.freeze([
   Object.freeze({ artifactKind: "aggregate.decision", pattern: ".lekalo/privacy/decisions/aggregate/**" })
 ]);
 
+// Explicit agent instruction home, outside the Model/runtime path grammars.
+// Other files in .agents remain project-owned; this is not a new Model root.
+export const AGENT_PROMPT_HOME = ".agents/lekalo.md";
+async function checkAgentInstructions(projectRoot) {
+  const home = await physicalType(join(projectRoot,".agents"));
+  if (home === "link") return denied(["structure.path-link",".agents"]);
+  if (!["missing","directory"].includes(home)) return denied(["structure.directory-required",".agents"]);
+  for (const path of ["AGENTS.md",...(home==="directory"?[AGENT_PROMPT_HOME]:[])]) {
+    const type = await physicalType(join(projectRoot,path));
+    if (type === "link") return denied(["structure.path-link",path]);
+    if (!["missing","file"].includes(type)) return denied(["structure.directory-required",path]);
+    if (type === "file" && (await lstat(join(projectRoot,path))).nlink !== 1) return denied(["structure.path-link",path]);
+  }
+  return null;
+}
+
 const MAX_SEGMENT_LENGTH = 64;
 const MAX_WALK_DEPTH = 64;
 const MAX_WALK_ENTRIES = 10000;
@@ -251,6 +267,8 @@ export async function findRoot(fromDir) {
 export async function validateProject(projectRoot) {
   const selectionFailure = await checkPhysicalSelection(projectRoot, "structure.project-not-directory");
   if (selectionFailure) return selectionFailure;
+  const agentFailure = await checkAgentInstructions(projectRoot);
+  if (agentFailure) return agentFailure;
 
   const lekaloDir = join(projectRoot, "lekalo");
   const lekaloType = await physicalType(lekaloDir);
