@@ -2,8 +2,8 @@
   "status": "valid",
   "operation": "generate",
   "mode": "check",
-  "manifestDigest": "sha256:f5269853b387a2263aa7c16606f9dbf92df9bc21b2ba9ea9d5f4ad1774ed4e38",
-  "lockDigest": "sha256:395cf90542b517c01547887192d2332ba89df6b1418e26b483a3e43ce81c4159",
+  "manifestDigest": "sha256:4325e7b984993b986b7519f2e324b1af1a0f0166aff5cc7d8a324a1001f5f7b6",
+  "lockDigest": "sha256:a28a9ef85b93f04ace1b6a3888a17637a0a2b05dfe67f7bfc814c11df09b21d1",
   "verdict": "reported",
   "counts": {
     "artifacts": 1,
