@@ -976,7 +976,12 @@ fn a_crashed_pre_journal_home_is_swept_and_the_retry_succeeds() {
         // it and the identical retry succeeds instead of colliding on
         // exclusive backup writes forever.
         let home = root.join(".lekalo/cache/format");
-        let residue = home.join("aabbccdd-1");
+        let residue = home.join(format!("{}-1", "a".repeat(47)));
+        // A shortened lookalike was never emitted by the formatter.
+        // It is foreign state, not proof of a crashed plan's ownership.
+        let foreign = home.join("aabbccdd-1");
+        fs::create_dir_all(&foreign).expect("foreign home");
+        fs::write(foreign.join("notes.txt"), b"user bytes\n").expect("foreign contents");
         fs::create_dir_all(residue.join("before/modules/planner")).expect("residue");
         fs::write(
             residue.join("before/modules/planner/entities.yaml"),
@@ -986,6 +991,10 @@ fn a_crashed_pre_journal_home_is_swept_and_the_retry_succeeds() {
         let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
         assert_eq!(result.status(), Status::Valid, "{result:?}");
         assert!(!residue.exists(), "the record-less residue was reclaimed");
+        assert_eq!(
+            fs::read(foreign.join("notes.txt")).unwrap(),
+            b"user bytes\n"
+        );
         // And a second full run is a byte-identical no-op.
         let again = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
         assert_eq!(again.status(), Status::Valid, "{again:?}");
@@ -1155,8 +1164,13 @@ fn an_orphaned_recovery_temp_does_not_poison_the_next_recovery() {
         // temp suffix under the runtime temp home.
         let temps = root.join(".lekalo/cache/format/temps");
         fs::create_dir_all(&temps).expect("temps home");
-        let orphan = temps.join("owned.restore.module.yaml.lekalo-format-new");
+        let orphan = temps.join(format!(
+            "recover.{}.restore.module.yaml.lekalo-format-new",
+            std::process::id()
+        ));
         fs::write(&orphan, b"orphaned: partial bytes\n").expect("orphan temp");
+        let foreign = temps.join("owned.restore.module.yaml.lekalo-format-new");
+        fs::write(&foreign, b"user bytes\n").expect("foreign lookalike");
         // Two consecutive mutating runs: the first reclaims the orphan
         // and recovers; the second proves the retry is no longer
         // poisoned by anything the recovery left behind.
@@ -1170,9 +1184,13 @@ fn an_orphaned_recovery_temp_does_not_poison_the_next_recovery() {
             );
         }
         assert!(!orphan.exists(), "the stranded orphan was reclaimed");
+        assert_eq!(fs::read(&foreign).unwrap(), b"user bytes\n");
         assert!(!home.join("journal.json").exists(), "the journal cleared");
         let leftover = temps.read_dir().map(|entries| entries.count()).unwrap_or(0);
-        assert_eq!(leftover, 0, "no rename temp survives a committed recovery");
+        assert_eq!(
+            leftover, 1,
+            "only the unrelated file remains after recovery"
+        );
     });
 }
 
@@ -1215,7 +1233,9 @@ fn a_module_temp_is_swept_when_the_runtime_temp_home_is_absent() {
     in_sandbox("legacy-no-temps-home", "seeds/noncanonical", |root| {
         let orphan = root.join("lekalo/modules/scheduling/.module.yaml.lekalo-format-new");
         fs::write(&orphan, b"orphaned: partial bytes\n").expect("orphan temp");
-        let home = root.join(".lekalo/cache/format/aabbccdd-1");
+        let home = root
+            .join(".lekalo/cache/format")
+            .join(format!("{}-1", "a".repeat(47)));
         fs::create_dir_all(&home).expect("plan home");
         assert!(!root.join(".lekalo/cache/format/temps").exists());
         let result = lekalo_core::format::run(&request(FormatScope::All, FormatMode::Apply), None);
