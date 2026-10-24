@@ -319,6 +319,9 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
     assert_eq!(
         core_normal_dependencies,
         [
+            // Issue #149 uses the pinned, MSRV-compatible Gitignore
+            // matcher; discovery retains its own confined walk/read seam.
+            "ignore",
             // Issue #102 adds the audited JSON Schema validator for embedded
             // frozen run-history source admission.
             "jsonschema",

@@ -91,6 +91,8 @@ the [input schema](../contracts/discovery-scope.schema.v0.9.0.json). It records
 the normalized roots, builtin/file provenance, input and ignore-file SHA-256
 pins, an effective-policy digest, bounded skipped-path reasons and coverage
 limits. Filter contents and absolute paths are not copied into it.
+Protected entries are grouped under path `.` with reason `protected`;
+sensitive filenames and names inside protected homes are not published.
 Changing the scope or an applicable ignore file changes its digest. The
 same unchanged policy has the same digest in preview, apply and replay;
 these invocations re-read the selected input rather than retaining a hidden

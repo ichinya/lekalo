@@ -154,6 +154,7 @@ fn mixed_repository_prunes_archives_and_preserves_sources_across_preview_apply_a
     let (_temp, root) = fixture();
     let before = inventory(&root);
     let preview = valid(&run(&root, &["--dry-run"]));
+    assert!(!serde_json::to_string(&preview).unwrap().contains(".env"));
     assert!(!root.join("lekalo").exists());
     let detection = &preview["detection"];
     let manifests: Vec<&str> = detection["manifests"]

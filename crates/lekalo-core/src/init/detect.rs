@@ -252,7 +252,9 @@ impl Walk {
             let selected = self.policy.included(&path);
             let excluded = self.policy.excluded(&path);
             if scope::protected(&path) {
-                self.scope.skip(&path, "protected");
+                // Record the policy reason without publishing sensitive
+                // filenames or names inside protected homes.
+                self.scope.skip(".", "protected");
                 // Preserve the pre-existing closed owner-layout metadata
                 // hint. These roots never grant a source/content read.
                 if prefix.is_empty()
@@ -270,7 +272,7 @@ impl Walk {
                 self.scope.skip(&path, "excluded");
                 continue;
             }
-            if !selected && !(is_dir && self.policy.ancestor(&path)) {
+            if !(selected || is_dir && self.policy.ancestor(&path)) {
                 self.scope.skip(&path, "outside-includes");
                 continue;
             }

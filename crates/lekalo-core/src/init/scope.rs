@@ -99,6 +99,13 @@ impl ScopeReceipt {
     }
 
     pub(crate) fn skip(&mut self, path: &str, reason: &'static str) {
+        if self
+            .skipped
+            .iter()
+            .any(|entry| entry.path == path && entry.reason == reason)
+        {
+            return;
+        }
         if self.skipped.len() < MAX_SKIPS {
             self.skipped.push(Skipped {
                 path: path.to_owned(),
