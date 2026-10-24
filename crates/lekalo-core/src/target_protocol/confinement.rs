@@ -901,9 +901,7 @@ impl Sandbox {
         // This literal permits that directory alone, never its descendants.
         let mut profile = format!("(version 1)(deny default)(allow process-exec)(allow sysctl-read)(allow mach-lookup (global-name \"com.apple.system.logger\"))(allow file-read* (literal \"/\") (subpath \"/System\") (subpath \"/usr/lib\") (subpath \"/dev\") (subpath {}) (subpath {}))", quoted(&self.runtime), quoted(&self.project));
         profile.push_str(macos_interpreter_library_rules(&command.program));
-        if self.policy.bounded_resources && self.policy.children_denied {
-            profile.push_str("(deny process-fork)");
-        }
+        profile.push_str(macos_child_process_rule(self.policy));
         for root in &self.write_roots {
             profile.push_str(&format!("(allow file-write* (subpath {}))", quoted(root)));
         }
@@ -917,6 +915,19 @@ impl Sandbox {
             program: "/usr/bin/sandbox-exec".into(),
             args,
         }
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn macos_child_process_rule(policy: SandboxPolicy) -> &'static str {
+    if !policy.children_denied {
+        // A fork inherits the same filesystem and network restrictions.
+        "(allow process-fork)"
+    } else if policy.bounded_resources {
+        "(deny process-fork)"
+    } else {
+        // Preserve the predecessor deny-default profile.
+        ""
     }
 }
 
@@ -1023,6 +1034,25 @@ fn runtime_assets(program: &Path) -> &'static [&'static str] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn macos_children_grant_is_explicit_and_default_denial_is_preserved() {
+        let strict = SandboxPolicy::strict();
+        assert_eq!(macos_child_process_rule(strict), "");
+        assert_eq!(
+            macos_child_process_rule(strict.with_bounded_resources(true)),
+            "(deny process-fork)"
+        );
+        let allowed = SandboxPolicy {
+            children_denied: false,
+            ..strict
+        };
+        assert_eq!(macos_child_process_rule(allowed), "(allow process-fork)");
+        assert_eq!(
+            macos_child_process_rule(allowed.with_bounded_resources(true)),
+            "(allow process-fork)"
+        );
+    }
 
     #[test]
     fn homebrew_library_rules_are_fixed_and_interpreter_specific() {

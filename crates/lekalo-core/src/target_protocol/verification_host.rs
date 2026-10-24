@@ -82,11 +82,12 @@ mod tests {
 const fs = require('node:fs');
 const cp = require('node:child_process');
 fs.writeFileSync('src/before', process.execPath);
-const child = cp.spawnSync(process.execPath, ['-e', 'process.stdout.write("CHILD-OK")'], {stdio:'inherit', timeout:2000});
+const childCode = 'let blocked=false;try{require("node:fs").writeFileSync(process.argv[1],"escaped")}catch{blocked=true}if(!blocked)process.exit(9);process.stdout.write("CHILD-OK")';
+const child = cp.spawnSync(process.execPath, ['-e', childCode, process.argv[1]], {stdio:'inherit', timeout:2000});
 fs.writeFileSync('src/result', JSON.stringify({status:child.status,stdout:child.stdout,stderr:child.stderr,error:child.error?.message}));
 if (child.status !== 0) process.exit(1);
 process.stdout.write('VERIFIER-OK');
-"#.to_owned()],
+"#.to_owned(), root.path().join("outside-marker").to_string_lossy().into_owned()],
         };
         let limits = TransportLimits {
             timeout_ms: 6000,
@@ -102,6 +103,10 @@ process.stdout.write('VERIFIER-OK');
                 .as_ref()
                 .is_ok_and(|value| value.exit_code == 0 && value.stdout == b"CHILD-OKVERIFIER-OK"),
             "result={result:?}; before={before:?}; child={child_result:?}"
+        );
+        assert!(
+            !root.path().join("outside-marker").exists(),
+            "the child cannot write the original root"
         );
     }
 }
