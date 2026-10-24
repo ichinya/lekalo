@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.8.15",
-  "cliSourceDigest": "sha256:fc69b22f37d07a4b98a9125ad332df28029b2e529f965a60366af562fd181b51",
+  "productVersion": "0.9.0",
+  "cliSourceDigest": "sha256:3c7fa9ecfb0761f68d49d953e7bee98384bb42d69ce733cfec2a28261cf7482a",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1382,7 +1382,7 @@
       "kind": "command",
       "command": "init",
       "usage": "lekalo init [OPTIONS]",
-      "helpDigest": "sha256:ecead53ca1124227b74cab7d30f6ab444854b96a63ad966e1d35327113969f52",
+      "helpDigest": "sha256:83b0126343606be4d187d0b38ef7a5510ed7f54e0c73a625996f1b5c75a7fd11",
       "summary": "Bootstrap a new greenfield Lekalo project in the invocation directory (issue #97), or adopt an existing repository with `--adopt` (issue #38)",
       "leaf": true,
       "owner": "docs/bootstrap.md",
@@ -3479,6 +3479,24 @@
       "source": "contracts/diagnostic.schema.v0.2.16.json",
       "sourceDigest": "sha256:97683cce1c7ac66a8040df70faaa9babebcf3b1b2b69fafa0f2d20c9eefa835b",
       "owner": "docs/diagnostics.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/discovery-scope-receipt.schema.v0.9.0.json",
+      "kind": "contract",
+      "source": "contracts/discovery-scope-receipt.schema.v0.9.0.json",
+      "sourceDigest": "sha256:a7b8740e428899061d49eeeab38aea9c461142194abd9b8484e54927ae11424d",
+      "owner": "docs/adopt.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/discovery-scope.schema.v0.9.0.json",
+      "kind": "contract",
+      "source": "contracts/discovery-scope.schema.v0.9.0.json",
+      "sourceDigest": "sha256:700682b35a23bdcbc9f752c96ec43e0d6d2a78953371690a1d856c546be3e1c4",
+      "owner": "docs/adopt.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

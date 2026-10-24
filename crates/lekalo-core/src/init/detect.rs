@@ -5,8 +5,14 @@
 //! discovered script, package manager, or adapter. The walk is bounded and
 //! no-follow: depth, entries, and per-collection caps are fixed, symlinks
 //! and Windows reparse points are skipped, and output order is canonical
+use std::cell::{Cell, RefCell};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use super::scope::{self, DiscoveryScope, ScopeReceipt};
+use crate::project_fs::{EntryType, Fs, FsErrorKind};
+use crate::DomainResult;
+use ignore::gitignore::Gitignore;
 use serde_json::Value;
 
 use super::receipt::{
@@ -30,7 +36,7 @@ pub(crate) const MAX_MANIFEST_BYTES: u64 = 8 * 1024 * 1024;
 /// Directories the detection walk never descends into: dependency and
 /// build trees, plus the externally owned OpenSpec/AI Factory/HLV homes
 /// and the canonical Lekalo trees themselves.
-const SKIP_DIRS: [&str; 18] = [
+pub(crate) const SKIP_DIRS: [&str; 18] = [
     ".git",
     ".hg",
     ".svn",
@@ -152,59 +158,202 @@ struct Visited {
 /// The bounded, sorted, no-follow snapshot of one repository tree.
 struct Walk {
     entries: Vec<Visited>,
-    truncated: bool,
+    files: BTreeSet<String>,
+    fs: Fs,
+    root: PathBuf,
+    policy: DiscoveryScope,
+    scope: ScopeReceipt,
+    seen: usize,
+    read_bytes: Cell<usize>,
+    read_failures: RefCell<Vec<String>>,
 }
 
 impl Walk {
-    fn run(root: &Path) -> Walk {
+    fn run(root: &Path, input: Option<&str>) -> Result<Walk, DomainResult> {
+        let fs = Fs::open(root).map_err(|_| scope::failure("structure.root-unreadable", None))?;
+        let (policy, receipt) = DiscoveryScope::load(&fs, root, input)?;
         let mut walk = Walk {
             entries: Vec::new(),
-            truncated: false,
+            files: BTreeSet::new(),
+            fs,
+            root: root.to_path_buf(),
+            policy,
+            scope: receipt,
+            seen: 0,
+            read_bytes: Cell::new(0),
+            read_failures: RefCell::new(Vec::new()),
         };
-        walk.visit(root, "", 0);
-        walk
+        walk.visit("", 0, &mut Vec::new())?;
+        Ok(walk)
     }
 
-    fn visit(&mut self, dir: &Path, prefix: &str, depth: usize) {
-        if self.truncated || depth > MAX_DETECTION_DEPTH {
-            return;
+    fn visit(
+        &mut self,
+        prefix: &str,
+        depth: usize,
+        matchers: &mut Vec<Gitignore>,
+    ) -> Result<(), DomainResult> {
+        let logical = if prefix.is_empty() { "." } else { prefix };
+        if self.scope.limits.contains(&"entry-limit") {
+            return Ok(());
         }
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            self.truncated = true;
-            return;
+        if self.policy.excluded(logical) {
+            self.scope.skip(logical, "excluded");
+            return Ok(());
+        }
+        if depth > MAX_DETECTION_DEPTH {
+            self.scope.limited("depth-limit");
+            self.scope.skip(logical, "depth-limit");
+            return Ok(());
+        }
+        let pushed = if let Some(matcher) =
+            scope::ignore_file(&self.fs, &self.root, prefix, &mut self.scope)?
+        {
+            matchers.push(matcher);
+            true
+        } else {
+            false
         };
-        let mut names: Vec<(String, bool)> = entries
-            .filter_map(|entry| entry.ok())
-            .filter_map(|entry| {
-                let metadata = entry.metadata().ok()?;
-                if metadata.file_type().is_symlink() || is_reparse(&metadata) {
-                    return None;
+        let names = match self
+            .fs
+            .entries_bounded(prefix, MAX_DETECTION_ENTRIES.saturating_sub(self.seen))
+        {
+            Ok(names) => names,
+            Err(FsErrorKind::Limit { .. }) => {
+                self.scope.limited("entry-limit");
+                self.scope.skip(logical, "entry-limit");
+                if pushed {
+                    matchers.pop();
                 }
-                Some((
-                    entry.file_name().to_string_lossy().into_owned(),
-                    metadata.is_dir(),
-                ))
-            })
-            .collect();
-        names.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
-        for (name, is_dir) in names {
-            if self.entries.len() >= MAX_DETECTION_ENTRIES {
-                self.truncated = true;
-                return;
+                return Ok(());
             }
+            Err(_) => {
+                self.scope.limited("directory-unreadable");
+                self.scope.skip(logical, "directory-unreadable");
+                if pushed {
+                    matchers.pop();
+                }
+                return Ok(());
+            }
+        };
+        for (name, kind) in names {
+            if self.seen >= MAX_DETECTION_ENTRIES {
+                self.scope.limited("entry-limit");
+                self.scope.skip(logical, "entry-limit");
+                break;
+            }
+            self.seen += 1;
             let path = if prefix.is_empty() {
                 name.clone()
             } else {
                 format!("{prefix}/{name}")
             };
-            self.entries.push(Visited {
-                path: path.clone(),
-                is_dir,
-            });
-            if is_dir && !SKIP_DIRS.contains(&name.as_str()) {
-                self.visit(&dir.join(&name), &path, depth + 1);
+            let is_dir = kind == EntryType::Directory;
+            let selected = self.policy.included(&path);
+            let excluded = self.policy.excluded(&path);
+            if scope::protected(&path) {
+                self.scope.skip(&path, "protected");
+                // Preserve the pre-existing closed owner-layout metadata
+                // hint. These roots never grant a source/content read.
+                if prefix.is_empty()
+                    && is_dir
+                    && selected
+                    && !excluded
+                    && matches!(name.as_str(), "openspec" | ".ai-factory" | ".hlv")
+                    && !scope::ignored(matchers, &self.root.join(&path), true)
+                {
+                    self.entries.push(Visited { path, is_dir });
+                }
+                continue;
+            }
+            if excluded {
+                self.scope.skip(&path, "excluded");
+                continue;
+            }
+            if !selected && !(is_dir && self.policy.ancestor(&path)) {
+                self.scope.skip(&path, "outside-includes");
+                continue;
+            }
+            if scope::ignored(matchers, &self.root.join(&path), is_dir) {
+                self.scope.skip(&path, "gitignored");
+                continue;
+            }
+            if kind == EntryType::Symlink || kind == EntryType::Special {
+                self.scope.limited("physical-entry-refused");
+                self.scope.skip(&path, "physical-entry-refused");
+                continue;
+            }
+            // Manifest basenames have established uppercase spellings;
+            // directory roots still use the shared portable grammar.
+            if is_dir && scope::path_violation(&path).is_some() {
+                self.scope.limited("non-portable-directory");
+                self.scope.skip(&path, "non-portable-directory");
+                continue;
+            }
+            if selected {
+                if !is_dir {
+                    self.files.insert(path.clone());
+                }
+                self.entries.push(Visited {
+                    path: path.clone(),
+                    is_dir,
+                });
+            }
+            if is_dir {
+                self.visit(&path, depth + 1, matchers)?;
+                if self.scope.limits.contains(&"entry-limit") {
+                    break;
+                }
             }
         }
+        if pushed {
+            matchers.pop();
+        }
+        Ok(())
+    }
+
+    fn has_file(&self, path: &str) -> bool {
+        self.files.contains(path)
+    }
+
+    fn read(&self, path: &str) -> Option<Vec<u8>> {
+        if !self.has_file(path) {
+            return None;
+        }
+        let remaining = (32usize * 1024 * 1024).saturating_sub(self.read_bytes.get());
+        let (directory, name) = scope::split(path);
+        match self
+            .fs
+            .read_file_opt(directory, name, remaining.min(MAX_MANIFEST_BYTES as usize))
+        {
+            Ok(Some(bytes)) => {
+                self.read_bytes.set(self.read_bytes.get() + bytes.len());
+                Some(bytes)
+            }
+            _ => {
+                self.read_failures.borrow_mut().push(path.to_owned());
+                None
+            }
+        }
+    }
+
+    fn json(&self, path: &str) -> Option<Value> {
+        let bytes = self.read(path)?;
+        match serde_json::from_slice(&bytes) {
+            Ok(value) => Some(value),
+            Err(_) => {
+                self.read_failures.borrow_mut().push(path.to_owned());
+                None
+            }
+        }
+    }
+
+    fn finish_scope(mut self) -> ScopeReceipt {
+        for path in self.read_failures.into_inner() {
+            self.scope.limited("manifest-read-or-parse-refused");
+            self.scope.skip(&path, "manifest-read-or-parse-refused");
+        }
+        self.scope
     }
 }
 
@@ -224,11 +373,9 @@ fn is_reparse(metadata: &std::fs::Metadata) -> bool {
 
 /// Read a bounded file; `None` on absence, oversize, or read failure.
 fn read_bounded(path: &Path) -> Option<Vec<u8>> {
-    let metadata = std::fs::metadata(path).ok()?;
-    if !metadata.is_file() || metadata.len() > MAX_MANIFEST_BYTES {
-        return None;
-    }
-    std::fs::read(path).ok()
+    let fs = Fs::open(path.parent()?).ok()?;
+    fs.read_file_opt("", path.file_name()?.to_str()?, MAX_MANIFEST_BYTES as usize)
+        .ok()?
 }
 
 /// Parse a bounded JSON manifest.
@@ -305,7 +452,11 @@ fn node_workspace_members(value: &Value) -> Option<Vec<String>> {
 /// The `packages` member globs of one `pnpm-workspace.yaml`.
 fn pnpm_workspace_members(path: &Path) -> Option<Vec<String>> {
     let bytes = read_bounded(path)?;
-    let text = std::str::from_utf8(&bytes).ok()?;
+    pnpm_workspace_members_bytes(&bytes)
+}
+
+fn pnpm_workspace_members_bytes(bytes: &[u8]) -> Option<Vec<String>> {
+    let text = std::str::from_utf8(bytes).ok()?;
     let index = crate::loader::source::LineIndex::new(text);
     let parsed = crate::loader::frontends::parse_document(text, &index).ok()?;
     let root = match parsed {
@@ -334,11 +485,8 @@ fn has_cargo_workspace(bytes: &[u8]) -> bool {
 }
 
 /// The `use (...)` member directories of one `go.work`.
-fn go_work_members(path: &Path) -> Vec<String> {
-    let Some(bytes) = read_bounded(path) else {
-        return Vec::new();
-    };
-    let Ok(text) = std::str::from_utf8(&bytes) else {
+fn go_work_members(bytes: &[u8]) -> Vec<String> {
+    let Ok(text) = std::str::from_utf8(bytes) else {
         return Vec::new();
     };
     let mut members = Vec::new();
@@ -367,11 +515,8 @@ fn go_work_members(path: &Path) -> Vec<String> {
 }
 
 /// The `[workspace] members` of one Cargo.toml (line-scan evidence).
-fn cargo_workspace_members(path: &Path) -> Vec<String> {
-    let Some(bytes) = read_bounded(path) else {
-        return Vec::new();
-    };
-    let Ok(text) = std::str::from_utf8(&bytes) else {
+fn cargo_workspace_members(bytes: &[u8]) -> Vec<String> {
+    let Ok(text) = std::str::from_utf8(bytes) else {
         return Vec::new();
     };
     let mut members = Vec::new();
@@ -406,7 +551,12 @@ fn cargo_workspace_members(path: &Path) -> Vec<String> {
 
 /// Push one quoted member entry if it is non-empty.
 fn push_member(members: &mut Vec<String>, raw: &str) {
-    let raw = raw.trim().trim_matches('"').trim_matches('\'');
+    let raw = raw
+        .trim()
+        .trim_end_matches(',')
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'');
     if !raw.is_empty() && members.len() < MAX_PER_COLLECTION {
         members.push(raw.to_owned());
     }
@@ -415,7 +565,11 @@ fn push_member(members: &mut Vec<String>, raw: &str) {
 /// The `[package] name` of one Cargo.toml (line-scan evidence).
 pub(crate) fn cargo_package_name(path: &Path) -> Option<String> {
     let bytes = read_bounded(path)?;
-    let text = std::str::from_utf8(&bytes).ok()?;
+    cargo_package_name_bytes(&bytes)
+}
+
+fn cargo_package_name_bytes(bytes: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(bytes).ok()?;
     let mut inside = false;
     for line in text.lines() {
         let trimmed = line.trim();
@@ -446,7 +600,11 @@ pub(crate) fn json_name(path: &Path) -> Option<String> {
 /// The `module` path of one go.mod.
 pub(crate) fn go_module_path(path: &Path) -> Option<String> {
     let bytes = read_bounded(path)?;
-    let text = std::str::from_utf8(&bytes).ok()?;
+    go_module_path_bytes(&bytes)
+}
+
+fn go_module_path_bytes(bytes: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(bytes).ok()?;
     for line in text.lines() {
         let line = line.trim();
         if let Some(rest) = line.strip_prefix("module ") {
@@ -469,9 +627,13 @@ fn node_scripts(value: &Value) -> Vec<String> {
 ///
 /// `requested_target` (when `--target` was passed) is always reported, so
 /// a missing adapter is visible evidence rather than a silent guess.
-pub(crate) fn detect(root: &Path, requested_target: Option<&str>) -> Detection {
+pub(crate) fn detect(
+    root: &Path,
+    requested_target: Option<&str>,
+    input: Option<&str>,
+) -> Result<Detection, DomainResult> {
     let mut detection = Detection::default();
-    let walk = Walk::run(root);
+    let walk = Walk::run(root, input)?;
 
     // Layouts: externally owned homes at the adopted root.
     for (kind, name, evidence) in [
@@ -483,11 +645,18 @@ pub(crate) fn detect(root: &Path, requested_target: Option<&str>) -> Detection {
         if detection.layouts.len() >= 3 {
             break;
         }
-        let path = root.join(name);
-        if !path.is_dir() || detection.layouts.iter().any(|item| item.path == name) {
+        if !walk
+            .entries
+            .iter()
+            .any(|entry| entry.path == name && entry.is_dir)
+            || detection.layouts.iter().any(|item| item.path == name)
+        {
             continue;
         }
-        let confidence = if evidence == name || root.join(evidence).is_dir() {
+        let (_, leaf) = scope::split(evidence);
+        let confidence = if evidence == name
+            || matches!(walk.fs.entry_type(name, leaf), Ok(EntryType::Directory))
+        {
             Confidence::High
         } else {
             Confidence::Medium
@@ -500,8 +669,8 @@ pub(crate) fn detect(root: &Path, requested_target: Option<&str>) -> Detection {
     }
 
     let mut node_manifests: Vec<(String, Value)> = Vec::new();
-    let mut composer_present = false;
-    let mut artisan_present = false;
+    let mut composer_manifests: Vec<(String, Value)> = Vec::new();
+    let mut artisan_paths = BTreeSet::new();
 
     for entry in &walk.entries {
         if entry.is_dir {
@@ -542,7 +711,7 @@ pub(crate) fn detect(root: &Path, requested_target: Option<&str>) -> Detection {
             }
         }
         if name == "package.json" {
-            if let Some(value) = parse_json(&root.join(&entry.path)) {
+            if let Some(value) = walk.json(&entry.path) {
                 scan_node_manifest(&entry.path, &value, &mut detection);
                 if node_manifests.len() < MAX_PER_COLLECTION {
                     node_manifests.push((entry.path.clone(), value));
@@ -550,13 +719,15 @@ pub(crate) fn detect(root: &Path, requested_target: Option<&str>) -> Detection {
             }
         }
         if name == "composer.json" {
-            composer_present = true;
-            if let Some(value) = parse_json(&root.join(&entry.path)) {
+            if let Some(value) = walk.json(&entry.path) {
                 scan_composer_manifest(&entry.path, &value, &mut detection);
+                if composer_manifests.len() < MAX_PER_COLLECTION {
+                    composer_manifests.push((entry.path.clone(), value));
+                }
             }
         }
         if name == "artisan" {
-            artisan_present = true;
+            artisan_paths.insert(entry.path.clone());
         }
         if name == "tsconfig.json" && detection.languages.len() < MAX_PER_COLLECTION {
             push_hint(
@@ -622,33 +793,47 @@ pub(crate) fn detect(root: &Path, requested_target: Option<&str>) -> Detection {
 
     // Workspace roots at the adopted root itself, then anywhere inside
     // the walked tree, plus their members.
-    let mut marked: Vec<(String, PathBuf, WorkspaceKind)> = Vec::new();
-    if let Some(kind) = workspace_marker(root) {
-        marked.push((".".to_owned(), root.to_path_buf(), kind));
+    let mut marked: Vec<(String, WorkspaceKind)> = Vec::new();
+    if let Some(kind) = workspace_marker_in(&walk, ".") {
+        marked.push((".".to_owned(), kind));
     }
     for entry in &walk.entries {
         if !entry.is_dir {
             continue;
         }
-        if let Some(kind) = workspace_marker(&root.join(&entry.path)) {
-            marked.push((entry.path.clone(), root.join(&entry.path), kind));
+        if let Some(kind) = workspace_marker_in(&walk, &entry.path) {
+            marked.push((entry.path.clone(), kind));
         }
     }
-    for (path, dir, kind) in marked {
+    for (path, kind) in marked {
         if detection.workspace_roots.len() >= MAX_PER_COLLECTION {
             break;
         }
         let (ecosystem, members) = match kind {
             WorkspaceKind::Node => {
-                let manifest = dir.join("package.json");
-                let members = parse_json(&manifest)
+                let manifest = child_path(&path, "package.json");
+                let members = walk
+                    .json(&manifest)
                     .and_then(|value| node_workspace_members(&value))
-                    .or_else(|| pnpm_workspace_members(&dir.join("pnpm-workspace.yaml")))
+                    .or_else(|| {
+                        walk.read(&child_path(&path, "pnpm-workspace.yaml"))
+                            .and_then(|bytes| pnpm_workspace_members_bytes(&bytes))
+                    })
                     .unwrap_or_default();
                 ("node", members)
             }
-            WorkspaceKind::Go => ("go", go_work_members(&dir.join("go.work"))),
-            WorkspaceKind::Rust => ("rust", cargo_workspace_members(&dir.join("Cargo.toml"))),
+            WorkspaceKind::Go => (
+                "go",
+                walk.read(&child_path(&path, "go.work"))
+                    .map(|bytes| go_work_members(&bytes))
+                    .unwrap_or_default(),
+            ),
+            WorkspaceKind::Rust => (
+                "rust",
+                walk.read(&child_path(&path, "Cargo.toml"))
+                    .map(|bytes| cargo_workspace_members(&bytes))
+                    .unwrap_or_default(),
+            ),
             WorkspaceKind::Gradle => ("gradle", Vec::new()),
         };
         detection.workspace_roots.push(WorkspaceRoot {
@@ -675,32 +860,58 @@ pub(crate) fn detect(root: &Path, requested_target: Option<&str>) -> Detection {
     // Observed modules: workspace members carrying a manifest.
     for workspace in &detection.workspace_roots {
         for glob in &workspace.members {
-            for module in expand_member_glob(root, workspace, glob) {
+            for module in expand_member_glob(&walk, workspace, glob) {
                 push_module(&mut detection.modules, module);
             }
         }
     }
     if detection.modules.is_empty() {
         for (path, value) in &node_manifests {
-            if path.split('/').count() == 1 {
+            if path.split('/').count() == 1 || detection.workspace_roots.is_empty() {
                 if let Some(name) = value.get("name").and_then(Value::as_str) {
                     push_module(
                         &mut detection.modules,
                         ObservedModule {
                             name: name.to_owned(),
-                            path: ".".to_owned(),
+                            path: path
+                                .rsplit_once('/')
+                                .map(|(directory, _)| directory)
+                                .unwrap_or(".")
+                                .to_owned(),
                             mode: "observed",
                             evidence: vec![path.clone()],
                             confidence: Confidence::High,
                         },
                     );
                 }
-                break;
+                if !detection.workspace_roots.is_empty() {
+                    break;
+                }
             }
         }
     }
 
     // Native gates: package.json scripts verbatim; ecosystem conventions.
+    if input.is_some() {
+        for (path, value) in &composer_manifests {
+            if let Some(name) = value.get("name").and_then(Value::as_str) {
+                let directory = path
+                    .rsplit_once('/')
+                    .map(|(directory, _)| directory)
+                    .unwrap_or(".");
+                push_module(
+                    &mut detection.modules,
+                    ObservedModule {
+                        name: name.to_owned(),
+                        path: directory.to_owned(),
+                        mode: "observed",
+                        evidence: vec![path.clone()],
+                        confidence: Confidence::High,
+                    },
+                );
+            }
+        }
+    }
     let node_manager = detection
         .package_managers
         .iter()
@@ -729,50 +940,43 @@ pub(crate) fn detect(root: &Path, requested_target: Option<&str>) -> Detection {
             break;
         }
     }
-    if composer_present && artisan_present {
-        detection.gates.push(GateProposal {
-            gate: "test",
-            command: "php artisan test".to_owned(),
-            source: "derived",
-            evidence: "artisan".to_owned(),
-            confidence: Confidence::Medium,
-        });
+    for (path, _) in &composer_manifests {
+        let directory = path
+            .rsplit_once('/')
+            .map(|(directory, _)| directory)
+            .unwrap_or(".");
+        let artisan = child_path(directory, "artisan");
+        if artisan_paths.contains(&artisan) {
+            detection.gates.push(GateProposal {
+                gate: "test",
+                command: "php artisan test".to_owned(),
+                source: "derived",
+                evidence: artisan,
+                confidence: Confidence::Medium,
+            });
+        }
     }
-    if detection.manifests.iter().any(|item| item.detail == "go") {
-        detection.gates.push(GateProposal {
-            gate: "build",
-            command: "go build ./...".to_owned(),
-            source: "derived",
-            evidence: "go.mod".to_owned(),
-            confidence: Confidence::Medium,
-        });
-        detection.gates.push(GateProposal {
-            gate: "test",
-            command: "go test ./...".to_owned(),
-            source: "derived",
-            evidence: "go.mod".to_owned(),
-            confidence: Confidence::Medium,
-        });
-    }
-    if detection.manifests.iter().any(|item| item.detail == "rust") {
-        detection.gates.push(GateProposal {
-            gate: "build",
-            command: "cargo build".to_owned(),
-            source: "derived",
-            evidence: "Cargo.toml".to_owned(),
-            confidence: Confidence::Medium,
-        });
-        detection.gates.push(GateProposal {
-            gate: "test",
-            command: "cargo test".to_owned(),
-            source: "derived",
-            evidence: "Cargo.toml".to_owned(),
-            confidence: Confidence::Medium,
-        });
+    for manifest in &detection.manifests {
+        let commands = match manifest.path.rsplit('/').next() {
+            Some("go.mod") => Some([("build", "go build ./..."), ("test", "go test ./...")]),
+            Some("Cargo.toml") => Some([("build", "cargo build"), ("test", "cargo test")]),
+            _ => None,
+        };
+        if let Some(commands) = commands {
+            for (gate, command) in commands {
+                detection.gates.push(GateProposal {
+                    gate,
+                    command: command.to_owned(),
+                    source: "derived",
+                    evidence: manifest.path.clone(),
+                    confidence: Confidence::Medium,
+                });
+            }
+        }
     }
 
     // Installed target adapters: a bounded PATH lookup, never an execution.
-    let installed = installed_adapters();
+    let installed = installed_adapters(root, &walk);
     let mut probed: Vec<String> = installed.clone();
     if let Some(target) = requested_target {
         if !probed.iter().any(|candidate| candidate == target) {
@@ -830,7 +1034,60 @@ pub(crate) fn detect(root: &Path, requested_target: Option<&str>) -> Detection {
     detection
         .modules
         .sort_by(|left, right| left.path.as_bytes().cmp(right.path.as_bytes()));
-    detection
+    detection.scope = walk.finish_scope();
+    if detection.manifests.len() >= MAX_PER_COLLECTION
+        || detection.modules.len() >= MAX_PER_COLLECTION
+        || detection.languages.len() >= MAX_PER_COLLECTION
+        || detection.openapi.len() >= MAX_OPENAPI
+        || detection.gates.len() > MAX_PER_COLLECTION
+    {
+        detection.scope.limited("collection-limit");
+    }
+    detection.gates.truncate(MAX_PER_COLLECTION);
+    detection.scope = detection.scope.finish();
+    Ok(detection)
+}
+
+fn child_path(directory: &str, name: &str) -> String {
+    if directory == "." {
+        name.to_owned()
+    } else {
+        format!("{directory}/{name}")
+    }
+}
+
+/// Workspace detection uses only admitted catalog entries, including for
+/// roots nested below another workspace. No membership glob can open a
+/// new directory or manifest outside the scoped walk.
+fn workspace_marker_in(walk: &Walk, directory: &str) -> Option<WorkspaceKind> {
+    if walk
+        .json(&child_path(directory, "package.json"))
+        .as_ref()
+        .and_then(node_workspace_members)
+        .is_some()
+        || walk
+            .read(&child_path(directory, "pnpm-workspace.yaml"))
+            .and_then(|bytes| pnpm_workspace_members_bytes(&bytes))
+            .is_some_and(|members| !members.is_empty())
+    {
+        return Some(WorkspaceKind::Node);
+    }
+    if walk.has_file(&child_path(directory, "go.work")) {
+        return Some(WorkspaceKind::Go);
+    }
+    if walk
+        .read(&child_path(directory, "Cargo.toml"))
+        .is_some_and(|bytes| has_cargo_workspace(&bytes))
+    {
+        return Some(WorkspaceKind::Rust);
+    }
+    if ["settings.gradle", "settings.gradle.kts"]
+        .iter()
+        .any(|name| walk.has_file(&child_path(directory, name)))
+    {
+        return Some(WorkspaceKind::Gradle);
+    }
+    None
 }
 
 /// Insert one hint, keeping collections bounded and duplicate-free.
@@ -859,61 +1116,36 @@ fn push_module(modules: &mut Vec<ObservedModule>, module: ObservedModule) {
 ///
 /// Only the closed `a/b/*` shape (literal segments plus one trailing or
 /// interior `*` level) is expanded, against on-disk directory entries.
-fn expand_member_glob(root: &Path, workspace: &WorkspaceRoot, glob: &str) -> Vec<ObservedModule> {
-    let base = if workspace.path == "." {
-        root.to_path_buf()
-    } else {
-        root.join(&workspace.path)
-    };
-    let segments: Vec<&str> = glob
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect();
-    if segments.is_empty() || segments.len() > 3 {
+fn expand_member_glob(walk: &Walk, workspace: &WorkspaceRoot, glob: &str) -> Vec<ObservedModule> {
+    let segments: Vec<&str> = glob.split('/').collect();
+    if segments.is_empty()
+        || segments.len() > 3
+        || segments
+            .iter()
+            .any(|part| *part != "*" && scope::path_violation(part).is_some())
+    {
         return Vec::new();
     }
-    let mut current = vec![(base, String::new())];
-    for segment in segments {
-        let mut next = Vec::new();
-        for (dir, prefix) in current {
-            if segment == "*" {
-                let Ok(entries) = std::fs::read_dir(&dir) else {
-                    continue;
-                };
-                let mut names: Vec<String> = entries
-                    .filter_map(|entry| entry.ok())
-                    .filter(|entry| {
-                        entry
-                            .metadata()
-                            .map(|metadata| metadata.is_dir() && !is_reparse(&metadata))
-                            .unwrap_or(false)
-                    })
-                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
-                    .collect();
-                names.sort_by(|left, right| left.as_bytes().cmp(right.as_bytes()));
-                for name in names {
-                    let child = dir.join(&name);
-                    let child_prefix = if prefix.is_empty() {
-                        name
-                    } else {
-                        format!("{prefix}/{name}")
-                    };
-                    next.push((child, child_prefix));
-                }
-            } else {
-                let child_prefix = if prefix.is_empty() {
-                    segment.to_owned()
-                } else {
-                    format!("{prefix}/{segment}")
-                };
-                next.push((dir.join(segment), child_prefix));
-            }
-        }
-        current = next;
-    }
+    let base = if workspace.path == "." {
+        String::new()
+    } else {
+        format!("{}/", workspace.path)
+    };
     let mut modules = Vec::new();
-    for (dir, prefix) in current {
-        let manifest = [
+    for entry in walk.entries.iter().filter(|entry| entry.is_dir) {
+        let Some(relative) = entry.path.strip_prefix(&base) else {
+            continue;
+        };
+        let parts: Vec<&str> = relative.split('/').collect();
+        if parts.len() != segments.len()
+            || !parts
+                .iter()
+                .zip(&segments)
+                .all(|(part, pattern)| *pattern == "*" || part == pattern)
+        {
+            continue;
+        }
+        let Some(manifest) = [
             "package.json",
             "composer.json",
             "go.mod",
@@ -921,28 +1153,28 @@ fn expand_member_glob(root: &Path, workspace: &WorkspaceRoot, glob: &str) -> Vec
             "pyproject.toml",
         ]
         .into_iter()
-        .find(|name| dir.join(name).is_file());
-        let Some(manifest) = manifest else {
+        .map(|name| child_path(&entry.path, name))
+        .find(|path| walk.has_file(path)) else {
             continue;
         };
-        let name = match manifest {
-            "package.json" | "composer.json" => json_name(&dir.join(manifest)),
-            "Cargo.toml" => cargo_package_name(&dir.join(manifest)),
-            "go.mod" => go_module_path(&dir.join(manifest))
-                .map(|module| module.rsplit('/').next().unwrap_or(&module).to_owned()),
-            _ => None,
-        };
-        let name = name.unwrap_or_else(|| prefix.clone());
-        let evidence_path = if prefix.is_empty() {
-            manifest.to_owned()
+        let name = if manifest.ends_with("package.json") || manifest.ends_with("composer.json") {
+            walk.json(&manifest)
+                .and_then(|value| value.get("name").and_then(Value::as_str).map(str::to_owned))
+        } else if manifest.ends_with("Cargo.toml") {
+            walk.read(&manifest)
+                .and_then(|bytes| cargo_package_name_bytes(&bytes))
+        } else if manifest.ends_with("go.mod") {
+            walk.read(&manifest)
+                .and_then(|bytes| go_module_path_bytes(&bytes))
+                .map(|module| module.rsplit('/').next().unwrap_or(&module).to_owned())
         } else {
-            format!("{prefix}/{manifest}")
+            None
         };
         modules.push(ObservedModule {
-            name,
-            path: prefix,
+            name: name.unwrap_or_else(|| relative.to_owned()),
+            path: entry.path.clone(),
             mode: "observed",
-            evidence: vec![evidence_path],
+            evidence: vec![manifest],
             confidence: Confidence::High,
         });
     }
@@ -1027,12 +1259,32 @@ fn scan_composer_manifest(path: &str, value: &Value, detection: &mut Detection) 
 }
 
 /// The `lekalo-target-<id>` executables available on `PATH`.
-fn installed_adapters() -> Vec<String> {
+fn installed_adapters(root: &Path, walk: &Walk) -> Vec<String> {
     let Some(path_var) = std::env::var_os("PATH") else {
         return Vec::new();
     };
     let mut found: Vec<String> = Vec::new();
+    let physical_root = root.canonicalize().ok();
     'dirs: for dir in std::env::split_paths(&path_var) {
+        // PATH is an independent environment probe. A directory inside
+        // this repository still cannot bypass its discovery scope.
+        if let (Some(root), Ok(directory)) = (&physical_root, dir.canonicalize()) {
+            if let Ok(relative) = directory.strip_prefix(root) {
+                let logical = relative.to_string_lossy().replace('\\', "/");
+                if logical.is_empty() {
+                    if !walk.policy.included(".") || walk.policy.excluded(".") {
+                        continue;
+                    }
+                } else if scope::protected(&logical)
+                    || !walk
+                        .entries
+                        .iter()
+                        .any(|entry| entry.is_dir && entry.path == logical)
+                {
+                    continue;
+                }
+            }
+        }
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };

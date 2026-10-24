@@ -6,7 +6,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.8.15"
+version = "0.9.0"
 edition = "2021"
 rust-version = "1.80.0"
 license = "MIT OR Apache-2.0"
@@ -28,6 +28,9 @@ tempfile = "3"
 # The pinned dependency graph still needs the workspace's Rust 1.80
 # and Windows/Linux/macOS CI checks; no cross-platform pass is implied.
 notify = "=6.1.1"
+# Last ignore/globset editions compatible with the Rust 1.80 floor.
+# Cargo.lock pins globset 0.4.16; successors use edition 2024.
+ignore = "=0.4.23"
 
 [workspace.dependencies.rustix]
 version = "1"

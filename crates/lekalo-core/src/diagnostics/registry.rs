@@ -398,7 +398,7 @@ impl DiagnosticRegistry {
         let mut seen_codes = std::collections::BTreeSet::new();
         for wire_entry in wire.entries {
             if let Some(previous) = &previous {
-                if wire_entry.id.as_str() <= previous {
+                if wire_entry.id.as_str() <= previous.as_str() {
                     // Entries must be sorted by unsigned UTF-8 id bytes and
                     // unique; a stale or reordered registry fails closed.
                     return Err(RegistryError::Invariant);

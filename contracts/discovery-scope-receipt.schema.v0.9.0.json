@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/schemas/discovery-scope-receipt/v0.9.0",
+  "title": "discovery-scope-receipt v0.9.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "digest",
+    "source",
+    "input",
+    "includes",
+    "excludes",
+    "gitIgnore",
+    "ignoreFiles",
+    "complete",
+    "limits",
+    "skipped",
+    "skippedTruncated"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/discovery-scope-receipt/v0.9.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.discovery-scope-receipt@0.9.0"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "source": {
+      "enum": [
+        "builtin",
+        "file"
+      ]
+    },
+    "input": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "includes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024,
+        "pattern": "^(?:\\.|(?:[A-Za-z0-9]|[A-Za-z0-9.][A-Za-z0-9._-]{0,62}[A-Za-z0-9_-])(?:/(?:[A-Za-z0-9]|[A-Za-z0-9.][A-Za-z0-9._-]{0,62}[A-Za-z0-9_-]))*)$",
+        "description": "Literal repository-relative path, or dot; hidden names and actual source capitalization are admitted. Shared escape/device rules and case-accurate physical no-follow checks additionally apply."
+      }
+    },
+    "excludes": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024,
+        "pattern": "^(?:\\.|(?:[A-Za-z0-9]|[A-Za-z0-9.][A-Za-z0-9._-]{0,62}[A-Za-z0-9_-])(?:/(?:[A-Za-z0-9]|[A-Za-z0-9.][A-Za-z0-9._-]{0,62}[A-Za-z0-9_-]))*)$",
+        "description": "Literal repository-relative path, or dot; hidden names and actual source capitalization are admitted. Shared escape/device rules and case-accurate physical no-follow checks additionally apply."
+      }
+    },
+    "gitIgnore": {
+      "const": "respect"
+    },
+    "ignoreFiles": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "complete": {
+      "type": "boolean"
+    },
+    "limits": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "skip-receipt-limit",
+          "physical-entry-refused",
+          "non-portable-directory",
+          "depth-limit",
+          "entry-limit",
+          "directory-unreadable",
+          "manifest-read-or-parse-refused",
+          "collection-limit"
+        ]
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "reason"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "reason": {
+            "enum": [
+              "protected",
+              "excluded",
+              "outside-includes",
+              "gitignored",
+              "physical-entry-refused",
+              "non-portable-directory",
+              "depth-limit",
+              "entry-limit",
+              "directory-unreadable",
+              "manifest-read-or-parse-refused"
+            ]
+          }
+        }
+      }
+    },
+    "skippedTruncated": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "source": {
+            "const": "builtin"
+          }
+        },
+        "required": [
+          "source"
+        ]
+      },
+      "then": {
+        "properties": {
+          "input": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "input": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -645,6 +645,8 @@ jobs:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         timeout-minutes: 20
         run: |
+          node scripts/gen-discovery-scope-contracts.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-discovery-scope-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-adoption-contracts.mjs
           node scripts/test-adoption-refactor.mjs
           node scripts/test-adoption-hybrid.mjs

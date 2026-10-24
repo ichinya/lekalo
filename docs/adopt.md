@@ -20,6 +20,7 @@ lekalo init --adopt --target node-typescript --profile default
 lekalo init --adopt --dry-run
 lekalo init --adopt --project DIR
 lekalo init --adopt --project-id ID
+lekalo init --adopt --discovery-scope discovery.json --dry-run
 ```
 
 `init` without `--adopt` creates a new minimal project through
@@ -27,9 +28,94 @@ lekalo init --adopt --project-id ID
 two modes cannot be combined. [ADR-0028](adr/0028-init-adopt.md) records the
 shared configuration seam.
 
+## Discovery scope
+
+`--discovery-scope FILE` is an explicit, repository-relative JSON input for
+adoption only. There is no automatic config search. `--profile` continues
+to select an adapter profile; it is not a discovery config filename.
+
+For a synthetic PHP backend and TypeScript frontend beside archived copies,
+create `discovery.json` at the selected root:
+
+```json
+{
+  "schemaVersion": "lekalo/discovery-scope/v0.9.0",
+  "identity": "dev.lekalo.discovery-scope@0.9.0",
+  "includes": ["apps/api", "apps/web"],
+  "excludes": [".orca", ".bench", "debug", "archives"],
+  "gitIgnore": "respect"
+}
+```
+
+Then preview and apply through the same public command:
+
+```bash
+lekalo init --adopt --project . --project-id mixed --discovery-scope discovery.json --dry-run
+lekalo init --adopt --project . --project-id mixed --discovery-scope discovery.json
+```
+
+Includes and exclusions are **literal paths**, not globs. `.` includes the
+selected root. Overlapping/duplicate roots are sorted and deduplicated;
+an exclusion removes that path and its entire subtree. Hidden repository
+directories and actual source-directory capitalization are permitted as scope paths, while the canonical Model path
+grammar remains unchanged. Absolute paths, traversal, Windows aliases,
+symlinks/junctions and protected include roots receive registered
+`structure.*` refusals before any skeleton write. Missing exclusion paths
+are valid policy; selected include roots must exist as physical directories.
+
+The precedence is fixed: protected dependency/build/runtime/sensitive paths
+cannot be included; explicit exclusions prune first; repository Git ignore
+rules then apply; includes never override either decision. Git ignore
+negation can restore a path only while its parent remains traversable and
+the path is neither protected nor explicitly excluded.
+
+Both default and explicit discovery respect `.gitignore` at the selected
+root and in traversed subdirectories. Matching is case-sensitive and does
+not consult the Git index, global excludes or `.git/info/exclude`; a tracked
+file matching these repository rules is still omitted from discovery.
+The explicitly supplied scope file and the applicable ancestor `.gitignore`
+files are policy inputs, read through the no-follow filesystem and pinned
+separately. An excluded subtree is pruned before reading its own ignore
+file, manifests or workspace members. The fixed owner-layout hints below
+remain metadata-only; they never grant a protected source read.
+
+Without a new input, the effective policy is `includes: ["."]`,
+`excludes: []`, `gitIgnore: "respect"`. With a scope input and no explicit
+`--project`/`LEKALO_PROJECT`, the invocation directory is the root: scoped
+discovery does not inspect ancestor manifests to choose a different root.
+The scope filename is resolved from that selected root.
+
+`detection.scope` is a versioned
+[receipt](../contracts/discovery-scope-receipt.schema.v0.9.0.json), paired with
+the [input schema](../contracts/discovery-scope.schema.v0.9.0.json). It records
+the normalized roots, builtin/file provenance, input and ignore-file SHA-256
+pins, an effective-policy digest, bounded skipped-path reasons and coverage
+limits. Filter contents and absolute paths are not copied into it.
+Changing the scope or an applicable ignore file changes its digest. The
+same unchanged policy has the same digest in preview, apply and replay;
+these invocations re-read the selected input rather than retaining a hidden
+plan. Discovery filters do not bypass canonical post-write validation or
+runtime recovery checks.
+
+Depth, entry and collection limits mark `complete: false` with a reason.
+Manifest reads are capped at 8 MiB each and 32 MiB per invocation. Scope
+and ignore inputs are capped at 64 KiB; at most 128 ignore files and 1024
+lines per ignore file are accepted. Unreadable, malformed or oversized
+policy inputs refuse instead of silently broadening discovery. A partial
+receipt is not exhaustive evidence about the repository.
+
+Discovery still executes no package scripts, gates or adapters and edits
+neither source nor ignore files. Workspace member globs are expanded only
+against the already admitted catalog, so they cannot reintroduce excluded
+or ignored copies. A PATH adapter directory inside the repository is also
+subject to that catalog.
+
 ## Root selection
 
 The adoption root is chosen deterministically:
+
+These ancestor-search rules apply without `--discovery-scope`; the explicit
+scoped-input anchoring is described above.
 
 1. an explicit `--project DIR` (or `LEKALO_PROJECT`) selector wins; the
    usual selection grammar and alias refusal apply, and the marker file is
@@ -51,7 +137,7 @@ absolute filesystem path ever enters a receipt.
 Detection is a bounded, no-follow walk (depth 4, 10 000 entries, closed
 skip list for dependency/build trees and for the externally owned
 `openspec/`, `.ai-factory/`, `.hlv/` homes and the canonical `lekalo/`
-trees). Every observation is a proposal with provenance and one of the
+trees), filtered by the discovery scope above. Every observation is a proposal with provenance and one of the
 closed confidences `high` (declared by a manifest field), `medium` (file
 presence or ecosystem convention), or `low`:
 
@@ -114,7 +200,9 @@ lock` seam, and `.gitignore` is user-owned and never edited.
 The canonical project id comes from, in order: `--project-id` (exact
 match against the closed grammar), the root `package.json` name,
 `composer.json` name, `Cargo.toml` `[package] name`, the `go.mod` module
-path's last segment, or the root directory name. A name that is not
+path's last segment, or the root directory name. Only root manifests admitted
+by discovery may supply that identity; ignored or out-of-scope manifests do
+not. A name that is not
 already grammar-clean is sanitized (`-` → `_`, scope separators folded)
 and the receipt records the derivation (`projectIdSource.source`,
 `.original`, `.confidence`). When nothing derivable remains, adoption
@@ -162,7 +250,8 @@ skeleton.
 | Outcome | Stream | Exit | Envelope |
 |---|---|---|---|
 | plan or applied adoption | stdout | `0` | `{"status":"valid","operation":"init",...}` |
-| usage (no `--adopt`, bad ids) | stderr | `1` | `cli.usage` |
+| usage (bad ids, malformed scope, orphan scope flag) | stderr | `1` | `cli.usage` |
+| scope/path policy refusal | stdout | `3` | registered `structure.*` reason |
 | write/rollback failure | stderr | `1` | `init.adopt-write-failed` / `init.adopt-recovery-required` |
 | conflict / ambiguity / id required | stdout | `3` | `init.adopt-conflict` / `init.adopt-ambiguous-root` / `init.adopt-id-required` |
 

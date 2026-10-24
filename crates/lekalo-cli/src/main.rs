@@ -664,6 +664,9 @@ enum Commands {
         /// Adopt the existing repository at the adoption root.
         #[arg(long)]
         adopt: bool,
+        /// Repository-relative versioned discovery scope (adoption only).
+        #[arg(long, value_name = "FILE", requires = "adopt")]
+        discovery_scope: Option<String>,
         /// Explicit target selection; written to `lekalo/targets/`.
         #[arg(long, value_name = "TARGET")]
         target: Option<String>,
@@ -2909,6 +2912,7 @@ fn runtime() -> u8 {
             Commands::Dataflow { command } => run_dataflow(command),
             Commands::Init {
                 adopt,
+                discovery_scope,
                 target,
                 profile,
                 project_id,
@@ -2919,6 +2923,7 @@ fn runtime() -> u8 {
                 dry_run,
             } => run_init(
                 adopt,
+                discovery_scope,
                 target,
                 profile,
                 project_id,
@@ -3667,6 +3672,7 @@ fn run_lock(project: Option<String>, check: bool, program_args: Vec<String>) -> 
 #[allow(clippy::too_many_arguments)]
 fn run_init(
     adopt: bool,
+    discovery_scope: Option<String>,
     target: Option<String>,
     profile: Option<String>,
     project_id: Option<String>,
@@ -3701,6 +3707,7 @@ fn run_init(
             profile,
             project_id,
             dry_run,
+            discovery_scope,
         });
     }
     lekalo_core::init::bootstrap::bootstrap(&lekalo_core::init::bootstrap::BootstrapRequest {
