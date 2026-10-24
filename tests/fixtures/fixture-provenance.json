@@ -327,7 +327,7 @@
     {
       "family": "public-typescript-scan",
       "origin": "synthetic",
-      "note": "Issue #150: authored standalone and workspace TypeScript sources and explicit public scan profiles; no private consumer material."
+      "note": "Issues #150/#153: authored standalone and workspace TypeScript sources, explicit public scan profiles and a domain command/effect/authorization example; no private consumer material."
     },
     {
       "family": "query-model",

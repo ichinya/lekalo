@@ -1,0 +1,20 @@
+schema_version: "0.2.16"
+definitions:
+  - id: public_core.write_score
+    kind: effect
+    version: 1
+    description: "Update domain state; no storage or transport binding is declared."
+    operation: update
+    entity: public_core.score
+  - id: public_core.set_value
+    kind: command
+    version: 1
+    description: "Set a value in the domain model."
+    visibility: module
+    portability: portable
+    input:
+      - name: value
+        type: public_core.value
+        required: true
+    effects:
+      - public_core.write_score

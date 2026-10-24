@@ -25,6 +25,8 @@ project scripts or native gates.
 
 The authored sources and profiles are in
 [`tests/fixtures/public-typescript-scan`](../tests/fixtures/public-typescript-scan).
+For an explicit local command/effect model without HTTP or storage, see
+[Domain and client workspace](domain-client-workspace.md).
 Copy either `standalone/` or `workspace/` into a disposable user project:
 
 | Layout | Declared scan roots |
