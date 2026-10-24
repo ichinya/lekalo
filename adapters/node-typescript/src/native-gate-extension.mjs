@@ -103,11 +103,11 @@ function decodeNativeRequest(value) {
     }
   }
   if (!isObject(value.changes)
-    || !Array.isArray(value.changes.files) || value.changes.files.length > 1024
-    || !Array.isArray(value.changes.symbols) || value.changes.symbols.length > 1024) {
+    || (value.changes.files !== undefined && (!Array.isArray(value.changes.files) || value.changes.files.length > 1024))
+    || (value.changes.symbols !== undefined && (!Array.isArray(value.changes.symbols) || value.changes.symbols.length > 1024))) {
     return { error: "changes bound violated" };
   }
-  for (const file of value.changes.files) {
+  for (const file of value.changes.files ?? []) {
     if (!isObject(file) || typeof file.path !== "string"
       || !["added", "modified", "deleted", "renamed"].includes(file.change)) {
       return { error: "changes.files entry malformed" };
@@ -118,7 +118,7 @@ function decodeNativeRequest(value) {
       return { error: `${key} is not a sha256 digest` };
     }
   }
-  return { value };
+  return { value: { ...value, changes: { files: [], symbols: [], ...value.changes } } };
 }
 
 /**
@@ -174,7 +174,7 @@ export function planNativeOperation(context, policyDocument) {
       }],
     };
   }
-  const toolCatalog = buildToolCatalog(policyDocument);
+  const toolCatalog = buildToolCatalog(policyDocument, context.nativePolicy ? "declared-manifest" : "fixture-catalog");
   const toolCatalogDigest = computeToolCatalogDigest(toolCatalog);
   let plan;
   try {
@@ -371,7 +371,7 @@ function verifyConfirmations(inventory, policyDocument, readView) {
  * by id: name/version/provenance stay declared metadata; the digests
  * are the custody anchors the runner verifies.
  */
-export function buildToolCatalog(policyDocument) {
+export function buildToolCatalog(policyDocument, provenance = "fixture-catalog") {
   const seen = new Map();
   for (const confirmation of policyDocument.confirmations) {
     const tool = confirmation.tool_ref;
@@ -381,9 +381,9 @@ export function buildToolCatalog(policyDocument) {
       name: confirmation.argv[0] ?? tool.id,
       version: tool.version ?? "unknown",
       artifact_digest: tool.artifact_digest,
-      entry_digest: tool.entry_digest,
+      ...(tool.entry_digest !== undefined ? { entry_digest: tool.entry_digest } : {}),
       platform: process.platform === "win32" ? "windows" : process.platform,
-      provenance: "fixture-catalog",
+      provenance,
     });
   }
   return [...seen.values()];

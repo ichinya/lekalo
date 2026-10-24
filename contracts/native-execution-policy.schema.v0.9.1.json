@@ -1,0 +1,598 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/native-execution-policy.schema.v0.9.1.json",
+  "title": "Lekalo native execution-policy 0.9.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "allow_execution",
+    "platforms",
+    "runtime_profile",
+    "planning_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/native-execution-policy/v0.9.1"
+    },
+    "allow_execution": {
+      "type": "boolean"
+    },
+    "platforms": {
+      "const": [
+        "windows"
+      ]
+    },
+    "runtime_profile": {
+      "const": "windows-node-lpac-job-v1"
+    },
+    "planning_policy": {
+      "$ref": "#/$defs/Policy_Document"
+    }
+  },
+  "$defs": {
+    "Policy_sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 71
+    },
+    "Policy_contractVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "Policy_repositoryRole": {
+      "type": "string",
+      "enum": [
+        "local-workspace",
+        "consumer-repository",
+        "lekalo-repository",
+        "openspec-repository",
+        "ai-factory-repository",
+        "hlv-repository",
+        "source-native-repository",
+        "external-repository",
+        "public-channel"
+      ]
+    },
+    "Policy_trust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "private",
+            "untrusted",
+            "public-fixture"
+          ]
+        },
+        "fixture_ref": {
+          "$ref": "#/$defs/Policy_sha256Digest"
+        },
+        "provenance_ref": {
+          "$ref": "#/$defs/Policy_sha256Digest"
+        }
+      }
+    },
+    "Policy_authorityRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.authority-matrix"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "digest": {
+          "$ref": "#/$defs/Policy_sha256Digest"
+        }
+      }
+    },
+    "Policy_policyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "policyId": {
+          "const": "dev.lekalo.privacy-export-policy"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "digest": {
+          "$ref": "#/$defs/Policy_sha256Digest"
+        }
+      }
+    },
+    "Policy_classificationRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.privacy-classification-decision"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "digest": {
+          "$ref": "#/$defs/Policy_sha256Digest"
+        }
+      }
+    },
+    "Policy_gateKind": {
+      "type": "string",
+      "enum": [
+        "build",
+        "typecheck",
+        "lint",
+        "test"
+      ]
+    },
+    "Policy_confirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package_id",
+        "gate",
+        "script_name",
+        "manifest_digest",
+        "script_digest",
+        "argv",
+        "tool_ref",
+        "rule_version",
+        "rule_digest",
+        "gate_id",
+        "gate_kind",
+        "required",
+        "cwd"
+      ],
+      "properties": {
+        "package_id": {
+          "$ref": "#/$defs/Policy_packageId"
+        },
+        "gate": {
+          "$ref": "#/$defs/Policy_gateKind"
+        },
+        "script_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_][A-Za-z0-9._:-]*$"
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/Policy_sha256Digest"
+        },
+        "script_digest": {
+          "$ref": "#/$defs/Policy_sha256Digest"
+        },
+        "argv": {
+          "$ref": "#/$defs/Policy_argv"
+        },
+        "tool_ref": {
+          "$ref": "#/$defs/Policy_toolRef"
+        },
+        "tsconfig_ref": {
+          "$ref": "#/$defs/Policy_logicalPath"
+        },
+        "rule_version": {
+          "$ref": "#/$defs/Policy_contractVersion"
+        },
+        "rule_digest": {
+          "$ref": "#/$defs/Policy_sha256Digest"
+        },
+        "gate_id": {
+          "$ref": "#/$defs/Policy_gateId"
+        },
+        "gate_kind": {
+          "$ref": "#/$defs/Policy_gateKindMetadata"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "cwd": {
+          "oneOf": [
+            {
+              "const": "."
+            },
+            {
+              "$ref": "#/$defs/Policy_logicalPath"
+            }
+          ]
+        },
+        "covers_suite_ids": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Policy_gateId"
+          }
+        }
+      },
+      "description": "One confirmed (package, gate) recipe. Confirmations join per package by the stable gate_id (issue #61): several confirmations for one package are allowed and each produces its own proposed command."
+    },
+    "Policy_packageId": {
+      "description": "The stable native package id: the workspace-relative root with its declared package name, joined by '=' (lowercase portable segments only).",
+      "type": "string",
+      "pattern": "^[a-z0-9.][a-z0-9._/-]{0,63}=[a-z0-9@/._-]{1,192}$",
+      "maxLength": 256
+    },
+    "Policy_argv": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+      }
+    },
+    "Policy_toolRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "artifact_digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "maxLength": 128
+        },
+        "artifact_digest": {
+          "$ref": "#/$defs/Policy_sha256Digest"
+        },
+        "entry_digest": {
+          "$ref": "#/$defs/Policy_sha256Digest"
+        },
+        "version": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Policy_contractVersion"
+            },
+            {
+              "const": "unknown"
+            }
+          ]
+        }
+      }
+    },
+    "Policy_fallbackRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "trigger",
+        "gate_kinds",
+        "rule_digest"
+      ],
+      "properties": {
+        "mode": {
+          "const": "release-full"
+        },
+        "trigger": {
+          "type": "string",
+          "enum": [
+            "explicit-release-invocation"
+          ]
+        },
+        "gate_kinds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Policy_gateKind"
+          }
+        },
+        "rule_digest": {
+          "$ref": "#/$defs/Policy_sha256Digest"
+        }
+      }
+    },
+    "Policy_envRecipe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_names",
+        "bindings"
+      ],
+      "properties": {
+        "allowed_names": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+            "maxLength": 64
+          }
+        },
+        "bindings": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/Policy_envBinding"
+          }
+        }
+      }
+    },
+    "Policy_envBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+          "maxLength": 64
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "literal",
+            "execution-temp",
+            "execution-home",
+            "platform-system-root"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    },
+    "Policy_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timeout_ms_per_command",
+        "timeout_ms_per_run",
+        "max_stdout_bytes",
+        "max_stderr_bytes",
+        "max_output_bytes_per_run"
+      ],
+      "properties": {
+        "timeout_ms_per_command": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30000
+        },
+        "timeout_ms_per_run": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 120000
+        },
+        "max_stdout_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "max_stderr_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "max_output_bytes_per_run": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      }
+    },
+    "Policy_writePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "stage-only",
+            "scoped"
+          ]
+        },
+        "scopes": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "root"
+            ],
+            "properties": {
+              "root": {
+                "$ref": "#/$defs/Policy_logicalPath"
+              },
+              "max_files": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000
+              },
+              "max_bytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 67108864
+              }
+            }
+          }
+        }
+      }
+    },
+    "Policy_logicalPath": {
+      "type": "string",
+      "pattern": "^(?!(?:.*[/])?(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[./]|$))(?!(?:.*[/])?\\.{1,2}(?:/|$))(?!.*\\.(?:/|$))[a-z0-9.][a-z0-9._-]{0,63}(?:/[a-z0-9.][a-z0-9._-]{0,63})*$",
+      "maxLength": 512
+    },
+    "Policy_gateId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "maxLength": 128
+    },
+    "Policy_gateKindMetadata": {
+      "type": "string",
+      "enum": [
+        "composer-script",
+        "mago-format",
+        "mago-lint",
+        "mago-analyze",
+        "mago-guard",
+        "laratesto",
+        "pest",
+        "phpunit",
+        "artisan-check",
+        "boot-smoke",
+        "migration-static",
+        "migration-execute",
+        "discovery-smoke",
+        "legacy-suite"
+      ]
+    },
+    "Policy_Document": {
+      "title": "Lekalo Native Gate Execution Policy",
+      "description": "Successor of the v0.3.2 native gate policy (issue #61; the v0.3.2 enums are never silently broadened). Closed contract for one checked-in native gate execution policy (issue #48): the exact package+script+manifest-hash+tool-recipe confirmations, the allowed gate kinds, the release fallback rule, the environment recipe, whole-run and per-command limits, output and write scopes, and the trust restriction. The policy is confirmation, never execution authority by itself: an execution still needs an approved exact plan digest, and a script merely named here without its exact manifest hash matches nothing. CI uses only this checked-in document; the absence of a confirmation blocks, it never prompts.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "policy_digest",
+        "identity",
+        "repository_role",
+        "trust",
+        "authority_ref",
+        "policy_ref",
+        "classification_ref",
+        "allowed_gate_kinds",
+        "confirmations",
+        "fallback_rule",
+        "env_recipe",
+        "limits",
+        "write_policy"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "lekalo/native-gate-policy/v0.4.0"
+        },
+        "kind": {
+          "const": "native-gate-policy"
+        },
+        "policy_digest": {
+          "$ref": "#/$defs/Policy_sha256Digest"
+        },
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "version"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]*$",
+              "maxLength": 128
+            },
+            "version": {
+              "$ref": "#/$defs/Policy_contractVersion"
+            }
+          }
+        },
+        "repository_role": {
+          "$ref": "#/$defs/Policy_repositoryRole"
+        },
+        "trust": {
+          "$ref": "#/$defs/Policy_trust"
+        },
+        "authority_ref": {
+          "$ref": "#/$defs/Policy_authorityRef"
+        },
+        "policy_ref": {
+          "$ref": "#/$defs/Policy_policyRef"
+        },
+        "classification_ref": {
+          "$ref": "#/$defs/Policy_classificationRef"
+        },
+        "allowed_gate_kinds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Policy_gateKind"
+          }
+        },
+        "confirmations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/Policy_confirmation"
+          }
+        },
+        "fallback_rule": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Policy_fallbackRule"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "none"
+                }
+              }
+            }
+          ]
+        },
+        "env_recipe": {
+          "$ref": "#/$defs/Policy_envRecipe"
+        },
+        "limits": {
+          "$ref": "#/$defs/Policy_limits"
+        },
+        "write_policy": {
+          "$ref": "#/$defs/Policy_writePolicy"
+        }
+      }
+    }
+  }
+}

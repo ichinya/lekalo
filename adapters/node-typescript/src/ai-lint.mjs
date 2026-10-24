@@ -11,7 +11,7 @@ export function validateLintRequest(request) {
   const l = request.lint_request;
   if ((request.operation === 'lint') !== (l !== undefined)) throw new Error('lint-request-pairing');
   if (!l) return;
-  if (!['0.6.4','0.9.0'].includes(request.protocol_version) || !request.target || ['dry_run','plan_id','native_request','ir_path','profile','profile_digest','profile_capabilities'].some(k => request[k] !== undefined)) throw new Error('lint-request-version-members');
+  if (!['0.6.4','0.9.0','0.9.1'].includes(request.protocol_version) || !request.target || ['dry_run','plan_id','native_request','ir_path','profile','profile_digest','profile_capabilities'].some(k => request[k] !== undefined)) throw new Error('lint-request-version-members');
   if (!l || Object.keys(l).sort().join() !== 'bindings,files,pins,scope' || !Array.isArray(l.scope) || !l.scope.length || l.scope.length > 10000 || !Array.isArray(l.files) || l.files.length > 4096 || !Array.isArray(l.bindings) || l.bindings.length > 10000) throw new Error('lint-request-shape');
   const token = s => typeof s === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:/#@\\-]{0,255}$/.test(s);
   const sha = s => typeof s === 'string' && /^sha256:[a-f0-9]{64}$/.test(s);

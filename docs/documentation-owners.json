@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "0.9.0",
-  "cliSourceDigest": "sha256:3c7fa9ecfb0761f68d49d953e7bee98384bb42d69ce733cfec2a28261cf7482a",
+  "cliSourceDigest": "sha256:bbdf5e4ab24fa837dbb1391aaab7f7e53321481bfa575b881c737c069741db3d",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1723,9 +1723,20 @@
       "kind": "command",
       "command": "native",
       "usage": "lekalo native [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:980538ed0b32fbd7c737daa2e4582bc63dda7b2ef83757a4c701738eb99fa0c1",
+      "helpDigest": "sha256:e490ce678de72d94634bf3c953d0a90d653df3829accc98cf443a0d5cd815478",
       "summary": "Plan native build/test gates over a Node workspace (issue #48). Planning is read-only: it produces the immutable proposed plan with its digest. Execution of trusted synthetic fixtures is owned by the test-only harness — the production binary never launches a gate command and answers with a typed refusal",
       "leaf": false,
+      "owner": "docs/native-gates.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:native plan",
+      "kind": "command",
+      "command": "native plan",
+      "usage": "lekalo native plan [OPTIONS] --adapter <PACKAGE> --policy <FILE> --profile <FILE> --catalog <FILE>",
+      "helpDigest": "sha256:65534471668f306eaabbb20ffb4deb6503173d25c86bb20501ccb2387ccb130e",
+      "summary": "Create a source/control-bound execution plan. Never runs a project command",
+      "leaf": true,
       "owner": "docs/native-gates.md",
       "status": "implemented"
     },
@@ -1734,8 +1745,8 @@
       "kind": "command",
       "command": "native run",
       "usage": "lekalo native run [OPTIONS] <PLAN>",
-      "helpDigest": "sha256:f27983982c82bca8848cd1528646d8f92a2267e13fa6dbcb15c802a6c97aba22",
-      "summary": "Propose the immutable native gate plan over the current workspace: workspace inventory, affected closure, confirmed commands, and the plan digest. Read-only; never launches a command. The plan document is read from stdin",
+      "helpDigest": "sha256:ae76c35fe897f9c07316f92be87a03de416e434dd251a6992e62f47d94696e07",
+      "summary": "Run a confirmed plan in a disposable OS-confined view",
       "leaf": true,
       "owner": "docs/native-gates.md",
       "status": "implemented"
@@ -4194,6 +4205,33 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/native-command-output.schema.v0.9.1.json",
+      "kind": "contract",
+      "source": "contracts/native-command-output.schema.v0.9.1.json",
+      "sourceDigest": "sha256:f6d1f2afcc52bb8d35c49e91e4f094de5a0d0026349bdad083ae37a15c9227a3",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-execution-plan.schema.v0.9.1.json",
+      "kind": "contract",
+      "source": "contracts/native-execution-plan.schema.v0.9.1.json",
+      "sourceDigest": "sha256:ba073f5a92a41e8e46476a5ae3e6087b911a0d9ce1e146a71e32e2f0a002c8fc",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-execution-policy.schema.v0.9.1.json",
+      "kind": "contract",
+      "source": "contracts/native-execution-policy.schema.v0.9.1.json",
+      "sourceDigest": "sha256:f179e0ea576d1951aeacbdee05e1f991c1198eb597ae542a47300c1702cfaf6d",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/native-gate-plan.schema.v0.4.0.json",
       "kind": "contract",
       "source": "contracts/native-gate-plan.schema.v0.4.0.json",
@@ -4225,6 +4263,15 @@
       "kind": "contract",
       "source": "contracts/native-gate-view.schema.v0.4.0.json",
       "sourceDigest": "sha256:82413cdaa4d67da03be1a0e23a56877830b1eb8a6b970687ef6ae9c88abed7bd",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-tool-catalog.schema.v0.9.1.json",
+      "kind": "contract",
+      "source": "contracts/native-tool-catalog.schema.v0.9.1.json",
+      "sourceDigest": "sha256:cb5869bd06886e9592f45025dc9141422d13d71708cb64ac7954d1c6a8ade7f0",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4873,6 +4920,15 @@
       "kind": "contract",
       "source": "contracts/target-protocol.schema.v0.9.0.json",
       "sourceDigest": "sha256:656d5499eb7d05a58ece5a78e1c0d596872098c13f440f2c42ee241a36248dcc",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/target-protocol.schema.v0.9.1.json",
+      "kind": "contract",
+      "source": "contracts/target-protocol.schema.v0.9.1.json",
+      "sourceDigest": "sha256:04689f0485be8a6fffa4860dc173fe29cb9ead7e49c2d34c18c3308653ff1b31",
       "owner": "docs/target-protocol.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

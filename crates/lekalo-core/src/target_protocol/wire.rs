@@ -39,6 +39,11 @@ pub fn decode_request(bytes: &[u8]) -> Result<RequestEnvelope, super::TargetFail
         };
         super::TargetFailure::RequestInvalid { detail }
     })?;
+    if request.protocol_version == super::version::EXEC_VERSION
+        && !super::native_schema::valid(bytes)
+    {
+        return Err(super::TargetFailure::RequestInvalid { detail: "shape" });
+    }
     validate_request(&request)?;
     Ok(request)
 }
@@ -65,6 +70,7 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
             super::version::LINT_VERSION
                 | super::version::WATCH_VERSION
                 | super::version::SCAN_VERSION
+                | super::version::EXEC_VERSION
         ) || request.target.is_none()
             || request.profile.is_some()
             || request.profile_digest.is_some()
@@ -315,6 +321,11 @@ pub fn decode_response(bytes: &[u8]) -> Result<ResponseEnvelope, ResponseInvalid
             ResponseInvalidity::Shape
         }
     })?;
+    if response.protocol_version == super::version::EXEC_VERSION
+        && !super::native_schema::valid(bytes)
+    {
+        return Err(ResponseInvalidity::Shape);
+    }
     validate_bounds(&response)?;
     Ok(response)
 }
@@ -373,7 +384,7 @@ fn constraints_bounded(constraints: Option<&AdapterConstraints>) -> bool {
 /// shared decoder in the client; no test-only parser owns these decisions.
 fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity> {
     let invalid = Err(ResponseInvalidity::Shape);
-    let public_scan = response.protocol_version == super::version::SCAN_VERSION
+    let public_scan = super::version::supports_scan_custody(&response.protocol_version)
         && response.operation == Operation::Scan
         && response.status == ResponseStatus::Ok;
     if public_scan {
@@ -393,6 +404,46 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
     } else if response.evidence.scan_profile_digest.is_some() {
         return invalid;
     }
+    if let Some(summary) = response
+        .result
+        .as_ref()
+        .and_then(|result| result.native_plan.as_ref())
+    {
+        if response.protocol_version == super::version::EXEC_VERSION {
+            let Some(plan) = &summary.plan else {
+                return invalid;
+            };
+            let bytes = serde_json::to_vec(plan).map_err(|_| ResponseInvalidity::Shape)?;
+            if crate::native_gate::validate_plan(&bytes).is_err()
+                || summary.digest != plan.plan_digest
+                || plan.adapter.id != response.evidence.adapter.id
+                || plan.adapter.version != response.evidence.adapter.version
+                || plan.adapter.digest != response.evidence.adapter.digest
+                || summary
+                    .commands
+                    .is_some_and(|n| n as usize != plan.commands.len())
+                || summary
+                    .packages
+                    .is_some_and(|n| n as usize != plan.workspace.packages.len())
+                || summary.completeness.as_ref().is_some_and(|v| {
+                    serde_json::to_value(v).ok()
+                        != Some(serde_json::Value::String(
+                            plan.workspace.completeness.clone(),
+                        ))
+                })
+                || summary.run_eligibility.as_ref().is_some_and(|v| {
+                    serde_json::to_value(v).ok()
+                        != Some(serde_json::Value::String(
+                            plan.run_eligibility.state.clone(),
+                        ))
+                })
+            {
+                return invalid;
+            }
+        } else if summary.plan.is_some() {
+            return invalid;
+        }
+    }
     if response
         .result
         .as_ref()
@@ -402,6 +453,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
             super::version::LINT_VERSION
                 | super::version::WATCH_VERSION
                 | super::version::SCAN_VERSION
+                | super::version::EXEC_VERSION
         ) || response.operation != Operation::Lint)
     {
         return invalid;
@@ -448,6 +500,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                     super::version::LINT_VERSION
                         | super::version::WATCH_VERSION
                         | super::version::SCAN_VERSION
+                        | super::version::EXEC_VERSION
                 ) {
                     10
                 } else {
@@ -459,6 +512,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                 super::version::LINT_VERSION
                     | super::version::WATCH_VERSION
                     | super::version::SCAN_VERSION
+                    | super::version::EXEC_VERSION
             ) && c.operations.contains(&Operation::Lint))
             || !unique(&c.transports, 1, 2)
             || !unique(&c.targets, 0, 64)
@@ -1026,15 +1080,17 @@ pub struct ScanEntryEvidence {
         deserialize_with = "present",
         skip_serializing_if = "Option::is_none"
     )]
-    pub source_digest: Option<String>,
+    pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<ScanEntryReference>,
+    // Append successor fields: historical Serde sequence spellings retain
+    // their frozen positional signature/references layout.
     #[serde(
         default,
         deserialize_with = "present",
         skip_serializing_if = "Option::is_none"
     )]
-    pub signature: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub references: Vec<ScanEntryReference>,
+    pub source_digest: Option<String>,
 }
 
 /// One scan entry (scan results).
@@ -1527,6 +1583,14 @@ pub struct NativePlanRef {
         skip_serializing_if = "Option::is_none"
     )]
     pub run_eligibility: Option<NativeRunEligibility>,
+    /// Append successor fields to preserve historical positional spellings.
+    /// Complete plan, admitted only by the negotiated 0.9.1 seam.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plan: Option<Box<crate::native_gate::NativePlan>>,
 }
 
 /// The one legal `kind` spelling of a native plan reference.
@@ -1575,6 +1639,39 @@ pub fn negotiated(capabilities: &Capabilities) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn historical_scan_evidence_sequence_retains_its_original_field_positions() {
+        let response = decode_response(include_bytes!(
+            "../../../../tests/fixtures/adapter-sdk/valid/r10-struct-scan-evidence-seq.json"
+        ))
+        .expect("the frozen 0.3.2 SDK response remains admissible");
+        let entry = &response.result.unwrap().entries.unwrap()[0];
+        let evidence = entry.evidence.as_ref().unwrap();
+        assert!(evidence.signature.is_some());
+        assert_eq!(evidence.references.len(), 2);
+        assert!(evidence.source_digest.is_none());
+    }
+
+    #[test]
+    fn historical_native_summary_sequences_retain_their_original_field_positions() {
+        for bytes in [
+            include_bytes!(
+                "../../../../tests/fixtures/adapter-sdk/valid/r10-native-plan-prefix-3.json"
+            )
+            .as_slice(),
+            include_bytes!(
+                "../../../../tests/fixtures/adapter-sdk/valid/r10-native-plan-prefix-4.json"
+            )
+            .as_slice(),
+        ] {
+            let response =
+                decode_response(bytes).expect("frozen 0.3.2 native summary remains valid");
+            let summary = response.result.unwrap().native_plan.unwrap();
+            assert_eq!(summary.commands, Some(2));
+            assert!(summary.plan.is_none());
+        }
+    }
 
     #[test]
     fn public_scan_requires_custody_and_keeps_predecessor_detail_bounds() {

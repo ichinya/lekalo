@@ -58,12 +58,12 @@ function baseRequest(overrides = {}) {
 
 test("identity constants are the frozen #43 values", () => {
   assert.equal(PROTOCOL_TOKEN, "lekalo.target/v1");
-  assert.deepEqual(SUPPORTED_VERSIONS, ["0.3.2", "0.6.4", "0.9.0"]);
+  assert.deepEqual(SUPPORTED_VERSIONS, ["0.3.2", "0.6.4", "0.9.0", "0.9.1"]);
   assert.equal(VERSION, "0.3.2");
   assert.equal(ADAPTER_ID, "lekalo-target-node-typescript");
-  // The release constant is the adapter package version (0.5.0),
+  // The release constant is the adapter package version (0.6.0),
   // not a protocol version.
-  assert.equal(ADAPTER_VERSION, "0.5.0");
+  assert.equal(ADAPTER_VERSION, "0.6.0");
   assert.match(entryDigest(), /^sha256:[0-9a-f]{64}$/);
 });
 
@@ -78,7 +78,7 @@ test("runtime metadata probe reports the exact running node", () => {
 test("the descriptor advertises describe only, with honest capability states", () => {
   const capabilities = describeCapabilities();
   assert.deepEqual(capabilities.operations, ["describe"]);
-  assert.deepEqual(capabilities.protocol_versions, ["0.3.2", "0.6.4", "0.9.0"]);
+  assert.deepEqual(capabilities.protocol_versions, ["0.3.2", "0.6.4", "0.9.0", "0.9.1"]);
   assert.deepEqual(capabilities.ir_versions, []);
   assert.equal(capabilities.progress, false);
   assert.deepEqual(capabilities.read_scopes, []);

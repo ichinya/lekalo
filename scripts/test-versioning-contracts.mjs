@@ -2,16 +2,16 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const read = p => JSON.parse(readFileSync(new URL('../'+p, import.meta.url), 'utf8'));
-const registry = read('crates/lekalo-core/src/versioning/contracts/version-registry.v0.9.0.json');
+const registry = read('crates/lekalo-core/src/versioning/contracts/version-registry.v0.9.1.json');
 assert.equal(registry.registry,'dev.lekalo.version-registry');
-assert.equal(registry.registryVersion,'0.9.0');
+assert.equal(registry.registryVersion,'0.9.1');
 assert.deepEqual(Object.keys(registry.families), ['model','ir','protocol']);
 for(const family of Object.values(registry.families)) {
  assert.deepEqual(Object.keys(family).sort(), ['aliases','current','migrations','versions']);
  assert.equal(family.current, family === registry.families.protocol ? '0.3.2' : '0.8.0');
  assert.deepEqual(family.aliases,[]);
  assert.deepEqual(family.migrations,[]);
- assert.deepEqual(family.versions.map(v=>v.version), family === registry.families.protocol ? ['0.3.2','0.6.4','0.8.0','0.9.0'] : ['0.2.16','0.8.0']);
+ assert.deepEqual(family.versions.map(v=>v.version), family === registry.families.protocol ? ['0.3.2','0.6.4','0.8.0','0.9.0','0.9.1'] : ['0.2.16','0.8.0']);
  assert.equal(family.current, family === registry.families.protocol ? family.versions[0].version : family.versions.at(-1).version);
  assert.equal(family.versions[0].state,'supported');
  assert.ok(family.versions[0].reason.length>0);

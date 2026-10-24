@@ -38,6 +38,8 @@ mod git_input;
 mod managed;
 mod mcp;
 mod metrics_export;
+mod native_execution;
+use native_execution::NativeCommands;
 mod module_api;
 mod pilot_battery;
 mod portability;
@@ -872,23 +874,6 @@ enum Commands {
     Adoption {
         #[command(subcommand)]
         command: crate::adoption::AdoptionCommands,
-    },
-}
-
-/// The `native` subcommands (issue #48).
-#[derive(Debug, Subcommand)]
-enum NativeCommands {
-    /// Propose the immutable native gate plan over the current
-    /// workspace: workspace inventory, affected closure, confirmed
-    /// commands, and the plan digest. Read-only; never launches a
-    /// command. The plan document is read from stdin.
-    Run {
-        /// The plan document path; use `-` for stdin. The plan must
-        /// carry a current trusted-fixture custody, and execution still
-        /// requires the test-only harness — this production command
-        /// answers with a typed blocked/unsupported refusal.
-        #[arg(value_name = "PLAN")]
-        plan: String,
     },
 }
 
@@ -2904,9 +2889,7 @@ fn runtime() -> u8 {
                 crate::search::run_search_index(command, cli.no_cache)
             }
             Commands::Contract { command } => run_contract(command),
-            Commands::Native { command } => match *command {
-                NativeCommands::Run { plan } => run_native_run(&plan),
-            },
+            Commands::Native { command } => return native_execution::run(*command, json_requested),
             Commands::Nfr { command } => run_nfr(command),
             Commands::Classification { command } => run_classification(command),
             Commands::Dataflow { command } => run_dataflow(command),
@@ -12443,21 +12426,8 @@ use std::path::PathBuf;
 /// answered unsupported (fixture-runner-not-shipped) because the real
 /// fixture runner is compiled only into the test harness. No gate
 /// command is ever launched from this binary.
-fn run_native_run(plan_ref: &str) -> DomainResult {
-    let bytes = if plan_ref == "-" {
-        let mut buffer = Vec::new();
-        use std::io::Read;
-        if io::stdin().lock().read_to_end(&mut buffer).is_err() {
-            return DomainResult::usage_error();
-        }
-        buffer
-    } else {
-        match std::fs::read(plan_ref) {
-            Ok(bytes) => bytes,
-            Err(_) => return DomainResult::usage_error(),
-        }
-    };
-    match lekalo_core::native_gate::production_run(&bytes) {
+fn run_native_run_bytes(bytes: &[u8]) -> DomainResult {
+    match lekalo_core::native_gate::production_run(bytes) {
         Ok(receipt) => DomainResult::receipt(
             serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
             format!(

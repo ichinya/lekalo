@@ -38,8 +38,9 @@ for (const mutation of [
 function faultPackage(root, profile, mode, path) {
   const dir = join(work, `fault-${basename(root)}-${mode}`);
   mkdirSync(dir);
+  const manifest = JSON.parse(readFileSync(join(repo, 'adapters/node-typescript/adapter.manifest.json'), 'utf8'));
   const capabilities = {};
-  for (const version of ['0.3.2', '0.9.0']) {
+  for (const version of manifest.compatibility.protocolVersions) {
     const request = {protocol: 'lekalo.target/v1', protocol_version: version, operation: 'describe', project_root: '.', request_id: 'req-' + '0'.repeat(64)};
     const run = spawnSync(process.execPath, [adapter, '--lekalo-project-profile-json', JSON.stringify(profile)], {cwd: root, input: JSON.stringify(request), encoding: 'utf8', timeout: 30000});
     assert.equal(run.status, 0, run.stderr);
@@ -48,13 +49,13 @@ function faultPackage(root, profile, mode, path) {
   const sourceDigest = sha(readFileSync(join(root, path)));
   const code = `import fs from 'node:fs'; import {createHash} from 'node:crypto';
 const r=JSON.parse(fs.readFileSync(0,'utf8')), mode=${JSON.stringify(mode)};
-const identity={id:'lekalo-target-node-typescript',version:'0.5.0',digest:'sha256:'+createHash('sha256').update(fs.readFileSync(new URL(import.meta.url))).digest('hex')};
+const identity={id:'lekalo-target-node-typescript',version:${JSON.stringify(manifest.adapter.version)},digest:'sha256:'+createHash('sha256').update(fs.readFileSync(new URL(import.meta.url))).digest('hex')};
 const out={protocol:r.protocol,protocol_version:r.protocol_version,operation:r.operation,request_id:r.request_id,status:'ok',evidence:{adapter:identity}};
 if(r.operation==='describe'){out.capabilities=${JSON.stringify(capabilities)}[r.protocol_version];out.capabilities.adapter=identity;}
 else{out.evidence.scan_profile_digest=${JSON.stringify(digest)};out.result={entries:[{path:${JSON.stringify(path)},kind:'entity',detail:JSON.stringify({s:'public_core.score',n:'ts-fault',l:1,q:'medium'}),evidence:{source_digest:${JSON.stringify(sourceDigest)}}}]};if(mode==='loss')delete out.result.entries[0].evidence;if(mode==='forged')out.result.entries[0].evidence.source_digest='sha256:'+'0'.repeat(64);if(mode==='broken'){process.stdout.write('{broken');process.exit(0);}}
 process.stdout.write(JSON.stringify(out));`;
   writeFileSync(join(dir, 'adapter.mjs'), code);
-  const manifest = JSON.parse(readFileSync(join(repo, 'adapters/node-typescript/adapter.manifest.json'), 'utf8'));
+
   const bytes = Buffer.from(code);
   manifest.integrity.files = [{path: 'adapter.mjs', digest: sha(bytes), bytes: bytes.length}];
   manifest.integrity.packageDigest = 'sha256:' + '0'.repeat(64);

@@ -14,6 +14,8 @@
 
 mod diagnostic;
 mod evidence;
+pub mod execution;
+mod execution_schema;
 #[cfg(test)]
 mod fixture_tests;
 mod policy;
@@ -27,6 +29,8 @@ pub use diagnostic::{native_gate_rule, NativeGateFailure};
 pub use evidence::{FailureClass, OutputCaps, RedactedOutput};
 pub use policy::validate_policy;
 pub use receipt::{validate_run_request, validate_run_result};
+#[cfg(windows)]
+pub(crate) use runner::copy_tree as copy_execution_tree;
 pub use runner::{
     run_confirmed_plan, CatalogEntry, ConfirmedRun, RunnerCatalog, RuntimeCapability,
 };
@@ -50,6 +54,11 @@ pub const POLICY_SCHEMA_VERSION: &str = "lekalo/native-gate-policy/v0.4.0";
 pub const RUN_SCHEMA_VERSION: &str = "lekalo/native-gate-run/v0.4.0";
 /// The schema discriminator of the native gate view family.
 pub const VIEW_SCHEMA_VERSION: &str = "lekalo/native-gate-view/v0.4.0";
+
+/// Independently decode the immutable adapter plan without execution.
+pub fn validate_plan(bytes: &[u8]) -> Result<NativePlan, PlanRejection> {
+    wire::decode_plan(bytes)
+}
 
 /// The digest domain of the digest-addressed selection document: a
 /// plan command's `selection_ref` is sha256 over this domain joined

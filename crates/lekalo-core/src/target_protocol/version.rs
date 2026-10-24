@@ -31,14 +31,26 @@ pub const WATCH_MODEL_VERSIONS: [&str; 2] = ["0.2.16", "0.8.0"];
 /// Ordinary public scan exchange with lossless bounded binding details.
 /// Optional watch partition work still requires an adapter capability claim.
 pub const SCAN_VERSION: &str = "0.9.0";
-pub const SUPPORTED_VERSIONS: [&str; 4] = ["0.3.2", LINT_VERSION, WATCH_VERSION, SCAN_VERSION];
+/// Lossless native planning for an independently approved execution plan.
+pub const EXEC_VERSION: &str = "0.9.1";
+pub const SUPPORTED_VERSIONS: [&str; 5] = [
+    "0.3.2",
+    LINT_VERSION,
+    WATCH_VERSION,
+    SCAN_VERSION,
+    EXEC_VERSION,
+];
 
 pub fn supports_watch(protocol: &str) -> bool {
-    matches!(protocol, WATCH_VERSION | SCAN_VERSION)
+    matches!(protocol, WATCH_VERSION | SCAN_VERSION | EXEC_VERSION)
+}
+
+pub fn supports_scan_custody(protocol: &str) -> bool {
+    matches!(protocol, SCAN_VERSION | EXEC_VERSION)
 }
 
 pub fn scan_detail_limit(protocol: &str, operation: super::wire::Operation) -> usize {
-    if protocol == SCAN_VERSION && operation == super::wire::Operation::Scan {
+    if supports_scan_custody(protocol) && operation == super::wire::Operation::Scan {
         2048
     } else {
         128
@@ -136,7 +148,7 @@ mod tests {
         };
         assert_eq!(negotiate(&[]), None);
         assert_eq!(
-            declared(&["0.9.1", "2.0.0"]).as_deref(),
+            declared(&["0.9.2", "2.0.0"]).as_deref(),
             None,
             "unsupported spellings never negotiate"
         );

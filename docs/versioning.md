@@ -16,7 +16,7 @@ Acceptance is exact. A higher filename, matching major version or newer product 
 
 The loader admits the explicit Model/IR profiles described in [Model](model.md) and [IR](ir.md). The `0.2.16` profile does not gain successor fields because the CLI is `0.8.0`. Unsupported shapes still refuse; documents must agree with the compilation's source-profile rules.
 
-The adapter bootstrap protocol remains `0.3.2`. Lint (`0.6.4`), watch-selection (`0.8.0`) and ordinary public scan custody (`0.9.0`) seams require explicit negotiation. The scan successor retains the `0.8.0` wire surface; optional watch work still requires an explicit adapter capability declaration. Protocol support does not establish support for every Model/IR pair. [Target protocol](target-protocol.md) owns that negotiation; [provider discovery](provider-contract.md) owns its separate process contract.
+The adapter bootstrap protocol remains `0.3.2`. Lint (`0.6.4`), watch-selection (`0.8.0`) ordinary public scan custody (`0.9.0`) and complete native-plan (`0.9.1`) seams require explicit negotiation. The scan successor retains the `0.8.0` wire surface; optional watch work still requires an explicit adapter capability declaration. Protocol support does not establish support for every Model/IR pair. [Target protocol](target-protocol.md) owns that negotiation; [provider discovery](provider-contract.md) owns its separate process contract.
 
 Diagnostic item format, registry, validation profile and result format have separate pins. Producers select an admitted registry rather than the largest version found on disk. [Diagnostics](diagnostics.md) owns result and registry selection.
 

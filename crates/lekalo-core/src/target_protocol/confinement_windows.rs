@@ -426,6 +426,10 @@ impl Process for Child {
         {
             return Err(std::io::Error::last_os_error());
         }
+        // A descendant may still own inherited output handles. End the job
+        // as soon as the root exits, before the pipe pump waits for EOF.
+        // Preserve the measured root exit code; descendants cannot extend it.
+        self.terminate();
         Ok(Some(code as i32))
     }
     fn terminate(&mut self) {
@@ -484,11 +488,40 @@ pub(super) fn run(
     cancel: Option<&AtomicBool>,
     env: &[(String, String)],
 ) -> Result<transport::TransportSuccess, Failure> {
+    run_at(
+        command,
+        request,
+        limits,
+        sandbox,
+        &sandbox.project,
+        cancel,
+        env,
+    )
+}
+
+pub(super) fn run_at(
+    command: &transport::AdapterCommand,
+    request: &[u8],
+    limits: &transport::TransportLimits,
+    sandbox: &Sandbox,
+    cwd: &Path,
+    cancel: Option<&AtomicBool>,
+    env: &[(String, String)],
+) -> Result<transport::TransportSuccess, Failure> {
     if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
         return Err(Failure::Cancelled);
     }
+    let started = std::time::Instant::now();
     let mut profile = Profile::new(sandbox)?;
-    let result = run_profile(command, request, limits, sandbox, cancel, &profile, env);
+    let result = run_profile(
+        command,
+        request,
+        (limits, started),
+        (sandbox, cwd),
+        cancel,
+        &profile,
+        env,
+    );
     profile.close()?;
     result
 }
@@ -496,12 +529,14 @@ pub(super) fn run(
 fn run_profile(
     command: &transport::AdapterCommand,
     request: &[u8],
-    limits: &transport::TransportLimits,
-    sandbox: &Sandbox,
+    budget: (&transport::TransportLimits, std::time::Instant),
+    location: (&Sandbox, &Path),
     cancel: Option<&AtomicBool>,
     profile: &Profile,
     env: &[(String, String)],
 ) -> Result<transport::TransportSuccess, Failure> {
+    let (sandbox, working_directory) = location;
+    let (limits, started) = budget;
     grant(sandbox.owned.path(), profile.sid, false)?;
     // LPAC has low integrity; lower only this owned staged copy so write
     // grants can work without weakening any real-project integrity label.
@@ -590,12 +625,18 @@ fn run_profile(
         arguments.push(quote(argument)?);
     }
     let mut command_line = wide(arguments.join(" "));
-    let cwd = wide(&sandbox.project);
+    let cwd = wide(working_directory);
     // No inherited user/provider environment, DLL search paths or Node options.
     // Issue #89: exactly the budget-granted pairs extend the private block;
     // values exist only inside the child environment, never in evidence.
     let system = std::env::var_os("SystemRoot").ok_or(Failure::Spawn)?;
-    let private = sandbox.owned.path().to_string_lossy();
+    let native_temp = sandbox.project.join(".lekalo-temp");
+    let private = if sandbox.report.native_execution {
+        native_temp.as_path()
+    } else {
+        sandbox.owned.path()
+    }
+    .to_string_lossy();
     let mut environment: Vec<u16> = Vec::new();
     for (key, value) in [
         ("APPDATA", private.as_ref()),
@@ -631,6 +672,11 @@ fn run_profile(
         // so any child creation inside the sandbox fails closed.
         job_limits.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
         job_limits.BasicLimitInformation.ActiveProcessLimit = 1;
+    } else if sandbox.policy.native_execution {
+        job_limits.BasicLimitInformation.LimitFlags |=
+            JOB_OBJECT_LIMIT_ACTIVE_PROCESS | JOB_OBJECT_LIMIT_JOB_MEMORY;
+        job_limits.BasicLimitInformation.ActiveProcessLimit = 32;
+        job_limits.JobMemoryLimit = sandbox.report.memory_limit().unwrap_or(0) as usize;
     }
     if unsafe {
         SetInformationJobObject(
@@ -642,6 +688,12 @@ fn run_profile(
     } == 0
     {
         return Err(io_error());
+    }
+    if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        return Err(Failure::Cancelled);
+    }
+    if started.elapsed().as_millis() >= u128::from(limits.timeout_ms) {
+        return Err(Failure::Timeout);
     }
     let mut info: PROCESS_INFORMATION = unsafe { zeroed() };
     #[cfg(test)]
@@ -689,7 +741,15 @@ fn run_profile(
     drop(child_input);
     drop(child_output);
     drop(child_error);
-    let result = transport::pump(&mut child, request, limits, cancel);
+    let mut remaining = *limits;
+    remaining.timeout_ms = limits
+        .timeout_ms
+        .saturating_sub(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
+    let result = if remaining.timeout_ms == 0 {
+        Err(Failure::Timeout)
+    } else {
+        transport::pump(&mut child, request, &remaining, cancel)
+    };
     child.finish()?;
     drop(child); // job descendants end before profile/staging cleanup.
     result

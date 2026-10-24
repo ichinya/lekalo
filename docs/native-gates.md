@@ -1,117 +1,148 @@
-# Native gates: pnpm workspaces, targeted plans, fixture-only execution
+# Native gate planning and confirmed execution
 
-Issue #48 adds the native gate seam: detect Node.js workspaces, build
-an immutable execution plan over confirmed gates, and — for trusted
-synthetic fixtures only — execute it in a disposable copy through the
-test-only harness. Arbitrary scripts are never run, package managers
-are never launched, and the original workspace is never the working
-directory of any command.
+Lekalo proposes existing Node commands without running them, then executes an
+explicitly approved plan in a disposable OS-confined copy. The first production
+execution profile supports **Windows x64 with exactly pinned Node 24**.
+Linux/macOS execution returns unsupported. Read-only adapter planning is available
+where the required adapter confinement is available.
 
-## Version and family identities
+Stock Node 24/libuv 1.52 has an upstream AppContainer limitation: creating
+child stdio/IPC pipes can hang until the execution deadline. Inherited handles
+work; the containment acceptance uses them to observe a real detached child.
+This profile does not claim arbitrary Node subprocess recipes are compatible.
+See the [Node issue](https://github.com/nodejs/node/issues/66374) and
+[libuv fix](https://github.com/libuv/libuv/pull/5181).
 
-| Contract | Current identity |
+Execution never installs dependencies, invokes a package manager, changes the
+original workspace, or uses ambient PATH to choose a program. A `public-fixture`
+marker grants no execution authority.
+
+## Public CLI
+
+Create a plan with explicitly selected controls:
+
+```sh
+lekalo --json native plan --project . --adapter /path/to/node-typescript-package --policy controls/native-policy.json --profile controls/native-profile.json --catalog controls/native-tools.json > native-plan.json
+```
+
+This launches only the manifested read-only planning adapter against a private
+view. Check its exit status before using the output. Optional `--changes FILE`
+supplies the closed native changed-input document. Without changes, the policy
+must explicitly select a full release rule; missing changes never invent a
+changed-file claim.
+
+Review commands, package selection, allowed writes, limits and custody. Approve
+the **outer** `plan_digest`, then supply the same controls:
+
+```sh
+lekalo --json native run native-plan.json --confirm sha256:APPROVED_DIGEST --project . --adapter /path/to/node-typescript-package --policy controls/native-policy.json --profile controls/native-profile.json --catalog controls/native-tools.json --cancel-file native.cancel
+```
+
+Replace package path/digest with the inspected values. Selectors are relative to
+the invocation directory. Creating the optional cancellation file cancels work;
+the CLI does not create it. It is required if a console interrupt handler cannot
+be registered. Ctrl-C and this file cooperate with process-tree teardown and
+cleanup. Hard process/OS termination cannot promise a terminal cleanup receipt.
+
+## Control documents and custody
+
+| Document | Published contract |
 | --- | --- |
-| Target protocol | `lekalo.target/v1`, contract `0.3.2` (`contracts/target-protocol.schema.v0.3.2.json`) |
-| Execution policy | `lekalo/native-gate-policy/v0.4.0` (`contracts/native-gate-policy.schema.v0.4.0.json`) |
-| Execution plan | `lekalo/native-gate-plan/v0.4.0` (`contracts/native-gate-plan.schema.v0.4.0.json`) |
-| Run request/receipt | `lekalo/native-gate-run/v0.4.0` (`contracts/native-gate-run.schema.v0.4.0.json`) |
-| Observed view | `lekalo/native-gate-view/v0.4.0` (`contracts/native-gate-view.schema.v0.4.0.json`) |
-| Diagnostic registry | `dev.lekalo.diagnostic-registry@0.6.4` (the active successor generation carrying the additive rule families; issue #48 added 14 `native-gate.*` rules, `LEK-NGT-001..014`) |
-| Authority matrix | `dev.lekalo.authority-matrix@0.3.2` (4 new `lekalo.native-gate-*` kinds) |
-| Privacy policy | `dev.lekalo.privacy-export-policy@0.3.2` |
+| Selected execution policy | [native-execution-policy v0.9.1](../contracts/native-execution-policy.schema.v0.9.1.json) |
+| Program catalog | [native-tool-catalog v0.9.1](../contracts/native-tool-catalog.schema.v0.9.1.json) |
+| Outer execution plan | [native-execution-plan v0.9.1](../contracts/native-execution-plan.schema.v0.9.1.json) |
+| Nested planning policy | [native-gate-policy v0.4.0](../contracts/native-gate-policy.schema.v0.4.0.json) |
+| Nested native plan | [native-gate-plan v0.4.0](../contracts/native-gate-plan.schema.v0.4.0.json) |
+| Run receipt | [native-gate-run v0.4.0](../contracts/native-gate-run.schema.v0.4.0.json) |
 
-The new protocol operation is `plan-native`: one read-only exchange
-whose request alone carries `native_request` (bounded changed
-files/symbols plus digest-addressed custody references) and whose
-successful result alone carries `native_plan` (the plan digest and a
-bounded summary). Negotiation is current-only 0.3.2: a 0.3.1 peer is refused at
-negotiation entirely (the frozen 0.3.1 documents keep their exact
-published meanings as superseded history). `dry_run`, `plan_id`,
-and `writes` stay forbidden on plan-native; the generation write-plan
-seam is never reused, and a native plan can never authorize a publish.
+The selected policy sets `allow_execution`, `platforms: ["windows"]` and
+`runtime_profile: "windows-node-lpac-job-v1"`. Its `planning_policy` is a complete
+independently validated v0.4.0 policy. Every confirmation names exact package,
+script, canonical package-manifest digest, script-text digest, complete literal
+argv and pinned tool. The first profile uses `legacy-suite` for generic existing
+Node gates and accepts an empty environment recipe. Arbitrary environment grants
+and separate tool-entry recipes require a supported successor profile.
 
-## Workspace detection and package graph
+A full fallback rule has `mode: "release-full"`,
+`trigger: "explicit-release-invocation"`, explicit `gate_kinds` and `rule_digest`.
+Its selection carries release-rule reasons, not fictional source changes. The
+package graph must still be complete.
 
-- Membership comes only from an in-scope `pnpm-workspace.yaml` parsed
-  with a strict bounded subset: canonical relative literals, `*`,
-  `**`, `?`; tags, anchors, aliases, flow syntax, block scalars, tabs,
-  and duplicate keys are structured refusals, never approximations.
-  Dot directories never match; a leading `!` marks a negated
-  exclusion that narrows membership and is recorded as an
-  uncertainty. The negated value must be a quoted scalar
-  (`- "!packages/x"`); an unquoted `!x` is a YAML tag and
-  refuses like any other tag.
-- Package manifests are strict-JSON objects from the read view; every
-  package id is `<root>=<name>`. Duplicate names and oversized
-  inventories are refusals.
-- Edges are typed from `dependencies`/`devDependencies`/
-  `optionalDependencies`/`peerDependencies`; `workspace:*`-style
-  specifiers prove local edges, plain name matches count as
-  manifest-evidence. Unresolved local specifiers become uncertainties.
-- With no in-scope workspace manifest the layout is `npm-standalone`
-  (its own capability path); yarn and bun are detected and answered
-  plan-only/unsupported. The pnpm CLI is never executed.
+Catalogs select absolute **physical** Node executable paths, exact program/artifact
+SHA-256 digests and versions. Resolve nvm symlinks/junctions before selecting their
+targets. Entries use the same Node 24 runtime. The program is copied and checked
+before the planning adapter starts, then checked again when the OS sandbox stages
+it. No tool is downloaded or selected through PATH.
 
-## Affected selection and confirmed scripts
+The explicit launch profile supplies file/tree source roots and literal exclusion
+roots (optional trailing `/**`). Paths are portable, lowercase and relative.
+Protected credential/runtime homes cannot be included. Links, junctions,
+hard-linked source files, case aliases, unsupported exclusions, unreadable inputs
+and exhausted budgets refuse. Capture is bounded to 4,096 files and 4,096 directories,
+4 MiB per source file and 64 MiB total. Manifest scopes are an independent ceiling.
 
-- A change inside a package affects that package plus its reverse
-  transitive dependents, each with bounded reason paths
-  (`changed-package`, `dependent-closure`, `build-prerequisite`,
-  ...). Unrelated packages stay excluded with a stable reason.
-- Only exact confirmed entries execute: the policy names
-  package+script+manifest-hash+tool recipe. The confirmed script must
-  match the full literal argv — prefix matches never confirm. Shell
-  metacharacters, interpolation, assignment prefixes, `node flags in bare or
-  attached-value form (`--eval`, `--eval=1`, `--require=x`,
-  `--import=y`, `--run=z`), `pnpm/npm/yarn/bun/corepack/npx`,
-  shells, `.cmd/.bat/.ps1/.sh` refuse. Lifecycle hooks
-  (`preinstall`/`postinstall`/`prepare`) never run; installation and
-  updates never happen.
-- Fallback to full gates is available only under an explicit
-  `release-full` rule with a recorded digest; failures, missing
-  tools, network gaps, and untrusted repos never trigger it.
+The outer plan records sorted source paths/byte digests, raw policy/profile/catalog
+SHA-256 pins, verified adapter manifest/package/entry and runtime pins. Its domain
+is `lekalo.native-execution-plan.v0.9.1` followed by compact recursively key-sorted
+JSON without `plan_digest`. Source additions, package-graph changes, reformatted
+controls and replaced tools revoke approval. Decoded duplicate keys refuse.
 
-## Digest, approval, run boundary
+Core checks approval, policy authorization and current custody **before any adapter
+or gate process**. It repeats read-only planning over pinned private inputs and
+requires an exact complete-plan match. OS qualification precedes gates. Shell
+syntax, eval/import hooks, executable shims and package-manager recipes refuse.
+Confirmed scripts must exist in the captured view.
 
-`plan_digest = sha256("lekalo.native-plan.v0.4.0" || canonical(plan
-without plan_digest))` over compact recursively key-sorted UTF-8 JSON
-(shared Node/Rust golden vectors). The approval always lives outside
-the hashed plan: a run names one exact approved digest, and the runner
-re-verifies every input, tool, policy, and catalog digest before the
-first launch — drift is `plan-stale`, zero spawns.
+## Results and platform guarantees
 
-Execution states are closed: `passed`, `failed` (real nonzero gate),
-`missing` (confirmed script/tool absent), `blocked` (policy/trust/
-approval), `unsupported` (manager/platform capability),
-`infrastructure` (spawn/crash/deadline/flood/cleanup), `security`
-(unexpected write, original mutation, env escape). Measurements use
-the #120 `valueState` vocabulary — a never-executed command reports
-unknown, never exit 0. Security and cleanup defects are never masked
-by a gate exit.
+Windows uses LPAC filesystem/network denial and a Job Object that contains
+descendants, kills them on closure, caps each process and the entire job at
+512 MiB committed memory, and permits at most 32 processes. Missing primitives or
+a failed runtime probe refuse; no raw-spawn fallback exists. The capability
+receipt digest commits to this configuration, not a peak-memory sample.
 
-## Platform capability honesty
+Only the private project is writable. The fixed Windows environment uses private
+temp/profile paths and the OS system root. Inherited credentials, Node options
+and package-manager tokens are absent. Per-command/whole-run deadlines,
+cancellation and output caps bound work. A reduced total output budget is
+apportioned between stdout and stderr.
 
-| Platform | Base | Gap behavior |
-| --- | --- | --- |
-| Windows (verified) | bounded direct spawn: deadline+kill, both pipes drained under caps, process-group kill on unix; capability evidence reports `unavailable` honestly | Network denial and descendant containment are NOT enforced — confinement is #89 |
-| Linux/macOS | not exercised on this runner | capability reported `unavailable`; confinement stays with #89/the backend suites |
+The receipt binds the nested plan digest; `provenance` names the approved outer
+plan. It records actual command exit/outcome, bounded redacted output references,
+observed private mutations, original verification and measured cleanup.
+Each output reference binds a [combined stdout/stderr artifact](../contracts/native-command-output.schema.v0.9.1.json); unavailable streams retain explicit states.
+Timeout/cancellation/flood retain unknown exits and unavailable outputs, never
+fabricated zero/empty-output digests. An unavailable mutation audit is explicit
+infrastructure/security failure; its empty list does not prove zero mutations.
 
-Network denial is NOT enforced by this runner; the receipt reports
-`network_denial: unavailable` honestly. True confinement is #89.
+| Result | CLI exit and evidence |
+| --- | --- |
+| Passed gates and cleanup | 0; run receipt on stdout |
+| Real required gate failure | 1; receipt on stderr, actual nonzero command exit |
+| Missing approval or policy denial | 3; registered diagnostic, no gate |
+| Stale source/tool/control | 1; `native-gate.plan-stale`, no gate |
+| Missing script or unsupported platform/confinement | 4; capability diagnostic, no fallback |
+| Timeout, cancellation, flood or infrastructure failure | 4; bounded failure evidence |
+| Unexpected writes, write-budget violation or original mutation | 3; security evidence |
 
-## M3 execution boundary (read this before running anything)
+Original verification compares declared captured inputs and selected control bytes;
+confinement denies writes to the rest of the host.
 
-The production `lekalo native run` binary never launches a gate
-command. It independently validates the plan and approval, then
-answers with a typed receipt: `blocked` + `confinement-required` for
-private/untrusted repositories (plan-only until #89), `unsupported` +
-`fixture-runner-not-shipped` for trusted synthetic plans — the real
-runner is compiled only into the Rust test harness
-(`native_gate::fixture_tests`, `#[cfg(test)]`), accepts only trusted
-catalog entries, executes only in a disposable byte copy, and proves
-original-unchanged plus cleanup-complete in the receipt.
+Command exit and execution verdict are separate: zero cannot mask security or
+cleanup failure. Actual receipts can enter trace/gate evidence; semantic
+validation alone cannot produce passing native evidence.
 
-There is no flag, environment variable, or marker file that turns gate
-execution on in a production build. Caller-controlled `public-fixture`
-markers are not trust: only the checked-in catalog identity, synthetic
-provenance, and exact digests admit a plan to the harness.
+## Protocol and historical boundary
+
+Protocol 0.9.1 carries the complete native plan and matching digest. Core checks
+its document, adapter identity and optional summary counts independently.
+Predecessors retain their summary-only wire members; summaries cannot authorize
+execution. The issue #48 fixture harness and frozen v0.4.0 documents retain their
+historical meaning. A raw v0.4.0 `native run PLAN` still returns plan-only refusal.
+Production execution requires the selected policy and approved v0.9.1 outer plan.
+
+Acceptance uses `cargo build --release -p lekalo-cli --locked` then
+`node scripts/test-native-execution.mjs` with pinned Ajv. The public release CLI
+executes `tests/fixtures/native-execution/project`; no test-only switch exists.
+Windows must pass real execution/refusal, original-byte, descendant and cleanup
+lanes. Other OS results report unsupported and do not qualify execution.

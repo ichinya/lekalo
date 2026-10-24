@@ -121,6 +121,9 @@ fn bwrap_available() -> bool {
 /// primitives (issue #89).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct SandboxPolicy {
+    /// Production native jobs share a bounded commit/process budget.
+    /// This is an internal host policy, never an adapter-supplied flag.
+    pub native_execution: bool,
     /// Watch's opt-in resource controls (Linux address space / macOS
     /// sampled RSS); predecessor command policies remain unchanged.
     pub bounded_resources: bool,
@@ -140,6 +143,7 @@ impl SandboxPolicy {
     /// probes and the describe handshake).
     pub fn strict() -> Self {
         Self {
+            native_execution: false,
             bounded_resources: false,
             children_denied: true,
             network_allowlist: false,
@@ -155,6 +159,7 @@ impl SandboxPolicy {
     pub fn from_budget(budget: &crate::adapter_package::budget::SessionBudget) -> Self {
         use crate::adapter_package::budget::{ChildPolicy, NetworkBudget};
         Self {
+            native_execution: false,
             bounded_resources: false,
             children_denied: budget.children() == ChildPolicy::Denied,
             network_allowlist: matches!(budget.network(), NetworkBudget::Allowlist(_)),
@@ -195,6 +200,7 @@ impl Enforcement {
 /// offers a namespace-level destination filter (issue #89).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct ConfinementReport {
+    native_execution: bool,
     pub network: Enforcement,
     pub children: Enforcement,
     pub resources: Enforcement,
@@ -241,6 +247,7 @@ impl ConfinementReport {
             Enforcement::Unenforced
         };
         Self {
+            native_execution: policy.native_execution,
             network: if policy.network_allowlist {
                 Enforcement::Degraded
             } else {
@@ -256,6 +263,9 @@ impl ConfinementReport {
     /// when denied; the Linux task bound where the wrapper exists and
     /// the kernel bounds the namespace, `None` otherwise).
     pub(super) fn process_limit(&self) -> Option<u64> {
+        if self.native_execution && cfg!(windows) {
+            return Some(32);
+        }
         lane_process_bound(host_read_only_lane(), self.children_denied)
             .filter(|_| self.children != Enforcement::Unenforced)
     }
@@ -263,6 +273,9 @@ impl ConfinementReport {
     /// The effective memory bound for the evidence: the Windows job
     /// commit-charge cap, or the Linux namespace address-space bound.
     pub(super) fn memory_limit(&self) -> Option<u64> {
+        if self.native_execution && cfg!(windows) {
+            return Some(512 * 1024 * 1024);
+        }
         lane_memory_bound(host_read_only_lane()).filter(|_| {
             self.resources == Enforcement::Enforced || self.resources == Enforcement::Degraded
         })
@@ -433,6 +446,78 @@ impl Drop for Sandbox {
 }
 
 impl Sandbox {
+    /// A private, already pinned native input tree. Only the Windows
+    /// LPAC/job lane currently qualifies its mandatory hard resource cap.
+    #[cfg(windows)]
+    pub(super) fn native_stage(root: &Path) -> Result<Self, TargetFailure> {
+        let mut policy = SandboxPolicy::strict();
+        policy.children_denied = false;
+        policy.native_execution = true;
+        let mut sandbox = Self::new(root, &[], &[], false, policy)?;
+        crate::native_gate::copy_execution_tree(root, &sandbox.project)
+            .map_err(|_| refusal("native-snapshot"))?;
+        sandbox.write_roots.push(sandbox.project.clone());
+        std::fs::create_dir_all(sandbox.project.join(".lekalo-temp"))
+            .map_err(|_| refusal("native-temp"))?;
+        Ok(sandbox)
+    }
+
+    #[cfg(windows)]
+    pub(super) fn run_native_at(
+        &self,
+        command: &transport::AdapterCommand,
+        cwd: &str,
+        expected_program_digest: &str,
+        limits: &transport::TransportLimits,
+        cancel: Option<&AtomicBool>,
+        env: &[(String, String)],
+    ) -> Result<transport::TransportSuccess, TargetFailure> {
+        let started = std::time::Instant::now();
+        if cwd != "." && !scopes::is_logical_path(cwd) {
+            return Err(refusal("native-cwd"));
+        }
+        let cwd = if cwd == "." {
+            self.project.clone()
+        } else {
+            self.project.join(cwd)
+        };
+        let cwd = std::fs::canonicalize(cwd).map_err(|_| refusal("native-cwd"))?;
+        let project = std::fs::canonicalize(&self.project).map_err(|_| refusal("native-cwd"))?;
+        if !cwd.starts_with(&project) {
+            return Err(refusal("native-cwd"));
+        }
+        let command = self.command(command)?;
+        let metadata = std::fs::metadata(&command.program).map_err(|_| refusal("native-tool"))?;
+        if metadata.len() > 256 * 1024 * 1024 {
+            return Err(refusal("native-tool"));
+        }
+        let bytes = std::fs::read(&command.program).map_err(|_| refusal("native-tool"))?;
+        if format!("sha256:{}", crate::digest::sha256_hex(&bytes)) != expected_program_digest {
+            return Err(refusal("native-tool-custody"));
+        }
+        let mut remaining = *limits;
+        remaining.timeout_ms = limits
+            .timeout_ms
+            .saturating_sub(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
+        if remaining.timeout_ms == 0 {
+            return Err(TargetFailure::Timeout);
+        }
+        windows::run_at(&command, b"", &remaining, self, &cwd, cancel, env)
+            .map_err(super::transport_failure)
+    }
+
+    #[cfg(windows)]
+    pub(super) fn close_native(self) -> Result<(), TargetFailure> {
+        let path = self.owned.path();
+        for _ in 0..40 {
+            match std::fs::remove_dir_all(path) {
+                Ok(()) => return Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            }
+        }
+        Err(refusal("native-cleanup"))
+    }
     pub fn publish(
         &self,
         root: &Path,

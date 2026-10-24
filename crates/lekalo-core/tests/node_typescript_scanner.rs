@@ -137,7 +137,7 @@ fn the_scanner_negotiates_the_current_protocol_and_declares_the_capability() {
     let described = client
         .describe(&command, &sandbox.dir)
         .expect("the scanner handshake must succeed");
-    assert_eq!(described.negotiated_version, "0.9.0");
+    assert_eq!(described.negotiated_version, "0.9.1");
     assert_eq!(
         described.capabilities.adapter.id,
         "lekalo-target-node-typescript"
@@ -147,7 +147,7 @@ fn the_scanner_negotiates_the_current_protocol_and_declares_the_capability() {
     // (issues #45 and #70 — the closed wire has exactly one generate
     // operation, so zod schemas and the transport route layer compose
     // under one descriptor).
-    assert_eq!(described.capabilities.adapter.version, "0.5.0");
+    assert_eq!(described.capabilities.adapter.version, "0.6.0");
     assert_eq!(described.capabilities.operations.len(), 6);
     assert!(described.capabilities.operations.contains(&Operation::Scan));
     assert!(described

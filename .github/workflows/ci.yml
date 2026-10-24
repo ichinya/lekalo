@@ -817,6 +817,15 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-native-gate-contracts.mjs
+      - name: Execute approved native plans through the release CLI (issue #151)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          node scripts/gen-native-execution-protocol.mjs --check
+          node scripts/gen-native-execution-contracts.mjs --check
+          cargo build --release -p lekalo-cli --locked
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-native-execution.mjs
       - name: Execute the native gate host suites (issue #48)
         run: cargo test --locked -p lekalo-core --lib native_gate
       - name: Run the applicable conformance battery against the kernel adapter (bare)

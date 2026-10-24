@@ -1838,7 +1838,7 @@ export function scanOperation(context) {
   if (index.state !== "complete") {
     return { state: "partial", diagnostics: [{ reason: "scan-incomplete" }] };
   }
-  if (context.request?.protocol_version === "0.9.0"
+  if (["0.9.0", "0.9.1"].includes(context.request?.protocol_version)
     && (index.symbols.some((symbol) => symbol.memberOf !== null) || index.routes.length > 0)) {
     // The ordinary public inventory carries top-level mappings, not
     // nested member definitions or endpoint projections. Never call a
@@ -1890,7 +1890,7 @@ export function scanOperation(context) {
       }
     }
     const evidence = buildEntryEvidence(symbol, index) ?? {};
-    if (context.request?.protocol_version === "0.9.0") {
+    if (["0.9.0", "0.9.1"].includes(context.request?.protocol_version)) {
       const source = index.inputManifest.files.find((file) => file.path === symbol.module);
       if (source) evidence.source_digest = `sha256:${source.digest}`;
     }

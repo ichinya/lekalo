@@ -221060,7 +221060,7 @@ function validateLintRequest(request) {
   const l = request.lint_request;
   if (request.operation === "lint" !== (l !== void 0)) throw new Error("lint-request-pairing");
   if (!l) return;
-  if (!["0.6.4", "0.9.0"].includes(request.protocol_version) || !request.target || ["dry_run", "plan_id", "native_request", "ir_path", "profile", "profile_digest", "profile_capabilities"].some((k) => request[k] !== void 0)) throw new Error("lint-request-version-members");
+  if (!["0.6.4", "0.9.0", "0.9.1"].includes(request.protocol_version) || !request.target || ["dry_run", "plan_id", "native_request", "ir_path", "profile", "profile_digest", "profile_capabilities"].some((k) => request[k] !== void 0)) throw new Error("lint-request-version-members");
   if (!l || Object.keys(l).sort().join() !== "bindings,files,pins,scope" || !Array.isArray(l.scope) || !l.scope.length || l.scope.length > 1e4 || !Array.isArray(l.files) || l.files.length > 4096 || !Array.isArray(l.bindings) || l.bindings.length > 1e4) throw new Error("lint-request-shape");
   const token = (s) => typeof s === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:/#@\\-]{0,255}$/.test(s);
   const sha = (s) => typeof s === "string" && /^sha256:[a-f0-9]{64}$/.test(s);
@@ -221247,9 +221247,9 @@ import { dirname, isAbsolute, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 var PROTOCOL_TOKEN = "lekalo.target/v1";
 var VERSION = "0.3.2";
-var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0"]);
+var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0", "0.9.1"]);
 var ADAPTER_ID = "lekalo-target-node-typescript";
-var ADAPTER_VERSION = "0.5.0";
+var ADAPTER_VERSION = "0.6.0";
 var MAX_REQUEST_BYTES = 1024 * 1024;
 var MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 var MAX_JSON_DEPTH = 64;
@@ -221857,15 +221857,21 @@ function validateNativeRequest(nativeRequest) {
     }
   }
   const changes = nativeRequest.changes;
+  if (changes && Object.keys(changes).some((key) => !["files", "symbols"].includes(key))) {
+    throw new RequestRefusal("native-request", "unknown changes member");
+  }
   if (typeof changes !== "object" || changes === null || Array.isArray(changes)) {
     throw new RequestRefusal("native-request", "changes must be an object");
   }
-  if (!Array.isArray(changes.files) || changes.files.length > 1024) {
+  if (changes.files !== void 0 && (!Array.isArray(changes.files) || changes.files.length > 1024)) {
     throw new RequestRefusal("native-request", "changes.files bound");
   }
-  for (const file3 of changes.files) {
+  for (const file3 of changes.files ?? []) {
     if (typeof file3 !== "object" || file3 === null || Array.isArray(file3)) {
       throw new RequestRefusal("native-request", "changes.files entry");
+    }
+    if (Object.keys(file3).some((key) => !["path", "change", "before_digest", "after_digest"].includes(key))) {
+      throw new RequestRefusal("native-request", "unknown changed file member");
     }
     if (!isLogicalPath(file3.path)) {
       throw new RequestRefusal("native-request", "changes.files path");
@@ -221880,17 +221886,14 @@ function validateNativeRequest(nativeRequest) {
       throw new RequestRefusal("native-request", "changes.files after_digest");
     }
   }
-  if (!Array.isArray(changes.symbols) || changes.symbols.length > 1024) {
+  if (changes.symbols !== void 0 && (!Array.isArray(changes.symbols) || changes.symbols.length > 1024)) {
     throw new RequestRefusal("native-request", "changes.symbols bound");
   }
   validateNativeContentRef(nativeRequest.scan_ref);
   if (nativeRequest.observed_ref !== void 0) {
     validateNativeContentRef(nativeRequest.observed_ref);
   }
-  const policy = nativeRequest.execution_policy_ref;
-  if (typeof policy !== "object" || policy === null || Array.isArray(policy) || typeof policy.id !== "string" || policy.id.length === 0 || policy.id.length > 128 || !isContractVersion(policy.version) || !isSha256Digest(policy.digest)) {
-    throw new RequestRefusal("native-request", "execution_policy_ref");
-  }
+  validateNativeContentRef(nativeRequest.execution_policy_ref);
   for (const key of ["input_manifest_digest", "tool_catalog_digest", "capability_snapshot_digest"]) {
     if (!isSha256Digest(nativeRequest[key])) {
       throw new RequestRefusal("native-request", key);
@@ -221898,6 +221901,9 @@ function validateNativeRequest(nativeRequest) {
   }
 }
 function validateNativeContentRef(reference) {
+  if (reference && Object.keys(reference).some((key) => !["digest", "revision", "adapter"].includes(key))) {
+    throw new RequestRefusal("native-request", "unknown content reference member");
+  }
   if (typeof reference !== "object" || reference === null || Array.isArray(reference) || !isSha256Digest(reference.digest)) {
     throw new RequestRefusal("native-request", "content reference");
   }
@@ -222896,6 +222902,7 @@ function createKernel(options = {}) {
           readView,
           ...writeView !== null ? { writeView } : {},
           ...trustedExecutionContext.frameworkPolicy ? { frameworkPolicy: trustedExecutionContext.frameworkPolicy } : {},
+          ...trustedExecutionContext.nativePolicy ? { nativePolicy: trustedExecutionContext.nativePolicy } : {},
           cancellation: trustedExecutionContext.cancellation ?? null,
           limits: trustedExecutionContext.limits ?? { files: 4096, bytes: 4 * 1024 * 1024 }
         }));
@@ -222924,7 +222931,7 @@ function createKernel(options = {}) {
       }
       recordSink(sink, validatedRequest, outcome, profile);
       const response = projectOutcome(validatedRequest, outcome);
-      if (validatedRequest.protocol_version === "0.9.0" && operation === "scan" && response.status === "ok") {
+      if (["0.9.0", "0.9.1"].includes(validatedRequest.protocol_version) && operation === "scan" && response.status === "ok") {
         response.evidence.scan_profile_digest = `sha256:${createHash2("sha256").update(canonicalJson(profile), "utf8").digest("hex")}`;
       }
       return { response, internal: outcome };
@@ -223082,7 +223089,11 @@ function projectResult(data, request) {
     if (typeof np !== "object" || np === null || np.kind !== "native-plan" || !isSha256Digest(np.plan_digest)) {
       return void 0;
     }
-    return { native_plan: { digest: np.plan_digest, kind: np.kind } };
+    return { native_plan: {
+      digest: np.plan_digest,
+      kind: np.kind,
+      ...request.protocol_version === "0.9.1" ? { plan: np } : {}
+    } };
   }
   if (!Array.isArray(data.entries)) {
     return void 0;
@@ -223092,7 +223103,7 @@ function projectResult(data, request) {
   }
   const entries = [];
   for (const entry of data.entries) {
-    if (typeof entry !== "object" || entry === null || !isLogicalPath(entry.path) || typeof entry.kind !== "string" || [...entry.kind].length > 128 || entry.detail !== void 0 && (typeof entry.detail !== "string" || [...entry.detail].length > (request.protocol_version === "0.9.0" && request.operation === "scan" ? 2048 : 128))) {
+    if (typeof entry !== "object" || entry === null || !isLogicalPath(entry.path) || typeof entry.kind !== "string" || [...entry.kind].length > 128 || entry.detail !== void 0 && (typeof entry.detail !== "string" || [...entry.detail].length > (["0.9.0", "0.9.1"].includes(request.protocol_version) && request.operation === "scan" ? 2048 : 128))) {
       return void 0;
     }
     const projected = entry.detail === void 0 ? { path: entry.path, kind: entry.kind } : { path: entry.path, kind: entry.kind, detail: entry.detail };
@@ -223103,7 +223114,7 @@ function projectResult(data, request) {
       }
       projected.evidence = evidence;
     }
-    if (request.protocol_version === "0.9.0" && request.operation === "scan") {
+    if (["0.9.0", "0.9.1"].includes(request.protocol_version) && request.operation === "scan") {
       if (!isSha256Digest(projected.evidence?.source_digest)) return void 0;
     } else if (projected.evidence?.source_digest !== void 0) return void 0;
     entries.push(projected);
@@ -223458,12 +223469,24 @@ async function main() {
     if (policyJson !== void 0) {
       frameworkPolicy = decodeFrameworkPolicyJson(policyJson);
     }
+    const nativeMarkers = argvWithoutEntry.filter((arg) => arg === "--lekalo-native-policy-json");
+    if (nativeMarkers.length > 1) throw new RequestRefusal("native-policy-input", "ambiguous native policy");
+    let nativePolicy = null;
+    if (nativeMarkers.length === 1) {
+      const text = argvWithoutEntry[argvWithoutEntry.indexOf(nativeMarkers[0]) + 1];
+      if (typeof text !== "string" || text.length === 0) throw new RequestRefusal("native-policy-input", "missing native policy");
+      nativePolicy = decodeJsonDocument(Buffer.from(text, "utf8"), { maxBytes: 16384 });
+      if (nativePolicy?.schema_version !== "lekalo/native-gate-policy/v0.4.0" || nativePolicy.kind !== "native-gate-policy" || !Array.isArray(nativePolicy.confirmations)) {
+        throw new RequestRefusal("native-policy-input", "invalid native policy");
+      }
+    }
     const document = decodeJsonDocument(requestBytes);
     const request = validateRequestObject(document);
     const kernel = options.kernel ?? createKernel();
     const dispatched = kernel.dispatch(request, {
       permittedProjectRoot: process.cwd(),
-      ...frameworkPolicy !== null ? { frameworkPolicy } : {}
+      ...frameworkPolicy !== null ? { frameworkPolicy } : {},
+      ...nativePolicy !== null ? { nativePolicy } : {}
     });
     process.stdout.write(canonicalJson(dispatched.response));
   } catch (error) {
@@ -230375,7 +230398,7 @@ function scanOperation(context) {
   if (index.state !== "complete") {
     return { state: "partial", diagnostics: [{ reason: "scan-incomplete" }] };
   }
-  if (context.request?.protocol_version === "0.9.0" && (index.symbols.some((symbol) => symbol.memberOf !== null) || index.routes.length > 0)) {
+  if (["0.9.0", "0.9.1"].includes(context.request?.protocol_version) && (index.symbols.some((symbol) => symbol.memberOf !== null) || index.routes.length > 0)) {
     return { state: "partial", diagnostics: [{ reason: "public-scan-surface-unrepresentable" }] };
   }
   const entries = [];
@@ -230408,7 +230431,7 @@ function scanOperation(context) {
       }
     }
     const evidence = buildEntryEvidence(symbol, index) ?? {};
-    if (context.request?.protocol_version === "0.9.0") {
+    if (["0.9.0", "0.9.1"].includes(context.request?.protocol_version)) {
       const source = index.inputManifest.files.find((file3) => file3.path === symbol.module);
       if (source) evidence.source_digest = `sha256:${source.digest}`;
     }
@@ -231314,6 +231337,17 @@ function buildNativePlan({
   const toolById = /* @__PURE__ */ new Map();
   for (const tool of toolCatalog ?? []) toolById.set(tool.id, tool);
   const affectedList = computeAffectedClosure(inventory, changedRoots);
+  if (policy.fallback_rule?.mode === "release-full") {
+    const digest2 = policy.fallback_rule.rule_digest;
+    if (typeof digest2 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(digest2)) {
+      throw new PlanRefusal("plan-release-rule-missing", "release-full requires its rule digest");
+    }
+    for (const pkg of inventory.packages) {
+      if (!affectedList.some((entry) => entry.package_id === pkg.id)) {
+        affectedList.push({ package_id: pkg.id, reasons: [{ kind: "release-rule", source_ref: digest2, policy_rule_ref: digest2 }] });
+      }
+    }
+  }
   const commands = [];
   const excluded = [];
   const affectedReasonRefs = /* @__PURE__ */ new Map();
@@ -231364,7 +231398,7 @@ function buildNativePlan({
         read_manifest_ref: inputManifestDigest,
         allowed_writes: { mode: "stage-only" },
         limits: policy.limits,
-        tsconfig_ref: confirmation.tsconfig_ref ?? (pkg ? `${pkg.root}/tsconfig.json` : "tsconfig.json")
+        tsconfig_ref: confirmation.tsconfig_ref ?? (pkg && pkg.root !== "." ? `${pkg.root}/tsconfig.json` : "tsconfig.json")
       });
     }
   }
@@ -231436,7 +231470,7 @@ function buildNativePlan({
       declared_version: "unknown",
       compatibility_path: inventory.compatibilityPath,
       root: inventory.root,
-      manifest_digest: inventory.workspaceManifestDigest ?? `sha256:${"0".repeat(64)}`,
+      manifest_digest: inventory.workspaceManifestDigest ?? inventory.packages.find((pkg) => pkg.root === ".")?.manifestDigest ?? `sha256:${"0".repeat(64)}`,
       lock_digest_state: inventory.lockDigestState ?? "absent",
       packages: inventory.packages.map((pkg) => ({
         id: pkg.id,
@@ -231457,7 +231491,13 @@ function buildNativePlan({
       modules: [...new Set(sortedAffected.map((entry) => {
         const pkg = inventory.packages.find((candidate) => candidate.id === entry.package_id);
         if (!pkg) return entry.package_id.replace(/[^a-z0-9._-]/g, "_");
-        if (pkg.root === ".") return pkg.id.replace(/[^a-z0-9._-]/g, "_");
+        if (pkg.root === ".") {
+          const module = pkg.name?.split("/").pop();
+          if (typeof module !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(module)) {
+            throw new PlanRefusal("plan-root-module-unrepresentable", "root package needs a portable module leaf");
+          }
+          return module;
+        }
         return pkg.root.split("/").pop();
       }))].sort(utf8Compare3),
       tests: [...new Set(commands.flatMap((command) => command.covers_suite_ids))].sort(utf8Compare3),
@@ -231473,7 +231513,7 @@ function buildNativePlan({
       name: tool.name,
       version: tool.version ?? "unknown",
       artifact_digest: tool.artifact_digest,
-      entry_digest: tool.entry_digest,
+      ...tool.entry_digest !== void 0 ? { entry_digest: tool.entry_digest } : {},
       platform: tool.platform,
       provenance: tool.provenance ?? "fixture-catalog"
     })),
@@ -231548,10 +231588,10 @@ function decodeNativeRequest(value) {
       return { error: `missing native_request member ${key}` };
     }
   }
-  if (!isObject5(value.changes) || !Array.isArray(value.changes.files) || value.changes.files.length > 1024 || !Array.isArray(value.changes.symbols) || value.changes.symbols.length > 1024) {
+  if (!isObject5(value.changes) || value.changes.files !== void 0 && (!Array.isArray(value.changes.files) || value.changes.files.length > 1024) || value.changes.symbols !== void 0 && (!Array.isArray(value.changes.symbols) || value.changes.symbols.length > 1024)) {
     return { error: "changes bound violated" };
   }
-  for (const file3 of value.changes.files) {
+  for (const file3 of value.changes.files ?? []) {
     if (!isObject5(file3) || typeof file3.path !== "string" || !["added", "modified", "deleted", "renamed"].includes(file3.change)) {
       return { error: "changes.files entry malformed" };
     }
@@ -231561,7 +231601,7 @@ function decodeNativeRequest(value) {
       return { error: `${key} is not a sha256 digest` };
     }
   }
-  return { value };
+  return { value: { ...value, changes: { files: [], symbols: [], ...value.changes } } };
 }
 function planNativeOperation(context, policyDocument) {
   const { request, profile, readView } = context;
@@ -231603,7 +231643,7 @@ function planNativeOperation(context, policyDocument) {
       }]
     };
   }
-  const toolCatalog = buildToolCatalog(policyDocument);
+  const toolCatalog = buildToolCatalog(policyDocument, context.nativePolicy ? "declared-manifest" : "fixture-catalog");
   const toolCatalogDigest = computeToolCatalogDigest(toolCatalog);
   let plan;
   try {
@@ -231761,7 +231801,7 @@ function verifyConfirmations(inventory, policyDocument, readView) {
   }
   return { unverifiable: unverifiable.slice(0, 16) };
 }
-function buildToolCatalog(policyDocument) {
+function buildToolCatalog(policyDocument, provenance = "fixture-catalog") {
   const seen = /* @__PURE__ */ new Map();
   for (const confirmation of policyDocument.confirmations) {
     const tool = confirmation.tool_ref;
@@ -231771,9 +231811,9 @@ function buildToolCatalog(policyDocument) {
       name: confirmation.argv[0] ?? tool.id,
       version: tool.version ?? "unknown",
       artifact_digest: tool.artifact_digest,
-      entry_digest: tool.entry_digest,
+      ...tool.entry_digest !== void 0 ? { entry_digest: tool.entry_digest } : {},
       platform: process.platform === "win32" ? "windows" : process.platform,
-      provenance: "fixture-catalog"
+      provenance
     });
   }
   return [...seen.values()];
@@ -237586,7 +237626,7 @@ __setLaunchExtensions([
     operations: ["plan-native"],
     namedCapabilities: { "plan.native-gates": "full" },
     acceptedIrVersions: ["0.2.16"],
-    invoke: (context) => planNativeOperation(context, launchPolicy)
+    invoke: (context) => planNativeOperation(context, context.nativePolicy ?? launchPolicy)
   },
   // The closed wire has exactly one generate operation: the Zod and
   // transport generators compose under the composite descriptor
@@ -237603,6 +237643,7 @@ var __lekaloTransport = transport_extension_exports;
 var __lekaloLaunchPolicy = native_policy_default;
 var __lekaloZodGen = descriptor;
 var __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: ADAPTER_VERSION, digest: entryDigest() };
+setAdapterIdentity(__lekaloAdapterIdentity);
 await runIfEntry(import.meta.url);
 export {
   __lekaloAdapterIdentity,

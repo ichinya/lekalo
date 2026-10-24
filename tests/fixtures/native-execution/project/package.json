@@ -1,0 +1,19 @@
+{
+  "name": "@native/execution",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node src/gate.mjs pass",
+    "test:fail": "node src/gate.mjs fail",
+    "test:timeout": "node src/gate.mjs timeout",
+    "test:cancel": "node src/gate.mjs cancel",
+    "test:flood": "node src/gate.mjs flood",
+    "test:stderr": "node src/gate.mjs stderr",
+    "test:tree": "node src/gate.mjs tree",
+    "test:security": "node src/gate.mjs security",
+    "test:filesystem": "node src/gate.mjs filesystem",
+    "test:network": "node src/gate.mjs network",
+    "test:budget": "node src/gate.mjs budget",
+    "test:memory": "node src/gate.mjs memory"
+  }
+}

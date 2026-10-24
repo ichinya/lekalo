@@ -243,6 +243,11 @@
       "note": "Issue #41: authored managed ownership/coverage wire documents, the planner project, deterministic expected outputs, committed custody records, and hostile controls. No native runtime outcome or private material."
     },
     {
+      "family": "mcp",
+      "origin": "synthetic",
+      "note": "Issue #33: authored trusted-catalog config, sensitive-path recipes, and the synthetic planner reuse by pinned reference (tests/fixtures/inspect/planner, tests/fixtures/trace/full.trace.json); hostile operands are materialized only in disposable test roots. No private code, real secrets, or executed application behavior."
+    },
+    {
       "family": "metrics-export",
       "origin": "synthetic",
       "note": "Issue #102: authored paired trial metadata, local recorder observations, aggregate/manifest/preview goldens and hostile lifecycle probes. No private consumer data or #100 evaluation claims."
@@ -259,6 +264,11 @@
       "family": "module-api",
       "origin": "synthetic",
       "note": "Issue #113: authored module API attachment/public/consumer/lock/context fixture corpus with synthetic tasks/planner/provider projects, boundary violation and valid-control variants, populated foreign public dependency pins through nested Task views/locks/context, and committed goldens; no private inputs or executed application behavior."
+    },
+    {
+      "family": "native-execution",
+      "origin": "synthetic",
+      "note": "Issue #151: authored existing Node commands exercised only through the release production CLI; private generated host paths stay in disposable test copies."
     },
     {
       "family": "nfr",
@@ -434,11 +444,6 @@
       "family": "watch",
       "origin": "synthetic",
       "note": "Issue #95: authored planner/unrelated Model documents and a dependency-free read-only Node adapter with synthetic crash/timeout/write/invalid-evidence, opt-in negotiated module/global selection and Linux namespace-limit controls, plus runtime-generated dependency, rapid-edit, retained-diagnostic, clean-target/multi-stage oracle, budget and consumer fixtures; no private application inputs."
-    },
-    {
-      "family": "mcp",
-      "origin": "synthetic",
-      "note": "Issue #33: authored trusted-catalog config, sensitive-path recipes, and the synthetic planner reuse by pinned reference (tests/fixtures/inspect/planner, tests/fixtures/trace/full.trace.json); hostile operands are materialized only in disposable test roots. No private code, real secrets, or executed application behavior."
     }
   ]
 }
