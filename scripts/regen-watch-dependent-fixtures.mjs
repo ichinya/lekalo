@@ -29,6 +29,12 @@ try {
  const lockDigest=hash(bytes.subarray(0,-1));
  save('tests/fixtures/lockfile/valid/contract-only.lock.json',bytes);
  save('tests/fixtures/lockfile/valid/contract-only.expect.json',JSON.stringify({lockDigest,payloadSha256:lockDigest.slice(7)})+'\n');
+ const successor=fixture('watch-successor','tests/fixtures/watch/project-successor');
+ const events=run(successor,['watch','--backend','poll','--validate','--impact','--json-lines','--stop-after-runs','1']).trim().split(/\r?\n/).map(JSON.parse);
+ const successorResult=events.find(event=>event.event==='run-completed')?.result;
+ assert.equal(successorResult?.status,'valid','successor watch must complete successfully');
+ assert.equal(successorResult.pins.versions.core,product,'successor producing-core metadata follows the product');
+ save('tests/fixtures/watch/golden/successor-result.json',JSON.stringify(stable(successorResult),null,2)+'\n');
  const orch=fixture('orchestration','tests/fixtures/orchestration/project');
  const adapter=['--','node','adapters/node-typescript/node-adapter.mjs'];
  json(orch,['lock',...adapter]);
