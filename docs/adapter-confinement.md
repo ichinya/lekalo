@@ -38,6 +38,10 @@ refuses as escalation. Secret values and granted environment values
 never enter canonical bytes, diagnostics, evidence, or logs; only
 variable names and handle ids do.
 
+The Windows private block also fixes `NODE_DISABLE_COMPILE_CACHE=1` so Node
+does not create optional compile-cache files. This value is controlled by the
+sandbox; an environment grant cannot replace it with the host's value.
+
 ### Implicit (synthesized) adapters
 
 An adapter supplied without a package manifest is synthesized from its

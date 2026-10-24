@@ -1,11 +1,22 @@
 // Read-only authoring helper; the production host independently rechecks custody.
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import {join,resolve} from 'node:path';
+import {dirname,join,resolve} from 'node:path';
 import {createHash} from 'node:crypto';
 const hash=bytes=>'sha256:'+createHash('sha256').update(bytes).digest('hex');
 const safePath=path=>path.length<=512&&path.split('/').every(part=>part.length>0&&part.length<=128&&part!=='.'&&part!=='..'&&!part.endsWith('.')&&/^[A-Za-z0-9@_.+-]+$/.test(part)&&!['.git','.ssh','.npmrc','.netrc'].includes(part.toLowerCase())&&!part.toLowerCase().startsWith('.env')&&!/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[.]|$)/i.test(part));
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
+// Node distributions put npm beside node.exe on Windows and under lib on Unix.
+// Explicit separate installations remain supported; never discover npm via PATH.
+export function resolveNpmCli(program,explicit=process.env.npm_execpath) {
+  const candidates=explicit!==undefined?[resolve(explicit)]:[
+    join(dirname(program),'node_modules/npm/bin/npm-cli.js'),
+    join(dirname(program),'../lib/node_modules/npm/bin/npm-cli.js'),
+  ];
+  const cli=candidates.find(path=>fs.existsSync(path)&&fs.statSync(path).isFile());
+  assert.ok(cli,'provide npm_execpath for an npm installation separate from node');
+  return fs.realpathSync(cli);
+}
 export function createNodeToolCatalog(root) {
   const assets=fs.realpathSync(resolve(root)),files=[],seen=new Set();let directories=0,total=0;
   function walk(prefix='',depth=0) {

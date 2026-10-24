@@ -8,7 +8,7 @@ import {createRequire} from 'node:module';
 import {tmpdir} from 'node:os';
 import {basename,dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createNodeToolCatalog} from './lib/node-tool-catalog.mjs';
+import {createNodeToolCatalog,resolveNpmCli} from './lib/node-tool-catalog.mjs';
 const repo=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const binary=process.env.LEKALO_BIN??join(repo,'target/release',process.platform==='win32'?'lekalo.exe':'lekalo');
 const fixture=join(repo,'tests/fixtures/node-native-tools');
@@ -31,8 +31,7 @@ if(process.argv.includes('--provision')) {
   const metadata=JSON.parse(lock);assert.deepEqual(metadata.packages[''].devDependencies,rootPackage.devDependencies);
   save(join(tools,'package.json'),{name:metadata.name,version:metadata.version,private:true,devDependencies:rootPackage.devDependencies});
   fs.writeFileSync(join(tools,'package-lock.json'),lock);
-  const npm=process.env.npm_execpath??join(dirname(process.execPath),'node_modules/npm/bin/npm-cli.js');
-  assert.ok(fs.existsSync(npm),'provide npm_execpath for an npm installation separate from node');
+  const npm=resolveNpmCli(process.execPath);
   const run=spawnSync(process.execPath,[npm,'ci','--ignore-scripts','--no-audit','--no-fund'],{cwd:tools,encoding:'utf8',timeout:300000,maxBuffer:8e6});
   assert.equal(run.status,0,run.stdout+'\n'+run.stderr);
 }

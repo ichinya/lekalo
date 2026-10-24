@@ -1462,6 +1462,10 @@ mod tests {
         // On Windows the grant is dropped; elsewhere there is no
         // private block and nothing is dropped.
         assert_eq!(env_grant_dropped("TEMP"), cfg!(windows));
+        assert_eq!(
+            env_grant_dropped("node_disable_compile_cache"),
+            cfg!(windows)
+        );
         assert!(!env_grant_dropped("LEKALO_GRANTED_VAR"));
     }
 
