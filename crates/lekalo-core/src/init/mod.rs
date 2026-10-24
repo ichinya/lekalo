@@ -16,6 +16,7 @@ pub mod detect;
 pub mod diagnostic;
 pub mod plan;
 pub mod receipt;
+pub mod scope;
 
 use std::path::{Path, PathBuf};
 
@@ -39,6 +40,8 @@ pub struct AdoptRequest {
     pub project_id: Option<String>,
     /// Preview the plan without writing (`--dry-run`).
     pub dry_run: bool,
+    /// Repository-relative versioned discovery-scope input.
+    pub discovery_scope: Option<String>,
 }
 
 /// How the adopted root was chosen.
@@ -238,7 +241,11 @@ type NameCandidate = (
 
 /// Derive the adopted project id: explicit flag, then root manifest
 /// names, then the root directory name. Every derivation is recorded.
-fn derive_project_id(root: &Path, explicit: Option<&str>) -> Result<ProjectId, &'static str> {
+fn derive_project_id(
+    root: &Path,
+    explicit: Option<&str>,
+    detection: &Detection,
+) -> Result<ProjectId, &'static str> {
     if let Some(explicit) = explicit {
         return match sanitize_id(explicit) {
             Some(id) if id == explicit => Ok(ProjectId {
@@ -279,6 +286,9 @@ fn derive_project_id(root: &Path, explicit: Option<&str>) -> Result<ProjectId, &
         ("go.mod", go_segment, "go.mod#module", Confidence::High),
     ];
     for (name, reader, source, confidence) in candidates {
+        if !detection.manifests.iter().any(|entry| entry.path == name) {
+            continue;
+        }
         if let Some(raw) = reader(&manifest(name)) {
             if let Some(id) = sanitize_id(&raw) {
                 return Ok(ProjectId {
@@ -447,20 +457,55 @@ pub fn adopt(request: &AdoptRequest) -> DomainResult {
         }
     }
 
-    // 1. Root selection and ambiguity resolution.
-    let (root, basis, candidates) = match resolve_root(request.project.as_deref()) {
+    if request
+        .project_id
+        .as_deref()
+        .is_some_and(|id| !valid_project_id(id))
+    {
+        return DomainResult::denied(diagnostic::id_required_set("invalid-project-id"));
+    }
+    if let Some(path) = request.discovery_scope.as_deref() {
+        if let Some(code) = scope::path_violation(path) {
+            return scope::failure(code, None);
+        }
+        if scope::protected(path) {
+            return scope::failure("structure.path-escape", None);
+        }
+    }
+    // A scope file is anchored at the explicitly selected root, or the
+    // invocation directory; scoped discovery never probes ancestor manifests.
+    let anchored = request.discovery_scope.is_some()
+        && request.project.is_none()
+        && std::env::var_os("LEKALO_PROJECT").is_none();
+    let selector = if anchored {
+        Some(".")
+    } else {
+        request.project.as_deref()
+    };
+    let (root, mut basis, mut candidates) = match resolve_root(selector) {
         Ok(resolved) => resolved,
         Err(result) => return result,
     };
+    if anchored {
+        basis = RootBasis::InvocationDirectory;
+        candidates = vec![".".to_owned()];
+    }
 
-    // 2. Project id derivation.
-    let project = match derive_project_id(&root, request.project_id.as_deref()) {
+    // Detection and name derivation share the admitted manifest catalog.
+    let mut detection: Detection = match detect::detect(
+        &root,
+        request.target.as_deref(),
+        request.discovery_scope.as_deref(),
+    ) {
+        Ok(detection) => detection,
+        Err(result) => return result,
+    };
+    let project = match derive_project_id(&root, request.project_id.as_deref(), &detection) {
         Ok(project) => project,
         Err(detail) => return DomainResult::denied(diagnostic::id_required_set(detail)),
     };
 
     // 3. Detection: read-only, bounded, evidence-first.
-    let mut detection: Detection = detect::detect(&root, request.target.as_deref());
     detection.basis = basis.as_str();
     detection.candidates = candidates;
 

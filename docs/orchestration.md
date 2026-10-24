@@ -51,6 +51,16 @@ same receipt; the human line is a one-line summary of the same data.
   follows the accepted envelope: ready 0, blocked 1 (or the failure's
   own class 3/4/5), degraded 4, version refusals 5, policy denials 3.
 
+## Verify with declared native commands
+
+An explicit --native-plan with its confirmation and selected controls composes
+semantic verification with actual confined execution in the same invocation.
+It emits the successor native-verify report, including before/after semantic
+results, real command exits and separate stdout/stderr artifacts. The supported
+platform, controls, status precedence and complete command are documented in
+[native gates](native-gates.md#declared-vitest-typescript-and-vite-tools).
+A supplied result file cannot replace execution.
+
 ## The catalog seam: `lekalo lock --adapter`
 
 Adapters are separate executables; the lock pins their identity, and

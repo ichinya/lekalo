@@ -69,12 +69,12 @@ fn the_kernel_describes_itself_through_the_production_client() {
     let described = client
         .describe(&command, &sandbox.dir)
         .expect("the kernel handshake must succeed");
-    assert_eq!(described.negotiated_version, "0.6.4");
+    assert_eq!(described.negotiated_version, "0.9.1");
     assert_eq!(
         described.capabilities.adapter.id,
         "lekalo-target-node-typescript"
     );
-    assert_eq!(described.capabilities.adapter.version, "0.4.0");
+    assert_eq!(described.capabilities.adapter.version, "0.6.1");
     assert!(described.capabilities.adapter.digest.starts_with("sha256:"));
     // The bundled compiler enables read-only lint independently of generation.
     assert_eq!(

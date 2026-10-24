@@ -318,6 +318,7 @@ fn environment_disclosure_is_bounded_to_the_budget() {
         let allowed: &[&str] = &[
             "APPDATA",
             "LOCALAPPDATA",
+            "NODE_DISABLE_COMPILE_CACHE",
             "SystemDrive",
             "SystemRoot",
             "TEMP",
@@ -333,6 +334,12 @@ fn environment_disclosure_is_bounded_to_the_budget() {
                 "unexpected variable {name}"
             );
         }
+        assert_eq!(
+            env.get("NODE_DISABLE_COMPILE_CACHE")
+                .and_then(|value| value.as_str()),
+            Some("1"),
+            "the fixed private block disables Node's optional compile cache"
+        );
     }
     // Values stay out of the confinement evidence: names only.
     let evidence = serde_json::to_string(&outcome.confinement).expect("evidence json");

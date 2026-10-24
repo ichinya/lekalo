@@ -1,0 +1,17 @@
+{
+  "schema_version": "lekalo/authorization/v0.2.16",
+  "identity": "dev.lekalo.authorization@0.2.16",
+  "model_ref": {
+    "schema_version": "0.2.16",
+    "ir_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "profile_ref": "dev.lekalo.authorization-profile@0.2.16",
+  "policies": [{
+    "id": "public_core.policy.local_state",
+    "actor": "public",
+    "decision": "allow",
+    "error_ref": "public_core.error.denied",
+    "applies_to": ["public_core.set_value"],
+    "fields": {"read": ["value"], "write": ["value"]}
+  }]
+}

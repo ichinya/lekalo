@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/native-command-output.schema.v0.9.1.json",
+  "title": "Lekalo native command-output 0.9.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "stdout",
+    "stderr"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/native-command-output/v0.9.1"
+    },
+    "stdout": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "text",
+            "truncated"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 65536
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "stderr": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "text",
+            "truncated"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 65536
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

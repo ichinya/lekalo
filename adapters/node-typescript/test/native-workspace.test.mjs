@@ -21,6 +21,17 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const fixtureRoot = join(repoRoot, "tests/fixtures/node-native-gates");
 
+test("npm membership is read from package.json and keeps its real manager",()=>{
+  const files={"package.json":JSON.stringify({name:"root",workspaces:["packages/*"]}),"packages/core/package.json":JSON.stringify({name:"core",version:"1.0.0"}),"packages/web/package.json":JSON.stringify({name:"web",version:"1.0.0",dependencies:{core:"1.0.0"}})};
+  const readView={canRead:path=>Object.hasOwn(files,path),readFile:path=>Buffer.from(files[path])};
+  const result=buildWorkspaceInventory({readView,directories:["packages/core","packages/web"]});
+  assert.equal(result.manager,"npm-workspaces");assert.equal(result.completeness,"complete");assert.equal(result.packages.length,3);assert.ok(result.edges.some(edge=>edge.from==="packages/web=web"&&edge.to==="packages/core=core"));
+  files["pnpm-workspace.yaml"]='packages:\n  - "packages/*"\n';
+  assert.throws(()=>buildWorkspaceInventory({readView,directories:[]}),WorkspaceRefusal);
+  delete files["pnpm-workspace.yaml"];files["package.json"]=JSON.stringify({name:"root",workspaces:[]});
+  assert.throws(()=>buildWorkspaceInventory({readView,directories:[]}),WorkspaceRefusal);
+});
+
 test("workspace YAML subset: packages list parses; tags/anchors/duplicates refuse", () => {
   const parsed = parseWorkspaceYaml('packages:\n  - "packages/*"\n');
   assert.deepEqual(parsed.packages, ["packages/*"]);

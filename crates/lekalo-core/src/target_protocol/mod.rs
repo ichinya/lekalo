@@ -29,6 +29,8 @@ pub mod discovery;
 pub mod evidence;
 #[cfg(any(target_os = "macos", test))]
 mod memory;
+mod native_host;
+mod native_schema;
 pub mod plan;
 pub mod scopes;
 pub mod selection;
@@ -38,6 +40,7 @@ pub mod version;
 pub mod watch;
 pub mod wire;
 
+pub(crate) use native_host::NativeSandbox;
 pub use verification_host::run_confined_verification;
 
 use std::sync::atomic::AtomicBool;
@@ -476,7 +479,7 @@ impl TargetClient {
         }
         let capabilities = described.capabilities.clone();
         if selection.is_some()
-            && (described.negotiated_version != version::WATCH_VERSION
+            && (!version::supports_watch(described.negotiated_version)
                 || !capabilities.watch.as_ref().is_some_and(|s| s.selection))
         {
             return Err(TargetFailure::CapabilityUnsupported {

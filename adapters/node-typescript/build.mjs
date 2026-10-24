@@ -310,7 +310,7 @@ kernel.__setLaunchExtensions([
     namedCapabilities: { "plan.native-gates": "full" },
     acceptedIrVersions: ["0.2.16"],
     invoke: (context) =>
-      nativeGate.planNativeOperation(context, nativeGate.launchPolicy),
+      nativeGate.planNativeOperation(context, context.nativePolicy ?? nativeGate.launchPolicy),
   },
   // The closed wire has exactly one generate operation: the Zod and
   // transport generators compose under the composite descriptor
@@ -327,6 +327,7 @@ export const __lekaloTransport = transport;
 export const __lekaloLaunchPolicy = nativePolicy;
 export const __lekaloZodGen = zodDescriptor;
 export const __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: kernel.ADAPTER_VERSION, digest: kernel.entryDigest() };
+nativeGate.setAdapterIdentity(__lekaloAdapterIdentity);
 await kernel.runIfEntry(import.meta.url);
 `;
 

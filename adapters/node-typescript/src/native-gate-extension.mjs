@@ -103,11 +103,11 @@ function decodeNativeRequest(value) {
     }
   }
   if (!isObject(value.changes)
-    || !Array.isArray(value.changes.files) || value.changes.files.length > 1024
-    || !Array.isArray(value.changes.symbols) || value.changes.symbols.length > 1024) {
+    || (value.changes.files !== undefined && (!Array.isArray(value.changes.files) || value.changes.files.length > 1024))
+    || (value.changes.symbols !== undefined && (!Array.isArray(value.changes.symbols) || value.changes.symbols.length > 1024))) {
     return { error: "changes bound violated" };
   }
-  for (const file of value.changes.files) {
+  for (const file of value.changes.files ?? []) {
     if (!isObject(file) || typeof file.path !== "string"
       || !["added", "modified", "deleted", "renamed"].includes(file.change)) {
       return { error: "changes.files entry malformed" };
@@ -118,7 +118,7 @@ function decodeNativeRequest(value) {
       return { error: `${key} is not a sha256 digest` };
     }
   }
-  return { value };
+  return { value: { ...value, changes: { files: [], symbols: [], ...value.changes } } };
 }
 
 /**
@@ -174,7 +174,7 @@ export function planNativeOperation(context, policyDocument) {
       }],
     };
   }
-  const toolCatalog = buildToolCatalog(policyDocument);
+  const toolCatalog = buildToolCatalog(policyDocument, context.nativePolicy ? "declared-manifest" : "fixture-catalog");
   const toolCatalogDigest = computeToolCatalogDigest(toolCatalog);
   let plan;
   try {
@@ -224,7 +224,10 @@ export function planNativeOperation(context, policyDocument) {
 export function readDeclaredPatterns(readView) {
   const WORKSPACE_FILE = "pnpm-workspace.yaml";
   const MAX_DOC = 1024 * 1024;
-  if (!readView.canRead(WORKSPACE_FILE)) return [];
+  if (!readView.canRead(WORKSPACE_FILE)) {
+    if(!readView.canRead("package.json"))return [];
+    try {const root=JSON.parse(readView.readFile("package.json",{files:4096,bytes:MAX_DOC}).toString("utf8"));return Array.isArray(root.workspaces)?root.workspaces:[];}catch{return [];}
+  }
   try {
     const parsed = parseWorkspaceYaml(
       readView.readFile(WORKSPACE_FILE, { files: 4096, bytes: MAX_DOC }).toString("utf8"),
@@ -276,6 +279,13 @@ export function listInventoryDirectories(readView, inclusionPatterns, out = {}) 
       .split("\u0000").join(".*");
     return new RegExp("^(?:" + regexText + ")$").test(name);
   };
+  const children = prefix => {
+    if (prefix && typeof readView.listDirectories === "function") {
+      // A parent may be outside an older profile's explicit leaf grants.
+      if ((readView.roots ?? []).some(root => root.kind === "tree" && (prefix === root.path || prefix.startsWith(root.path + "/")))) return readView.listDirectories(prefix);
+    }
+    return CHILD_VOCABULARY;
+  };
   const expand = (prefix, segments, depth) => {
     expansions += 1;
     if (expansions > MAX_EXPANSIONS
@@ -293,7 +303,7 @@ export function listInventoryDirectories(readView, inclusionPatterns, out = {}) 
     const segment = segments[0];
     if (segment === "**") {
       if (prefix !== "") expand(prefix, [], depth);
-      for (const name of CHILD_VOCABULARY) {
+      for (const name of children(prefix)) {
         const child = prefix === "" ? name : prefix + "/" + name;
         expand(child, segments, depth + 1);
       }
@@ -304,7 +314,7 @@ export function listInventoryDirectories(readView, inclusionPatterns, out = {}) 
       expand(child, segments.slice(1), depth + 1);
       return;
     }
-    for (const name of CHILD_VOCABULARY) {
+    for (const name of children(prefix)) {
       if (segmentAllows(segment, name)) {
         const child = prefix === "" ? name : prefix + "/" + name;
         expand(child, segments.slice(1), depth + 1);
@@ -371,7 +381,7 @@ function verifyConfirmations(inventory, policyDocument, readView) {
  * by id: name/version/provenance stay declared metadata; the digests
  * are the custody anchors the runner verifies.
  */
-export function buildToolCatalog(policyDocument) {
+export function buildToolCatalog(policyDocument, provenance = "fixture-catalog") {
   const seen = new Map();
   for (const confirmation of policyDocument.confirmations) {
     const tool = confirmation.tool_ref;
@@ -381,9 +391,9 @@ export function buildToolCatalog(policyDocument) {
       name: confirmation.argv[0] ?? tool.id,
       version: tool.version ?? "unknown",
       artifact_digest: tool.artifact_digest,
-      entry_digest: tool.entry_digest,
+      ...(tool.entry_digest !== undefined ? { entry_digest: tool.entry_digest } : {}),
       platform: process.platform === "win32" ? "windows" : process.platform,
-      provenance: "fixture-catalog",
+      provenance,
     });
   }
   return [...seen.values()];

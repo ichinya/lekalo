@@ -41,7 +41,7 @@ This original projection corpus deliberately has an unimplemented count query, a
 
 Generation passes through explicit profile/capability/lock/ownership checks and a plan/apply protocol. An adapter operates in a confined staged view; core verifies declared outputs and rechecks real before-state before publishing admitted changes. [Target protocol](target-protocol.md), [orchestration](orchestration.md), [ownership manifest](artifact-manifest.md), [security](security.md).
 
-Native gate planning is **Implemented**. Production `native run` execution is **Planned** and currently gives a typed refusal; test harnesses execute explicitly trusted synthetic native fixtures. Readiness evaluates supplied evidence and does not automatically run a validation-consumer.
+Native gate planning and opt-in production execution are **Implemented** for the declared [Windows x64 / Node 24 profile](native-gates.md). Execution requires a source-bound plan, exact external approval and selected execution policy; unsupported hosts refuse. Historical raw plans remain plan-only. Readiness evaluates supplied evidence and does not automatically run a validation-consumer.
 
 Workflow-provider discovery is a separate **Implemented** metadata contract, not an adapter execution transport. A workflow-consumer owns its QA envelope; a validation-consumer owns its results. [Authority](authority.md), [integrations](integrations.md).
 

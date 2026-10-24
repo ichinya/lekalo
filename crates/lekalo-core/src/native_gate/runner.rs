@@ -66,9 +66,23 @@ pub struct CatalogEntry {
 #[derive(Clone, Debug, Default)]
 pub struct RunnerCatalog {
     entries: BTreeMap<String, CatalogEntry>,
+    recipes: BTreeMap<String, ToolRecipe>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ToolRecipe {
+    pub entry: String,
+    pub entry_digest: String,
+    pub program_digest: String,
 }
 
 impl RunnerCatalog {
+    pub(crate) fn set_recipe(&mut self, id: String, recipe: ToolRecipe) {
+        self.recipes.insert(id, recipe);
+    }
+    pub(crate) fn recipe(&self, id: &str) -> Option<&ToolRecipe> {
+        self.recipes.get(id)
+    }
     pub fn new() -> Self {
         Self::default()
     }
@@ -139,6 +153,23 @@ pub type ConfirmedRunOutcome = Result<NativeRunResult, NativeGateFailure>;
 /// custody drift, or an unstageable snapshot each end the run with the
 /// typed failure before the first child process exists.
 pub fn run_confirmed_plan(run: &ConfirmedRun<'_>) -> ConfirmedRunOutcome {
+    run_inner(run, None, None)
+}
+
+pub(crate) fn run_confirmed_plan_in_sandbox(
+    run: &ConfirmedRun<'_>,
+    sandbox: crate::target_protocol::NativeSandbox,
+    outputs: &std::cell::RefCell<BTreeMap<String, serde_json::Value>>,
+) -> ConfirmedRunOutcome {
+    run_inner(run, Some(sandbox), Some(outputs))
+}
+
+fn run_inner(
+    run: &ConfirmedRun<'_>,
+    mut sandbox: Option<crate::target_protocol::NativeSandbox>,
+    outputs: Option<&std::cell::RefCell<BTreeMap<String, serde_json::Value>>>,
+) -> ConfirmedRunOutcome {
+    let production = sandbox.is_some();
     // 1. Approval preflight: the named digest must be this exact plan.
     if run.approved_plan_digest != run.plan.plan_digest {
         return Err(NativeGateFailure::ApprovalMissing);
@@ -173,13 +204,26 @@ pub fn run_confirmed_plan(run: &ConfirmedRun<'_>) -> ConfirmedRunOutcome {
     }
     // 4. Staged disposable copy with reviewed budgets; the original
     // snapshot is never the cwd and is verified unchanged afterwards.
-    let stage = tempfile::Builder::new()
-        .prefix("lekalo-native-runner-")
-        .tempdir()
-        .map_err(|_| NativeGateFailure::RunInfrastructure)?;
-    let stage_root = stage.path().join("project");
     let original_before = snapshot_tree(run.source_root)?;
-    copy_tree(run.source_root, &stage_root)?;
+    let stage = if sandbox.is_none() {
+        Some(
+            tempfile::Builder::new()
+                .prefix("lekalo-native-runner-")
+                .tempdir()
+                .map_err(|_| NativeGateFailure::RunInfrastructure)?,
+        )
+    } else {
+        None
+    };
+    let stage_root = match &sandbox {
+        Some(confined) => confined
+            .project_root()
+            .map_err(|_| NativeGateFailure::RunInfrastructure)?,
+        None => stage.as_ref().expect("raw stage").path().join("project"),
+    };
+    if sandbox.is_none() {
+        copy_tree(run.source_root, &stage_root)?;
+    }
     // 5. Execute the commands in plan order under the whole-run
     // deadline; a failed required gate preempts dependent work.
     let run_started = Instant::now();
@@ -190,7 +234,43 @@ pub fn run_confirmed_plan(run: &ConfirmedRun<'_>) -> ConfirmedRunOutcome {
         max_stdout_bytes: run.plan.limits.max_stdout_bytes as usize,
         max_stderr_bytes: run.plan.limits.max_stderr_bytes as usize,
     };
+    let mut output_spent = 0usize;
+    let mut execution_reasons = Vec::new();
     for command in &run.plan.commands {
+        if sandbox.is_some() && matches!(terminal, Terminal::Infrastructure | Terminal::Security) {
+            results.push(preflight_miss(
+                command,
+                "infrastructure",
+                Some(FailureClass::Infrastructure),
+                vec!["previous-execution-unsafe".into()],
+            ));
+            continue;
+        }
+        let remaining = usize::try_from(run.plan.limits.max_output_bytes_per_run)
+            .unwrap_or(usize::MAX)
+            .saturating_sub(output_spent);
+        if remaining < 2 {
+            terminal = terminal.max(Terminal::Infrastructure);
+            results.push(preflight_miss(
+                command,
+                "infrastructure",
+                Some(FailureClass::Infrastructure),
+                vec![reasons::OUTPUT_LIMIT.to_owned()],
+            ));
+            continue;
+        }
+        let command_caps = if remaining
+            >= output_caps
+                .max_stdout_bytes
+                .saturating_add(output_caps.max_stderr_bytes)
+        {
+            output_caps
+        } else {
+            OutputCaps {
+                max_stdout_bytes: output_caps.max_stdout_bytes.min(remaining / 2),
+                max_stderr_bytes: output_caps.max_stderr_bytes.min(remaining - remaining / 2),
+            }
+        };
         if run_started.elapsed() >= run_deadline {
             terminal = terminal.max(Terminal::Infrastructure);
             results.push(preflight_miss(
@@ -250,18 +330,46 @@ pub fn run_confirmed_plan(run: &ConfirmedRun<'_>) -> ConfirmedRunOutcome {
             }
         };
         let started = Instant::now();
-        let launched = launch_command(
+        let mut launched = launch_command(
             run,
             command,
             entry,
             &stage_root,
-            &entry.program,
-            &output_caps,
-            Duration::from_millis(command.limits.timeout_ms_per_command),
+            &command_caps,
+            Duration::from_millis(command.limits.timeout_ms_per_command)
+                .min(run_deadline.saturating_sub(run_started.elapsed())),
+            sandbox.as_ref(),
         );
+        if sandbox.is_some() {
+            match snapshot_tree_with(&stage_root, production) {
+                Ok(after) => {
+                    let mut current = audit_writes(run.plan, &original_before, &after);
+                    if enforce_write_bounds(run.plan, &stage_root, &mut current).is_err() {
+                        terminal = terminal.max(Terminal::Infrastructure);
+                        execution_reasons.push("write-audit-unverifiable".into());
+                    }
+                    if !current.unexpected.is_empty() {
+                        terminal = Terminal::Security;
+                        if let Ok(success) = &mut launched {
+                            success.unexpected_writes = current.unexpected;
+                        }
+                    }
+                    execution_reasons.extend(current.reason_codes);
+                }
+                Err(failure) => {
+                    terminal = terminal.max(if failure == NativeGateFailure::SecurityViolation {
+                        Terminal::Security
+                    } else {
+                        Terminal::Infrastructure
+                    });
+                    execution_reasons.push("mutation-audit-unverifiable".into());
+                }
+            }
+        }
         let duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         let measurement = match launched {
             Ok(success) => {
+                output_spent = output_spent.saturating_add(success.captured_bytes);
                 let (mut outcome, mut failure_class, mut reason_codes) = if success.flooded {
                     terminal = terminal.max(Terminal::Infrastructure);
                     (
@@ -314,10 +422,10 @@ pub fn run_confirmed_plan(run: &ConfirmedRun<'_>) -> ConfirmedRunOutcome {
                     // A deadline/cancellation teardown never reports a
                     // known exit: the killed child has no terminal
                     // measurement, and -1 would be a fabricated value.
-                    exit_code: if success.timed_out {
+                    exit_code: if success.timed_out || success.exit_code < 0 {
                         None
                     } else {
-                        Some(u64::try_from(success.exit_code.max(0)).unwrap_or(0))
+                        u64::try_from(success.exit_code).ok()
                     },
                     duration_ms,
                     outcome,
@@ -368,6 +476,16 @@ pub fn run_confirmed_plan(run: &ConfirmedRun<'_>) -> ConfirmedRunOutcome {
                     duration_ms,
                 )
             }
+            Err(LaunchFailure::Interrupted(reason)) => {
+                terminal = terminal.max(Terminal::Infrastructure);
+                preflight_measurement(
+                    command,
+                    "infrastructure",
+                    Some(FailureClass::Infrastructure),
+                    vec![reason.to_owned()],
+                    duration_ms,
+                )
+            }
             Err(LaunchFailure::Infrastructure) => {
                 terminal = terminal.max(Terminal::Infrastructure);
                 preflight_measurement(
@@ -379,26 +497,67 @@ pub fn run_confirmed_plan(run: &ConfirmedRun<'_>) -> ConfirmedRunOutcome {
                 )
             }
         };
-        results.push(command_result(measurement, output_digest));
+        results.push(command_result(measurement, |bytes| {
+            let digest = output_digest(bytes);
+            if let (Some(outputs), Ok(value)) = (outputs, serde_json::from_slice(bytes)) {
+                outputs.borrow_mut().insert(digest.clone(), value);
+            }
+            digest
+        }));
     }
     // 6. Mutation audit: the staged tree is diffed against the original
     // snapshot; the original root is verified unchanged.
-    let original_after = snapshot_tree(run.source_root)?;
-    let original_state = if original_before == original_after {
+    let original_after = snapshot_tree(run.source_root);
+    let original_state = if original_after
+        .as_ref()
+        .is_ok_and(|after| original_before == *after)
+    {
         "unchanged"
+    } else if original_after.is_err() {
+        terminal = terminal.max(Terminal::Infrastructure);
+        "unverifiable"
     } else {
         terminal = Terminal::Security;
         "mutated"
     };
-    let staged_after = snapshot_tree(&stage_root)?;
-    let mut audit = audit_writes(run.plan, &original_before, &staged_after);
+    let mut audit = match snapshot_tree_with(&stage_root, production) {
+        Ok(after) => audit_writes(run.plan, &original_before, &after),
+        Err(failure) => {
+            terminal = terminal.max(if failure == NativeGateFailure::SecurityViolation {
+                Terminal::Security
+            } else {
+                Terminal::Infrastructure
+            });
+            WriteAudit {
+                created: Vec::new(),
+                modified: Vec::new(),
+                deleted: Vec::new(),
+                unexpected: Vec::new(),
+                reason_codes: vec!["mutation-audit-unverifiable".into()],
+            }
+        }
+    };
+    if enforce_write_bounds(run.plan, &stage_root, &mut audit).is_err() {
+        terminal = terminal.max(Terminal::Infrastructure);
+        audit.reason_codes.push("write-audit-unverifiable".into());
+    }
+    audit.reason_codes.extend(execution_reasons);
+    audit.reason_codes.sort();
+    audit.reason_codes.dedup();
     if !audit.unexpected.is_empty() {
         terminal = Terminal::Security;
     }
     // 7. Cleanup: dropping the TempDir removes the disposable copy.
-    let stage_path = stage.path().to_path_buf();
-    drop(stage);
-    let cleanup_state = if !stage_path.exists() {
+    let cleaned = if let Some(confined) = sandbox.take() {
+        confined.close().is_ok()
+    } else {
+        stage.expect("raw stage").close().is_ok()
+    };
+    if run_started.elapsed() > run_deadline {
+        terminal = terminal.max(Terminal::Infrastructure);
+        audit.reason_codes.push(reasons::RUN_DEADLINE.into());
+    }
+    let cleanup_state = if cleaned {
         "complete"
     } else {
         if terminal != Terminal::Security {
@@ -424,7 +583,12 @@ pub fn run_confirmed_plan(run: &ConfirmedRun<'_>) -> ConfirmedRunOutcome {
         .cloned()
         .collect();
     let mut receipt = NativeRunResult {
-        schema_version: RUN_SCHEMA_VERSION.to_owned(),
+        schema_version: if production {
+            "lekalo/native-gate-run/v1.0.0"
+        } else {
+            RUN_SCHEMA_VERSION
+        }
+        .to_owned(),
         kind: "native-run-result".to_owned(),
         plan_digest: run.plan.plan_digest.clone(),
         execution_policy_ref: run.plan.execution_policy_ref.clone(),
@@ -586,6 +750,7 @@ struct CommandSuccess {
     timed_out: bool,
     flooded: bool,
     unexpected_writes: Vec<String>,
+    captured_bytes: usize,
 }
 
 enum LaunchFailure {
@@ -598,6 +763,8 @@ enum LaunchFailure {
     Security,
     /// Spawn/deadline/pipe infrastructure failure.
     Infrastructure,
+    /// A measured bounded termination, with no fabricated output/exit.
+    Interrupted(&'static str),
 }
 
 /// Launch one command inside the staged view: direct argv from the
@@ -608,11 +775,13 @@ fn launch_command(
     command: &super::types::NativeCommand,
     entry: &CatalogEntry,
     stage_root: &Path,
-    program: &Path,
     caps: &OutputCaps,
     deadline: Duration,
+    sandbox: Option<&crate::target_protocol::NativeSandbox>,
 ) -> Result<CommandSuccess, LaunchFailure> {
     use std::process::{Command, Stdio};
+    let program = &entry.program;
+    let launch_started = Instant::now();
     // The logical cwd must resolve inside the staged package root:
     // traversal, absolute spellings, and symlinks escaping the stage
     // are refused before any spawn.
@@ -639,8 +808,13 @@ fn launch_command(
         .file_stem()
         .and_then(|stem| stem.to_str())
         .ok_or(LaunchFailure::Missing)?;
-    let family_matches =
-        resolved_argv0 == catalog_family || (catalog_family == "php" && resolved_argv0 == "php");
+    let family_matches = if run.catalog.recipe(&command.tool_ref).is_some() {
+        // A private asset recipe pins the logical package bin separately
+        // from its Node interpreter. It never resolves the bin via PATH.
+        resolved_argv0 == &command.tool_ref && sandbox.is_some()
+    } else {
+        resolved_argv0 == catalog_family || (catalog_family == "php" && resolved_argv0 == "php")
+    };
     if !family_matches {
         return Err(LaunchFailure::Missing);
     }
@@ -710,6 +884,18 @@ fn launch_command(
             _ => return Err(LaunchFailure::Security),
         }
     }
+    if let Some(confined) = sandbox {
+        return launch_confined(
+            run,
+            command,
+            entry,
+            &stage_canonical,
+            &cwd_canonical,
+            caps,
+            deadline.saturating_sub(launch_started.elapsed()),
+            confined,
+        );
+    }
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     cmd.stdin(Stdio::null());
@@ -778,18 +964,20 @@ fn launch_command(
         None => (-1, true),
     };
     let flooded = stdout_bytes.1 || stderr_bytes.1;
-    let stdout = redact_stream(
+    let mut stdout = redact_stream(
         &stdout_bytes.0,
         caps.max_stdout_bytes,
         &run.secrets,
         &run.host_paths,
     );
-    let stderr = redact_stream(
+    let mut stderr = redact_stream(
         &stderr_bytes.0,
         caps.max_stderr_bytes,
         &run.secrets,
         &run.host_paths,
     );
+    stdout.flooded |= stdout_bytes.1;
+    stderr.flooded |= stderr_bytes.1;
     let unexpected_writes = Vec::new();
     Ok(CommandSuccess {
         exit_code,
@@ -798,6 +986,110 @@ fn launch_command(
         timed_out,
         flooded,
         unexpected_writes,
+        captured_bytes: stdout_bytes.0.len().saturating_add(stderr_bytes.0.len()),
+    })
+}
+
+/// The production lane never enters the raw spawn primitive above.
+#[allow(clippy::too_many_arguments)]
+fn launch_confined(
+    run: &ConfirmedRun<'_>,
+    command: &super::types::NativeCommand,
+    entry: &CatalogEntry,
+    stage: &Path,
+    cwd: &Path,
+    caps: &OutputCaps,
+    deadline: Duration,
+    sandbox: &crate::target_protocol::NativeSandbox,
+) -> Result<CommandSuccess, LaunchFailure> {
+    use crate::target_protocol::{
+        transport::{AdapterCommand, TransportLimits},
+        TargetFailure,
+    };
+    let started = Instant::now();
+    let recipe = run.catalog.recipe(&command.tool_ref);
+    let mut args: Vec<String> = if let Some(recipe) = recipe {
+        let script = sandbox
+            .tool_script(&recipe.entry, &recipe.entry_digest)
+            .map_err(|_| LaunchFailure::Security)?;
+        std::iter::once(script.to_string_lossy().into_owned())
+            .chain(command.argv.iter().skip(1).cloned())
+            .collect()
+    } else {
+        command.argv.iter().skip(1).cloned().collect()
+    };
+    let script = args.first_mut().ok_or(LaunchFailure::Missing)?;
+    if recipe.is_none() && (script.starts_with('-') || Path::new(script).is_absolute()) {
+        return Err(LaunchFailure::Security);
+    }
+    let candidate = cwd.join(&*script);
+    let canonical = std::fs::canonicalize(&candidate).map_err(|_| LaunchFailure::Missing)?;
+    if recipe.is_none() && !canonical.starts_with(stage) {
+        return Err(LaunchFailure::Security);
+    }
+    *script = crate::target_protocol::NativeSandbox::runtime_path(&canonical)
+        .to_string_lossy()
+        .into_owned();
+    let mut env = Vec::new();
+    for binding in &run.plan.env.bindings {
+        if !command.env.contains(&binding.name) {
+            continue;
+        }
+        let value = match binding.kind.as_str() {
+            "literal" => binding.value.clone().unwrap_or_default(),
+            "execution-temp" | "execution-home" => {
+                stage.join(".lekalo-temp").to_string_lossy().into_owned()
+            }
+            "platform-system-root" => continue,
+            _ => return Err(LaunchFailure::Security),
+        };
+        env.push((binding.name.clone(), value));
+    }
+    let deadline = deadline.saturating_sub(started.elapsed());
+    if deadline.is_zero() {
+        return Err(LaunchFailure::Interrupted(reasons::TIMEOUT));
+    }
+    let limits = TransportLimits {
+        timeout_ms: u64::try_from(deadline.as_millis())
+            .unwrap_or(u64::MAX)
+            .max(1),
+        max_output_bytes: caps.max_stdout_bytes,
+        max_stderr_bytes: caps.max_stderr_bytes,
+        max_request_bytes: 1,
+    };
+    let result = sandbox
+        .run(
+            &AdapterCommand {
+                program: entry.program.clone(),
+                args,
+            },
+            &command.cwd,
+            recipe
+                .map(|recipe| recipe.program_digest.as_str())
+                .unwrap_or(&entry.artifact_digest),
+            &limits,
+            run.cancellation,
+            &env,
+        )
+        .map_err(|error| match error {
+            TargetFailure::Timeout => LaunchFailure::Interrupted(reasons::TIMEOUT),
+            TargetFailure::Cancelled => LaunchFailure::Interrupted(reasons::CANCELLED),
+            TargetFailure::OutputLimit { .. } => LaunchFailure::Interrupted(reasons::OUTPUT_LIMIT),
+            _ => LaunchFailure::Infrastructure,
+        })?;
+    let mut paths = run.host_paths.clone();
+    paths.push(stage.to_string_lossy().into_owned());
+    if let Some(owned) = stage.parent() {
+        paths.push(owned.to_string_lossy().into_owned());
+    }
+    Ok(CommandSuccess {
+        exit_code: result.exit_code,
+        stdout: redact_stream(&result.stdout, caps.max_stdout_bytes, &run.secrets, &paths),
+        stderr: redact_stream(&result.stderr, caps.max_stderr_bytes, &run.secrets, &paths),
+        timed_out: false,
+        flooded: result.stdout_truncated || result.stderr_truncated,
+        unexpected_writes: Vec::new(),
+        captured_bytes: result.stdout.len().saturating_add(result.stderr.len()),
     })
 }
 
@@ -861,26 +1153,43 @@ fn kill_tree(pid: u32) {
 
 /// The bounded staged-tree snapshot: relative logical paths to digests.
 fn snapshot_tree(root: &Path) -> Result<BTreeMap<String, String>, NativeGateFailure> {
+    snapshot_tree_with(root, false)
+}
+fn snapshot_tree_with(
+    root: &Path,
+    tool_outputs: bool,
+) -> Result<BTreeMap<String, String>, NativeGateFailure> {
     let mut map = BTreeMap::new();
     let mut stack = vec![root.to_path_buf()];
+    let mut seen = std::collections::BTreeSet::new();
     let mut files = 0usize;
+    let mut entries_seen = 0usize;
     let mut total = 0usize;
     while let Some(dir) = stack.pop() {
         let entries = std::fs::read_dir(&dir).map_err(|_| NativeGateFailure::RunInfrastructure)?;
         for entry in entries {
             let entry = entry.map_err(|_| NativeGateFailure::RunInfrastructure)?;
+            entries_seen += 1;
+            if entries_seen > STAGE_MAX_FILES {
+                return Err(NativeGateFailure::RunInfrastructure);
+            }
             let path = entry.path();
             let file_type = entry
                 .file_type()
                 .map_err(|_| NativeGateFailure::RunInfrastructure)?;
-            if file_type.is_symlink() {
-                // Symlinks never stage: junction/symlink escapes are
-                // refused at the copy, not audited afterwards.
-                continue;
+            let metadata = std::fs::symlink_metadata(&path)
+                .map_err(|_| NativeGateFailure::RunInfrastructure)?;
+            if crate::project_fs::metadata_is_physical_link(&metadata)
+                || (!file_type.is_file() && !file_type.is_dir())
+            {
+                return Err(NativeGateFailure::SecurityViolation);
             }
             if file_type.is_dir() {
                 stack.push(path);
                 continue;
+            }
+            if crate::managed::fs::is_shared_alias(&path, &metadata) {
+                return Err(NativeGateFailure::SecurityViolation);
             }
             files += 1;
             if files > STAGE_MAX_FILES {
@@ -901,6 +1210,15 @@ fn snapshot_tree(root: &Path) -> Result<BTreeMap<String, String>, NativeGateFail
                 .map_err(|_| NativeGateFailure::RunInfrastructure)?
                 .to_string_lossy()
                 .replace('\\', "/");
+            if !seen.insert(relative.to_ascii_lowercase())
+                || !(if tool_outputs {
+                    super::execution::tool_output_path(&relative)
+                } else {
+                    crate::target_protocol::scopes::is_logical_path(&relative)
+                })
+            {
+                return Err(NativeGateFailure::SecurityViolation);
+            }
             let bytes = std::fs::read(&path).map_err(|_| NativeGateFailure::RunInfrastructure)?;
             map.insert(
                 relative,
@@ -913,8 +1231,9 @@ fn snapshot_tree(root: &Path) -> Result<BTreeMap<String, String>, NativeGateFail
 
 /// The bounded staged copy: regular files only, symlinks refused,
 /// budgets enforced before any command spawns.
-fn copy_tree(source: &Path, destination: &Path) -> Result<(), NativeGateFailure> {
+pub(crate) fn copy_tree(source: &Path, destination: &Path) -> Result<(), NativeGateFailure> {
     let mut files = 0usize;
+    let mut entries_seen = 0usize;
     let mut total = 0usize;
     let mut stack = vec![source.to_path_buf()];
     std::fs::create_dir_all(destination).map_err(|_| NativeGateFailure::RunInfrastructure)?;
@@ -922,12 +1241,20 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<(), NativeGateFailure>
         let entries = std::fs::read_dir(&dir).map_err(|_| NativeGateFailure::RunInfrastructure)?;
         for entry in entries {
             let entry = entry.map_err(|_| NativeGateFailure::RunInfrastructure)?;
+            entries_seen += 1;
+            if entries_seen > STAGE_MAX_FILES {
+                return Err(NativeGateFailure::RunInfrastructure);
+            }
             let path = entry.path();
             let file_type = entry
                 .file_type()
                 .map_err(|_| NativeGateFailure::RunInfrastructure)?;
-            if file_type.is_symlink() {
-                continue;
+            let metadata = std::fs::symlink_metadata(&path)
+                .map_err(|_| NativeGateFailure::RunInfrastructure)?;
+            if crate::project_fs::metadata_is_physical_link(&metadata)
+                || (!file_type.is_file() && !file_type.is_dir())
+            {
+                return Err(NativeGateFailure::SecurityViolation);
             }
             let relative = path
                 .strip_prefix(source)
@@ -938,6 +1265,9 @@ fn copy_tree(source: &Path, destination: &Path) -> Result<(), NativeGateFailure>
                     .map_err(|_| NativeGateFailure::RunInfrastructure)?;
                 stack.push(path);
             } else {
+                if crate::managed::fs::is_shared_alias(&path, &metadata) {
+                    return Err(NativeGateFailure::SecurityViolation);
+                }
                 files += 1;
                 if files > STAGE_MAX_FILES {
                     return Err(NativeGateFailure::RunInfrastructure);
@@ -1033,9 +1363,68 @@ fn audit_writes(
     audit
 }
 
+fn enforce_write_bounds(
+    plan: &super::types::NativePlan,
+    root: &Path,
+    audit: &mut WriteAudit,
+) -> Result<(), NativeGateFailure> {
+    for scope in plan.write_policy.scopes.iter().flatten() {
+        let mutations: Vec<_> = audit
+            .created
+            .iter()
+            .chain(&audit.modified)
+            .filter(|entry| {
+                entry.path == scope.root || entry.path.starts_with(&format!("{}/", scope.root))
+            })
+            .collect();
+        let mut bytes = 0u64;
+        for entry in &mutations {
+            bytes = bytes.saturating_add(
+                std::fs::symlink_metadata(root.join(&entry.path))
+                    .map_err(|_| NativeGateFailure::RunInfrastructure)?
+                    .len(),
+            );
+        }
+        if scope
+            .max_files
+            .is_some_and(|limit| mutations.len() as u64 > limit)
+            || scope.max_bytes.is_some_and(|limit| bytes > limit)
+        {
+            audit
+                .unexpected
+                .extend(mutations.into_iter().map(|entry| entry.path.clone()));
+            audit.reason_codes.push("write-budget-exceeded".into());
+        }
+    }
+    audit.unexpected.sort();
+    audit.unexpected.dedup();
+    audit.reason_codes.sort();
+    audit.reason_codes.dedup();
+    Ok(())
+}
+
 #[cfg(test)]
 mod runner_tests {
     use super::*;
+
+    #[test]
+    fn snapshots_and_staging_refuse_shared_inodes_before_reading_their_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = root.path().join("outside");
+        std::fs::write(&outside, b"private outside bytes").unwrap();
+        let source = root.path().join("source");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::hard_link(&outside, source.join("alias")).unwrap();
+        assert_eq!(
+            snapshot_tree(&source).unwrap_err(),
+            NativeGateFailure::SecurityViolation
+        );
+        assert_eq!(
+            copy_tree(&source, &root.path().join("stage")).unwrap_err(),
+            NativeGateFailure::SecurityViolation
+        );
+        assert_eq!(std::fs::read(outside).unwrap(), b"private outside bytes");
+    }
     use crate::native_gate::types::NativeOutputRef;
     use crate::native_gate::wire::decode_plan;
 
@@ -1312,7 +1701,6 @@ mod runner_tests {
         let plan = plan_with_script(script, 30_000);
         let (dir, source) = source_root();
         let receipt = run_with(&plan, &program, &qualified(), &source).expect("the run succeeds");
-        eprintln!("DBGOUT={:?}", receipt.commands[0]);
         assert_eq!(receipt.outcome, "passed");
         assert_eq!(receipt.verdict, "passed");
         assert_eq!(receipt.commands.len(), 1);
@@ -1326,7 +1714,12 @@ mod runner_tests {
         assert_eq!(receipt.capability_evidence.network_denial, "enforced");
         // The captured output must be exactly the redacted truth: the
         // grant visible, the canary variable absent.
-        let expected = b"granted-value-".to_vec();
+        let expected = serde_json::to_vec(&serde_json::json!({
+            "schema_version":"lekalo/native-command-output/v0.9.1",
+            "stdout":{"state":"known","text":"granted-value-","truncated":false},
+            "stderr":{"state":"known","text":"","truncated":false}
+        }))
+        .unwrap();
         let expected_digest = format!(
             "sha256:{}",
             crate::digest::sha256_hex(

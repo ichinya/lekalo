@@ -1,0 +1,1538 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/native-verify-report.schema.v1.0.0.json",
+  "title": "Lekalo native verify-report 1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "status",
+    "verdict",
+    "semantic",
+    "semantic_after",
+    "native",
+    "exit_code",
+    "reason_codes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/native-verify-report/v1.0.0"
+    },
+    "kind": {
+      "const": "native-verify-report"
+    },
+    "status": {
+      "enum": [
+        "passed",
+        "failed",
+        "security",
+        "infrastructure",
+        "unsupported",
+        "not-run",
+        "denied"
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "ready",
+        "blocked",
+        "degraded"
+      ]
+    },
+    "semantic": {
+      "type": "object"
+    },
+    "semantic_after": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "const": "not-run"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "report"
+          ],
+          "properties": {
+            "state": {
+              "const": "checked"
+            },
+            "report": {
+              "type": "object"
+            }
+          }
+        }
+      ]
+    },
+    "native": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Execution_Document"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "reason"
+          ],
+          "properties": {
+            "state": {
+              "const": "not-run"
+            },
+            "reason": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "execution",
+            "diagnostic"
+          ],
+          "properties": {
+            "state": {
+              "const": "error"
+            },
+            "execution": {
+              "const": "unverified"
+            },
+            "diagnostic": {
+              "type": "object"
+            }
+          }
+        }
+      ]
+    },
+    "exit_code": {
+      "type": "integer",
+      "enum": [
+        0,
+        1,
+        3,
+        4,
+        5
+      ]
+    },
+    "reason_codes": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "semantic-after-refused",
+          "semantic-custody-changed"
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 2,
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "Execution_Run_sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 71
+    },
+    "Execution_Run_contractVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "Execution_Run_packageId": {
+      "type": "string",
+      "pattern": "^[a-z0-9.][a-z0-9._/-]{0,63}=[a-z0-9@/._-]{1,192}$",
+      "maxLength": 256
+    },
+    "Execution_Run_logicalPath": {
+      "type": "string",
+      "pattern": "^(?!(?:.*[/])?(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[./]|$))(?!(?:.*[/])?\\.{1,2}(?:/|$))(?!.*\\.(?:/|$))[a-z0-9.][a-z0-9._-]{0,63}(?:/[a-z0-9.][a-z0-9._-]{0,63})*$",
+      "maxLength": 512
+    },
+    "Execution_Run_argv": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+      }
+    },
+    "Execution_Run_authorityRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.authority-matrix"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "digest": {
+          "$ref": "#/$defs/Execution_Run_sha256Digest"
+        }
+      }
+    },
+    "Execution_Run_policyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "policyId": {
+          "const": "dev.lekalo.privacy-export-policy"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "digest": {
+          "$ref": "#/$defs/Execution_Run_sha256Digest"
+        }
+      }
+    },
+    "Execution_Run_executionPolicyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "maxLength": 128
+        },
+        "version": {
+          "$ref": "#/$defs/Execution_Run_contractVersion"
+        },
+        "digest": {
+          "$ref": "#/$defs/Execution_Run_sha256Digest"
+        }
+      }
+    },
+    "Execution_Run_runRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "plan_ref",
+        "approved_plan_digest",
+        "approval",
+        "fixture_catalog_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "lekalo/native-gate-run/v0.4.0"
+        },
+        "kind": {
+          "const": "native-run-request"
+        },
+        "plan_ref": {
+          "$ref": "#/$defs/Execution_Run_logicalPath"
+        },
+        "approved_plan_digest": {
+          "$ref": "#/$defs/Execution_Run_sha256Digest"
+        },
+        "approval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "subject_ref",
+            "policy_digest"
+          ],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "explicit",
+                "checked-in-policy"
+              ]
+            },
+            "subject_ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "policy_digest": {
+              "$ref": "#/$defs/Execution_Run_sha256Digest"
+            },
+            "rule_ref": {
+              "$ref": "#/$defs/Execution_Run_sha256Digest"
+            }
+          }
+        },
+        "fixture_catalog_ref": {
+          "$ref": "#/$defs/Execution_Run_sha256Digest"
+        }
+      }
+    },
+    "Execution_Run_runResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "plan_digest",
+        "execution_policy_ref",
+        "authority_ref",
+        "policy_ref",
+        "outcome",
+        "reason_codes",
+        "commands",
+        "mutation_summary",
+        "original_verification",
+        "cleanup",
+        "capability_evidence",
+        "verdict",
+        "coverage"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "lekalo/native-gate-run/v0.4.0"
+        },
+        "kind": {
+          "const": "native-run-result"
+        },
+        "plan_digest": {
+          "$ref": "#/$defs/Execution_Run_sha256Digest"
+        },
+        "execution_policy_ref": {
+          "$ref": "#/$defs/Execution_Run_executionPolicyRef"
+        },
+        "authority_ref": {
+          "$ref": "#/$defs/Execution_Run_authorityRef"
+        },
+        "policy_ref": {
+          "$ref": "#/$defs/Execution_Run_policyRef"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Execution_Run_outcome"
+        },
+        "reason_codes": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+            "maxLength": 64
+          }
+        },
+        "commands": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/Execution_Run_commandResult"
+          }
+        },
+        "mutation_summary": {
+          "$ref": "#/$defs/Execution_Run_mutationSummary"
+        },
+        "original_verification": {
+          "$ref": "#/$defs/Execution_Run_originalVerification"
+        },
+        "cleanup": {
+          "$ref": "#/$defs/Execution_Run_cleanup"
+        },
+        "capability_evidence": {
+          "$ref": "#/$defs/Execution_Run_capabilityEvidence"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Execution_Run_sha256Digest"
+        },
+        "verdict": {
+          "$ref": "#/$defs/Execution_Run_verdict"
+        },
+        "coverage": {
+          "$ref": "#/$defs/Execution_Run_coverage"
+        }
+      }
+    },
+    "Execution_Run_outcome": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "missing",
+        "blocked",
+        "unsupported",
+        "infrastructure",
+        "security"
+      ]
+    },
+    "Execution_Run_commandResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command_id",
+        "package_id",
+        "cwd",
+        "tool_ref",
+        "argv",
+        "env_names",
+        "outcome",
+        "gate_id",
+        "required",
+        "failure_class"
+      ],
+      "properties": {
+        "command_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+          "maxLength": 128
+        },
+        "package_id": {
+          "$ref": "#/$defs/Execution_Run_packageId"
+        },
+        "cwd": {
+          "$ref": "#/$defs/Execution_Run_logicalPath"
+        },
+        "tool_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "argv": {
+          "$ref": "#/$defs/Execution_Run_argv"
+        },
+        "env_names": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+            "maxLength": 64
+          }
+        },
+        "env_recipe_digest": {
+          "$ref": "#/$defs/Execution_Run_sha256Digest"
+        },
+        "tool_version": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Execution_Run_contractVersion"
+            },
+            {
+              "const": "unknown"
+            }
+          ]
+        },
+        "exit": {
+          "$ref": "#/$defs/Execution_Run_valueState"
+        },
+        "duration_ms": {
+          "$ref": "#/$defs/Execution_Run_valueState"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Execution_Run_outcome"
+        },
+        "reason_codes": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+            "maxLength": 64
+          }
+        },
+        "output_ref": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Execution_Run_sha256Digest"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "withheld",
+                    "unknown"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "gate_id": {
+          "$ref": "#/$defs/Execution_Run_gateId"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "failure_class": {
+          "$ref": "#/$defs/Execution_Run_failureClass"
+        },
+        "toolchain_ref": {
+          "$ref": "#/$defs/Execution_Run_sha256Digest"
+        }
+      }
+    },
+    "Execution_Run_valueState": {
+      "description": "A measured value with the #120 valueState vocabulary: a never-executed command reports unknown/unsupported/withheld, never a fabricated zero; a real zero is known.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "unknown",
+                "unsupported",
+                "withheld"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "Execution_Run_mutationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "created",
+        "modified",
+        "deleted",
+        "unexpected"
+      ],
+      "properties": {
+        "created": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "$ref": "#/$defs/Execution_Run_logicalPath"
+              },
+              "digest": {
+                "$ref": "#/$defs/Execution_Run_sha256Digest"
+              }
+            }
+          }
+        },
+        "modified": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "$ref": "#/$defs/Execution_Run_logicalPath"
+              },
+              "digest": {
+                "$ref": "#/$defs/Execution_Run_sha256Digest"
+              }
+            }
+          }
+        },
+        "deleted": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Execution_Run_logicalPath"
+          }
+        },
+        "unexpected": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Execution_Run_logicalPath"
+          }
+        }
+      }
+    },
+    "Execution_Run_originalVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "unchanged",
+            "mutated",
+            "unverifiable"
+          ]
+        },
+        "mutated_paths": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Execution_Run_logicalPath"
+          }
+        }
+      }
+    },
+    "Execution_Run_cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "failed",
+            "deferred",
+            "unknown"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    },
+    "Execution_Run_capabilityEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "network_denial",
+        "process_containment"
+      ],
+      "properties": {
+        "network_denial": {
+          "type": "string",
+          "enum": [
+            "enforced",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "process_containment": {
+          "type": "string",
+          "enum": [
+            "enforced",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "backend": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "receipt_digest": {
+          "$ref": "#/$defs/Execution_Run_sha256Digest"
+        }
+      }
+    },
+    "Execution_Run_gateId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "maxLength": 128
+    },
+    "Execution_Run_failureClass": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "assertion",
+            "static-analysis",
+            "boot",
+            "missing-tool",
+            "incompatible",
+            "infrastructure"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "Execution_Run_verdict": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "blocked",
+        "degraded"
+      ]
+    },
+    "Execution_Run_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "uncovered_gate_ids"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "incomplete",
+            "unknown"
+          ]
+        },
+        "uncovered_gate_ids": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Execution_Run_gateId"
+          }
+        }
+      }
+    },
+    "Execution_Run_Document": {
+      "title": "Lekalo Native Gate Run Request and Receipt",
+      "description": "Successor of the v0.3.2 native gate run contract (issue #61; the v0.3.2 enums are never silently broadened). Closed contract for one native gate run request and its terminal receipt (issue #48). The run request names one exact approved plan digest with an explicit or checked-in approval that lives outside the hashed plan — a plan can never approve itself — plus the trusted fixture catalog reference for the test-only runner. The receipt is the terminal, exactly-once result: the closed outcome set distinguishes passed, failed, missing, blocked, unsupported, infrastructure and security; per-command results carry valueState measurements (a never-executed command reports unknown, never a fabricated zero); mutation, original-verification and cleanup sections propagate security and cleanup defects over any gate exit; and portable evidence carries repository-relative paths only.",
+      "type": "object",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Execution_Run_runRequest"
+        },
+        {
+          "$ref": "#/$defs/Execution_Run_runResult"
+        }
+      ]
+    },
+    "Execution_RunTools_sha256Digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "maxLength": 71
+    },
+    "Execution_RunTools_contractVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "Execution_RunTools_packageId": {
+      "type": "string",
+      "pattern": "^[a-z0-9.][a-z0-9._/-]{0,63}=[a-z0-9@/._-]{1,192}$",
+      "maxLength": 256
+    },
+    "Execution_RunTools_logicalPath": {
+      "type": "string",
+      "pattern": "^(?!(?:.*[/])?(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[./]|$))(?!(?:.*[/])?\\.{1,2}(?:/|$))(?!.*\\.(?:/|$))[a-z0-9.][a-z0-9._-]{0,63}(?:/[a-z0-9.][a-z0-9._-]{0,63})*$",
+      "maxLength": 512
+    },
+    "Execution_RunTools_argv": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+      }
+    },
+    "Execution_RunTools_authorityRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "contractId": {
+          "const": "dev.lekalo.authority-matrix"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "digest": {
+          "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+        }
+      }
+    },
+    "Execution_RunTools_policyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policyId",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "policyId": {
+          "const": "dev.lekalo.privacy-export-policy"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "digest": {
+          "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+        }
+      }
+    },
+    "Execution_RunTools_executionPolicyRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "maxLength": 128
+        },
+        "version": {
+          "$ref": "#/$defs/Execution_RunTools_contractVersion"
+        },
+        "digest": {
+          "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+        }
+      }
+    },
+    "Execution_RunTools_runRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "plan_ref",
+        "approved_plan_digest",
+        "approval",
+        "fixture_catalog_ref"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "lekalo/native-gate-run/v1.0.0"
+        },
+        "kind": {
+          "const": "native-run-request"
+        },
+        "plan_ref": {
+          "$ref": "#/$defs/Execution_RunTools_logicalPath"
+        },
+        "approved_plan_digest": {
+          "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+        },
+        "approval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "subject_ref",
+            "policy_digest"
+          ],
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "explicit",
+                "checked-in-policy"
+              ]
+            },
+            "subject_ref": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "policy_digest": {
+              "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+            },
+            "rule_ref": {
+              "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+            }
+          }
+        },
+        "fixture_catalog_ref": {
+          "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+        }
+      }
+    },
+    "Execution_RunTools_runResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "plan_digest",
+        "execution_policy_ref",
+        "authority_ref",
+        "policy_ref",
+        "outcome",
+        "reason_codes",
+        "commands",
+        "mutation_summary",
+        "original_verification",
+        "cleanup",
+        "capability_evidence",
+        "verdict",
+        "coverage"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "lekalo/native-gate-run/v1.0.0"
+        },
+        "kind": {
+          "const": "native-run-result"
+        },
+        "plan_digest": {
+          "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+        },
+        "execution_policy_ref": {
+          "$ref": "#/$defs/Execution_RunTools_executionPolicyRef"
+        },
+        "authority_ref": {
+          "$ref": "#/$defs/Execution_RunTools_authorityRef"
+        },
+        "policy_ref": {
+          "$ref": "#/$defs/Execution_RunTools_policyRef"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Execution_RunTools_outcome"
+        },
+        "reason_codes": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+            "maxLength": 64
+          }
+        },
+        "commands": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/Execution_RunTools_commandResult"
+          }
+        },
+        "mutation_summary": {
+          "$ref": "#/$defs/Execution_RunTools_mutationSummary"
+        },
+        "original_verification": {
+          "$ref": "#/$defs/Execution_RunTools_originalVerification"
+        },
+        "cleanup": {
+          "$ref": "#/$defs/Execution_RunTools_cleanup"
+        },
+        "capability_evidence": {
+          "$ref": "#/$defs/Execution_RunTools_capabilityEvidence"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+        },
+        "verdict": {
+          "$ref": "#/$defs/Execution_RunTools_verdict"
+        },
+        "coverage": {
+          "$ref": "#/$defs/Execution_RunTools_coverage"
+        }
+      }
+    },
+    "Execution_RunTools_outcome": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "missing",
+        "blocked",
+        "unsupported",
+        "infrastructure",
+        "security"
+      ]
+    },
+    "Execution_RunTools_commandResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command_id",
+        "package_id",
+        "cwd",
+        "tool_ref",
+        "argv",
+        "env_names",
+        "outcome",
+        "gate_id",
+        "required",
+        "failure_class"
+      ],
+      "properties": {
+        "command_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+          "maxLength": 128
+        },
+        "package_id": {
+          "$ref": "#/$defs/Execution_RunTools_packageId"
+        },
+        "cwd": {
+          "oneOf": [
+            {
+              "const": "."
+            },
+            {
+              "$ref": "#/$defs/Execution_RunTools_logicalPath"
+            }
+          ]
+        },
+        "tool_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "argv": {
+          "$ref": "#/$defs/Execution_RunTools_argv"
+        },
+        "env_names": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+            "maxLength": 64
+          }
+        },
+        "env_recipe_digest": {
+          "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+        },
+        "tool_version": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Execution_RunTools_contractVersion"
+            },
+            {
+              "const": "unknown"
+            }
+          ]
+        },
+        "exit": {
+          "$ref": "#/$defs/Execution_RunTools_valueState"
+        },
+        "duration_ms": {
+          "$ref": "#/$defs/Execution_RunTools_valueState"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Execution_RunTools_outcome"
+        },
+        "reason_codes": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,63}$",
+            "maxLength": 64
+          }
+        },
+        "output_ref": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "withheld",
+                    "unknown"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "gate_id": {
+          "$ref": "#/$defs/Execution_RunTools_gateId"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "failure_class": {
+          "$ref": "#/$defs/Execution_RunTools_failureClass"
+        },
+        "toolchain_ref": {
+          "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+        }
+      }
+    },
+    "Execution_RunTools_valueState": {
+      "description": "A measured value with the #120 valueState vocabulary: a never-executed command reports unknown/unsupported/withheld, never a fabricated zero; a real zero is known.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "value"
+          ],
+          "properties": {
+            "state": {
+              "const": "known"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": [
+                "unknown",
+                "unsupported",
+                "withheld"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "Execution_RunTools_mutationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "created",
+        "modified",
+        "deleted",
+        "unexpected"
+      ],
+      "properties": {
+        "created": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "$ref": "#/$defs/Execution_RunTools_toolOutputPath"
+              },
+              "digest": {
+                "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+              }
+            }
+          }
+        },
+        "modified": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "$ref": "#/$defs/Execution_RunTools_toolOutputPath"
+              },
+              "digest": {
+                "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+              }
+            }
+          }
+        },
+        "deleted": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Execution_RunTools_toolOutputPath"
+          }
+        },
+        "unexpected": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Execution_RunTools_toolOutputPath"
+          }
+        }
+      }
+    },
+    "Execution_RunTools_originalVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "unchanged",
+            "mutated",
+            "unverifiable"
+          ]
+        },
+        "mutated_paths": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Execution_RunTools_logicalPath"
+          }
+        }
+      }
+    },
+    "Execution_RunTools_cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "failed",
+            "deferred",
+            "unknown"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    },
+    "Execution_RunTools_capabilityEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "network_denial",
+        "process_containment"
+      ],
+      "properties": {
+        "network_denial": {
+          "type": "string",
+          "enum": [
+            "enforced",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "process_containment": {
+          "type": "string",
+          "enum": [
+            "enforced",
+            "unavailable",
+            "unknown"
+          ]
+        },
+        "backend": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "receipt_digest": {
+          "$ref": "#/$defs/Execution_RunTools_sha256Digest"
+        }
+      }
+    },
+    "Execution_RunTools_gateId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "maxLength": 128
+    },
+    "Execution_RunTools_failureClass": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "assertion",
+            "static-analysis",
+            "boot",
+            "missing-tool",
+            "incompatible",
+            "infrastructure"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "Execution_RunTools_verdict": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "blocked",
+        "degraded"
+      ]
+    },
+    "Execution_RunTools_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "uncovered_gate_ids"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "incomplete",
+            "unknown"
+          ]
+        },
+        "uncovered_gate_ids": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/Execution_RunTools_gateId"
+          }
+        }
+      }
+    },
+    "Execution_RunTools_toolOutputPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9@_.+-]+(?:/[A-Za-z0-9@_.+-]+)*$"
+    },
+    "Execution_RunTools_Document": {
+      "title": "Lekalo native run with explicit tool output paths 1.0.0",
+      "description": "Terminal receipt for declared tools with separately bounded relative output paths; predecessor source/cwd and command semantics remain unchanged.",
+      "type": "object",
+      "$ref": "#/$defs/Execution_RunTools_runResult"
+    },
+    "Execution_Output_Document": {
+      "title": "Lekalo native command-output 0.9.1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "stdout",
+        "stderr"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "lekalo/native-command-output/v0.9.1"
+        },
+        "stdout": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "text",
+                "truncated"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "text": {
+                  "type": "string",
+                  "maxLength": 65536
+                },
+                "truncated": {
+                  "type": "boolean"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "stderr": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "text",
+                "truncated"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "text": {
+                  "type": "string",
+                  "maxLength": 65536
+                },
+                "truncated": {
+                  "type": "boolean"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "Execution_Document": {
+      "title": "Lekalo native execution-report 1.0.0",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "kind",
+        "run",
+        "outputs"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "lekalo/native-execution-report/v1.0.0"
+        },
+        "kind": {
+          "const": "native-execution-report"
+        },
+        "run": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Execution_Run_Document"
+            },
+            {
+              "$ref": "#/$defs/Execution_RunTools_Document"
+            }
+          ]
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "digest",
+              "output"
+            ],
+            "properties": {
+              "digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "output": {
+                "$ref": "#/$defs/Execution_Output_Document"
+              }
+            }
+          },
+          "minItems": 0,
+          "maxItems": 128,
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

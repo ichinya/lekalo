@@ -233,3 +233,12 @@ ordered and output has no timestamps. Repeated evaluation of the same input and
 filesystem state is byte-stable. Except for the successful discovery root,
 envelopes contain only logical project-relative paths and never echo raw root
 selectors.
+
+## Optional agent instruction home
+
+`.agents/lekalo.md` is the explicit managed agent instruction, outside the
+canonical Model and runtime grammars. Root `AGENTS.md` remains project-owned;
+only its Lekalo marker section belongs to the installer. Other `.agents/`
+files are outside that managed scope. The structure checker refuses linked,
+hard-linked or non-file instruction leaves and a linked `.agents` directory.
+See [installation and update rules](agent-instructions.md).

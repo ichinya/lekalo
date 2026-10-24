@@ -1,0 +1,15 @@
+schema_version: "0.2.16"
+definitions:
+  - id: public_core.value
+    kind: scalar
+    version: 1
+    base: string
+  - id: public_core.score
+    kind: entity
+    version: 1
+    fields:
+      - name: value
+        type: public_core.value
+        required: true
+    identity:
+      - value

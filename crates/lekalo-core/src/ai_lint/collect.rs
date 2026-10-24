@@ -85,16 +85,21 @@ pub fn collect(
     let mut client = TargetClient::default();
     let discovered = catalog::discover(&mut client, &supply, root, Default::default())
         .map_err(|f| DomainResult::from(&f))?;
-    if discovered.negotiated_version != crate::target_protocol::version::LINT_VERSION
-        || discovered
-            .capability("lint.ai-readability")
-            .map_or(true, |c| {
-                !matches!(
-                    c.state,
-                    crate::target_protocol::wire::SupportState::Full
-                        | crate::target_protocol::wire::SupportState::Partial
-                )
-            })
+    if !matches!(
+        discovered.negotiated_version,
+        crate::target_protocol::version::LINT_VERSION
+            | crate::target_protocol::version::WATCH_VERSION
+            | crate::target_protocol::version::SCAN_VERSION
+            | crate::target_protocol::version::EXEC_VERSION
+    ) || discovered
+        .capability("lint.ai-readability")
+        .map_or(true, |c| {
+            !matches!(
+                c.state,
+                crate::target_protocol::wire::SupportState::Full
+                    | crate::target_protocol::wire::SupportState::Partial
+            )
+        })
     {
         return Err(DomainResult::from(
             &crate::target_protocol::TargetFailure::CapabilityUnsupported {

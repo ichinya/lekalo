@@ -44,6 +44,7 @@ export function discoverCommands(bin) {
   return rows.sort((a,b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 const commandOwners = {
+  install:"agent-instructions",
   watch:"cli",
   explain:"explain",
   search:"semantic-search", find:"semantic-search", "search-index":"semantic-search",
@@ -78,6 +79,10 @@ const families = {
   "ir":"ir", "task-links-integration":"task-external-links", "task-links-report":"task-external-links", "task-links-evidence":"task-external-links", "task-links-portability":"task-external-links", "task-links-execution":"task-external-links",
   "mcp-capabilities":"mcp", "mcp-server-config":"mcp", "mcp-resource":"mcp", "mcp-graph-query":"mcp", "mcp-tool-inspect-input":"mcp", "mcp-tool-inspect-output":"mcp", "mcp-tool-impact-input":"mcp", "mcp-tool-impact-output":"mcp", "mcp-tool-context-input":"mcp", "mcp-tool-context-output":"mcp", "mcp-tool-graph-input":"mcp", "mcp-tool-graph-output":"mcp", "mcp-tool-validate-input":"mcp", "mcp-tool-validate-output":"mcp", "mcp-tool-target-status-input":"mcp", "mcp-tool-target-status-output":"mcp", "mcp-tool-trace-export-input":"mcp", "mcp-tool-trace-export-output":"mcp",
 };
+families["discovery-scope"]="adopt";
+families["discovery-scope-receipt"]="adopt";
+for (const family of ["native-execution-policy", "native-tool-catalog", "native-execution-plan", "native-command-output"]) families[family]="native-gates";
+for (const family of ["native-execution-report", "native-verify-report"]) families[family]="native-gates";
 export function contractRecords() {
   return readdirSync(join(ROOT,"contracts")).filter(x => x.endsWith(".json")).sort().map(name => {
     const family = name.replace(/(?:\.schema)?\.v\d.*$/, "").replace(/\.manifest\.json$/, "");

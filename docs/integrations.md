@@ -27,4 +27,4 @@ An AIFHub Extension consumer negotiates exact identity/schema refs, invokes the 
 
 [AI Workspace integration](integrations/ai-workspace.md) is optional and local. Its production event sends remain refused by default until exact authority admission; an override/fake test is not real delivery. No cloud push or private-repository sharing is part of the quickstart.
 
-[Local run history](run-history.md) is **Implemented** local-only storage/retention. [Public aggregate export #102](https://github.com/ichinya/lekalo/issues/102) is **Planned** and must preserve preview, sample-size/unknown states, policy pins and deletion invalidation. Generic privacy export does not implement that aggregate workflow.
+[Local run history](run-history.md) is **Implemented** local-only storage/retention. [Public aggregate export #102](metrics-export.md) is **Implemented** as a local pipeline with preview, sample-size/unknown states, policy pins and deletion invalidation. Its synthetic gates validate that pipeline; they do not establish measured Framework Lift from external agent campaigns.

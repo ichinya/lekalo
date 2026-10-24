@@ -1,6 +1,6 @@
 //! Issue #44 integration tests: the production `TargetClient` drives the
 //! actual single-file scanner artifact through the public process
-//! protocol, proving the 0.3.1 negotiation, the launch-profile seam, the
+//! protocol, proving the current protocol negotiation, the launch-profile seam, the
 //! pre-dispatch profile binding (review finding F1), the typed
 //! scan-entry evidence member on the wire, and the end-to-end consumer
 //! round trip into the observed binding registry (AC5).
@@ -77,8 +77,8 @@ impl ScanSandbox {
         std::fs::write(
             dir.join("src").join("main.ts"),
             b"import { tag } from './helper';\n\
-              export interface Point { x: number; y: number }\n\
-              export function dist(p: Point): number { return p.x + p.y + tag.length; }\n",
+              export type Point = number;\n\
+              export function dist(p: Point): number { return p + tag.length; }\n",
         )
         .expect("source");
         std::fs::write(
@@ -137,7 +137,7 @@ fn the_scanner_negotiates_the_current_protocol_and_declares_the_capability() {
     let described = client
         .describe(&command, &sandbox.dir)
         .expect("the scanner handshake must succeed");
-    assert_eq!(described.negotiated_version, "0.6.4");
+    assert_eq!(described.negotiated_version, "0.9.1");
     assert_eq!(
         described.capabilities.adapter.id,
         "lekalo-target-node-typescript"
@@ -147,7 +147,7 @@ fn the_scanner_negotiates_the_current_protocol_and_declares_the_capability() {
     // (issues #45 and #70 — the closed wire has exactly one generate
     // operation, so zod schemas and the transport route layer compose
     // under one descriptor).
-    assert_eq!(described.capabilities.adapter.version, "0.4.0");
+    assert_eq!(described.capabilities.adapter.version, "0.6.1");
     assert_eq!(described.capabilities.operations.len(), 6);
     assert!(described.capabilities.operations.contains(&Operation::Scan));
     assert!(described
@@ -320,4 +320,39 @@ fn scan_entries_with_signature_and_references_merge_into_the_registry() {
         !view.edges.is_empty() || with_references == 0,
         "evidence references become analyzer edges"
     );
+}
+
+#[test]
+fn public_scan_refuses_nested_members_instead_of_dropping_them() {
+    let sandbox = ScanSandbox::new("nested");
+    std::fs::write(
+        sandbox.dir.join("src").join("nested.ts"),
+        b"export interface Point { x: number; y: number }\n",
+    )
+    .expect("nested source");
+    let command = AdapterCommand {
+        program: PathBuf::from("node"),
+        args: vec![
+            adapter_path(),
+            "--lekalo-project-profile-json".to_owned(),
+            fixture_profile(),
+        ],
+    };
+    let mut client = TargetClient::new(brief_limits());
+    client.describe(&command, &sandbox.dir).expect("handshake");
+    let fs = lekalo_core::project_fs::Fs::open(&sandbox.dir).expect("fs");
+    match client.call(
+        &command,
+        scan_request("standalone"),
+        &sandbox.dir,
+        &fs,
+        None,
+    ) {
+        Err(TargetFailure::OperationFailed {
+            code,
+            partial: true,
+            ..
+        }) => assert_eq!(code, "outcome-partial-public-scan-surface-unrepresentable"),
+        other => panic!("expected a typed partial refusal, got {other:?}"),
+    }
 }

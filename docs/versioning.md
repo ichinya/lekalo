@@ -4,7 +4,7 @@ This page owns the repository's version policy. Feature references specify exact
 
 ## Product and contract versions
 
-The product version is `workspace.package.version` in [Cargo.toml](../Cargo.toml), currently `0.8.15`. Each contract has an exact identity and wire spelling, such as Model `0.2.16`, Model `0.8.0` or target protocol `0.3.2`.
+The product version is `workspace.package.version` in [Cargo.toml](../Cargo.toml), currently `1.0.0` for the M9 release candidate. Each contract has an exact identity and wire spelling, such as Model `0.2.16`, Model `0.8.0` or target protocol `0.3.2`.
 
 When a contract changes, its new version is the product version of the implementing commit. Update the filename, identity/discriminator, embedded constants, consumer pins and digests together. Contracts whose bytes do not change retain their accepted versions. A product release does not rewrite every contract to the product number.
 
@@ -16,7 +16,7 @@ Acceptance is exact. A higher filename, matching major version or newer product 
 
 The loader admits the explicit Model/IR profiles described in [Model](model.md) and [IR](ir.md). The `0.2.16` profile does not gain successor fields because the CLI is `0.8.0`. Unsupported shapes still refuse; documents must agree with the compilation's source-profile rules.
 
-The adapter bootstrap protocol remains `0.3.2`. Lint (`0.6.4`) and watch-selection (`0.8.0`) seams require explicit negotiation. Protocol support does not establish support for every Model/IR pair. [Target protocol](target-protocol.md) owns that negotiation; [provider discovery](provider-contract.md) owns its separate process contract.
+The adapter bootstrap protocol remains `0.3.2`. Lint (`0.6.4`), watch-selection (`0.8.0`) ordinary public scan custody (`0.9.0`) and complete native-plan (`0.9.1`) seams require explicit negotiation. The scan successor retains the `0.8.0` wire surface; optional watch work still requires an explicit adapter capability declaration. Protocol support does not establish support for every Model/IR pair. [Target protocol](target-protocol.md) owns that negotiation; [provider discovery](provider-contract.md) owns its separate process contract.
 
 Diagnostic item format, registry, validation profile and result format have separate pins. Producers select an admitted registry rather than the largest version found on disk. [Diagnostics](diagnostics.md) owns result and registry selection.
 

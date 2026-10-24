@@ -143,15 +143,105 @@ pub fn redact_stream(
     for path in host_paths {
         if !path.is_empty() {
             scrubbed = scrubbed.replace(path.as_str(), "[host-path]");
+            let plain = path.strip_prefix(r"\\?\").unwrap_or(path);
+            scrubbed = scrubbed.replace(plain, "[host-path]");
+            // Node inspect/JSON diagnostics can print doubled Windows separators.
+            // Scrub that spelling too before retaining either output stream.
+            if let Ok(escaped) = serde_json::to_string(plain) {
+                scrubbed = scrubbed.replace(&escaped[1..escaped.len() - 1], "[host-path]");
+            }
+            scrubbed = scrubbed.replace(&plain.replace('\\', "/"), "[host-path]");
         }
     }
+    let withheld = scrubbed.len() > cap;
     if scrubbed != text {
         bytes = scrubbed.into_bytes();
+    }
+    if withheld {
+        bytes.clear();
     }
     RedactedOutput {
         bytes,
         flooded,
-        withheld: false,
+        withheld,
+    }
+}
+
+/// One opaque artifact binds both streams; stderr is never silently discarded.
+/// Unknown/withheld streams have explicit states rather than invented empty text.
+fn command_output(
+    stdout: Option<RedactedOutput>,
+    stderr: Option<RedactedOutput>,
+) -> Option<RedactedOutput> {
+    if stdout.is_none() && stderr.is_none() {
+        return None;
+    }
+    let stream = |output: &Option<RedactedOutput>| match output {
+        None => serde_json::json!({"state":"unknown"}),
+        Some(output) if output.withheld => serde_json::json!({"state":"withheld"}),
+        Some(output) => match std::str::from_utf8(&output.bytes) {
+            Ok(text) => serde_json::json!({"state":"known","text":text,"truncated":output.flooded}),
+            Err(_) => serde_json::json!({"state":"withheld"}),
+        },
+    };
+    let value = serde_json::json!({"schema_version":"lekalo/native-command-output/v0.9.1","stdout":stream(&stdout),"stderr":stream(&stderr)});
+    let withheld = value["stdout"]["state"] != "known" && value["stderr"]["state"] != "known";
+    Some(RedactedOutput {
+        bytes: serde_json::to_vec(&value).expect("output artifact serializes"),
+        flooded: stdout.as_ref().is_some_and(|output| output.flooded)
+            || stderr.as_ref().is_some_and(|output| output.flooded),
+        withheld,
+    })
+}
+
+#[cfg(test)]
+mod output_artifact_tests {
+    use super::*;
+    #[test]
+    fn json_escaped_host_paths_do_not_survive_tool_diagnostics() {
+        let path = ["C:", "Users", "private", "native-stage"].join(&char::from(92).to_string());
+        let escaped = serde_json::to_string(&path).unwrap();
+        let raw = format!("Require stack: [{escaped}]");
+        let result = redact_stream(raw.as_bytes(), 4096, &[], &[path]);
+        let text = String::from_utf8(result.bytes).unwrap();
+        assert!(text.contains("[host-path]"));
+        assert!(!text.contains("private"));
+    }
+    #[test]
+    fn changing_only_stderr_changes_the_output_reference_and_unknown_stays_unknown() {
+        let stream = |text: &str| RedactedOutput {
+            bytes: text.as_bytes().to_vec(),
+            flooded: false,
+            withheld: false,
+        };
+        let first =
+            command_output(Some(stream("same stdout")), Some(stream("first error"))).unwrap();
+        let second =
+            command_output(Some(stream("same stdout")), Some(stream("second error"))).unwrap();
+        assert_ne!(
+            crate::digest::sha256_hex(&first.bytes),
+            crate::digest::sha256_hex(&second.bytes)
+        );
+        let document: serde_json::Value = serde_json::from_slice(&first.bytes).unwrap();
+        assert_eq!(document["stderr"]["text"], "first error");
+        let partial = command_output(None, Some(stream("known error"))).unwrap();
+        let document: serde_json::Value = serde_json::from_slice(&partial.bytes).unwrap();
+        assert_eq!(document["stdout"], serde_json::json!({"state":"unknown"}));
+        assert!(command_output(None, None).is_none());
+    }
+    #[test]
+    fn windows_path_spellings_are_redacted_without_changing_relative_dots() {
+        let value = redact_stream(
+            b"file:///C:/workspace/project/src/gate.mjs",
+            1024,
+            &[],
+            &[r"\\?\C:\workspace\project".into()],
+        );
+        assert_eq!(
+            std::str::from_utf8(&value.bytes).unwrap(),
+            "file:///[host-path]/src/gate.mjs"
+        );
+        assert!(!value.withheld);
     }
 }
 
@@ -220,10 +310,8 @@ pub fn command_result(
             value: Some(measurement.duration_ms),
         }
     };
-    let stdout = measurement
-        .stdout
+    let output = command_output(measurement.stdout, measurement.stderr)
         .map(|redacted| output_ref(&redacted, &digest_of));
-    let _ = measurement.stderr;
     NativeCommandResult {
         command_id: measurement.command_id,
         package_id: measurement.package_id,
@@ -243,7 +331,7 @@ pub fn command_result(
         duration_ms: Some(duration),
         outcome: measurement.outcome.to_owned(),
         reason_codes: measurement.reason_codes,
-        output_ref: stdout,
+        output_ref: output,
     }
 }
 

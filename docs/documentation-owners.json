@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "0.8.15",
-  "cliSourceDigest": "sha256:fc69b22f37d07a4b98a9125ad332df28029b2e529f965a60366af562fd181b51",
+  "productVersion": "1.0.0",
+  "cliSourceDigest": "sha256:4219d7171eaa2b1175fe006ebcb2657a8155db3f8f03d9faf1e178e702545f25",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1382,7 +1382,7 @@
       "kind": "command",
       "command": "init",
       "usage": "lekalo init [OPTIONS]",
-      "helpDigest": "sha256:ecead53ca1124227b74cab7d30f6ab444854b96a63ad966e1d35327113969f52",
+      "helpDigest": "sha256:83b0126343606be4d187d0b38ef7a5510ed7f54e0c73a625996f1b5c75a7fd11",
       "summary": "Bootstrap a new greenfield Lekalo project in the invocation directory (issue #97), or adopt an existing repository with `--adopt` (issue #38)",
       "leaf": true,
       "owner": "docs/bootstrap.md",
@@ -1397,6 +1397,28 @@
       "summary": "Inspect one semantic symbol: identity, contract, effects, relations, and bounded projections in one deterministic view",
       "leaf": true,
       "owner": "docs/inspect.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:install",
+      "kind": "command",
+      "command": "install",
+      "usage": "lekalo install [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:de220d4c2e7646670d6706b28a0944e2c455d0ed0b4b0d6df58d29816239e541",
+      "summary": "Install explicitly managed project instructions",
+      "leaf": false,
+      "owner": "docs/agent-instructions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:install prompt",
+      "kind": "command",
+      "command": "install prompt",
+      "usage": "lekalo install prompt [OPTIONS]",
+      "helpDigest": "sha256:59d2bea318f2df182f5ff37eebd8ddde41b82fcc2d55f7d32e78de3555b12111",
+      "summary": "Install or explicitly update the embedded Lekalo agent instruction",
+      "leaf": true,
+      "owner": "docs/agent-instructions.md",
       "status": "implemented"
     },
     {
@@ -1723,9 +1745,20 @@
       "kind": "command",
       "command": "native",
       "usage": "lekalo native [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:980538ed0b32fbd7c737daa2e4582bc63dda7b2ef83757a4c701738eb99fa0c1",
-      "summary": "Plan native build/test gates over a Node workspace (issue #48). Planning is read-only: it produces the immutable proposed plan with its digest. Execution of trusted synthetic fixtures is owned by the test-only harness — the production binary never launches a gate command and answers with a typed refusal",
+      "helpDigest": "sha256:0268464e871cf39ec8ab04746c843497fc1c190b1c080613866419beaf7d2d28",
+      "summary": "Plan existing Node gates or execute an exact approved plan. Execution requires explicit controls and a qualified OS sandbox",
       "leaf": false,
+      "owner": "docs/native-gates.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:native plan",
+      "kind": "command",
+      "command": "native plan",
+      "usage": "lekalo native plan [OPTIONS] --adapter <PACKAGE> --policy <FILE> --profile <FILE> --catalog <FILE>",
+      "helpDigest": "sha256:65534471668f306eaabbb20ffb4deb6503173d25c86bb20501ccb2387ccb130e",
+      "summary": "Create a source/control-bound execution plan. Never runs a project command",
+      "leaf": true,
       "owner": "docs/native-gates.md",
       "status": "implemented"
     },
@@ -1734,8 +1767,8 @@
       "kind": "command",
       "command": "native run",
       "usage": "lekalo native run [OPTIONS] <PLAN>",
-      "helpDigest": "sha256:f27983982c82bca8848cd1528646d8f92a2267e13fa6dbcb15c802a6c97aba22",
-      "summary": "Propose the immutable native gate plan over the current workspace: workspace inventory, affected closure, confirmed commands, and the plan digest. Read-only; never launches a command. The plan document is read from stdin",
+      "helpDigest": "sha256:ae76c35fe897f9c07316f92be87a03de416e434dd251a6992e62f47d94696e07",
+      "summary": "Run a confirmed plan in a disposable OS-confined view",
       "leaf": true,
       "owner": "docs/native-gates.md",
       "status": "implemented"
@@ -2713,7 +2746,7 @@
       "kind": "command",
       "command": "verify",
       "usage": "lekalo verify [OPTIONS] [PROGRAM_ARGS]...",
-      "helpDigest": "sha256:604250b14735736f2d9542c12a1d6f1951a2f1b674cd79fcf8ca025356956f91",
+      "helpDigest": "sha256:70a2aa689b02209d753b148bc31cbc6dee86903c13d416da28f92a9221fbae60",
       "summary": "Run the read-only verification pipeline over a validated project: core validation, drift, per-target adapter validation, portable",
       "leaf": true,
       "owner": "docs/orchestration.md",
@@ -3483,6 +3516,24 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/discovery-scope-receipt.schema.v0.9.0.json",
+      "kind": "contract",
+      "source": "contracts/discovery-scope-receipt.schema.v0.9.0.json",
+      "sourceDigest": "sha256:a7b8740e428899061d49eeeab38aea9c461142194abd9b8484e54927ae11424d",
+      "owner": "docs/adopt.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/discovery-scope.schema.v0.9.0.json",
+      "kind": "contract",
+      "source": "contracts/discovery-scope.schema.v0.9.0.json",
+      "sourceDigest": "sha256:700682b35a23bdcbc9f752c96ec43e0d6d2a78953371690a1d856c546be3e1c4",
+      "owner": "docs/adopt.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/doctor.schema.v0.3.2.json",
       "kind": "contract",
       "source": "contracts/doctor.schema.v0.3.2.json",
@@ -4176,6 +4227,51 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/native-command-output.schema.v0.9.1.json",
+      "kind": "contract",
+      "source": "contracts/native-command-output.schema.v0.9.1.json",
+      "sourceDigest": "sha256:f6d1f2afcc52bb8d35c49e91e4f094de5a0d0026349bdad083ae37a15c9227a3",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-execution-plan.schema.v0.9.1.json",
+      "kind": "contract",
+      "source": "contracts/native-execution-plan.schema.v0.9.1.json",
+      "sourceDigest": "sha256:ba073f5a92a41e8e46476a5ae3e6087b911a0d9ce1e146a71e32e2f0a002c8fc",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-execution-plan.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/native-execution-plan.schema.v1.0.0.json",
+      "sourceDigest": "sha256:e183544b4d1009649bbb63ed0a3e258b7a0586136540e54bd9f5e194c53593ef",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-execution-policy.schema.v0.9.1.json",
+      "kind": "contract",
+      "source": "contracts/native-execution-policy.schema.v0.9.1.json",
+      "sourceDigest": "sha256:f179e0ea576d1951aeacbdee05e1f991c1198eb597ae542a47300c1702cfaf6d",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-execution-report.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/native-execution-report.schema.v1.0.0.json",
+      "sourceDigest": "sha256:5994fe0bc05655aed58816771ebac2b3f9d0f4d1cac03af125fae96387701dcc",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/native-gate-plan.schema.v0.4.0.json",
       "kind": "contract",
       "source": "contracts/native-gate-plan.schema.v0.4.0.json",
@@ -4203,10 +4299,46 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/native-gate-run.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/native-gate-run.schema.v1.0.0.json",
+      "sourceDigest": "sha256:97179bad949fc3f1c3191ab40bb38045c4312b6de00fcc4f9094dd5996fdbead",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/native-gate-view.schema.v0.4.0.json",
       "kind": "contract",
       "source": "contracts/native-gate-view.schema.v0.4.0.json",
       "sourceDigest": "sha256:82413cdaa4d67da03be1a0e23a56877830b1eb8a6b970687ef6ae9c88abed7bd",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-tool-catalog.schema.v0.9.1.json",
+      "kind": "contract",
+      "source": "contracts/native-tool-catalog.schema.v0.9.1.json",
+      "sourceDigest": "sha256:cb5869bd06886e9592f45025dc9141422d13d71708cb64ac7954d1c6a8ade7f0",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-tool-catalog.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/native-tool-catalog.schema.v1.0.0.json",
+      "sourceDigest": "sha256:fa6e27873fa20bdc517ff3c657e69878eb7708d96a224c085f542d8723759067",
+      "owner": "docs/native-gates.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/native-verify-report.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/native-verify-report.schema.v1.0.0.json",
+      "sourceDigest": "sha256:e1fb818e72a6c4a66b39fef21e77002bbfffc867684dcaea873d321a92f2ad7a",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4846,6 +4978,24 @@
       "kind": "contract",
       "source": "contracts/target-protocol.schema.v0.8.0.json",
       "sourceDigest": "sha256:fa7be2dd60dee889b9f26c40944fec807677b156a7560ccf8241f0c957a86172",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/target-protocol.schema.v0.9.0.json",
+      "kind": "contract",
+      "source": "contracts/target-protocol.schema.v0.9.0.json",
+      "sourceDigest": "sha256:656d5499eb7d05a58ece5a78e1c0d596872098c13f440f2c42ee241a36248dcc",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/target-protocol.schema.v0.9.1.json",
+      "kind": "contract",
+      "source": "contracts/target-protocol.schema.v0.9.1.json",
+      "sourceDigest": "sha256:04689f0485be8a6fffa4860dc173fe29cb9ead7e49c2d34c18c3308653ff1b31",
       "owner": "docs/target-protocol.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

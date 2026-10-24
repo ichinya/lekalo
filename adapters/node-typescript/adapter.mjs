@@ -221060,7 +221060,7 @@ function validateLintRequest(request) {
   const l = request.lint_request;
   if (request.operation === "lint" !== (l !== void 0)) throw new Error("lint-request-pairing");
   if (!l) return;
-  if (request.protocol_version !== "0.6.4" || !request.target || ["dry_run", "plan_id", "native_request", "ir_path", "profile", "profile_digest", "profile_capabilities"].some((k) => request[k] !== void 0)) throw new Error("lint-request-version-members");
+  if (!["0.6.4", "0.9.0", "0.9.1"].includes(request.protocol_version) || !request.target || ["dry_run", "plan_id", "native_request", "ir_path", "profile", "profile_digest", "profile_capabilities"].some((k) => request[k] !== void 0)) throw new Error("lint-request-version-members");
   if (!l || Object.keys(l).sort().join() !== "bindings,files,pins,scope" || !Array.isArray(l.scope) || !l.scope.length || l.scope.length > 1e4 || !Array.isArray(l.files) || l.files.length > 4096 || !Array.isArray(l.bindings) || l.bindings.length > 1e4) throw new Error("lint-request-shape");
   const token = (s) => typeof s === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:/#@\\-]{0,255}$/.test(s);
   const sha = (s) => typeof s === "string" && /^sha256:[a-f0-9]{64}$/.test(s);
@@ -221235,6 +221235,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  opendirSync,
   fstatSync,
   readSync,
   readFileSync,
@@ -221247,14 +221248,14 @@ import { dirname, isAbsolute, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 var PROTOCOL_TOKEN = "lekalo.target/v1";
 var VERSION = "0.3.2";
-var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4"]);
+var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0", "0.9.1"]);
 var ADAPTER_ID = "lekalo-target-node-typescript";
-var ADAPTER_VERSION = "0.4.0";
+var ADAPTER_VERSION = "0.6.1";
 var MAX_REQUEST_BYTES = 1024 * 1024;
 var MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 var MAX_JSON_DEPTH = 64;
 var MAX_PROFILE_JSON_BYTES = 16 * 1024;
-var SCAN_ENTRY_EVIDENCE_KEYS = Object.freeze(["references", "signature"]);
+var SCAN_ENTRY_EVIDENCE_KEYS = Object.freeze(["references", "signature", "source_digest"]);
 var SCAN_ENTRY_REFERENCE_KEYS = Object.freeze(["confidence", "role", "target"]);
 var SCAN_ENTRY_ROLES = Object.freeze([
   "read",
@@ -221857,15 +221858,21 @@ function validateNativeRequest(nativeRequest) {
     }
   }
   const changes = nativeRequest.changes;
+  if (changes && Object.keys(changes).some((key) => !["files", "symbols"].includes(key))) {
+    throw new RequestRefusal("native-request", "unknown changes member");
+  }
   if (typeof changes !== "object" || changes === null || Array.isArray(changes)) {
     throw new RequestRefusal("native-request", "changes must be an object");
   }
-  if (!Array.isArray(changes.files) || changes.files.length > 1024) {
+  if (changes.files !== void 0 && (!Array.isArray(changes.files) || changes.files.length > 1024)) {
     throw new RequestRefusal("native-request", "changes.files bound");
   }
-  for (const file3 of changes.files) {
+  for (const file3 of changes.files ?? []) {
     if (typeof file3 !== "object" || file3 === null || Array.isArray(file3)) {
       throw new RequestRefusal("native-request", "changes.files entry");
+    }
+    if (Object.keys(file3).some((key) => !["path", "change", "before_digest", "after_digest"].includes(key))) {
+      throw new RequestRefusal("native-request", "unknown changed file member");
     }
     if (!isLogicalPath(file3.path)) {
       throw new RequestRefusal("native-request", "changes.files path");
@@ -221880,17 +221887,14 @@ function validateNativeRequest(nativeRequest) {
       throw new RequestRefusal("native-request", "changes.files after_digest");
     }
   }
-  if (!Array.isArray(changes.symbols) || changes.symbols.length > 1024) {
+  if (changes.symbols !== void 0 && (!Array.isArray(changes.symbols) || changes.symbols.length > 1024)) {
     throw new RequestRefusal("native-request", "changes.symbols bound");
   }
   validateNativeContentRef(nativeRequest.scan_ref);
   if (nativeRequest.observed_ref !== void 0) {
     validateNativeContentRef(nativeRequest.observed_ref);
   }
-  const policy = nativeRequest.execution_policy_ref;
-  if (typeof policy !== "object" || policy === null || Array.isArray(policy) || typeof policy.id !== "string" || policy.id.length === 0 || policy.id.length > 128 || !isContractVersion(policy.version) || !isSha256Digest(policy.digest)) {
-    throw new RequestRefusal("native-request", "execution_policy_ref");
-  }
+  validateNativeContentRef(nativeRequest.execution_policy_ref);
   for (const key of ["input_manifest_digest", "tool_catalog_digest", "capability_snapshot_digest"]) {
     if (!isSha256Digest(nativeRequest[key])) {
       throw new RequestRefusal("native-request", key);
@@ -221898,6 +221902,9 @@ function validateNativeRequest(nativeRequest) {
   }
 }
 function validateNativeContentRef(reference) {
+  if (reference && Object.keys(reference).some((key) => !["digest", "revision", "adapter"].includes(key))) {
+    throw new RequestRefusal("native-request", "unknown content reference member");
+  }
   if (typeof reference !== "object" || reference === null || Array.isArray(reference) || !isSha256Digest(reference.digest)) {
     throw new RequestRefusal("native-request", "content reference");
   }
@@ -222896,6 +222903,7 @@ function createKernel(options = {}) {
           readView,
           ...writeView !== null ? { writeView } : {},
           ...trustedExecutionContext.frameworkPolicy ? { frameworkPolicy: trustedExecutionContext.frameworkPolicy } : {},
+          ...trustedExecutionContext.nativePolicy ? { nativePolicy: trustedExecutionContext.nativePolicy } : {},
           cancellation: trustedExecutionContext.cancellation ?? null,
           limits: trustedExecutionContext.limits ?? { files: 4096, bytes: 4 * 1024 * 1024 }
         }));
@@ -222923,10 +222931,11 @@ function createKernel(options = {}) {
         };
       }
       recordSink(sink, validatedRequest, outcome, profile);
-      return {
-        response: projectOutcome(validatedRequest, outcome),
-        internal: outcome
-      };
+      const response = projectOutcome(validatedRequest, outcome);
+      if (["0.9.0", "0.9.1"].includes(validatedRequest.protocol_version) && operation === "scan" && response.status === "ok") {
+        response.evidence.scan_profile_digest = `sha256:${createHash2("sha256").update(canonicalJson(profile), "utf8").digest("hex")}`;
+      }
+      return { response, internal: outcome };
     }
   };
 }
@@ -222996,7 +223005,7 @@ function projectOutcome(request, outcome) {
         }
       });
     }
-    const result = projectResult(outcome.data);
+    const result = projectResult(outcome.data, request);
     if (result) {
       return buildResponse(request, { result });
     }
@@ -223072,7 +223081,7 @@ function projectVerifyFindings(request, data) {
   }
   return findings.length > 0 ? { ok: true, findings } : { ok: true };
 }
-function projectResult(data) {
+function projectResult(data, request) {
   if (data === void 0 || data === null || typeof data !== "object") {
     return void 0;
   }
@@ -223081,7 +223090,11 @@ function projectResult(data) {
     if (typeof np !== "object" || np === null || np.kind !== "native-plan" || !isSha256Digest(np.plan_digest)) {
       return void 0;
     }
-    return { native_plan: { digest: np.plan_digest, kind: np.kind } };
+    return { native_plan: {
+      digest: np.plan_digest,
+      kind: np.kind,
+      ...request.protocol_version === "0.9.1" ? { plan: np } : {}
+    } };
   }
   if (!Array.isArray(data.entries)) {
     return void 0;
@@ -223091,7 +223104,7 @@ function projectResult(data) {
   }
   const entries = [];
   for (const entry of data.entries) {
-    if (typeof entry !== "object" || entry === null || !isLogicalPath(entry.path) || typeof entry.kind !== "string" || [...entry.kind].length > 128 || entry.detail !== void 0 && (typeof entry.detail !== "string" || [...entry.detail].length > 128)) {
+    if (typeof entry !== "object" || entry === null || !isLogicalPath(entry.path) || typeof entry.kind !== "string" || [...entry.kind].length > 128 || entry.detail !== void 0 && (typeof entry.detail !== "string" || [...entry.detail].length > (["0.9.0", "0.9.1"].includes(request.protocol_version) && request.operation === "scan" ? 2048 : 128))) {
       return void 0;
     }
     const projected = entry.detail === void 0 ? { path: entry.path, kind: entry.kind } : { path: entry.path, kind: entry.kind, detail: entry.detail };
@@ -223102,6 +223115,9 @@ function projectResult(data) {
       }
       projected.evidence = evidence;
     }
+    if (["0.9.0", "0.9.1"].includes(request.protocol_version) && request.operation === "scan") {
+      if (!isSha256Digest(projected.evidence?.source_digest)) return void 0;
+    } else if (projected.evidence?.source_digest !== void 0) return void 0;
     entries.push(projected);
   }
   const result = { entries };
@@ -223120,6 +223136,10 @@ function projectScanEntryEvidence(evidence) {
     }
   }
   const projected = {};
+  if (evidence.source_digest !== void 0) {
+    if (!isSha256Digest(evidence.source_digest)) return void 0;
+    projected.source_digest = evidence.source_digest;
+  }
   if (evidence.signature !== void 0) {
     if (evidence.signature !== null && !isSha256Digest(evidence.signature)) {
       return void 0;
@@ -223177,11 +223197,11 @@ function createReadView(permittedRoot, roots, profile) {
     return false;
   };
   const revalidate = (logicalPath, expectedKind) => {
-    const root = roots.find((candidate) => scopeCovers(candidate.scope, logicalPath) || candidate.kind === "file" && candidate.path === logicalPath);
+    const root = roots.find((candidate) => scopeCovers(candidate.scope, logicalPath) || candidate.path === logicalPath && (candidate.kind === "file" || expectedKind === "directory"));
     if (!root) {
       throw new RequestRefusal("read-denied", "path outside the resolved roots");
     }
-    if (excludedPath(logicalPath)) {
+    if (excludedPath(logicalPath) || expectedKind === "directory" && excludedPath(logicalPath + "/probe")) {
       throw new RequestRefusal("read-denied", "path is excluded");
     }
     const absolute = resolve(permittedRoot, ...logicalPath.split("/"));
@@ -223202,6 +223222,9 @@ function createReadView(permittedRoot, roots, profile) {
       }
     }
     const follow = statSync(absolute);
+    if (expectedKind === "directory" && !follow.isDirectory()) {
+      throw new RequestRefusal("read-denied", "kind");
+    }
     if (expectedKind === "file" && !follow.isFile()) {
       throw new RequestRefusal("read-denied", "kind");
     }
@@ -223216,6 +223239,30 @@ function createReadView(permittedRoot, roots, profile) {
       } catch {
         return false;
       }
+    },
+    // Bounded physical enumeration for declared workspace patterns. Never
+    // follow directory links or reveal names outside this read grant.
+    listDirectories(logicalPath) {
+      const absolute = revalidate(logicalPath, "directory");
+      const directory = opendirSync(absolute);
+      const result = [];
+      let count = 0;
+      try {
+        for (let entry; (entry = directory.readSync()) !== null; ) {
+          if (++count > 4096) throw new RequestRefusal("read-denied", "directory cap exhausted");
+          const child = logicalPath + "/" + entry.name;
+          if (!isLogicalPath(child) || protectedHomeViolation(child) || excludedPath(child) || excludedPath(child + "/probe")) continue;
+          if (entry.isSymbolicLink()) throw new RequestRefusal("read-denied", "link");
+          if (entry.isDirectory()) {
+            revalidate(child, "directory");
+            result.push(entry.name);
+          }
+        }
+      } finally {
+        directory.closeSync();
+      }
+      revalidate(logicalPath, "directory");
+      return result.sort();
     },
     readFile(logicalPath, limits = { files: 4096, bytes: 4 * 1024 * 1024 }) {
       if (filesRead >= limits.files) {
@@ -223450,12 +223497,24 @@ async function main() {
     if (policyJson !== void 0) {
       frameworkPolicy = decodeFrameworkPolicyJson(policyJson);
     }
+    const nativeMarkers = argvWithoutEntry.filter((arg) => arg === "--lekalo-native-policy-json");
+    if (nativeMarkers.length > 1) throw new RequestRefusal("native-policy-input", "ambiguous native policy");
+    let nativePolicy = null;
+    if (nativeMarkers.length === 1) {
+      const text = argvWithoutEntry[argvWithoutEntry.indexOf(nativeMarkers[0]) + 1];
+      if (typeof text !== "string" || text.length === 0) throw new RequestRefusal("native-policy-input", "missing native policy");
+      nativePolicy = decodeJsonDocument(Buffer.from(text, "utf8"), { maxBytes: 16384 });
+      if (nativePolicy?.schema_version !== "lekalo/native-gate-policy/v0.4.0" || nativePolicy.kind !== "native-gate-policy" || !Array.isArray(nativePolicy.confirmations)) {
+        throw new RequestRefusal("native-policy-input", "invalid native policy");
+      }
+    }
     const document = decodeJsonDocument(requestBytes);
     const request = validateRequestObject(document);
     const kernel = options.kernel ?? createKernel();
     const dispatched = kernel.dispatch(request, {
       permittedProjectRoot: process.cwd(),
-      ...frameworkPolicy !== null ? { frameworkPolicy } : {}
+      ...frameworkPolicy !== null ? { frameworkPolicy } : {},
+      ...nativePolicy !== null ? { nativePolicy } : {}
     });
     process.stdout.write(canonicalJson(dispatched.response));
   } catch (error) {
@@ -230367,6 +230426,9 @@ function scanOperation(context) {
   if (index.state !== "complete") {
     return { state: "partial", diagnostics: [{ reason: "scan-incomplete" }] };
   }
+  if (["0.9.0", "0.9.1"].includes(context.request?.protocol_version) && (index.symbols.some((symbol) => symbol.memberOf !== null) || index.routes.length > 0)) {
+    return { state: "partial", diagnostics: [{ reason: "public-scan-surface-unrepresentable" }] };
+  }
   const entries = [];
   const lekaloIdsByModule = lekaloTestIdsByModule(index.tests);
   for (const module of lekaloIdsByModule.truncated) {
@@ -230380,6 +230442,9 @@ function scanOperation(context) {
   const moduleSeen = /* @__PURE__ */ new Set();
   for (const symbol of index.symbols) {
     if (symbol.memberOf !== null) continue;
+    if (index.references.filter((row) => row.from === symbol.module).length > 8) {
+      index.anyUncertainty.push({ path: symbol.module, kind: "reference-evidence-overflow", detail: "wire-reference-bound", line: symbol.line });
+    }
     const detail = {
       s: semanticProposalFor(symbol, index),
       n: symbol.native,
@@ -230393,11 +230458,16 @@ function scanOperation(context) {
         detail.t = `${symbol.module}#${ids.map((id) => `lekalo:${id}`).join(",")}`;
       }
     }
+    const evidence = buildEntryEvidence(symbol, index) ?? {};
+    if (["0.9.0", "0.9.1"].includes(context.request?.protocol_version)) {
+      const source = index.inputManifest.files.find((file3) => file3.path === symbol.module);
+      if (source) evidence.source_digest = `sha256:${source.digest}`;
+    }
     entries.push({
       path: symbol.module,
       kind: "entity",
       detail: JSON.stringify(detail),
-      evidence: buildEntryEvidence(symbol, index)
+      ...Object.keys(evidence).length > 0 ? { evidence } : {}
     });
   }
   for (const absent of lekaloCarrierlessModules(lekaloIdsByModule.byModule, moduleSeen)) {
@@ -230501,10 +230571,10 @@ function lekaloTestIdsByModule(tests) {
   return { byModule, truncated };
 }
 function semanticProposalFor(symbol, index) {
-  const pkg = index.packages.find((candidate) => symbol.module === candidate.root || symbol.module.startsWith(candidate.root + "/"));
+  const pkg = owningPackage(symbol.module, index);
   const scope = (pkg?.name ?? "project").replace(/^@/, "").split(/[\\/._-]+/).filter((part) => /^[a-z0-9]+$/i.test(part)).join("_").toLowerCase() || "project";
   const name = symbol.qualifiedName.split(".").map((part) => part).join(".");
-  return (scope + "." + name).slice(0, 192);
+  return scope + "." + name;
 }
 function buildEntryEvidence(symbol, index) {
   const references = index.references.filter((row) => row.from === symbol.module).slice(0, 8).map((row) => ({
@@ -230520,10 +230590,19 @@ function buildEntryEvidence(symbol, index) {
   return Object.keys(evidence).length > 0 ? evidence : void 0;
 }
 function moduleSemanticAnchor(modulePath, index) {
-  const pkg = index.packages.find((candidate) => modulePath === candidate.root || modulePath.startsWith(candidate.root + "/"));
+  const pkg = owningPackage(modulePath, index);
   const scope = (pkg?.name ?? "project").replace(/^@/, "").split(/[\\/._-]+/).filter((part) => /^[a-z0-9]+$/i.test(part)).join("_").toLowerCase() || "project";
   const suffix = modulePath.replace(/\.(ts|tsx|mts|cts|d\.ts|d\.mts|d\.cts)$/i, "").split("/").join(".");
-  return (scope + "." + suffix).slice(0, 192);
+  return scope + "." + suffix;
+}
+function owningPackage(modulePath, index) {
+  let best = null;
+  for (const candidate of index.packages) {
+    if (candidate.root === "." || candidate.root === "" || modulePath === candidate.root || modulePath.startsWith(candidate.root + "/")) {
+      if (best === null || candidate.root.length > best.root.length) best = candidate;
+    }
+  }
+  return best;
 }
 
 // src/workspace.mjs
@@ -230717,7 +230796,18 @@ function buildWorkspaceInventory({ readView, directories, discoveryTruncated = f
       completeness: "unknown"
     };
   }
-  if (!readView.canRead(WORKSPACE_FILE)) {
+  const rootText = readView.readFile(PACKAGE_MANIFEST, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8");
+  let rootManifest;
+  try {
+    rootManifest = JSON.parse(rootText);
+  } catch {
+    rootManifest = {};
+  }
+  const npmWorkspace = Object.hasOwn(rootManifest, "workspaces");
+  if (npmWorkspace && (!Array.isArray(rootManifest.workspaces) || rootManifest.workspaces.length === 0 || rootManifest.workspaces.length > 128 || rootManifest.workspaces.some((p) => typeof p !== "string" || p.length > 256))) throw new WorkspaceRefusal("workspace-pattern-unsupported", "npm workspaces require bounded patterns");
+  if (npmWorkspace && readView.canRead(WORKSPACE_FILE)) throw new WorkspaceRefusal("workspace-manager-ambiguous", "both npm and pnpm membership are declared");
+  if (npmWorkspace && rootManifest.packageManager && !rootManifest.packageManager.startsWith("npm@")) throw new WorkspaceRefusal("workspace-manager-ambiguous", "npm membership conflicts with packageManager");
+  if (!readView.canRead(WORKSPACE_FILE) && !npmWorkspace) {
     let manifest;
     try {
       manifest = JSON.parse(readView.readFile(PACKAGE_MANIFEST, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8"));
@@ -230760,11 +230850,13 @@ function buildWorkspaceInventory({ readView, directories, discoveryTruncated = f
   }
   let workspaceText;
   try {
-    workspaceText = readView.readFile(WORKSPACE_FILE, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8");
+    workspaceText = npmWorkspace ? rootText : readView.readFile(WORKSPACE_FILE, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8");
   } catch (error) {
     throw new WorkspaceRefusal("workspace-read-denied", "the workspace document exists but cannot be read in scope");
   }
-  const parsed = parseWorkspaceYaml(workspaceText);
+  const parsed = npmWorkspace ? { packages: rootManifest.workspaces } : parseWorkspaceYaml(workspaceText);
+  const manager = npmWorkspace ? "npm-workspaces" : "pnpm-workspace";
+  const lockfile = npmWorkspace ? "package-lock.json" : LOCKFILE;
   const patterns = parsed.packages ?? [];
   const inclusions = [];
   const exclusions = [];
@@ -230952,12 +231044,12 @@ function buildWorkspaceInventory({ readView, directories, discoveryTruncated = f
   }
   edges.sort((left, right) => utf8Compare2(left.from, right.from) || utf8Compare2(left.to, right.to) || utf8Compare2(left.kind, right.kind));
   return {
-    manager: "pnpm-workspace",
+    manager,
     compatibilityPath: "supported",
     root: ".",
     workspaceManifestDigest: sha256Text(workspaceText),
-    lockDigestState: lockState(readView),
-    lockDigest: lockDigest(readView),
+    lockDigestState: lockState(readView, lockfile),
+    lockDigest: lockDigest(readView, lockfile),
     packages,
     edges,
     uncertainties: uncertainties.slice(0, MAX_UNCERTAINTIES),
@@ -230965,14 +231057,14 @@ function buildWorkspaceInventory({ readView, directories, discoveryTruncated = f
   };
 }
 var LOCKFILE = "pnpm-lock.yaml";
-function lockState(readView) {
-  if (!readView.canRead(LOCKFILE)) return "absent";
+function lockState(readView, lockfile = LOCKFILE) {
+  if (!readView.canRead(lockfile)) return "absent";
   return "present";
 }
-function lockDigest(readView) {
-  if (!readView.canRead(LOCKFILE)) return void 0;
+function lockDigest(readView, lockfile = LOCKFILE) {
+  if (!readView.canRead(lockfile)) return void 0;
   try {
-    return sha256Text(readView.readFile(LOCKFILE, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8"));
+    return sha256Text(readView.readFile(lockfile, { files: MAX_WORKSPACE_DOC_BYTES, bytes: MAX_WORKSPACE_DOC_BYTES }).toString("utf8"));
   } catch {
     return void 0;
   }
@@ -231147,9 +231239,9 @@ function parseConfirmedScript(scriptText, confirmedArgv) {
     return { ok: false, reason: "script-assignment-prefix" };
   }
   const parsed = scriptText.split(" ");
-  for (const element of parsed) {
+  for (const [index, element] of parsed.entries()) {
     if (!isSafeLiteral(element)) return { ok: false, reason: "script-unsafe-element" };
-    if (FORBIDDEN_ARG_EXACT.has(element)) return { ok: false, reason: "script-node-flag" };
+    if (FORBIDDEN_ARG_EXACT.has(element) && !(parsed[0] === "tsc" && index > 0 && element === "-p")) return { ok: false, reason: "script-node-flag" };
     for (const prefix of FORBIDDEN_ARG_PREFIXES) {
       if (element === prefix || element.startsWith(prefix)) {
         return { ok: false, reason: "script-node-flag" };
@@ -231286,6 +231378,17 @@ function buildNativePlan({
   const toolById = /* @__PURE__ */ new Map();
   for (const tool of toolCatalog ?? []) toolById.set(tool.id, tool);
   const affectedList = computeAffectedClosure(inventory, changedRoots);
+  if (policy.fallback_rule?.mode === "release-full") {
+    const digest2 = policy.fallback_rule.rule_digest;
+    if (typeof digest2 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(digest2)) {
+      throw new PlanRefusal("plan-release-rule-missing", "release-full requires its rule digest");
+    }
+    for (const pkg of inventory.packages) {
+      if (!affectedList.some((entry) => entry.package_id === pkg.id)) {
+        affectedList.push({ package_id: pkg.id, reasons: [{ kind: "release-rule", source_ref: digest2, policy_rule_ref: digest2 }] });
+      }
+    }
+  }
   const commands = [];
   const excluded = [];
   const affectedReasonRefs = /* @__PURE__ */ new Map();
@@ -231336,7 +231439,7 @@ function buildNativePlan({
         read_manifest_ref: inputManifestDigest,
         allowed_writes: { mode: "stage-only" },
         limits: policy.limits,
-        tsconfig_ref: confirmation.tsconfig_ref ?? (pkg ? `${pkg.root}/tsconfig.json` : "tsconfig.json")
+        tsconfig_ref: confirmation.tsconfig_ref ?? (pkg && pkg.root !== "." ? `${pkg.root}/tsconfig.json` : "tsconfig.json")
       });
     }
   }
@@ -231408,7 +231511,7 @@ function buildNativePlan({
       declared_version: "unknown",
       compatibility_path: inventory.compatibilityPath,
       root: inventory.root,
-      manifest_digest: inventory.workspaceManifestDigest ?? `sha256:${"0".repeat(64)}`,
+      manifest_digest: inventory.workspaceManifestDigest ?? inventory.packages.find((pkg) => pkg.root === ".")?.manifestDigest ?? `sha256:${"0".repeat(64)}`,
       lock_digest_state: inventory.lockDigestState ?? "absent",
       packages: inventory.packages.map((pkg) => ({
         id: pkg.id,
@@ -231429,7 +231532,13 @@ function buildNativePlan({
       modules: [...new Set(sortedAffected.map((entry) => {
         const pkg = inventory.packages.find((candidate) => candidate.id === entry.package_id);
         if (!pkg) return entry.package_id.replace(/[^a-z0-9._-]/g, "_");
-        if (pkg.root === ".") return pkg.id.replace(/[^a-z0-9._-]/g, "_");
+        if (pkg.root === ".") {
+          const module = pkg.name?.split("/").pop();
+          if (typeof module !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(module)) {
+            throw new PlanRefusal("plan-root-module-unrepresentable", "root package needs a portable module leaf");
+          }
+          return module;
+        }
         return pkg.root.split("/").pop();
       }))].sort(utf8Compare3),
       tests: [...new Set(commands.flatMap((command) => command.covers_suite_ids))].sort(utf8Compare3),
@@ -231445,7 +231554,7 @@ function buildNativePlan({
       name: tool.name,
       version: tool.version ?? "unknown",
       artifact_digest: tool.artifact_digest,
-      entry_digest: tool.entry_digest,
+      ...tool.entry_digest !== void 0 ? { entry_digest: tool.entry_digest } : {},
       platform: tool.platform,
       provenance: tool.provenance ?? "fixture-catalog"
     })),
@@ -231520,10 +231629,10 @@ function decodeNativeRequest(value) {
       return { error: `missing native_request member ${key}` };
     }
   }
-  if (!isObject5(value.changes) || !Array.isArray(value.changes.files) || value.changes.files.length > 1024 || !Array.isArray(value.changes.symbols) || value.changes.symbols.length > 1024) {
+  if (!isObject5(value.changes) || value.changes.files !== void 0 && (!Array.isArray(value.changes.files) || value.changes.files.length > 1024) || value.changes.symbols !== void 0 && (!Array.isArray(value.changes.symbols) || value.changes.symbols.length > 1024)) {
     return { error: "changes bound violated" };
   }
-  for (const file3 of value.changes.files) {
+  for (const file3 of value.changes.files ?? []) {
     if (!isObject5(file3) || typeof file3.path !== "string" || !["added", "modified", "deleted", "renamed"].includes(file3.change)) {
       return { error: "changes.files entry malformed" };
     }
@@ -231533,7 +231642,7 @@ function decodeNativeRequest(value) {
       return { error: `${key} is not a sha256 digest` };
     }
   }
-  return { value };
+  return { value: { ...value, changes: { files: [], symbols: [], ...value.changes } } };
 }
 function planNativeOperation(context, policyDocument) {
   const { request, profile, readView } = context;
@@ -231575,7 +231684,7 @@ function planNativeOperation(context, policyDocument) {
       }]
     };
   }
-  const toolCatalog = buildToolCatalog(policyDocument);
+  const toolCatalog = buildToolCatalog(policyDocument, context.nativePolicy ? "declared-manifest" : "fixture-catalog");
   const toolCatalogDigest = computeToolCatalogDigest(toolCatalog);
   let plan;
   try {
@@ -231617,7 +231726,15 @@ function planNativeOperation(context, policyDocument) {
 function readDeclaredPatterns(readView) {
   const WORKSPACE_FILE2 = "pnpm-workspace.yaml";
   const MAX_DOC = 1024 * 1024;
-  if (!readView.canRead(WORKSPACE_FILE2)) return [];
+  if (!readView.canRead(WORKSPACE_FILE2)) {
+    if (!readView.canRead("package.json")) return [];
+    try {
+      const root = JSON.parse(readView.readFile("package.json", { files: 4096, bytes: MAX_DOC }).toString("utf8"));
+      return Array.isArray(root.workspaces) ? root.workspaces : [];
+    } catch {
+      return [];
+    }
+  }
   try {
     const parsed = parseWorkspaceYaml(
       readView.readFile(WORKSPACE_FILE2, { files: 4096, bytes: MAX_DOC }).toString("utf8")
@@ -231651,6 +231768,12 @@ function listInventoryDirectories(readView, inclusionPatterns, out = {}) {
     const regexText = segment.replace(/[.+^${}()|[\\]\\\\]/g, "\\\\$&").split("**").join("\0").split("*").join("[^/]*").split("?").join("[^/]").split("\0").join(".*");
     return new RegExp("^(?:" + regexText + ")$").test(name);
   };
+  const children = (prefix) => {
+    if (prefix && typeof readView.listDirectories === "function") {
+      if ((readView.roots ?? []).some((root) => root.kind === "tree" && (prefix === root.path || prefix.startsWith(root.path + "/")))) return readView.listDirectories(prefix);
+    }
+    return CHILD_VOCABULARY;
+  };
   const expand = (prefix, segments, depth) => {
     expansions += 1;
     if (expansions > MAX_EXPANSIONS || candidates.size >= MAX_CANDIDATES || depth > MAX_DEPTH) {
@@ -231666,7 +231789,7 @@ function listInventoryDirectories(readView, inclusionPatterns, out = {}) {
     const segment = segments[0];
     if (segment === "**") {
       if (prefix !== "") expand(prefix, [], depth);
-      for (const name of CHILD_VOCABULARY) {
+      for (const name of children(prefix)) {
         const child = prefix === "" ? name : prefix + "/" + name;
         expand(child, segments, depth + 1);
       }
@@ -231677,7 +231800,7 @@ function listInventoryDirectories(readView, inclusionPatterns, out = {}) {
       expand(child, segments.slice(1), depth + 1);
       return;
     }
-    for (const name of CHILD_VOCABULARY) {
+    for (const name of children(prefix)) {
       if (segmentAllows(segment, name)) {
         const child = prefix === "" ? name : prefix + "/" + name;
         expand(child, segments.slice(1), depth + 1);
@@ -231733,7 +231856,7 @@ function verifyConfirmations(inventory, policyDocument, readView) {
   }
   return { unverifiable: unverifiable.slice(0, 16) };
 }
-function buildToolCatalog(policyDocument) {
+function buildToolCatalog(policyDocument, provenance = "fixture-catalog") {
   const seen = /* @__PURE__ */ new Map();
   for (const confirmation of policyDocument.confirmations) {
     const tool = confirmation.tool_ref;
@@ -231743,9 +231866,9 @@ function buildToolCatalog(policyDocument) {
       name: confirmation.argv[0] ?? tool.id,
       version: tool.version ?? "unknown",
       artifact_digest: tool.artifact_digest,
-      entry_digest: tool.entry_digest,
+      ...tool.entry_digest !== void 0 ? { entry_digest: tool.entry_digest } : {},
       platform: process.platform === "win32" ? "windows" : process.platform,
-      provenance: "fixture-catalog"
+      provenance
     });
   }
   return [...seen.values()];
@@ -237558,7 +237681,7 @@ __setLaunchExtensions([
     operations: ["plan-native"],
     namedCapabilities: { "plan.native-gates": "full" },
     acceptedIrVersions: ["0.2.16"],
-    invoke: (context) => planNativeOperation(context, launchPolicy)
+    invoke: (context) => planNativeOperation(context, context.nativePolicy ?? launchPolicy)
   },
   // The closed wire has exactly one generate operation: the Zod and
   // transport generators compose under the composite descriptor
@@ -237575,6 +237698,7 @@ var __lekaloTransport = transport_extension_exports;
 var __lekaloLaunchPolicy = native_policy_default;
 var __lekaloZodGen = descriptor;
 var __lekaloAdapterIdentity = { id: "lekalo-target-node-typescript", version: ADAPTER_VERSION, digest: entryDigest() };
+setAdapterIdentity(__lekaloAdapterIdentity);
 await runIfEntry(import.meta.url);
 export {
   __lekaloAdapterIdentity,

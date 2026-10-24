@@ -327,7 +327,7 @@ function renderCompatibilityTests(lang) {
     // foreign tokens, and cross-version operations fail before any IR
     // disclosure or callback execution.
     { admitted: false, protocolVersion: "0.3.1", reason: "version", wireToken: config.wireToken },
-    { admitted: false, protocolVersion: "0.9.0", reason: "version", wireToken: config.wireToken },
+    { admitted: false, protocolVersion: "99.0.0", reason: "version", wireToken: config.wireToken },
     { admitted: false, protocolVersion: "1.0.0", reason: "version", wireToken: config.wireToken },
     { admitted: false, protocolVersion: "0.6.4", reason: "token", wireToken: "lekalo.target/v0" },
     { admitted: true, operation: "lint", protocolVersion: "0.6.4", wireToken: config.wireToken },

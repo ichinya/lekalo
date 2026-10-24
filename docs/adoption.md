@@ -4,6 +4,12 @@ Status: **Implemented** bounded adoption/confirmation/conformance; the contribut
 
 Use [init/adopt](adopt.md) for safe discovery and skeleton writes, [observed mode](observed-mode.md) for derived code evidence, [bindings](bindings.md) for confirmation and [contracted mode](contracted-mode.md) for maintained implementation conformance.
 
+The [public TypeScript scan](public-typescript-scan.md) qualifies its
+explicit standalone/workspace subset through the manifested CLI path.
+[Domain and client workspace](domain-client-workspace.md) demonstrates
+strict commands/effects without HTTP or storage; optional backend profiles
+do not define the semantic core.
+
 | Mode | Authority and evidence | Writes to implementation |
 | --- | --- | --- |
 | Observed | Existing code is indexed into derived observations. Origin/confidence, partial coverage and current/stale/unknown remain visible. | Scan/adoption does not rewrite source. |

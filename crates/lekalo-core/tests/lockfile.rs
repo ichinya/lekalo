@@ -33,8 +33,8 @@ use lekalo_core::versioning::{ContractVersion, VersionRegistry};
 
 const GOLDEN: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
-const GOLDEN_DIGEST: &str =
-    "sha256:a28a9ef85b93f04ace1b6a3888a17637a0a2b05dfe67f7bfc814c11df09b21d1";
+const GOLDEN_EXPECT: &str =
+    include_str!("../../../tests/fixtures/lockfile/valid/contract-only.expect.json");
 const MULTI: &[u8] =
     include_bytes!("../../../tests/fixtures/lockfile/valid/multi-adapter.lock.json");
 const REFERENCE_PROJECT: &str = "../../tests/fixtures/lockfile/project";
@@ -225,7 +225,12 @@ fn with_project(body: impl FnOnce(&LoadSelection, &Path)) {
 #[test]
 fn golden_contract_only_lock_parses_and_matches_its_independent_digest() {
     let lock = Lockfile::parse_canonical(GOLDEN).expect("golden lock parses");
-    assert_eq!(lock.digest().as_str(), GOLDEN_DIGEST);
+    let expected: serde_json::Value =
+        serde_json::from_str(GOLDEN_EXPECT).expect("independent digest fixture");
+    assert_eq!(
+        lock.digest().as_str(),
+        expected["lockDigest"].as_str().expect("digest")
+    );
     assert_eq!(lock.resolver_version().as_str(), RESOLVER_VERSION);
     assert_eq!(
         lock.core_version().as_str(),

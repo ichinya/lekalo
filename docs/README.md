@@ -2,6 +2,8 @@
 
 Use a tutorial to complete a task, then its linked reference for the exact contract. Documentation on `main` follows the source checkout. Installed binaries use the matching [release snapshot](releases.md#release-snapshots).
 
+For the complete domain/client path, use the [MVP user workflow](mvp-workflow.md).
+
 ## Getting started
 
 | Goal | Main page |

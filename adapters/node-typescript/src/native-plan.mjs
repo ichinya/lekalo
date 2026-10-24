@@ -154,9 +154,11 @@ export function parseConfirmedScript(scriptText, confirmedArgv) {
     return { ok: false, reason: "script-assignment-prefix" };
   }
   const parsed = scriptText.split(" ");
-  for (const element of parsed) {
+  for (const [index, element] of parsed.entries()) {
     if (!isSafeLiteral(element)) return { ok: false, reason: "script-unsafe-element" };
-    if (FORBIDDEN_ARG_EXACT.has(element)) return { ok: false, reason: "script-node-flag" };
+    // tsc consumes its own -p after the pinned entry script; it is not
+    // passed to Node as the runtime print/eval option.
+    if (FORBIDDEN_ARG_EXACT.has(element) && !(parsed[0] === "tsc" && index > 0 && element === "-p")) return { ok: false, reason: "script-node-flag" };
     for (const prefix of FORBIDDEN_ARG_PREFIXES) {
       if (element === prefix || element.startsWith(prefix)) {
         return { ok: false, reason: "script-node-flag" };
@@ -328,6 +330,19 @@ export function buildNativePlan({
   const toolById = new Map();
   for (const tool of toolCatalog ?? []) toolById.set(tool.id, tool);
   const affectedList = computeAffectedClosure(inventory, changedRoots);
+  // An explicitly selected full-release rule owns the full selection,
+  // including packages without a changed-file claim. Do not invent changes.
+  if (policy.fallback_rule?.mode === "release-full") {
+    const digest = policy.fallback_rule.rule_digest;
+    if (typeof digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(digest)) {
+      throw new PlanRefusal("plan-release-rule-missing", "release-full requires its rule digest");
+    }
+    for (const pkg of inventory.packages) {
+      if (!affectedList.some(entry => entry.package_id === pkg.id)) {
+        affectedList.push({ package_id: pkg.id, reasons: [{ kind: "release-rule", source_ref: digest, policy_rule_ref: digest }] });
+      }
+    }
+  }
   const commands = [];
   const excluded = [];
   const affectedReasonRefs = new Map();
@@ -379,7 +394,7 @@ export function buildNativePlan({
         read_manifest_ref: inputManifestDigest,
         allowed_writes: { mode: "stage-only" },
         limits: policy.limits,
-        tsconfig_ref: confirmation.tsconfig_ref ?? (pkg ? `${pkg.root}/tsconfig.json` : "tsconfig.json"),
+        tsconfig_ref: confirmation.tsconfig_ref ?? (pkg && pkg.root !== "." ? `${pkg.root}/tsconfig.json` : "tsconfig.json"),
       });
     }
   }
@@ -465,7 +480,7 @@ export function buildNativePlan({
       declared_version: "unknown",
       compatibility_path: inventory.compatibilityPath,
       root: inventory.root,
-      manifest_digest: inventory.workspaceManifestDigest ?? `sha256:${"0".repeat(64)}`,
+      manifest_digest: inventory.workspaceManifestDigest ?? inventory.packages.find(pkg => pkg.root === ".")?.manifestDigest ?? `sha256:${"0".repeat(64)}`,
       lock_digest_state: inventory.lockDigestState ?? "absent",
       packages: inventory.packages.map((pkg) => ({
         id: pkg.id,
@@ -489,7 +504,13 @@ export function buildNativePlan({
         // workspace root itself is a package).
         const pkg = inventory.packages.find((candidate) => candidate.id === entry.package_id);
         if (!pkg) return entry.package_id.replace(/[^a-z0-9._-]/g, "_");
-        if (pkg.root === ".") return pkg.id.replace(/[^a-z0-9._-]/g, "_");
+        if (pkg.root === ".") {
+          const module = pkg.name?.split("/").pop();
+          if (typeof module !== "string" || !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(module)) {
+            throw new PlanRefusal("plan-root-module-unrepresentable", "root package needs a portable module leaf");
+          }
+          return module;
+        }
         return pkg.root.split("/").pop();
       }))].sort(utf8Compare),
       tests: [...new Set(commands.flatMap((command) => command.covers_suite_ids))].sort(utf8Compare),
@@ -506,7 +527,7 @@ export function buildNativePlan({
       name: tool.name,
       version: tool.version ?? "unknown",
       artifact_digest: tool.artifact_digest,
-      entry_digest: tool.entry_digest,
+      ...(tool.entry_digest !== undefined ? { entry_digest: tool.entry_digest } : {}),
       platform: tool.platform,
       provenance: tool.provenance ?? "fixture-catalog",
     })),

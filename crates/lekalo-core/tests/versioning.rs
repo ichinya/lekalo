@@ -209,7 +209,7 @@ mod compatibility {
         // A wrong manifest schema version is a manifest fault.
         assert_eq!(
             AdapterCompatibilityManifest::new(
-                registry_version("0.9.0"),
+                registry_version("0.9.1"),
                 "example-adapter",
                 ir("0.2.16"),
                 ir("0.2.16"),
@@ -244,7 +244,7 @@ mod compatibility {
         let registry = VersionRegistry::embedded().expect("valid");
         let report = CompatibilityReport::from_registry(registry);
         assert_eq!(report.status, "valid");
-        assert_eq!(report.registry_version, "0.8.0");
+        assert_eq!(report.registry_version, "0.9.1");
         let names: Vec<&str> = report.families.iter().map(|f| f.family).collect();
         assert_eq!(names, ["model", "ir", "protocol"]);
         let model_family: &CompatibilityReportFamilyAlias = &report.families[0];

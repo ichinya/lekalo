@@ -161,9 +161,9 @@ in the fixture is fictional; the fixture family is registered
 5. **Native gates.** The workspace's build/typecheck/test surface is
    carried by a #48 native gate plan
    (`tests/fixtures/pilot/taskhub-gates/`): the confirmed command
-   surface is recorded data. The production `lekalo native run` answers
-   with the typed refusal (`unsupported` /
-   `fixture-runner-not-shipped`) and never launches a command.
+   surface is recorded data. That historical raw plan remains plan-only.
+   Production execution requires a separately approved source-bound plan
+   and the supported [native profile](native-gates.md).
 6. **Baseline.** `lekalo observe baseline [--native-plan <plan>]`
    records the metrics the next comparison starts from: the index
    digest, the binding-state counts, the scan revision and adapter

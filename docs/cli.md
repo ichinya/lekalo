@@ -15,6 +15,9 @@ Status: **Implemented** handlers for this checkout; watch remains experimental a
 
 ## Commands
 
+Use [`lekalo install prompt`](agent-instructions.md) to explicitly install or
+check the project's managed agent instruction.
+
 Use `lekalo --help` for groups and `lekalo <command> --help` for the exact options supported by your binary. The [command index](#command-index) maps every registered command to one reference. The sections below preserve navigation links; detailed behavior and runnable workflows live in their owners.
 
 ### `lekalo watch` (experimental, issue #95)
@@ -283,7 +286,7 @@ Create an empty module using the grammar and no-clobber rules in [bootstrap](boo
 <!-- issue-105-command-index -->
 ## Command index
 
-Status: **Implemented** command handlers for product 0.8.15. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution remains a typed refusal in the production CLI.
+Status: **Implemented** command handlers for product 1.0.0. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution requires an approved plan and the supported [Windows profile](native-gates.md).
 
 | Command | Synopsis from this binary | Reference owner |
 | --- | --- | --- |
@@ -409,6 +412,8 @@ Status: **Implemented** command handlers for product 0.8.15. Handler existence d
 | `lekalo impact` | `lekalo impact [OPTIONS] [SYMBOL]` | [reference](impact.md) |
 | `lekalo init` | `lekalo init [OPTIONS]` | [reference](bootstrap.md) |
 | `lekalo inspect` | `lekalo inspect [OPTIONS] <SYMBOL>` | [reference](inspect.md) |
+| `lekalo install` | `lekalo install [OPTIONS] <COMMAND>` | [reference](agent-instructions.md) |
+| `lekalo install prompt` | `lekalo install prompt [OPTIONS]` | [reference](agent-instructions.md) |
 | `lekalo load` | `lekalo load [OPTIONS]` | [reference](loader.md) |
 | `lekalo lock` | `lekalo lock [OPTIONS] [PROGRAM_ARGS]...` | [reference](lockfile.md) |
 | `lekalo managed` | `lekalo managed [OPTIONS] <COMMAND>` | [reference](managed-mode.md) |
@@ -439,6 +444,7 @@ Status: **Implemented** command handlers for product 0.8.15. Handler existence d
 | `lekalo module api mapping` | `lekalo module api mapping [OPTIONS] --in-process <PATH> --service <PATH> <PUBLIC>` | [reference](bootstrap.md) |
 | `lekalo module new` | `lekalo module new [OPTIONS] <ID>` | [reference](bootstrap.md) |
 | `lekalo native` | `lekalo native [OPTIONS] <COMMAND>` | [reference](native-gates.md) |
+| `lekalo native plan` | `lekalo native plan [OPTIONS] --adapter <PACKAGE> --policy <FILE> --profile <FILE> --catalog <FILE>` | [reference](native-gates.md) |
 | `lekalo native run` | `lekalo native run [OPTIONS] <PLAN>` | [reference](native-gates.md) |
 | `lekalo nfr` | `lekalo nfr [OPTIONS] <COMMAND>` | [reference](nfr.md) |
 | `lekalo nfr diff` | `lekalo nfr diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](nfr.md) |

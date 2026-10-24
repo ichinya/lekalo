@@ -181,6 +181,8 @@ pub struct Detection {
     pub gates: Vec<GateProposal>,
     pub adapters: Vec<Adapter>,
     pub modules: Vec<ObservedModule>,
+    /// Effective discovery inputs, provenance, pruning and coverage limits.
+    pub scope: super::scope::ScopeReceipt,
 }
 
 /// One planned or executed skeleton write.

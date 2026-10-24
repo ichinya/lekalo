@@ -645,6 +645,8 @@ jobs:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         timeout-minutes: 20
         run: |
+          node scripts/gen-discovery-scope-contracts.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-discovery-scope-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-adoption-contracts.mjs
           node scripts/test-adoption-refactor.mjs
           node scripts/test-adoption-hybrid.mjs
@@ -742,6 +744,17 @@ jobs:
           node adapters/node-typescript/build.mjs --check
       - name: Run the TypeScript scanner suite (issue #44)
         run: node scripts/test-node-typescript-scanner.mjs
+      - name: Qualify the public manifested TypeScript scan (issue #150)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        timeout-minutes: 10
+        run: |
+          node scripts/gen-public-scan-protocol.mjs --check
+          node scripts/test-public-typescript-scan.mjs
+      - name: Qualify the domain/client workspace without a backend (issue #153)
+        run: node scripts/test-domain-workspace.mjs
+      - name: Qualify managed agent instruction installation (issue #157)
+        run: node scripts/test-install-prompt.mjs
       - name: Run the Hono framework-binding suites (issue #115)
         timeout-minutes: 15
         run: node scripts/test-node-hono-bindings.mjs
@@ -806,6 +819,42 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-native-gate-contracts.mjs
+      - name: Execute approved native plans through the release CLI (issue #151)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          node scripts/gen-native-execution-protocol.mjs --check
+          node scripts/gen-native-execution-contracts.mjs --check
+          cargo build --release -p lekalo-cli --locked
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-native-execution.mjs
+      - name: Execute declared workspace tools through production verify (issue #156)
+        timeout-minutes: 15
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+          LEKALO_NODE_TOOLS_HOME: ${{ runner.temp }}/lekalo-declared-node-tools
+          LEKALO_NATIVE_REPORTS_DIR: ${{ runner.temp }}/lekalo-native-acceptance
+        run: |
+          set -euo pipefail
+          node scripts/gen-node-native-contracts.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-node-native-tools.mjs --provision
+      - name: "Qualify the clean MVP user workflow (issue #1)"
+        timeout-minutes: 15
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+          LEKALO_NODE_TOOLS_HOME: ${{ runner.temp }}/lekalo-declared-node-tools
+          LEKALO_NATIVE_REPORTS_DIR: ${{ runner.temp }}/lekalo-mvp-acceptance
+        run: node scripts/test-mvp-workflow.mjs
+      - name: Retain native plans and measured verify reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-acceptance-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/lekalo-native-acceptance/
+            ${{ runner.temp }}/lekalo-mvp-acceptance/
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Execute the native gate host suites (issue #48)
         run: cargo test --locked -p lekalo-core --lib native_gate
       - name: Run the applicable conformance battery against the kernel adapter (bare)

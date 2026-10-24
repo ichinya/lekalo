@@ -35,9 +35,13 @@ mod explain;
 mod fix;
 mod format;
 mod git_input;
+mod install_prompt;
 mod managed;
 mod mcp;
 mod metrics_export;
+mod native_execution;
+mod native_verify;
+use native_execution::NativeCommands;
 mod module_api;
 mod pilot_battery;
 mod portability;
@@ -619,6 +623,8 @@ enum Commands {
     /// Run the read-only verification pipeline over a validated project:
     /// core validation, drift, per-target adapter validation, portable
     Verify {
+        #[command(flatten)]
+        native: Box<native_verify::NativeVerifyArgs>,
         /// Project root selector, relative to the invocation directory.
         #[arg(long, value_name = "DIR")]
         project: Option<String>,
@@ -664,6 +670,9 @@ enum Commands {
         /// Adopt the existing repository at the adoption root.
         #[arg(long)]
         adopt: bool,
+        /// Repository-relative versioned discovery scope (adoption only).
+        #[arg(long, value_name = "FILE", requires = "adopt")]
+        discovery_scope: Option<String>,
         /// Explicit target selection; written to `lekalo/targets/`.
         #[arg(long, value_name = "TARGET")]
         target: Option<String>,
@@ -845,14 +854,16 @@ enum Commands {
         #[command(subcommand)]
         command: ContractCommands,
     },
-    /// Plan native build/test gates over a Node workspace (issue #48).
-    /// Planning is read-only: it produces the immutable proposed plan
-    /// with its digest. Execution of trusted synthetic fixtures is
-    /// owned by the test-only harness — the production binary never
-    /// launches a gate command and answers with a typed refusal.
+    /// Plan existing Node gates or execute an exact approved plan.
+    /// Execution requires explicit controls and a qualified OS sandbox.
     Native {
         #[command(subcommand)]
         command: Box<NativeCommands>,
+    },
+    /// Install explicitly managed project instructions.
+    Install {
+        #[command(subcommand)]
+        command: install_prompt::InstallCommands,
     },
     /// Resolve NFR constraints against their measured evidence
     /// (issue #85): the gate, the derived report, and the closed
@@ -869,23 +880,6 @@ enum Commands {
     Adoption {
         #[command(subcommand)]
         command: crate::adoption::AdoptionCommands,
-    },
-}
-
-/// The `native` subcommands (issue #48).
-#[derive(Debug, Subcommand)]
-enum NativeCommands {
-    /// Propose the immutable native gate plan over the current
-    /// workspace: workspace inventory, affected closure, confirmed
-    /// commands, and the plan digest. Read-only; never launches a
-    /// command. The plan document is read from stdin.
-    Run {
-        /// The plan document path; use `-` for stdin. The plan must
-        /// carry a current trusted-fixture custody, and execution still
-        /// requires the test-only harness — this production command
-        /// answers with a typed blocked/unsupported refusal.
-        #[arg(value_name = "PLAN")]
-        plan: String,
     },
 }
 
@@ -2810,6 +2804,7 @@ fn runtime() -> u8 {
                 )
             }
             Commands::Verify {
+                native,
                 project,
                 target,
                 module,
@@ -2831,6 +2826,26 @@ fn runtime() -> u8 {
                 };
                 if let Err(result) = request.validate() {
                     return emit(result, json_requested);
+                }
+                if native.native_plan.is_some() {
+                    let root =
+                        match lekalo_core::orchestration::project_root(&selection_for(&project)) {
+                            Ok(root) => root,
+                            Err(result) => return emit(result, json_requested),
+                        };
+                    return native_verify::run(*native, root, json_requested, || {
+                        run_verify(
+                            project.clone(),
+                            target.clone(),
+                            module.clone(),
+                            changed,
+                            locked,
+                            trace.clone(),
+                            program_args.clone(),
+                            timeout_ms,
+                            &request,
+                        )
+                    });
                 }
                 run_verify(
                     project,
@@ -2901,14 +2916,14 @@ fn runtime() -> u8 {
                 crate::search::run_search_index(command, cli.no_cache)
             }
             Commands::Contract { command } => run_contract(command),
-            Commands::Native { command } => match *command {
-                NativeCommands::Run { plan } => run_native_run(&plan),
-            },
+            Commands::Native { command } => return native_execution::run(*command, json_requested),
+            Commands::Install { command } => install_prompt::run(command),
             Commands::Nfr { command } => run_nfr(command),
             Commands::Classification { command } => run_classification(command),
             Commands::Dataflow { command } => run_dataflow(command),
             Commands::Init {
                 adopt,
+                discovery_scope,
                 target,
                 profile,
                 project_id,
@@ -2919,6 +2934,7 @@ fn runtime() -> u8 {
                 dry_run,
             } => run_init(
                 adopt,
+                discovery_scope,
                 target,
                 profile,
                 project_id,
@@ -3667,6 +3683,7 @@ fn run_lock(project: Option<String>, check: bool, program_args: Vec<String>) -> 
 #[allow(clippy::too_many_arguments)]
 fn run_init(
     adopt: bool,
+    discovery_scope: Option<String>,
     target: Option<String>,
     profile: Option<String>,
     project_id: Option<String>,
@@ -3701,6 +3718,7 @@ fn run_init(
             profile,
             project_id,
             dry_run,
+            discovery_scope,
         });
     }
     lekalo_core::init::bootstrap::bootstrap(&lekalo_core::init::bootstrap::BootstrapRequest {
@@ -12436,21 +12454,8 @@ use std::path::PathBuf;
 /// answered unsupported (fixture-runner-not-shipped) because the real
 /// fixture runner is compiled only into the test harness. No gate
 /// command is ever launched from this binary.
-fn run_native_run(plan_ref: &str) -> DomainResult {
-    let bytes = if plan_ref == "-" {
-        let mut buffer = Vec::new();
-        use std::io::Read;
-        if io::stdin().lock().read_to_end(&mut buffer).is_err() {
-            return DomainResult::usage_error();
-        }
-        buffer
-    } else {
-        match std::fs::read(plan_ref) {
-            Ok(bytes) => bytes,
-            Err(_) => return DomainResult::usage_error(),
-        }
-    };
-    match lekalo_core::native_gate::production_run(&bytes) {
+fn run_native_run_bytes(bytes: &[u8]) -> DomainResult {
+    match lekalo_core::native_gate::production_run(bytes) {
         Ok(receipt) => DomainResult::receipt(
             serde_json::to_string_pretty(&receipt).expect("receipt serializes"),
             format!(

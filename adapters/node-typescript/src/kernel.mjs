@@ -58,6 +58,7 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  opendirSync,
   fstatSync,
   readSync,
   readFileSync,
@@ -74,11 +75,11 @@ export const PROTOCOL_TOKEN = "lekalo.target/v1";
 /** The sole protocol version this kernel speaks (the current contract). */
 export const VERSION = "0.3.2";
 /** The closed supported-version set: exact membership, never ranges. */
-export const SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4"]);
+export const SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0", "0.9.1"]);
 /** The adapter identity token. */
 export const ADAPTER_ID = "lekalo-target-node-typescript";
 /** The adapter release version (the reserved product version). */
-export const ADAPTER_VERSION = "0.4.0";
+export const ADAPTER_VERSION = "0.6.1";
 /** The maximum request size this kernel reads (mirrors the core bound). */
 export const MAX_REQUEST_BYTES = 1024 * 1024;
 /** The maximum response size this kernel writes (mirrors the core cap). */
@@ -100,7 +101,7 @@ export const MAX_PROFILE_JSON_BYTES = 16 * 1024;
  * observed reference rows `{target, role, confidence}` as typed data —
  * never arbitrary JSON.
  */
-const SCAN_ENTRY_EVIDENCE_KEYS = Object.freeze(["references", "signature"]);
+const SCAN_ENTRY_EVIDENCE_KEYS = Object.freeze(["references", "signature", "source_digest"]);
 const SCAN_ENTRY_REFERENCE_KEYS = Object.freeze(["confidence", "role", "target"]);
 const SCAN_ENTRY_ROLES = Object.freeze([
   "read", "create", "update", "delete", "emit", "call", "reference",
@@ -828,15 +829,21 @@ export function validateNativeRequest(nativeRequest) {
     }
   }
   const changes = nativeRequest.changes;
+  if (changes && Object.keys(changes).some(key => !["files", "symbols"].includes(key))) {
+    throw new RequestRefusal("native-request", "unknown changes member");
+  }
   if (typeof changes !== "object" || changes === null || Array.isArray(changes)) {
     throw new RequestRefusal("native-request", "changes must be an object");
   }
-  if (!Array.isArray(changes.files) || changes.files.length > 1024) {
+  if (changes.files !== undefined && (!Array.isArray(changes.files) || changes.files.length > 1024)) {
     throw new RequestRefusal("native-request", "changes.files bound");
   }
-  for (const file of changes.files) {
+  for (const file of changes.files ?? []) {
     if (typeof file !== "object" || file === null || Array.isArray(file)) {
       throw new RequestRefusal("native-request", "changes.files entry");
+    }
+    if (Object.keys(file).some(key => !["path", "change", "before_digest", "after_digest"].includes(key))) {
+      throw new RequestRefusal("native-request", "unknown changed file member");
     }
     if (!isLogicalPath(file.path)) {
       throw new RequestRefusal("native-request", "changes.files path");
@@ -851,19 +858,14 @@ export function validateNativeRequest(nativeRequest) {
       throw new RequestRefusal("native-request", "changes.files after_digest");
     }
   }
-  if (!Array.isArray(changes.symbols) || changes.symbols.length > 1024) {
+  if (changes.symbols !== undefined && (!Array.isArray(changes.symbols) || changes.symbols.length > 1024)) {
     throw new RequestRefusal("native-request", "changes.symbols bound");
   }
   validateNativeContentRef(nativeRequest.scan_ref);
   if (nativeRequest.observed_ref !== undefined) {
     validateNativeContentRef(nativeRequest.observed_ref);
   }
-  const policy = nativeRequest.execution_policy_ref;
-  if (typeof policy !== "object" || policy === null || Array.isArray(policy)
-    || typeof policy.id !== "string" || policy.id.length === 0 || policy.id.length > 128
-    || !isContractVersion(policy.version) || !isSha256Digest(policy.digest)) {
-    throw new RequestRefusal("native-request", "execution_policy_ref");
-  }
+  validateNativeContentRef(nativeRequest.execution_policy_ref);
   for (const key of ["input_manifest_digest", "tool_catalog_digest", "capability_snapshot_digest"]) {
     if (!isSha256Digest(nativeRequest[key])) {
       throw new RequestRefusal("native-request", key);
@@ -872,6 +874,9 @@ export function validateNativeRequest(nativeRequest) {
 }
 
 function validateNativeContentRef(reference) {
+  if (reference && Object.keys(reference).some(key => !["digest", "revision", "adapter"].includes(key))) {
+    throw new RequestRefusal("native-request", "unknown content reference member");
+  }
   if (typeof reference !== "object" || reference === null || Array.isArray(reference)
     || !isSha256Digest(reference.digest)) {
     throw new RequestRefusal("native-request", "content reference");
@@ -2106,6 +2111,7 @@ export function createKernel(options = {}) {
           ...(trustedExecutionContext.frameworkPolicy
             ? { frameworkPolicy: trustedExecutionContext.frameworkPolicy }
             : {}),
+          ...(trustedExecutionContext.nativePolicy ? { nativePolicy: trustedExecutionContext.nativePolicy } : {}),
           cancellation: trustedExecutionContext.cancellation ?? null,
           limits: trustedExecutionContext.limits ?? { files: 4096, bytes: 4 * 1024 * 1024 },
         }));
@@ -2135,10 +2141,11 @@ export function createKernel(options = {}) {
         };
       }
       recordSink(sink, validatedRequest, outcome, profile);
-      return {
-        response: projectOutcome(validatedRequest, outcome),
-        internal: outcome,
-      };
+      const response = projectOutcome(validatedRequest, outcome);
+      if (["0.9.0", "0.9.1"].includes(validatedRequest.protocol_version) && operation === "scan" && response.status === "ok") {
+        response.evidence.scan_profile_digest = `sha256:${createHash("sha256").update(canonicalJson(profile), "utf8").digest("hex")}`;
+      }
+      return { response, internal: outcome };
     },
   };
 }
@@ -2235,7 +2242,7 @@ function projectOutcome(request, outcome) {
         },
       });
     }
-    const result = projectResult(outcome.data);
+    const result = projectResult(outcome.data, request);
     if (result) {
       return buildResponse(request, { result });
     }
@@ -2344,7 +2351,7 @@ function projectVerifyFindings(request, data) {
   return findings.length > 0 ? { ok: true, findings } : { ok: true };
 }
 
-function projectResult(data) {
+function projectResult(data, request) {
   if (data === undefined || data === null || typeof data !== "object") {
     return undefined;
   }
@@ -2354,7 +2361,8 @@ function projectResult(data) {
     if (typeof np !== "object" || np === null || np.kind !== "native-plan" || !isSha256Digest(np.plan_digest)) {
       return undefined;
     }
-    return { native_plan: { digest: np.plan_digest, kind: np.kind } };
+    return { native_plan: { digest: np.plan_digest, kind: np.kind,
+      ...(request.protocol_version === "0.9.1" ? { plan: np } : {}) } };
   }
   if (!Array.isArray(data.entries)) {
     return undefined;
@@ -2371,7 +2379,8 @@ function projectResult(data) {
       || !isLogicalPath(entry.path)
       || typeof entry.kind !== "string"
       || [...entry.kind].length > 128
-      || (entry.detail !== undefined && (typeof entry.detail !== "string" || [...entry.detail].length > 128))) {
+      || (entry.detail !== undefined && (typeof entry.detail !== "string" || [...entry.detail].length >
+        (["0.9.0", "0.9.1"].includes(request.protocol_version) && request.operation === "scan" ? 2048 : 128)))) {
       return undefined;
     }
     const projected = entry.detail === undefined
@@ -2384,6 +2393,9 @@ function projectResult(data) {
       }
       projected.evidence = evidence;
     }
+    if (["0.9.0", "0.9.1"].includes(request.protocol_version) && request.operation === "scan") {
+      if (!isSha256Digest(projected.evidence?.source_digest)) return undefined;
+    } else if (projected.evidence?.source_digest !== undefined) return undefined;
     entries.push(projected);
   }
   const result = { entries };
@@ -2411,6 +2423,10 @@ function projectScanEntryEvidence(evidence) {
     }
   }
   const projected = {};
+  if (evidence.source_digest !== undefined) {
+    if (!isSha256Digest(evidence.source_digest)) return undefined;
+    projected.source_digest = evidence.source_digest;
+  }
   if (evidence.signature !== undefined) {
     if (evidence.signature !== null && !isSha256Digest(evidence.signature)) {
       return undefined;
@@ -2498,11 +2514,11 @@ export function createReadView(permittedRoot, roots, profile) {
   };
   const revalidate = (logicalPath, expectedKind) => {
     const root = roots.find((candidate) => scopeCovers(candidate.scope, logicalPath)
-      || (candidate.kind === "file" && candidate.path === logicalPath));
+      || (candidate.path === logicalPath && (candidate.kind === "file" || expectedKind === "directory")));
     if (!root) {
       throw new RequestRefusal("read-denied", "path outside the resolved roots");
     }
-    if (excludedPath(logicalPath)) {
+    if (excludedPath(logicalPath) || (expectedKind === "directory" && excludedPath(logicalPath + "/probe"))) {
       throw new RequestRefusal("read-denied", "path is excluded");
     }
     const absolute = resolve(permittedRoot, ...logicalPath.split("/"));
@@ -2525,6 +2541,9 @@ export function createReadView(permittedRoot, roots, profile) {
       }
     }
     const follow = statSync(absolute);
+    if (expectedKind === "directory" && !follow.isDirectory()) {
+      throw new RequestRefusal("read-denied", "kind");
+    }
     if (expectedKind === "file" && !follow.isFile()) {
       throw new RequestRefusal("read-denied", "kind");
     }
@@ -2539,6 +2558,28 @@ export function createReadView(permittedRoot, roots, profile) {
       } catch {
         return false;
       }
+    },
+    // Bounded physical enumeration for declared workspace patterns. Never
+    // follow directory links or reveal names outside this read grant.
+    listDirectories(logicalPath) {
+      const absolute = revalidate(logicalPath, "directory");
+      const directory = opendirSync(absolute);
+      const result = [];
+      let count = 0;
+      try {
+        for (let entry; (entry = directory.readSync()) !== null;) {
+          if (++count > 4096) throw new RequestRefusal("read-denied", "directory cap exhausted");
+          const child = logicalPath + "/" + entry.name;
+          if (!isLogicalPath(child) || protectedHomeViolation(child) || excludedPath(child) || excludedPath(child + "/probe")) continue;
+          if (entry.isSymbolicLink()) throw new RequestRefusal("read-denied", "link");
+          if (entry.isDirectory()) {
+            revalidate(child, "directory");
+            result.push(entry.name);
+          }
+        }
+      } finally { directory.closeSync(); }
+      revalidate(logicalPath, "directory");
+      return result.sort();
     },
     readFile(logicalPath, limits = { files: 4096, bytes: 4 * 1024 * 1024 }) {
       if (filesRead >= limits.files) {
@@ -2830,12 +2871,24 @@ export async function main() {
     if (policyJson !== undefined) {
       frameworkPolicy = decodeFrameworkPolicyJson(policyJson);
     }
+    const nativeMarkers = argvWithoutEntry.filter(arg => arg === "--lekalo-native-policy-json");
+    if (nativeMarkers.length > 1) throw new RequestRefusal("native-policy-input", "ambiguous native policy");
+    let nativePolicy = null;
+    if (nativeMarkers.length === 1) {
+      const text = argvWithoutEntry[argvWithoutEntry.indexOf(nativeMarkers[0]) + 1];
+      if (typeof text !== "string" || text.length === 0) throw new RequestRefusal("native-policy-input", "missing native policy");
+      nativePolicy = decodeJsonDocument(Buffer.from(text, "utf8"), { maxBytes: 16384 });
+      if (nativePolicy?.schema_version !== "lekalo/native-gate-policy/v0.4.0" || nativePolicy.kind !== "native-gate-policy" || !Array.isArray(nativePolicy.confirmations)) {
+        throw new RequestRefusal("native-policy-input", "invalid native policy");
+      }
+    }
     const document = decodeJsonDocument(requestBytes);
     const request = validateRequestObject(document);
     const kernel = options.kernel ?? createKernel();
     const dispatched = kernel.dispatch(request, {
       permittedProjectRoot: process.cwd(),
       ...(frameworkPolicy !== null ? { frameworkPolicy } : {}),
+      ...(nativePolicy !== null ? { nativePolicy } : {}),
     });
     process.stdout.write(canonicalJson(dispatched.response));
   } catch (error) {

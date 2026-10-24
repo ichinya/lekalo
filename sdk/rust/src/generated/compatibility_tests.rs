@@ -24,7 +24,7 @@ pub const COMPATIBILITY_MATRIX: &[CompatibilityCase] = &[
     CompatibilityCase { admitted: true, operation: None, protocol_version: "0.3.2", reason: None, wire_token: Some("lekalo.target/v1") },
     CompatibilityCase { admitted: true, operation: None, protocol_version: "0.6.4", reason: None, wire_token: Some("lekalo.target/v1") },
     CompatibilityCase { admitted: false, operation: None, protocol_version: "0.3.1", reason: Some("version"), wire_token: Some("lekalo.target/v1") },
-    CompatibilityCase { admitted: false, operation: None, protocol_version: "0.9.0", reason: Some("version"), wire_token: Some("lekalo.target/v1") },
+    CompatibilityCase { admitted: false, operation: None, protocol_version: "99.0.0", reason: Some("version"), wire_token: Some("lekalo.target/v1") },
     CompatibilityCase { admitted: false, operation: None, protocol_version: "1.0.0", reason: Some("version"), wire_token: Some("lekalo.target/v1") },
     CompatibilityCase { admitted: false, operation: None, protocol_version: "0.6.4", reason: Some("token"), wire_token: Some("lekalo.target/v0") },
     CompatibilityCase { admitted: true, operation: Some("lint"), protocol_version: "0.6.4", reason: None, wire_token: Some("lekalo.target/v1") },
