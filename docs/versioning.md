@@ -4,7 +4,7 @@ This page owns the repository's version policy. Feature references specify exact
 
 ## Product and contract versions
 
-The product version is `workspace.package.version` in [Cargo.toml](../Cargo.toml), currently `0.8.0`. Each contract has an exact identity and wire spelling, such as Model `0.2.16`, Model `0.8.0` or target protocol `0.3.2`.
+The product version is `workspace.package.version` in [Cargo.toml](../Cargo.toml), currently `0.8.14`. Each contract has an exact identity and wire spelling, such as Model `0.2.16`, Model `0.8.0` or target protocol `0.3.2`.
 
 When a contract changes, its new version is the product version of the implementing commit. Update the filename, identity/discriminator, embedded constants, consumer pins and digests together. Contracts whose bytes do not change retain their accepted versions. A product release does not rewrite every contract to the product number.
 

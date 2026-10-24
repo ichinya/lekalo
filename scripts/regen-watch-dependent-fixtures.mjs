@@ -19,7 +19,9 @@ const work=mkdtempSync(join(tmpdir(),'lekalo-watch-registry-'));
 const output=[];
 const save=(path,bytes)=>{writeFileSync(join(root,path),bytes);output.push(path);};
 const fixture=(name,path)=>{const dir=join(work,name);cpSync(join(root,path),dir,{recursive:true});return dir;};
-assert.equal(json(root,['--version']).version,'0.8.0','build the current CLI first');
+const product=readFileSync(join(root,'Cargo.toml'),'utf8').match(/\[workspace.package\][\s\S]*?version = "([^"]+)"/)?.[1];
+assert.ok(product,'workspace product version');
+assert.equal(json(root,['--version']).version,product,'build the current CLI first');
 try {
  const lockRoot=fixture('lock','tests/fixtures/lockfile/project');
  json(lockRoot,['lock']);
