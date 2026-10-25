@@ -84,6 +84,10 @@ The companion node-native-tools gate exercises real Vitest/typecheck/Vite
 failures and forged-receipt/approval/source refusals. The production-native-
 execution gate independently checks the sandbox and its resource/custody
 boundaries. CI retains versioned JSON evidence for its exact candidate.
+Each acceptance case has separate input, invocation and verify files. The native
+tools summary lists SHA-256 digests over the raw input bytes and canonical JSON
+request/report for every case, so the saved positive, failure and refusal records
+can be checked independently.
 
 This synthetic workflow does not rerun a private consumer or establish
 cross-language behavioral equivalence or causal agent productivity gains.

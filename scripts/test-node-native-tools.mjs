@@ -52,6 +52,7 @@ const validators=Object.fromEntries(['tool-catalog','execution-plan','verify-rep
 assert.ok(validators['tool-catalog'](catalog),JSON.stringify(validators['tool-catalog'].errors));
 const temp=fs.realpathSync(tmpdir()),work=fs.mkdtempSync(join(temp,'lekalo-native-tools-'));
 const results=[];
+const retainedReports=[];
 const reports=process.env.LEKALO_NATIVE_REPORTS_DIR?resolve(process.env.LEKALO_NATIVE_REPORTS_DIR):null;
 if(reports){fs.mkdirSync(reports,{recursive:true});assert.equal(fs.readdirSync(reports).length,0,'acceptance output must be an empty dedicated directory');}
 
@@ -87,15 +88,27 @@ function prepare(name,{only,mutate,adoptScope,afterAdopt}={}) {
   const plan=cli(root,['native','plan',...controls]);assert.ok(validators['execution-plan'](plan),JSON.stringify(validators['execution-plan'].errors));assert.equal(plan.native_plan.workspace.manager,'npm-workspaces');save(join(home,'plan.json'),plan);
   return {root,home,plan};
 }
-function verify(f,exit=0) {
+function verify(f,exit=0,label=basename(f.home)) {
   const before=inventory(f.root),args=['verify','--project','.', '--native-plan',join(f.home,'plan.json'),'--native-confirm',f.plan.plan_digest,'--native-adapter',join(repo,'adapters/node-typescript'),'--native-policy',join(f.home,'policy.json'),'--native-profile',join(f.home,'profile.json'),'--native-catalog',join(f.home,'catalog.json'),'--native-cancel-file',join(f.home,'cancel.marker')];
+  let retained;
+  if(reports){
+    assert.match(label,/^[a-z][a-z0-9-]*$/);
+    const input=fs.readFileSync(join(f.home,'plan.json'));
+    const request={cwd:f.root,argv:['--json','--no-cache',...args],expectedExit:exit};
+    retained={case:label,inputFile:label+'.input.json',requestFile:label+'.request.json',reportFile:label+'.verify.json',inputDigest:hash(input),requestDigest:hash(bytes(request))};
+    fs.writeFileSync(join(reports,retained.inputFile),input,{flag:'wx'});
+    fs.writeFileSync(join(reports,retained.requestFile),JSON.stringify(request,null,2)+'\n',{flag:'wx'});
+  }
   const report=cli(f.root,args,exit);assert.ok(validators['verify-report'](report),JSON.stringify(validators['verify-report'].errors));assert.deepEqual(inventory(f.root),before,'the original workspace survives verify');assert.equal(report.exit_code,exit);
   if(report.native.kind==='native-execution-report') {
     const run=report.native.run;assert.equal(run.original_verification.state,'unchanged');assert.equal(run.cleanup.state,'complete');
     for(const output of report.native.outputs)assert.equal(output.digest,hash(bytes(output.output)));
     for(const command of run.commands)if(typeof command.output_ref==='string')assert.ok(report.native.outputs.some(output=>output.digest===command.output_ref));
   }
-  if(reports){save(join(reports,basename(f.home)+'.plan.json'),f.plan);save(join(reports,basename(f.home)+'.verify.json'),report);}
+  if(retained){
+    fs.writeFileSync(join(reports,retained.reportFile),JSON.stringify(report,null,2)+'\n',{flag:'wx'});
+    retainedReports.push({...retained,reportDigest:hash(bytes(report))});
+  }
   return report;
 }
 const isMain=process.argv[1]&&resolve(process.argv[1]).toLowerCase()===fileURLToPath(import.meta.url).toLowerCase();
@@ -119,13 +132,22 @@ try {
       results.push({lane:name,status:result.status,toolExit:expected,cliExit:result.exit_code});
     }
     const originalPlan=fs.readFileSync(join(f.home,'plan.json'));
-    save(join(f.home,'plan.json'),report);const forged=verify(f,1);assert.equal(forged.native.state,'error');assert.equal(forged.native.diagnostic.status,'invalid');fs.writeFileSync(join(f.home,'plan.json'),originalPlan);
-    const approved=f.plan.plan_digest;f.plan.plan_digest=hash('wrong approval');const denied=verify(f,3);assert.equal(denied.native.state,'error');f.plan.plan_digest=approved;
-    const source=join(f.root,'packages/core/src/index.ts'),originalSource=fs.readFileSync(source);fs.appendFileSync(source,'\n// changed after approval\n');const stale=verify(f,1);assert.ok(stale.native.diagnostic.reasonCodes.includes('native-gate.plan-stale'));fs.writeFileSync(source,originalSource);
+    save(join(f.home,'plan.json'),report);const forged=verify(f,1,'forged-receipt');assert.equal(forged.native.state,'error');assert.equal(forged.native.diagnostic.status,'invalid');fs.writeFileSync(join(f.home,'plan.json'),originalPlan);
+    const approved=f.plan.plan_digest;f.plan.plan_digest=hash('wrong approval');const denied=verify(f,3,'wrong-approval');assert.equal(denied.native.state,'error');f.plan.plan_digest=approved;
+    const source=join(f.root,'packages/core/src/index.ts'),originalSource=fs.readFileSync(source);fs.appendFileSync(source,'\n// changed after approval\n');const stale=verify(f,1,'source-stale');assert.ok(stale.native.diagnostic.reasonCodes.includes('native-gate.plan-stale'));fs.writeFileSync(source,originalSource);
     results.push({lane:'custody',forgedReceipt:'refused',wrongApproval:'denied',changedSource:'refused'});
 
   }
-  const summary={ok:true,gate:'node-native-tools',productionCli:true,executionQualified:process.platform==='win32',binaryDigest:hash(fs.readFileSync(binary)),runtime:process.versions.node,tools:catalog.tools.map(({id,version,entry_digest,artifact_digest})=>({id,version,entry_digest,artifact_digest})),results};
+  if(reports){
+    for(const row of retainedReports){
+      assert.equal(hash(fs.readFileSync(join(reports,row.inputFile))),row.inputDigest);
+      assert.equal(hash(bytes(JSON.parse(fs.readFileSync(join(reports,row.requestFile),'utf8')))),row.requestDigest);
+      assert.equal(hash(bytes(JSON.parse(fs.readFileSync(join(reports,row.reportFile),'utf8')))),row.reportDigest);
+    }
+    const positive=results.find(row=>row.lane==='workspace');
+    if(positive)assert.equal(hash(bytes(JSON.parse(fs.readFileSync(join(reports,'passing.verify.json'),'utf8')))),positive.reportDigest,'custody refusals must not replace positive evidence');
+  }
+  const summary={ok:true,gate:'node-native-tools',productionCli:true,executionQualified:process.platform==='win32',binaryDigest:hash(fs.readFileSync(binary)),runtime:process.versions.node,tools:catalog.tools.map(({id,version,entry_digest,artifact_digest})=>({id,version,entry_digest,artifact_digest})),results,retainedReports};
    if(reports)save(join(reports,'summary.json'),summary);
    console.log(JSON.stringify(summary));
 } finally {cleanup();}
