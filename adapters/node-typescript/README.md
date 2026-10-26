@@ -12,7 +12,9 @@ physical file.
 
 The supported standalone/workspace public CLI recipe and its custody and
 refusal gates are documented in [Public TypeScript observed scan](../../docs/public-typescript-scan.md).
-Package `0.5.0` explicitly declares ordinary scan protocol `0.9.0`; the
+Package `1.1.0` explicitly declares native inventory scan protocol `1.1.0`
+and retains its negotiated predecessors. Native declarations and explicit
+type uncertainty do not establish business semantics or type correctness; the
 separate contributor framework pilots keep their documented limitations.
 
 ```sh

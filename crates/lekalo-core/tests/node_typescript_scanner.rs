@@ -137,7 +137,7 @@ fn the_scanner_negotiates_the_current_protocol_and_declares_the_capability() {
     let described = client
         .describe(&command, &sandbox.dir)
         .expect("the scanner handshake must succeed");
-    assert_eq!(described.negotiated_version, "0.9.1");
+    assert_eq!(described.negotiated_version, "1.1.0");
     assert_eq!(
         described.capabilities.adapter.id,
         "lekalo-target-node-typescript"
@@ -147,7 +147,7 @@ fn the_scanner_negotiates_the_current_protocol_and_declares_the_capability() {
     // (issues #45 and #70 — the closed wire has exactly one generate
     // operation, so zod schemas and the transport route layer compose
     // under one descriptor).
-    assert_eq!(described.capabilities.adapter.version, "0.6.1");
+    assert_eq!(described.capabilities.adapter.version, "1.1.0");
     assert_eq!(described.capabilities.operations.len(), 6);
     assert!(described.capabilities.operations.contains(&Operation::Scan));
     assert!(described
@@ -323,7 +323,7 @@ fn scan_entries_with_signature_and_references_merge_into_the_registry() {
 }
 
 #[test]
-fn public_scan_refuses_nested_members_instead_of_dropping_them() {
+fn public_native_scan_preserves_nested_members_instead_of_dropping_them() {
     let sandbox = ScanSandbox::new("nested");
     std::fs::write(
         sandbox.dir.join("src").join("nested.ts"),
@@ -341,18 +341,30 @@ fn public_scan_refuses_nested_members_instead_of_dropping_them() {
     let mut client = TargetClient::new(brief_limits());
     client.describe(&command, &sandbox.dir).expect("handshake");
     let fs = lekalo_core::project_fs::Fs::open(&sandbox.dir).expect("fs");
-    match client.call(
-        &command,
-        scan_request("standalone"),
-        &sandbox.dir,
-        &fs,
-        None,
-    ) {
-        Err(TargetFailure::OperationFailed {
-            code,
-            partial: true,
-            ..
-        }) => assert_eq!(code, "outcome-partial-public-scan-surface-unrepresentable"),
-        other => panic!("expected a typed partial refusal, got {other:?}"),
-    }
+    let outcome = client
+        .call(
+            &command,
+            scan_request("standalone"),
+            &sandbox.dir,
+            &fs,
+            None,
+        )
+        .expect("negotiated native scan preserves the complete subtree");
+    assert_eq!(outcome.response.protocol_version, "1.1.0");
+    let entries = outcome.response.result.unwrap().entries.unwrap();
+    let point = entries.iter().find(|e| e.path == "src/nested.ts").unwrap();
+    let nodes = point
+        .evidence
+        .as_ref()
+        .unwrap()
+        .native_symbols
+        .as_ref()
+        .unwrap();
+    assert_eq!(nodes.len(), 3);
+    assert!(nodes
+        .iter()
+        .any(|n| n.qualified_name == "Point.x" && n.member_of.is_some()));
+    assert!(nodes
+        .iter()
+        .any(|n| n.qualified_name == "Point.y" && n.member_of.is_some()));
 }

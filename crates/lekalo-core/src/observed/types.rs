@@ -381,6 +381,47 @@ pub struct Evidence {
     pub values: Vec<ValueEvidence>,
 }
 
+/// Fresh evidence for one scan candidate, retained separately from a
+/// confirmed binding until its changed shape is explicitly reconfirmed.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BindingEvidence {
+    pub symbol: String,
+    pub native: String,
+    pub evidence: Evidence,
+}
+
+/// Validate the source inventory and its root-to-binding joins without
+/// inventing a mapping or choosing one ambiguous native candidate.
+pub(crate) fn native_evidence_valid(
+    symbols: &[crate::native_symbols::NativeSymbol],
+    bindings: &[BindingEvidence],
+) -> bool {
+    if !crate::native_symbols::valid(symbols)
+        || bindings.len() > version::MAX_SYMBOLS
+        || !bindings
+            .windows(2)
+            .all(|p| (&p[0].symbol, &p[0].native) < (&p[1].symbol, &p[1].native))
+    {
+        return false;
+    }
+    let mut covered = std::collections::BTreeSet::new();
+    let nodes: std::collections::BTreeMap<_, _> = symbols.iter().map(|s| (&s.native, s)).collect();
+    for binding in bindings {
+        let Some(root) = nodes.get(&binding.native) else {
+            return false;
+        };
+        if root.member_of.is_some()
+            || !crate::trace::id::is_semantic_id(&binding.symbol)
+            || root.signature != binding.evidence.signature
+            || !covered.insert(&binding.native)
+        {
+            return false;
+        }
+    }
+    covered.len() == symbols.iter().filter(|s| s.member_of.is_none()).count()
+}
+
 /// The provenance of one recorded fact.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Provenance {
@@ -533,6 +574,14 @@ pub struct ObservedIndex {
     /// sorted by id.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub test_bindings: Vec<TestBindingRecord>,
+    /// Source-bound declaration forest, admitted only by index 1.1.0.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_symbols: Vec<crate::native_symbols::NativeSymbol>,
+    /// Current scan evidence per candidate, not a silent ownership change.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub binding_evidence: Vec<BindingEvidence>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub native_uncertainty: Vec<crate::native_symbols::NativeUncertainty>,
 }
 
 impl ObservedIndex {
@@ -551,6 +600,9 @@ impl ObservedIndex {
             target: None,
             profile: None,
             test_bindings: Vec::new(),
+            native_symbols: Vec::new(),
+            binding_evidence: Vec::new(),
+            native_uncertainty: Vec::new(),
         }
     }
 
@@ -623,4 +675,8 @@ pub struct ScanDocument {
     pub target: Option<String>,
     pub profile: Option<String>,
     pub test_bindings: Vec<ScanTestBinding>,
+    pub native_inventory: bool,
+    pub native_symbols: Vec<crate::native_symbols::NativeSymbol>,
+    pub binding_evidence: Vec<BindingEvidence>,
+    pub native_uncertainty: Vec<crate::native_symbols::NativeUncertainty>,
 }

@@ -356,6 +356,7 @@ const banner = `#!/usr/bin/env node
 async function buildZodArtifact() {
   rmSync(zodScratchRoot, { recursive: true, force: true });
   mkdirSync(join(zodScratchRoot, "src"), { recursive: true });
+  writeFileSync(join(zodScratchRoot, "src", "native-symbols.mjs"), readFileSync(join(adapterRoot, "src", "native-symbols.mjs"), "utf8"));
   writeFileSync(join(zodScratchRoot,"src","ai-lint.mjs"),readFileSync(join(adapterRoot,"src","ai-lint.mjs"),"utf8"));
   const kernelSource = readFileSync(kernelPath, "utf8").replace(/^#![^[\n]*\n/, "");
   writeFileSync(join(zodScratchRoot, "src", "kernel.mjs"), kernelSource);
@@ -437,6 +438,7 @@ async function buildArtifact() {
   writeFileSync(join(scratchRoot, "src", "kernel.mjs"), kernelSource);
   const scannerSource = readFileSync(scannerPath, "utf8").replace(stripShebang, "");
   writeFileSync(join(scratchRoot, "src", "scanner.mjs"), scannerSource);
+  writeFileSync(join(scratchRoot, "src", "native-symbols.mjs"), readFileSync(join(adapterRoot, "src", "native-symbols.mjs"), "utf8"));
   writeFileSync(join(scratchRoot, "src", "workspace.mjs"), readFileSync(workspacePath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "native-plan.mjs"), readFileSync(nativePlanPath, "utf8").replace(stripShebang, ""));
   writeFileSync(join(scratchRoot, "src", "native-gate-extension.mjs"), readFileSync(nativeExtensionPath, "utf8").replace(stripShebang, ""));

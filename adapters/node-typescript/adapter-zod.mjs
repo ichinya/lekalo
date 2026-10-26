@@ -106,7 +106,7 @@ function validateLintRequest(request) {
   const l = request.lint_request;
   if (request.operation === "lint" !== (l !== void 0)) throw new Error("lint-request-pairing");
   if (!l) return;
-  if (!["0.6.4", "0.9.0", "0.9.1"].includes(request.protocol_version) || !request.target || ["dry_run", "plan_id", "native_request", "ir_path", "profile", "profile_digest", "profile_capabilities"].some((k) => request[k] !== void 0)) throw new Error("lint-request-version-members");
+  if (!["0.6.4", "0.9.0", "0.9.1", "1.1.0"].includes(request.protocol_version) || !request.target || ["dry_run", "plan_id", "native_request", "ir_path", "profile", "profile_digest", "profile_capabilities"].some((k) => request[k] !== void 0)) throw new Error("lint-request-version-members");
   if (!l || Object.keys(l).sort().join() !== "bindings,files,pins,scope" || !Array.isArray(l.scope) || !l.scope.length || l.scope.length > 1e4 || !Array.isArray(l.files) || l.files.length > 4096 || !Array.isArray(l.bindings) || l.bindings.length > 1e4) throw new Error("lint-request-shape");
   const token = (s) => typeof s === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:/#@\\-]{0,255}$/.test(s);
   const sha = (s) => typeof s === "string" && /^sha256:[a-f0-9]{64}$/.test(s);
@@ -115,11 +115,11 @@ function validateLintRequest(request) {
   for (const [key, p] of Object.entries(l.pins)) {
     if (!p || !["known", "unknown", "withheld", "unsupported"].includes(p.state) || Object.keys(p).sort().join() !== (p.state === "known" ? "state,value" : "state") || p.state === "known" && !(key === "revision" ? token(p.value) : sha(p.value)) || ["model", "ir"].includes(key) && p.state !== "known") throw new Error("lint-request-pin");
   }
-  const keys = /* @__PURE__ */ new Set();
+  const keys2 = /* @__PURE__ */ new Set();
   for (const b of l.bindings) {
     const key = JSON.stringify([b.path, b.nativeId, b.kind]);
-    if (keys.has(key)) throw new Error("lint-binding-ambiguous");
-    keys.add(key);
+    if (keys2.has(key)) throw new Error("lint-binding-ambiguous");
+    keys2.add(key);
   }
   for (const b of l.bindings) if (!b || Object.keys(b).sort().join() !== "fingerprint,kind,nativeId,path,symbol" || !l.files.includes(b.path) || !token(b.nativeId) || !token(b.symbol) || !sha(b.fingerprint) || !["command", "entity"].includes(b.kind)) throw new Error("lint-request-binding");
 }
@@ -130,18 +130,18 @@ function collectAiLint(request, ts, readView, artifactDigest, adapterVersion) {
     const bytes = readView.readFile(path, { files: 4096, bytes: 8 * 1024 * 1024 });
     total += bytes.length;
     if (total > 8 * 1024 * 1024) throw new Error("lint-source-limit");
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes), fingerprint = digest(bytes);
-    texts.set(path, text);
+    const text2 = new TextDecoder("utf-8", { fatal: true }).decode(bytes), fingerprint = digest(bytes);
+    texts.set(path, text2);
     sources.push({ id: hash([path, fingerprint]), path, fingerprint, bytes: bytes.length });
   }
   for (const b of l.bindings) if (sources.find((s) => s.path === b.path)?.fingerprint !== b.fingerprint) throw new Error("lint-binding-stale");
-  const files = new Map([...texts].map(([path, text]) => [path, ts.createSourceFile(path, text, ts.ScriptTarget.ES2022, true, path.endsWith(".tsx") ? ts.ScriptKind.TSX : path.endsWith(".js") ? ts.ScriptKind.JS : ts.ScriptKind.TS)]));
+  const files = new Map([...texts].map(([path, text2]) => [path, ts.createSourceFile(path, text2, ts.ScriptTarget.ES2022, true, path.endsWith(".tsx") ? ts.ScriptKind.TSX : path.endsWith(".js") ? ts.ScriptKind.JS : ts.ScriptKind.TS)]));
   const host = { getSourceFile: (path) => files.get(path), getDefaultLibFileName: () => "", writeFile: () => {
     throw new Error("lint-write-denied");
   }, getCurrentDirectory: () => "", getDirectories: () => [], fileExists: (path) => files.has(path), readFile: (path) => texts.get(path), getCanonicalFileName: (path) => path, useCaseSensitiveFileNames: () => true, getNewLine: () => "\n", directoryExists: () => false, realpath: (path) => path, resolveModuleNames: (names) => names.map(() => void 0) };
   const program = ts.createProgram([...files.keys()], { noLib: true, noEmit: true, allowJs: true, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 }, host), checker = program.getTypeChecker();
-  const position = (text, offset) => {
-    const pre = text.slice(0, offset);
+  const position = (text2, offset) => {
+    const pre = text2.slice(0, offset);
     return [pre.split("\n").length, Array.from(pre.split("\n").at(-1)).length + 1];
   };
   function span(node, sf) {
@@ -274,6 +274,41 @@ function collectAiLint(request, ts, readView, artifactDigest, adapterVersion) {
   return { schemaVersion: "lekalo/ai-lint-evidence/v0.6.4", identity: "dev.lekalo.ai-lint-evidence@0.6.4", target: request.target, scope: l.scope, producer: { id: "lekalo-target-node-typescript", version: adapterVersion, artifactDigest, tool: "node-static", compiler: known("typescript/5.9.3"), framework: known("node-events/v1"), recipe: "ai-readability/1" }, pins: l.pins, inputManifestDigest: hash(sources), sources, locations: boundedLocations, records: boundedRecords, limitations: ["static-files-only", "no-application-execution", "external-module-resolution-unsupported", ...limit], coverage: rules.flatMap((rule) => l.scope.map((scope) => ({ rule, target: request.target, scope, state: supported.has(rule) && files.size ? "partial" : "unsupported", eligible: unknown(), examined: known(calls.length), limitations: supported.has(rule) ? ["bounded-static-files", ...limit] : ["detector-unsupported"] }))) };
 }
 
+// src/native-symbols.mjs
+var keys = /* @__PURE__ */ new Set(["native", "qualified_name", "family", "path", "line", "end_line", "slot", "declaration_only", "member_of", "signature"]);
+var families = /* @__PURE__ */ new Set(["class", "interface", "enum", "type-alias", "function", "method", "variable", "property", "module", "symbol"]);
+var text = (s, max) => typeof s === "string" && [...s].length > 0 && [...s].length <= max && !/[\u0000-\u001f\u007f-\u009f]/u.test(s);
+var digest2 = (s) => typeof s === "string" && /^sha256:[0-9a-f]{64}$/.test(s);
+var compare = (a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b));
+function validNativeSymbols(rows, isLogicalPath2) {
+  if (!Array.isArray(rows) || rows.length > 1e4) return false;
+  const all = /* @__PURE__ */ new Map();
+  let previous = "";
+  for (const row of rows) {
+    if (!row || typeof row !== "object" || Array.isArray(row) || Object.keys(row).some((k) => !keys.has(k)) || !text(row.native, 256) || compare(row.native, previous) <= 0 || !text(row.qualified_name, 256) || typeof row.family !== "string" || !isLogicalPath2(row.path) || !Number.isSafeInteger(row.line) || row.line < 1 || !Number.isSafeInteger(row.end_line) || row.end_line < row.line || row.end_line > 1e6 || !["static", "instance"].includes(row.slot) || typeof row.declaration_only !== "boolean" || Object.hasOwn(row, "member_of") && !text(row.member_of, 256) || Object.hasOwn(row, "signature") && !digest2(row.signature)) return false;
+    const parts = row.family.split("+");
+    if (parts.length > 10 || parts.some((p) => !families.has(p)) || parts.some((p, i) => i > 0 && parts[i - 1] >= p)) return false;
+    all.set(row.native, row);
+    previous = row.native;
+  }
+  const owners = /* @__PURE__ */ new Map();
+  for (const row of rows) {
+    const seen = /* @__PURE__ */ new Set();
+    let current = row;
+    while (current.member_of !== void 0) {
+      if (seen.size >= 64 || seen.has(current.native)) return false;
+      seen.add(current.native);
+      const owner = all.get(current.member_of);
+      if (!owner || owner.path !== current.path || owner.line > current.line || owner.end_line < current.end_line) return false;
+      current = owner;
+    }
+    const count = (owners.get(current.native) ?? 0) + 1;
+    owners.set(current.native, count);
+    if (count > 256) return false;
+  }
+  return true;
+}
+
 // src/kernel.mjs
 import { createHash as createHash2 } from "node:crypto";
 import {
@@ -294,9 +329,9 @@ import { dirname, isAbsolute, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 var PROTOCOL_TOKEN = "lekalo.target/v1";
 var VERSION = "0.3.2";
-var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0", "0.9.1"]);
+var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0", "0.9.1", "1.1.0"]);
 var ADAPTER_ID = "lekalo-target-node-typescript";
-var ADAPTER_VERSION = "0.6.1";
+var ADAPTER_VERSION = "1.1.0";
 var MAX_REQUEST_BYTES = 1024 * 1024;
 var MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 var MAX_JSON_DEPTH = 64;
@@ -388,8 +423,8 @@ function __setCompilerMetadata(metadata) {
     throw new RequestRefusal("compiler-metadata", `invalid compiler metadata: ${reason}`);
   };
   if (typeof metadata !== "object" || metadata === null) invalid("not an object");
-  const keys = Object.keys(metadata).sort();
-  if (keys.join(",") !== "esbuild,typescript,vendored") invalid("members");
+  const keys2 = Object.keys(metadata).sort();
+  if (keys2.join(",") !== "esbuild,typescript,vendored") invalid("members");
   if (metadata.vendored !== true) invalid("vendored");
   if (!/^\d+\.\d+\.\d+$/.test(metadata.typescript)) invalid("typescript");
   if (!/^\d+\.\d+\.\d+$/.test(metadata.esbuild)) invalid("esbuild");
@@ -425,17 +460,17 @@ function vendoredTs() {
 function embeddedLibFiles() {
   return embeddedLibs;
 }
-function __attachDrizzleDeclarations(files, pin, digest2) {
+function __attachDrizzleDeclarations(files, pin, digest3) {
   if (!(files instanceof Map) || files.size === 0) {
     throw new RequestRefusal("compiler", "the embedded drizzle declaration map is malformed");
   }
-  if (typeof pin !== "string" || pin === "" || typeof digest2 !== "string" || !isSha256Digest(digest2)) {
+  if (typeof pin !== "string" || pin === "" || typeof digest3 !== "string" || !isSha256Digest(digest3)) {
     throw new RequestRefusal("compiler", "the embedded drizzle declaration identity is malformed");
   }
-  if (drizzleDeclarations !== null && (drizzleDeclarations.pin !== pin || drizzleDeclarations.digest !== digest2)) {
+  if (drizzleDeclarations !== null && (drizzleDeclarations.pin !== pin || drizzleDeclarations.digest !== digest3)) {
     throw new RequestRefusal("compiler", "a different drizzle declaration closure is already attached");
   }
-  drizzleDeclarations = Object.freeze({ files, pin, digest: digest2 });
+  drizzleDeclarations = Object.freeze({ files, pin, digest: digest3 });
 }
 function embeddedDrizzleDeclarations() {
   return drizzleDeclarations;
@@ -546,14 +581,14 @@ function decodeJsonDocument(bytes, { maxBytes = MAX_REQUEST_BYTES } = {}) {
   if (bytes.length > maxBytes) {
     throw new RequestRefusal("request-too-large", "request bytes exceed the transport bound");
   }
-  const text = decodeUtf8Fatal(bytes);
-  const parser = new StrictJsonParser(text);
+  const text2 = decodeUtf8Fatal(bytes);
+  const parser = new StrictJsonParser(text2);
   const value = parser.parseDocument();
   return value;
 }
 var StrictJsonParser = class {
-  constructor(text) {
-    this.text = text;
+  constructor(text2) {
+    this.text = text2;
     this.position = 0;
     this.keyAliases = null;
   }
@@ -781,12 +816,12 @@ var StrictJsonParser = class {
   }
 };
 function canonicalJson(value) {
-  const text = writeCanonical(value);
-  const size = Buffer.byteLength(text, "utf8");
+  const text2 = writeCanonical(value);
+  const size = Buffer.byteLength(text2, "utf8");
   if (size > MAX_RESPONSE_BYTES) {
     throw new RequestRefusal("response-too-large", "canonical response exceeds the transport bound");
   }
-  return text;
+  return text2;
 }
 function writeCanonical(value) {
   if (value === null) {
@@ -810,10 +845,10 @@ function writeCanonical(value) {
   if (Array.isArray(value)) {
     return `[${value.map(writeCanonical).join(",")}]`;
   }
-  const keys = Object.keys(value);
-  const canonical = Array.from(new Uint8Array(Buffer.from(keys[0] ?? "", "utf8")));
-  let canonicalKey = keys[0] ?? "";
-  const sorted = keys.sort((a, b) => {
+  const keys2 = Object.keys(value);
+  const canonical = Array.from(new Uint8Array(Buffer.from(keys2[0] ?? "", "utf8")));
+  let canonicalKey = keys2[0] ?? "";
+  const sorted = keys2.sort((a, b) => {
     const left = Buffer.from(a, "utf8");
     const right = Buffer.from(b, "utf8");
     const length = Math.min(left.length, right.length);
@@ -835,8 +870,8 @@ function canonicalNumber(value) {
   }
   return JSON.stringify(value);
 }
-function sha256Hex(text) {
-  return createHash2("sha256").update(text, "utf8").digest("hex");
+function sha256Hex(text2) {
+  return createHash2("sha256").update(text2, "utf8").digest("hex");
 }
 var RequestRefusal = class extends Error {
   constructor(code, message) {
@@ -869,7 +904,7 @@ function canonicalJsonText(value) {
   if (Array.isArray(value)) {
     return `[${value.map(canonicalJsonText).join(",")}]`;
   }
-  const keys = Object.keys(value).sort((left, right) => {
+  const keys2 = Object.keys(value).sort((left, right) => {
     const leftBytes = Buffer.from(left, "utf8");
     const rightBytes = Buffer.from(right, "utf8");
     const length = Math.min(leftBytes.length, rightBytes.length);
@@ -880,7 +915,7 @@ function canonicalJsonText(value) {
     }
     return leftBytes.length - rightBytes.length;
   });
-  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJsonText(value[key])}`).join(",")}}`;
+  return `{${keys2.map((key) => `${JSON.stringify(key)}:${canonicalJsonText(value[key])}`).join(",")}}`;
 }
 function validateNativeRequest(nativeRequest) {
   if (typeof nativeRequest !== "object" || nativeRequest === null || Array.isArray(nativeRequest)) {
@@ -1040,8 +1075,8 @@ function validateRequestObject(document) {
     if (typeof limits !== "object" || limits === null || Array.isArray(limits)) {
       throw new RequestRefusal("shape", "limits must be an object");
     }
-    const keys = Object.keys(limits).sort();
-    if (keys.join(",") !== "max_output_bytes,timeout_ms") {
+    const keys2 = Object.keys(limits).sort();
+    if (keys2.join(",") !== "max_output_bytes,timeout_ms") {
       throw new RequestRefusal("shape", "limits members are closed");
     }
     const timeout = limits.timeout_ms;
@@ -1113,8 +1148,8 @@ function validateProfileCapabilities(capabilities) {
     if (typeof capability !== "object" || capability === null || Array.isArray(capability)) {
       throw new RequestRefusal("profile-capabilities", "capability entries are objects");
     }
-    const keys = Object.keys(capability).sort();
-    if (keys.join(",") !== "id,support") {
+    const keys2 = Object.keys(capability).sort();
+    if (keys2.join(",") !== "id,support") {
       throw new RequestRefusal("profile-capabilities", "capability entry members are closed");
     }
     if (!isCapabilityId(capability.id) || !SUPPORT_STATES.includes(capability.support)) {
@@ -1145,11 +1180,11 @@ var ERROR_CODES = Object.freeze({
   })
 });
 var MAX_FRAMEWORK_POLICY_JSON_BYTES = 8 * 1024;
-function decodeFrameworkPolicyJson(text) {
-  if (typeof text !== "string") {
+function decodeFrameworkPolicyJson(text2) {
+  if (typeof text2 !== "string") {
     throw new RequestRefusal("framework-policy", "the framework policy must be one JSON text");
   }
-  const bytes = Buffer.from(text, "utf8");
+  const bytes = Buffer.from(text2, "utf8");
   if (bytes.length === 0 || bytes.length > MAX_FRAMEWORK_POLICY_JSON_BYTES) {
     throw new RequestRefusal("framework-policy", "the framework policy exceeds the closed input bound");
   }
@@ -1168,8 +1203,8 @@ function decodeFrameworkPolicyJson(text) {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
       throw new RequestRefusal("framework-policy", "provider must be an object");
     }
-    const keys = Object.keys(entry);
-    if (keys.length !== 2 || !keys.includes("id") || !keys.includes("state")) {
+    const keys2 = Object.keys(entry);
+    if (keys2.length !== 2 || !keys2.includes("id") || !keys2.includes("state")) {
       throw new RequestRefusal("framework-policy", "provider shape is closed (id, state)");
     }
     const { id, state } = entry;
@@ -1186,8 +1221,8 @@ function decodeFrameworkPolicyJson(text) {
     return { id, state };
   });
   const canonical = { providers };
-  const digest2 = `sha256:${createHash2("sha256").update(canonicalJson(canonical), "utf8").digest("hex")}`;
-  return deepFreeze({ schema: document.schema, version: 1, providers, digest: digest2 });
+  const digest3 = `sha256:${createHash2("sha256").update(canonicalJson(canonical), "utf8").digest("hex")}`;
+  return deepFreeze({ schema: document.schema, version: 1, providers, digest: digest3 });
 }
 function extractFrameworkPolicyJson(argv = process.argv.slice(2)) {
   const markers = argv.filter((argument) => argument === "--lekalo-framework-policy-json");
@@ -1204,11 +1239,11 @@ function extractFrameworkPolicyJson(argv = process.argv.slice(2)) {
   }
   return value;
 }
-function decodeProjectProfileJson(text) {
-  if (typeof text !== "string") {
+function decodeProjectProfileJson(text2) {
+  if (typeof text2 !== "string") {
     throw new RequestRefusal("profile-input", "the launch profile must be one JSON text");
   }
-  const bytes = Buffer.from(text, "utf8");
+  const bytes = Buffer.from(text2, "utf8");
   if (bytes.length === 0 || bytes.length > MAX_PROFILE_JSON_BYTES) {
     throw new RequestRefusal("profile-input", "the launch profile exceeds the closed input bound");
   }
@@ -1391,8 +1426,8 @@ function validateResolvedProjectProfile(candidate) {
     if (typeof root !== "object" || root === null || Array.isArray(root)) {
       invalid("readRoots entries");
     }
-    const keys = Object.keys(root).sort();
-    if (keys.join(",") !== "kind,path" && keys.join(",") !== "kind,path,scope") {
+    const keys2 = Object.keys(root).sort();
+    if (keys2.join(",") !== "kind,path" && keys2.join(",") !== "kind,path,scope") {
       invalid("readRoots members");
     }
     if (root.kind !== "file" && root.kind !== "tree") {
@@ -1443,8 +1478,8 @@ function validateResolvedProjectProfile(candidate) {
     if (typeof resolution !== "object" || Array.isArray(resolution)) {
       invalid("targetResolution");
     }
-    const keys = Object.keys(resolution).sort();
-    if (keys.join(",") !== "capabilities,digest") {
+    const keys2 = Object.keys(resolution).sort();
+    if (keys2.join(",") !== "capabilities,digest") {
       invalid("targetResolution members");
     }
     if (!isSha256Digest(resolution.digest)) {
@@ -1480,8 +1515,8 @@ function validateResolvedProjectProfile(candidate) {
     if (typeof raw !== "object" || Array.isArray(raw)) {
       invalid("provenance");
     }
-    const keys = Object.keys(raw).sort();
-    if (keys.join(",") !== "disposition,origin,revision") {
+    const keys2 = Object.keys(raw).sort();
+    if (keys2.join(",") !== "disposition,origin,revision") {
       invalid("provenance members");
     }
     if (typeof raw.origin !== "string" || !["declared", "observed", "inferred"].includes(raw.origin) || typeof raw.revision !== "string" || raw.revision.length === 0 || raw.revision.length > 256 || typeof raw.disposition !== "string" || !["public-fixture", "user-confirmed", "unconfirmed"].includes(raw.disposition)) {
@@ -1978,15 +2013,18 @@ function createKernel(options = {}) {
       }
       recordSink(sink, validatedRequest, outcome, profile);
       const response = projectOutcome(validatedRequest, outcome);
-      if (["0.9.0", "0.9.1"].includes(validatedRequest.protocol_version) && operation === "scan" && response.status === "ok") {
+      if (["0.9.0", "0.9.1", "1.1.0"].includes(validatedRequest.protocol_version) && operation === "scan" && response.status === "ok") {
         response.evidence.scan_profile_digest = `sha256:${createHash2("sha256").update(canonicalJson(profile), "utf8").digest("hex")}`;
+      }
+      if (validatedRequest.protocol_version === "1.1.0" && operation === "scan" && response.status === "ok") {
+        response.evidence.native_uncertainty = outcome.evidence?.nativeUncertainty ?? [];
       }
       return { response, internal: outcome };
     }
   };
 }
-function boundToken(text) {
-  const bounded2 = text.replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 128);
+function boundToken(text2) {
+  const bounded2 = text2.replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 128);
   return bounded2 === "" ? "unspecified" : bounded2;
 }
 function recordSink(sink, request, outcome, profile) {
@@ -2139,7 +2177,7 @@ function projectResult(data, request) {
     return { native_plan: {
       digest: np.plan_digest,
       kind: np.kind,
-      ...request.protocol_version === "0.9.1" ? { plan: np } : {}
+      ...["0.9.1", "1.1.0"].includes(request.protocol_version) ? { plan: np } : {}
     } };
   }
   if (!Array.isArray(data.entries)) {
@@ -2150,18 +2188,18 @@ function projectResult(data, request) {
   }
   const entries = [];
   for (const entry of data.entries) {
-    if (typeof entry !== "object" || entry === null || !isLogicalPath(entry.path) || typeof entry.kind !== "string" || [...entry.kind].length > 128 || entry.detail !== void 0 && (typeof entry.detail !== "string" || [...entry.detail].length > (["0.9.0", "0.9.1"].includes(request.protocol_version) && request.operation === "scan" ? 2048 : 128))) {
+    if (typeof entry !== "object" || entry === null || !isLogicalPath(entry.path) || typeof entry.kind !== "string" || [...entry.kind].length > 128 || entry.detail !== void 0 && (typeof entry.detail !== "string" || [...entry.detail].length > (["0.9.0", "0.9.1", "1.1.0"].includes(request.protocol_version) && request.operation === "scan" ? 2048 : 128))) {
       return void 0;
     }
     const projected = entry.detail === void 0 ? { path: entry.path, kind: entry.kind } : { path: entry.path, kind: entry.kind, detail: entry.detail };
     if (entry.evidence !== void 0) {
-      const evidence = projectScanEntryEvidence(entry.evidence);
+      const evidence = projectScanEntryEvidence(entry.evidence, request.protocol_version);
       if (!evidence) {
         return void 0;
       }
       projected.evidence = evidence;
     }
-    if (["0.9.0", "0.9.1"].includes(request.protocol_version) && request.operation === "scan") {
+    if (["0.9.0", "0.9.1", "1.1.0"].includes(request.protocol_version) && request.operation === "scan") {
       if (!isSha256Digest(projected.evidence?.source_digest)) return void 0;
     } else if (projected.evidence?.source_digest !== void 0) return void 0;
     entries.push(projected);
@@ -2172,12 +2210,13 @@ function projectResult(data, request) {
   }
   return result;
 }
-function projectScanEntryEvidence(evidence) {
+function projectScanEntryEvidence(evidence, protocolVersion) {
+  const nativeScan = protocolVersion === "1.1.0";
   if (typeof evidence !== "object" || evidence === null || Array.isArray(evidence)) {
     return void 0;
   }
   for (const key of Object.keys(evidence)) {
-    if (!SCAN_ENTRY_EVIDENCE_KEYS.includes(key)) {
+    if (!SCAN_ENTRY_EVIDENCE_KEYS.includes(key) && !(nativeScan && key === "native_symbols")) {
       return void 0;
     }
   }
@@ -2193,7 +2232,7 @@ function projectScanEntryEvidence(evidence) {
     projected.signature = evidence.signature;
   }
   if (evidence.references !== void 0) {
-    if (!Array.isArray(evidence.references) || evidence.references.length > MAX_SCAN_ENTRY_REFERENCES) {
+    if (!Array.isArray(evidence.references) || evidence.references.length > (nativeScan ? 256 : MAX_SCAN_ENTRY_REFERENCES)) {
       return void 0;
     }
     const references = [];
@@ -2201,8 +2240,8 @@ function projectScanEntryEvidence(evidence) {
       if (typeof reference !== "object" || reference === null || Array.isArray(reference)) {
         return void 0;
       }
-      const keys = Object.keys(reference).sort();
-      if (keys.join(",") !== SCAN_ENTRY_REFERENCE_KEYS.join(",")) {
+      const keys2 = Object.keys(reference).sort();
+      if (keys2.join(",") !== SCAN_ENTRY_REFERENCE_KEYS.join(",")) {
         return void 0;
       }
       if (typeof reference.target !== "string" || reference.target.length === 0 || reference.target.length > 192 || !isSemanticId(reference.target) || !SCAN_ENTRY_ROLES.includes(reference.role) || !SCAN_ENTRY_CONFIDENCES.includes(reference.confidence)) {
@@ -2216,7 +2255,12 @@ function projectScanEntryEvidence(evidence) {
     }
     projected.references = references;
   }
-  if (canonicalJsonText(projected).length > MAX_SCAN_ENTRY_EVIDENCE_BYTES) {
+  if (nativeScan) {
+    const nodes = evidence.native_symbols;
+    if (!Array.isArray(nodes) || !nodes.length || nodes.length > 256 || !validNativeSymbols(nodes, isLogicalPath)) return void 0;
+    projected.native_symbols = nodes;
+  }
+  if (canonicalJsonText(projected).length > (nativeScan ? 512 * 1024 : MAX_SCAN_ENTRY_EVIDENCE_BYTES)) {
     return void 0;
   }
   return projected;
@@ -2547,9 +2591,9 @@ async function main() {
     if (nativeMarkers.length > 1) throw new RequestRefusal("native-policy-input", "ambiguous native policy");
     let nativePolicy = null;
     if (nativeMarkers.length === 1) {
-      const text = argvWithoutEntry[argvWithoutEntry.indexOf(nativeMarkers[0]) + 1];
-      if (typeof text !== "string" || text.length === 0) throw new RequestRefusal("native-policy-input", "missing native policy");
-      nativePolicy = decodeJsonDocument(Buffer.from(text, "utf8"), { maxBytes: 16384 });
+      const text2 = argvWithoutEntry[argvWithoutEntry.indexOf(nativeMarkers[0]) + 1];
+      if (typeof text2 !== "string" || text2.length === 0) throw new RequestRefusal("native-policy-input", "missing native policy");
+      nativePolicy = decodeJsonDocument(Buffer.from(text2, "utf8"), { maxBytes: 16384 });
       if (nativePolicy?.schema_version !== "lekalo/native-gate-policy/v0.4.0" || nativePolicy.kind !== "native-gate-policy" || !Array.isArray(nativePolicy.confirmations)) {
         throw new RequestRefusal("native-policy-input", "invalid native policy");
       }
@@ -2617,8 +2661,8 @@ function deepFreeze2(value) {
   }
   return value;
 }
-function pascal(text) {
-  return text.split("_").filter((part) => part.length > 0).map((part) => part[0].toUpperCase() + part.slice(1)).join("");
+function pascal(text2) {
+  return text2.split("_").filter((part) => part.length > 0).map((part) => part[0].toUpperCase() + part.slice(1)).join("");
 }
 var KIND_SUFFIX = deepFreeze2({
   command: "Input",
@@ -2971,8 +3015,8 @@ function compareFindings(left, right) {
 
 // src/zod-emit.mjs
 var ADAPTER_ID2 = "lekalo-target-node-typescript";
-function sha256(text) {
-  return "sha256:" + createHash3("sha256").update(text, "utf8").digest("hex");
+function sha256(text2) {
+  return "sha256:" + createHash3("sha256").update(text2, "utf8").digest("hex");
 }
 function canonicalJson2(value) {
   if (value === null) return "null";
@@ -2988,7 +3032,7 @@ function canonicalJson2(value) {
       if (Array.isArray(value)) {
         return `[${value.map(canonicalJson2).join(",")}]`;
       }
-      const keys = Object.keys(value).sort((left, right) => {
+      const keys2 = Object.keys(value).sort((left, right) => {
         const leftBytes = Buffer.from(left, "utf8");
         const rightBytes = Buffer.from(right, "utf8");
         const length = Math.min(leftBytes.length, rightBytes.length);
@@ -2999,14 +3043,14 @@ function canonicalJson2(value) {
         }
         return leftBytes.length - rightBytes.length;
       });
-      return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalJson2(value[key])}`).join(",")}}`;
+      return `{${keys2.map((key) => `${JSON.stringify(key)}:${canonicalJson2(value[key])}`).join(",")}}`;
     }
     default:
       throw new TypeError("unserializable value");
   }
 }
-function file(path, text, map) {
-  return { path, text, map };
+function file(path, text2, map) {
+  return { path, text: text2, map };
 }
 function emitFiles({ modules, inputDigest, adapterVersion, irIdentity }) {
   const files = [file(`${ZOD_DIR}/runtime.ts`, runtimeText(adapterVersion))];
@@ -3205,23 +3249,23 @@ ${imports.join("\n")}
 
 `);
   for (const declaration of orderDeclarations(module.declarations)) {
-    const text2 = renderDeclaration(declaration);
+    const text3 = renderDeclaration(declaration);
     const start = cursor;
-    const end = start + byteLength(text2);
+    const end = start + byteLength(text3);
     declarations.push({
       id: declaration.semanticId,
       export: declaration.exportName,
       start,
       end
     });
-    body.push(text2);
+    body.push(text3);
     cursor = end + 1;
   }
-  const text = `${[...header, "", ...imports, "", ...body].join("\n")}
+  const text2 = `${[...header, "", ...imports, "", ...body].join("\n")}
 `;
   const owner = Object.hasOwn(module.fields, "") ? module.fields[""] : module.modules[0].id;
   return {
-    text,
+    text: text2,
     map: {
       contract: MAP_CONTRACT,
       adapter: { id: ADAPTER_ID2, version: context.adapterVersion },
@@ -3390,32 +3434,32 @@ ${inner}})${expr.strict ? ".strict()" : ".strip()"}`;
 function indentUnit(indent) {
   return indent;
 }
-function byteLength(text) {
-  return Buffer.byteLength(text, "utf8");
+function byteLength(text2) {
+  return Buffer.byteLength(text2, "utf8");
 }
 
 // src/zod-policy.mjs
 var POLICY_PATH = "lekalo/targets/node-typescript.yaml";
 var MAX_POLICY_BYTES = 16 * 1024;
-function resolvePolicy(text) {
-  if (text === null || text === void 0) {
+function resolvePolicy(text2) {
+  if (text2 === null || text2 === void 0) {
     return { policy: { ...DEFAULT_POLICY }, source: "defaults" };
   }
-  if (typeof text !== "string") {
+  if (typeof text2 !== "string") {
     return { refusal: "not-text" };
   }
-  const bytes = Buffer.byteLength(text, "utf8");
+  const bytes = Buffer.byteLength(text2, "utf8");
   if (bytes > MAX_POLICY_BYTES) {
     return { refusal: "overbound" };
   }
-  const parsed = parsePolicyYaml(text);
+  const parsed = parsePolicyYaml(text2);
   if (parsed.refusal) {
     return { refusal: parsed.refusal };
   }
   return { policy: parsed.policy, source: "document" };
 }
-function parsePolicyYaml(text) {
-  const lines = text.split(/\r?\n/);
+function parsePolicyYaml(text2) {
+  const lines = text2.split(/\r?\n/);
   let section = null;
   const seen = /* @__PURE__ */ new Set();
   const policy = {};
@@ -3609,22 +3653,22 @@ function readIr(readView, irPath) {
   } catch {
     return { refusal: "ir-unreadable" };
   }
-  let text;
+  let text2;
   try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    text2 = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     return { refusal: "ir-encoding" };
   }
   let document;
   try {
-    document = JSON.parse(text);
+    document = JSON.parse(text2);
   } catch {
     return { refusal: "ir-json" };
   }
   if (document === null || typeof document !== "object" || !Array.isArray(document.definitions)) {
     return { refusal: "ir-shape" };
   }
-  return { document, text };
+  return { document, text: text2 };
 }
 function sha256Bytes(bytes) {
   return "sha256:" + createHash4("sha256").update(bytes).digest("hex");
@@ -3632,8 +3676,8 @@ function sha256Bytes(bytes) {
 function byPath(left, right) {
   return left.path < right.path ? -1 : left.path > right.path ? 1 : 0;
 }
-function bounded(text) {
-  return String(text ?? "unknown").replace(/[^a-zA-Z0-9._: -]+/g, "?").slice(0, 128);
+function bounded(text2) {
+  return String(text2 ?? "unknown").replace(/[^a-zA-Z0-9._: -]+/g, "?").slice(0, 128);
 }
 
 // src/main.mjs

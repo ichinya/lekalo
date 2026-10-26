@@ -1,0 +1,67 @@
+[
+  {
+    "path": "package.json",
+    "sha256": "d2e023bd828a7a3c497c9d8f9272d3b8305abe7c1826d4521e369fc831ece161",
+    "bytes": 171
+  },
+  {
+    "path": "README.md",
+    "sha256": "5e552f999a19b8bd6b392fc37875a9f72a27c18f41dd91ae1a8042478a177a23",
+    "bytes": 179
+  },
+  {
+    "path": "src/api/planner-view.ts",
+    "sha256": "567995c1dbc2d37c1c7a4851432a98bd8435c49e6657bb25571c92c08ed57863",
+    "bytes": 302
+  },
+  {
+    "path": "src/api/task-json.ts",
+    "sha256": "e1f7413deabb1ebf162a07684b3e81a11c34f4aa26146d6b8432eac623c76c40",
+    "bytes": 846
+  },
+  {
+    "path": "src/domain/errors.ts",
+    "sha256": "87b7dc6d7933c80c529dedf369f22d2ed4f082950174f86516e729fe0d47272d",
+    "bytes": 150
+  },
+  {
+    "path": "src/domain/planning.ts",
+    "sha256": "f7f3855be8cdeff7bf831ed1ddec11429bb5d74d8aeec6e8c1a47fd0b04280ba",
+    "bytes": 343
+  },
+  {
+    "path": "src/domain/task-service.ts",
+    "sha256": "0edaf3d1ca4a7441961124b5196e250a44ea241789ab691afbe0f705f1809db1",
+    "bytes": 838
+  },
+  {
+    "path": "src/domain/task.ts",
+    "sha256": "857ebbdcd81643c0860c5bf4d538b002b1d7a98d62fe624dcc1b8493002f657b",
+    "bytes": 440
+  },
+  {
+    "path": "src/domain/validation.ts",
+    "sha256": "ed29f83221e04b16645561e479426c4fc917611ad50106aad8400cf7702efa9d",
+    "bytes": 337
+  },
+  {
+    "path": "src/index.ts",
+    "sha256": "2475a31f707fc1d08275e2f3a208d2d17aed4be0f0529310ef3626507fac7830",
+    "bytes": 262
+  },
+  {
+    "path": "src/storage/memory.ts",
+    "sha256": "004a3bd2dd9308f0631b1ae4892cdba56f1efb01f8a1e62dad6c1f1d5708cc6a",
+    "bytes": 487
+  },
+  {
+    "path": "test/public.test.mjs",
+    "sha256": "c12284cd30755d7545f7774f4f07c72528d616d8960379634dae63a08fdf15a7",
+    "bytes": 1154
+  },
+  {
+    "path": "tsconfig.json",
+    "sha256": "948c713319f925ee71a0a4d1992e9fd0672316b3f962728b100e3a92969feb92",
+    "bytes": 234
+  }
+]

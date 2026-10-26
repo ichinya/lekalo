@@ -751,10 +751,14 @@ jobs:
         run: |
           node scripts/gen-public-scan-protocol.mjs --check
           node scripts/test-public-typescript-scan.mjs
+          node scripts/gen-native-symbols-protocol.mjs --check
+          node scripts/test-public-typescript-roundtrip.mjs
       - name: Qualify the domain/client workspace without a backend (issue #153)
         run: node scripts/test-domain-workspace.mjs
       - name: Qualify managed agent instruction installation (issue #157)
         run: node scripts/test-install-prompt.mjs
+      - name: Check source and context reuse in the research harness (issue #167)
+        run: node --test scripts/research/test-framework-lift-workspace.mjs
       - name: Run the Hono framework-binding suites (issue #115)
         timeout-minutes: 15
         run: node scripts/test-node-hono-bindings.mjs

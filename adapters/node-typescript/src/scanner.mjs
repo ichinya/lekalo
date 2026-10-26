@@ -42,6 +42,7 @@ import {
   resolveDrizzleAttachment,
 } from "./drizzle-evidence.mjs";
 import { HONO_PROVIDER_ID, scanHonoProvider } from "./hono-scanner.mjs";
+import {nativeInventory, ownedNativeSymbols, validNativeSymbols} from "./native-symbols.mjs";
 
 // ---------------------------------------------------------------------------
 // 1. Bounds, domains, and small utilities.
@@ -52,7 +53,7 @@ const IDENTITY_DOMAIN = "lekalo.ts.native.v1";
 /** The domain-separation prefix of the structural signature digest. */
 const SIGNATURE_DOMAIN = "lekalo.ts.signature.v1";
 /** The version of the signature policy (part of every signature key). */
-const SIGNATURE_POLICY_VERSION = 1;
+const SIGNATURE_POLICY_VERSION = 2;
 
 /** Maximum total source bytes one scan may read. */
 const MAX_SCAN_SOURCE_BYTES = 16 * 1024 * 1024;
@@ -451,7 +452,10 @@ function createRestrictedHost({ ts, inventorySet, readBytes, libMap, logicalToHo
     getCanonicalFileName: (name) => name.toLowerCase(),
     getCurrentDirectory: () => currentDirectory,
     getNewLine: () => "\n",
-    getDefaultLibFileName: () => "/lekalo/libs/lib.d.ts",
+    // Use the pinned compiler's target-specific library entrypoint. The
+    // old ES5-only root lost Map/iterators/includes even for ES2022 inputs.
+    // Resolution still stays entirely inside the embedded library map.
+    getDefaultLibFileName: (options) => `/lekalo/libs/${ts.getDefaultLibFileName(options)}`,
     getDefaultLibLocation: () => "/lekalo/libs",
 
     fileExists(hostName) {
@@ -714,7 +718,7 @@ function signatureGraphOfSymbol({ ts, checker, symbol, program, depthBudget }) {
         name: parameter.name,
         optional,
         rest: isRest,
-        type: visit(checker.getTypeOfSymbol(parameter), 0),
+        type: visit(checker.getTypeOfSymbolAtLocation(parameter, declaration ?? signature.declaration), 0),
       };
     });
     const returnType = visit(checker.getReturnTypeOfSignature(signature), 0);
@@ -723,19 +727,23 @@ function signatureGraphOfSymbol({ ts, checker, symbol, program, depthBudget }) {
     return { parameters, returnType: async ? { kind: "promise", value: returnType } : returnType, async };
   });
 
-  const type = checker.getTypeOfSymbolAtLocation(symbol, symbol.declarations?.[0] ?? program.getSourceFiles()[0]);
+  const location = symbol.declarations?.[0] ?? program.getSourceFiles()[0];
+  const valueType = checker.getTypeOfSymbolAtLocation(symbol, location);
+  const type = symbol.flags & (ts.SymbolFlags.Interface | ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Class | ts.SymbolFlags.Enum)
+    ? checker.getDeclaredTypeOfSymbol(symbol) : valueType;
   const callSignatures = checker.getSignaturesOfType(type, ts.SignatureKind.Call);
-  const constructSignatures = checker.getSignaturesOfType(type, ts.SignatureKind.Construct);
+  const constructSignatures = checker.getSignaturesOfType(valueType, ts.SignatureKind.Construct);
   const graph = {
     policy: SIGNATURE_POLICY_VERSION,
+    value: visit(type, 0),
     call: callGraph(callSignatures),
     construct: callGraph(constructSignatures),
     properties: (type.flags & ts.TypeFlags.Object) === 0 ? [] : checker
       .getPropertiesOfType(type)
-      .filter((member) => !(member.flags & (ts.SymbolFlags.Method | ts.SymbolFlags.Function)))
       .map((member) => ({
         name: member.name,
-        type: visit(checker.getTypeOfSymbol(member), 0),
+        type: visit(checker.getTypeOfSymbolAtLocation(member, member.valueDeclaration ?? member.declarations?.[0] ?? location), 0),
+        call: callGraph(checker.getSignaturesOfType(checker.getTypeOfSymbolAtLocation(member, member.valueDeclaration ?? member.declarations?.[0] ?? location), ts.SignatureKind.Call)),
         optional: Boolean(member.declarations?.[0]?.questionToken),
       }))
       .sort((left, right) => utf8Compare(left.name, right.name)),
@@ -925,9 +933,7 @@ function indexSourceFile({ ts, checker, sourceFile, modulePath, packageIndex, in
         const end = node.getEnd();
         const startLine = sourceFile.getLineAndCharacterOfPosition(start);
         const endLine = sourceFile.getLineAndCharacterOfPosition(end);
-        const signatureGraph = family === "class" || family === "interface"
-          ? null
-          : signatureGraphOfSymbol({ ts, checker, symbol, program: context.program, depthBudget: 6 });
+        const signatureGraph = signatureGraphOfSymbol({ ts, checker, symbol, program: context.program, depthBudget: 6 });
         const signature = signatureGraph ? signatureDigest(signatureGraph) : null;
         const jsdoc = symbol.getDocumentationComment
           ? symbol.getDocumentationComment(checker)
@@ -1845,6 +1851,11 @@ export function scanOperation(context) {
     // projection complete after dropping known unrepresentable facts.
     return { state: "partial", diagnostics: [{ reason: "public-scan-surface-unrepresentable" }] };
   }
+  const nativeScan = context.request?.protocol_version === "1.1.0";
+  const nativeSymbols = nativeScan ? nativeInventory(index) : [];
+  if (nativeScan && (index.routes.length > 0 || !validNativeSymbols(nativeSymbols, p => typeof p === "string" && p.length <= 512 && !p.startsWith("/") && !p.includes("\\") && !p.split("/").some(s => !s || s === "." || s === "..")))) {
+    return {state:"partial", diagnostics:[{reason:"native-inventory-unrepresentable"}]};
+  }
   const entries = [];
   // Issue #47 (plan S8): native tests claiming a scenario identity via
   // the `lekalo:<id>` title convention ride the FIRST top-level symbol
@@ -1868,7 +1879,7 @@ export function scanOperation(context) {
     if (symbol.memberOf !== null) continue; // members ride their owner
     // The closed evidence slot holds eight rows. Losing further rows
     // cannot qualify as a complete public scan.
-    if (index.references.filter((row) => row.from === symbol.module).length > 8) {
+    if (index.references.filter((row) => row.from === symbol.module).length > (nativeScan ? 256 : 8)) {
       index.anyUncertainty.push({path: symbol.module, kind: "reference-evidence-overflow", detail: "wire-reference-bound", line: symbol.line});
     }
     const detail = {
@@ -1890,7 +1901,16 @@ export function scanOperation(context) {
       }
     }
     const evidence = buildEntryEvidence(symbol, index) ?? {};
-    if (["0.9.0", "0.9.1"].includes(context.request?.protocol_version)) {
+    if (nativeScan) {
+      const members = ownedNativeSymbols(nativeSymbols, symbol.native);
+      if (members.length > 256) return {state:"partial",diagnostics:[{reason:"native-inventory-bound"}]};
+      evidence.native_symbols = members;
+      // The successor retains every bounded outbound module reference.
+      evidence.references = index.references.filter(r=>r.from===symbol.module).map(r=>({
+        target:moduleSemanticAnchor(r.to,index),role:r.role,confidence:r.confidence,
+      }));
+    }
+    if (nativeScan || ["0.9.0", "0.9.1"].includes(context.request?.protocol_version)) {
       const source = index.inputManifest.files.find((file) => file.path === symbol.module);
       if (source) evidence.source_digest = `sha256:${source.digest}`;
     }
@@ -1951,8 +1971,15 @@ export function scanOperation(context) {
     counts,
     ...frameworkEvidence,
   };
+  if (nativeScan) {
+    internalEvidence.nativeUncertainty = index.anyUncertainty.filter(r=>r.kind==="any-surface").map(r=>({
+      path:r.path,kind:r.kind,detail:r.detail,
+      ...(r.line===null?{}:{line:r.line}),
+      source_digest:"sha256:"+index.inputManifest.files.find(f=>f.path===r.path)?.digest,
+    })).sort((a,b)=>utf8Compare(a.path,b.path)||utf8Compare(a.kind,b.kind)||utf8Compare(a.detail,b.detail)||(a.line??0)-(b.line??0)||utf8Compare(a.source_digest,b.source_digest));
+  }
   if (drizzleSummary !== null) internalEvidence.drizzle = drizzleSummary;
-  if (index.anyUncertainty.length > 0 || errorCount > 0) {
+  if (index.anyUncertainty.some(r=>!nativeScan||r.kind!=="any-surface") || errorCount > 0) {
     return {
       state: "partial",
       diagnostics: [{

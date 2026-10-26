@@ -4,7 +4,7 @@
   "adapter": {
     "id": "lekalo-target-node-typescript",
     "name": "Node/TypeScript target adapter",
-    "version": "0.6.1"
+    "version": "1.1.0"
   },
   "publisher": {
     "id": "lekalo",
@@ -26,7 +26,8 @@
       "0.3.2",
       "0.6.4",
       "0.9.0",
-      "0.9.1"
+      "0.9.1",
+      "1.1.0"
     ],
     "irVersions": [
       "0.2.16"
@@ -98,12 +99,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:7f1ee063c694f3d058ab9c4dd95edd18e8c17f60f94f4207296d429c1aa49209",
+    "packageDigest": "sha256:ab2088e34ea1db6964f54cb9aeb417e2ee05e310a142f41844652d7190f3c881",
     "files": [
       {
         "path": "adapter.mjs",
-        "digest": "sha256:c3e6581e04939a091ceab9b9b72238b5e16c19b94176da502075828bea85d84b",
-        "bytes": 14779146
+        "digest": "sha256:e18b801e99618a3d4a67369917c70333f503fca2827fe6df24e8771dcd733118",
+        "bytes": 14786496
       }
     ],
     "signaturePolicy": "unsigned",

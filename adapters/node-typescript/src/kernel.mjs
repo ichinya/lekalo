@@ -52,6 +52,7 @@
  */
 
 import { collectAiLint, validateLintRequest } from './ai-lint.mjs';
+import {validNativeSymbols} from "./native-symbols.mjs";
 import { createHash } from "node:crypto";
 import {
   closeSync,
@@ -75,11 +76,11 @@ export const PROTOCOL_TOKEN = "lekalo.target/v1";
 /** The sole protocol version this kernel speaks (the current contract). */
 export const VERSION = "0.3.2";
 /** The closed supported-version set: exact membership, never ranges. */
-export const SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0", "0.9.1"]);
+export const SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0", "0.9.1", "1.1.0"]);
 /** The adapter identity token. */
 export const ADAPTER_ID = "lekalo-target-node-typescript";
 /** The adapter release version (the reserved product version). */
-export const ADAPTER_VERSION = "0.6.1";
+export const ADAPTER_VERSION = "1.1.0";
 /** The maximum request size this kernel reads (mirrors the core bound). */
 export const MAX_REQUEST_BYTES = 1024 * 1024;
 /** The maximum response size this kernel writes (mirrors the core cap). */
@@ -2142,8 +2143,11 @@ export function createKernel(options = {}) {
       }
       recordSink(sink, validatedRequest, outcome, profile);
       const response = projectOutcome(validatedRequest, outcome);
-      if (["0.9.0", "0.9.1"].includes(validatedRequest.protocol_version) && operation === "scan" && response.status === "ok") {
+      if (["0.9.0", "0.9.1", "1.1.0"].includes(validatedRequest.protocol_version) && operation === "scan" && response.status === "ok") {
         response.evidence.scan_profile_digest = `sha256:${createHash("sha256").update(canonicalJson(profile), "utf8").digest("hex")}`;
+      }
+      if (validatedRequest.protocol_version === "1.1.0" && operation === "scan" && response.status === "ok") {
+        response.evidence.native_uncertainty = outcome.evidence?.nativeUncertainty ?? [];
       }
       return { response, internal: outcome };
     },
@@ -2362,7 +2366,7 @@ function projectResult(data, request) {
       return undefined;
     }
     return { native_plan: { digest: np.plan_digest, kind: np.kind,
-      ...(request.protocol_version === "0.9.1" ? { plan: np } : {}) } };
+      ...(["0.9.1", "1.1.0"].includes(request.protocol_version) ? { plan: np } : {}) } };
   }
   if (!Array.isArray(data.entries)) {
     return undefined;
@@ -2380,20 +2384,20 @@ function projectResult(data, request) {
       || typeof entry.kind !== "string"
       || [...entry.kind].length > 128
       || (entry.detail !== undefined && (typeof entry.detail !== "string" || [...entry.detail].length >
-        (["0.9.0", "0.9.1"].includes(request.protocol_version) && request.operation === "scan" ? 2048 : 128)))) {
+        (["0.9.0", "0.9.1", "1.1.0"].includes(request.protocol_version) && request.operation === "scan" ? 2048 : 128)))) {
       return undefined;
     }
     const projected = entry.detail === undefined
       ? { path: entry.path, kind: entry.kind }
       : { path: entry.path, kind: entry.kind, detail: entry.detail };
     if (entry.evidence !== undefined) {
-      const evidence = projectScanEntryEvidence(entry.evidence);
+      const evidence = projectScanEntryEvidence(entry.evidence, request.protocol_version);
       if (!evidence) {
         return undefined;
       }
       projected.evidence = evidence;
     }
-    if (["0.9.0", "0.9.1"].includes(request.protocol_version) && request.operation === "scan") {
+    if (["0.9.0", "0.9.1", "1.1.0"].includes(request.protocol_version) && request.operation === "scan") {
       if (!isSha256Digest(projected.evidence?.source_digest)) return undefined;
     } else if (projected.evidence?.source_digest !== undefined) return undefined;
     entries.push(projected);
@@ -2413,12 +2417,13 @@ function projectResult(data, request) {
  * signature digest and up to eight reference rows, canonically ordered.
  * Every other shape is refused.
  */
-function projectScanEntryEvidence(evidence) {
+function projectScanEntryEvidence(evidence, protocolVersion) {
+  const nativeScan = protocolVersion === "1.1.0";
   if (typeof evidence !== "object" || evidence === null || Array.isArray(evidence)) {
     return undefined;
   }
   for (const key of Object.keys(evidence)) {
-    if (!SCAN_ENTRY_EVIDENCE_KEYS.includes(key)) {
+    if (!SCAN_ENTRY_EVIDENCE_KEYS.includes(key) && !(nativeScan && key === "native_symbols")) {
       return undefined;
     }
   }
@@ -2435,7 +2440,7 @@ function projectScanEntryEvidence(evidence) {
   }
   if (evidence.references !== undefined) {
     if (!Array.isArray(evidence.references)
-      || evidence.references.length > MAX_SCAN_ENTRY_REFERENCES) {
+      || evidence.references.length > (nativeScan ? 256 : MAX_SCAN_ENTRY_REFERENCES)) {
       return undefined;
     }
     const references = [];
@@ -2463,7 +2468,12 @@ function projectScanEntryEvidence(evidence) {
     }
     projected.references = references;
   }
-  if (canonicalJsonText(projected).length > MAX_SCAN_ENTRY_EVIDENCE_BYTES) {
+  if (nativeScan) {
+    const nodes=evidence.native_symbols;
+    if (!Array.isArray(nodes) || !nodes.length || nodes.length>256 || !validNativeSymbols(nodes,isLogicalPath)) return undefined;
+    projected.native_symbols=nodes;
+  }
+  if (canonicalJsonText(projected).length > (nativeScan ? 512 * 1024 : MAX_SCAN_ENTRY_EVIDENCE_BYTES)) {
     return undefined;
   }
   return projected;

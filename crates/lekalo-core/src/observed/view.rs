@@ -71,6 +71,13 @@ pub struct ObservedCard {
     pub endpoints: Vec<EndpointRecord>,
     pub schemas: Vec<SchemaRecord>,
     pub completeness: Completeness,
+    /// Current scan's declaration subtree, separately revision-bound.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub native_symbols: Vec<crate::native_symbols::NativeSymbol>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_revision: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub native_uncertainty: Vec<crate::native_symbols::NativeUncertainty>,
 }
 
 /// Project the card for one recorded symbol.
@@ -81,6 +88,17 @@ pub fn inspect_card(index: &ObservedIndex, symbol_id: &str) -> Result<ObservedCa
     let module = ObservedIndex::module_of(symbol_id)
         .unwrap_or_default()
         .to_owned();
+    let native_symbols = native_subtrees(index, record);
+    let native_uncertainty: Vec<_> = index
+        .native_uncertainty
+        .iter()
+        .filter(|u| native_symbols.iter().any(|s| s.path == u.path))
+        .cloned()
+        .collect();
+    let completeness = match record_completeness(record) {
+        Completeness::Complete if !native_uncertainty.is_empty() => Completeness::Incomplete,
+        other => other,
+    };
     Ok(ObservedCard {
         mode: version::MODE,
         symbol: record.id.clone(),
@@ -109,8 +127,47 @@ pub fn inspect_card(index: &ObservedIndex, symbol_id: &str) -> Result<ObservedCa
             .filter(|schema| schema.symbol == symbol_id)
             .cloned()
             .collect(),
-        completeness: record_completeness(record),
+        completeness,
+        native_symbols,
+        native_revision: (index.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION)
+            .then(|| index.revision.clone()),
+        native_uncertainty,
     })
+}
+
+fn native_subtrees(
+    index: &ObservedIndex,
+    record: &SymbolRecord,
+) -> Vec<crate::native_symbols::NativeSymbol> {
+    let roots: std::collections::BTreeSet<_> = record
+        .stable_key
+        .iter()
+        .map(String::as_str)
+        .chain(record.candidates.iter().map(|c| c.native.as_str()))
+        .collect();
+    let nodes: std::collections::BTreeMap<_, _> = index
+        .native_symbols
+        .iter()
+        .map(|s| (s.native.as_str(), s))
+        .collect();
+    index
+        .native_symbols
+        .iter()
+        .filter(|s| {
+            let mut current = Some(*s);
+            while let Some(node) = current {
+                if roots.contains(node.native.as_str()) {
+                    return true;
+                }
+                current = node
+                    .member_of
+                    .as_ref()
+                    .and_then(|p| nodes.get(p.as_str()).copied());
+            }
+            false
+        })
+        .cloned()
+        .collect()
 }
 
 impl ObservedCard {
@@ -141,6 +198,24 @@ impl ObservedCard {
         }
         if let Some(key) = &self.stable_key {
             lines.push(format!("  key {key}"));
+        }
+        if let Some(revision) = &self.native_revision {
+            lines.push(format!(
+                "  native inventory {} declarations at {revision}",
+                self.native_symbols.len()
+            ));
+            for symbol in &self.native_symbols {
+                lines.push(format!(
+                    "    {} ({}) {}:{}-{}",
+                    symbol.qualified_name, symbol.family, symbol.path, symbol.line, symbol.end_line
+                ));
+            }
+        }
+        for uncertainty in &self.native_uncertainty {
+            lines.push(format!(
+                "  type evidence unknown: {} ({})",
+                uncertainty.detail, uncertainty.kind
+            ));
         }
         if self.promoted {
             lines.push("  promoted to the canonical model".to_owned());

@@ -1,12 +1,12 @@
 # Target adapter process protocol
 
-Status: **Implemented** host protocol `lekalo.target/v1` with bootstrap contract `0.3.2` and explicitly negotiated successors `0.6.4` (lint), `0.8.0` (watch selection) `0.9.0` (ordinary public scan custody) and `0.9.1` (complete native plans), product `1.0.0`. Owner: adapter-host maintainers. [ADR-0025](adr/0025-target-protocol.md). Source-bound Model/IR pairs are `0.2.16` and `0.8.0`; ordinary operations retain their predecessor admission, and watch requires the explicit pins below. The ordinary diagnostic registry is `0.6.4`; watch emits the merged `0.8.0` union. Supported operations are describe, scan, bind, validate, generate, verify, plan-clean, clean and the read-only native-plan extension. Operation availability depends on the adapter and profile; declaration is not successful execution.
+Status: **Implemented** host protocol `lekalo.target/v1` with bootstrap contract `0.3.2` and explicitly negotiated successors `0.6.4` (lint), `0.8.0` (watch selection) `0.9.0` (ordinary public scan custody) `0.9.1` (complete native plans) and `1.1.0` (native declaration inventory), development product `1.1.0`. Owner: adapter-host maintainers. [ADR-0025](adr/0025-target-protocol.md). Source-bound Model/IR pairs are `0.2.16` and `0.8.0`; ordinary operations retain their predecessor admission, and watch requires the explicit pins below. The ordinary diagnostic registry is `0.6.4`; watch emits the merged `0.8.0` union. Supported operations are describe, scan, bind, validate, generate, verify, plan-clean, clean and the read-only native-plan extension. Operation availability depends on the adapter and profile; declaration is not successful execution.
 
 The exact [current schema](../contracts/target-protocol.schema.v0.3.2.json) and production decoder govern this checkout. Historical base/extension paragraphs below describe negotiation history; they do not admit a historical contract absent from the current registry. [Workflow provider discovery](provider-contract.md) is separate. [Native gates](native-gates.md) own read-only planning and the explicitly approved Windows production execution profile. [Architecture](architecture.md), [security](security.md), [Node adapter](../adapters/node-typescript/README.md), [PHP adapter](../adapters/php-laravel/README.md).
 
 ## Version negotiation and capability discovery
 
-This checkout probes at **exactly `0.3.2`** (`BASE_VERSION`/`VERSION`) and upgrades only to a supported version the adapter explicitly declares and proves through a second describe at that exact version. The ascending `SUPPORTED_VERSIONS` set in `crates/lekalo-core/src/target_protocol/version.rs` admits 0.3.2, 0.6.4, 0.8.0, 0.9.0 and 0.9.1. The frozen predecessor schemas retain their exact members and bytes; arbitrary newer/older strings are refused.
+This checkout probes at **exactly `0.3.2`** (`BASE_VERSION`/`VERSION`) and upgrades only to a supported version the adapter explicitly declares and proves through a second describe at that exact version. The ascending `SUPPORTED_VERSIONS` set in `crates/lekalo-core/src/target_protocol/version.rs` admits 0.3.2, 0.6.4, 0.8.0, 0.9.0, 0.9.1 and 1.1.0. The frozen predecessor schemas retain their exact members and bytes; arbitrary newer/older strings are refused.
 
 Protocol `0.9.0` retains the `0.8.0` wire surface and adds exact
 source/profile custody for successful scans, with scan detail capacity of
@@ -65,9 +65,35 @@ source/control/runtime custody.
 
 ## Scan entry evidence
 
-The current schema can carry optional closed entry evidence: structural signature digest and at most eight outbound references with typed role (`read`, `create`, `update`, `delete`, `emit`, `call`, `reference`) and confidence (`exact`, `high`, `medium`, `low`, `unknown`). Missing evidence stays unknown. Core records it in observed evidence; signature changes can stale a binding instead of silently refreshing its mapping.
+Predecessor protocols can carry optional closed entry evidence: structural signature digest and at most eight outbound references with typed role (`read`, `create`, `update`, `delete`, `emit`, `call`, `reference`) and confidence (`exact`, `high`, `medium`, `low`, `unknown`). Missing evidence stays unknown. Core records it in observed evidence; signature changes can stale a binding instead of silently refreshing its mapping.
 
 Rich adapter-local evidence need not fit this closed projection. A lossy scan must refuse; [the brownfield tutorial](tutorial-brownfield-typescript.md) labels its separate contributor fallback **Experimental**. Successful direct-kernel evidence does not qualify the public wire exchange.
+
+## Complete native declaration inventory (1.1.0)
+
+The explicitly negotiated [successor schema](../contracts/target-protocol.schema.v1.1.0.json)
+retains complete native plans and source/profile custody. Successful scan
+entries require a nonempty native_symbols subtree. Each declaration records
+its exact native key, lexical qualified name, declaration family, path,
+start/end line, static/instance slot, declaration-only flag, optional owner
+key and optional structural signature. The subtree root must match the
+entry's native binding and signature. Core validates unique sorted keys,
+owner existence, acyclicity, same-file containment and complete root joins.
+Bounds are 256 declarations per root, 10,000 globally, owner depth 64 and
+256 outbound references per entry. Overflow refuses without truncation.
+
+Successful scans also require native_uncertainty (possibly empty). Its
+only admitted kind is any-surface; every record binds a confined source
+path and exact source digest. Other uncertainty and compiler errors remain
+producer refusals. Native inventory completeness is distinct from type
+evidence completeness and from semantic correctness. Non-scan and failed
+responses cannot carry these fields. Published predecessors reject them.
+
+The observed scan/index successors are exactly versioned 1.1.0. Fresh
+candidate evidence is retained separately from user-confirmed evidence;
+signature changes require explicit reconfirmation through
+[bindings](bindings.md). The [public planner gate](public-typescript-scan.md#native-inventory-and-change-review-110)
+exercises that cycle through the manifested production artifact.
 
 ## Resolved profile request
 
