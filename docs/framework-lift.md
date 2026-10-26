@@ -5,6 +5,17 @@ for issue #100. Actual external agent/provider runs and independently authentica
 execution receipts remain an integration seam. Synthetic fixtures are recorded
 simulations; they are never evidence of measured Framework Lift.
 
+Post-MVP issue [#167](https://github.com/ichinya/lekalo/issues/167) now has real
+public synthetic CLI runs, with an allowlisted
+[read-once result](../scripts/research/results/2026-10-26-read-once.json) and
+[receipt audit / admission notes](../scripts/research/README.md). These are
+research disclosures, not admitted `framework-lift-result` documents or product
+privacy exports. Unknown CLI sampling defaults/pricing, an uncapped token policy
+and a different timing window cannot be represented faithfully by the existing
+0.6.4 campaign recipe. Actual `record-arm/compare` remain NOTRUN; synthetic
+admission probes preserve that distinction. Historical simulations and the MVP
+1.0.0 acceptance limitation retain their original status.
+
 `lekalo evaluation` never launches an agent, shell, native gate, provider, judge or
 network request. It reads explicit bounded documents and emits local-only canonical
 JSON. The five closed `framework-lift-{baseline,task,campaign,arm,result}` families

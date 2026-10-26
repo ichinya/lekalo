@@ -1,0 +1,65 @@
+{
+  "format": "lekalo-167-admission-probe/1",
+  "kind": "synthetic-contract-probes-not-empirical-results",
+  "contract": "0.6.4",
+  "actualRecordArm": "NOTRUN",
+  "actualCompare": "NOTRUN",
+  "binarySha256": "dd0267d139bac7bb243ce81e3c4b8df7b9c5fc3b9bc8a98e56e4d5195dc4a55d",
+  "rows": [
+    {
+      "name": "known-fixture-control",
+      "exit": 0,
+      "diagnostics": []
+    },
+    {
+      "name": "unknown-temperatureMicros",
+      "exit": 1,
+      "diagnostics": [
+        {
+          "id": "evaluation.protocol-invalid",
+          "detail": "closed-contract"
+        }
+      ]
+    },
+    {
+      "name": "unknown-topPMicros",
+      "exit": 1,
+      "diagnostics": [
+        {
+          "id": "evaluation.protocol-invalid",
+          "detail": "closed-contract"
+        }
+      ]
+    },
+    {
+      "name": "unknown-maxOutputTokens",
+      "exit": 1,
+      "diagnostics": [
+        {
+          "id": "evaluation.protocol-invalid",
+          "detail": "closed-contract"
+        }
+      ]
+    },
+    {
+      "name": "unknown-pricing",
+      "exit": 1,
+      "diagnostics": [
+        {
+          "id": "evaluation.protocol-invalid",
+          "detail": "closed-contract"
+        }
+      ]
+    },
+    {
+      "name": "unbounded-tokens",
+      "exit": 1,
+      "diagnostics": [
+        {
+          "id": "evaluation.protocol-invalid",
+          "detail": "closed-contract"
+        }
+      ]
+    }
+  ]
+}

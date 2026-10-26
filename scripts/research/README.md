@@ -1,5 +1,53 @@
 # Framework Lift research helpers (#167)
 
+## Published read-once receipts and admission gap
+
+`results/2026-10-26-read-once.json` is an allowlisted research disclosure of the
+eight actual attempts discussed in issue #167. All eight native candidates pass
+the 20-case holdout; seven finish the executor workflow. Devin B1 remains in the
+denominator after a noninteractive confirmation refusal. Total usage is 1,648,102
+tokens, including 1,369,728 cached input tokens as a subset, with money unknown.
+Mean B total tokens exceed A by 17.1% for Devin and 30.5% for Codex. There is no
+general savings claim. The sample is two pairs per CLI on one small public task;
+ordering, cache behavior and an incomplete attempt limit interpretation.
+
+The read-only exporter verifies all 625 files against an explicitly supplied
+archive manifest pin, independently sums Devin step metrics / Codex turn usage,
+checks them against collector and summary values, and checks native oracle
+receipts. It emits only selected counts, public profile identifiers and hashes;
+raw account exports and workstation paths stay local. It never rewrites an
+archive or an existing output. Use an output path that does not yet exist:
+
+```text
+node scripts/research/framework-lift-public-result.mjs ARCHIVE_ROOT MANIFEST_SHA256 NEW_OUTPUT.json
+node --test scripts/research/test-framework-lift-public-result.mjs
+```
+
+This is not a product privacy-export receipt or provider-authenticated execution.
+The raw archive remains local and is needed to replay its integrity audit. Its
+manifest pin and source receipt hashes are in the disclosure. Unknown data is
+not inferred from zero charges or from missing events.
+
+`results/2026-10-26-admission-probe.json` records **synthetic contract probes**
+against the actual candidate CLI, not imported empirical arms. A valid 0.6.4
+campaign passes; unknown temperature/top-p/max-output/pricing and an unbounded
+token limit each refuse with `evaluation.protocol-invalid / closed-contract`:
+
+```text
+node scripts/research/framework-lift-admission-probe.mjs
+```
+
+Actual `record-arm/compare` remain **NOTRUN**. The existing protocol requires
+numeric sampling defaults and finite limits plus a tariff pin. The actual CLI
+defaults and prices are not fully exposed, and the authorized budget is uncapped.
+Also, agent wall time excludes independent grading, whereas the protocol's
+measurement window ends at acceptance. Filling these gaps with guessed values
+would corrupt custody. A versioned import must preserve unknowns, explicit
+unbounded policy and the original measurement window, and mark translation as
+post-run. Published 0.6.4 simulation records retain their original status.
+Issue #167 stays open until formal admission, privacy-export and acceptance-ledger
+requirements are handled.
+
 ## Source and capsule reuse for future campaigns
 
 The shared `framework-lift-workspace.mjs` reader is copied unchanged into
