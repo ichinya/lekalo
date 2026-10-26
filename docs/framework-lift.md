@@ -184,3 +184,8 @@ It checks record-arm/compare parity with the independently audited disclosure,
 retains the incomplete Devin B1 and unknown costs, and makes no provider request.
 Local-private result records remain ineligible for the existing product public
 export until the #102 admission boundary explicitly supports this artifact.
+A bounded compatibility projection can already exercise #121/#102 on the fields
+their frozen contracts represent. It keeps unsupported categories in the full
+parent, including subset reasoning, and does not claim full result ingestion.
+For the actual two-trial-per-arm/profile campaign the current recipe withholds
+cohort numbers; the dry-run remains blocked without actual authorization.

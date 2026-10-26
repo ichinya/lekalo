@@ -1,5 +1,40 @@
 # Framework Lift research helpers (#167)
 
+## Actual history / privacy preview
+
+`framework-lift-history-preview.mjs` verifies both immutable evidence manifests,
+projects the representable metrics of all eight admitted arms into a fresh #121
+history store, checks exact input/output/total parity and executor completion,
+then calls the existing #102 `metrics export --dry-run` twice. No source archive,
+history schema, aggregation recipe, consent evidence or minimum sample is changed.
+
+```text
+node scripts/research/framework-lift-history-preview.mjs ADMISSION_ARCHIVE ADMISSION_MANIFEST_SHA256 ORIGINAL_ARCHIVE NEW_PROJECT
+node --test scripts/research/test-framework-lift-history-preview.mjs
+```
+
+This is an explicitly limited compatibility projection, not full 1.1.0 history
+ingestion. `source-links.local.json` binds each generated history record to its
+full admitted parent. Cached input, fix cycles, source-read lower bounds and raw
+evidence refs remain in that parent. History 0.4 treats reasoning as a disjoint
+addition, while this provider reports a subset of output: its legacy reasoning
+leaf is therefore **unsupported**, and original input/output/total stay unchanged.
+The script never invents a shared Git revision, a model revision or a price.
+
+The [actual preview audit](results/2026-10-26-history-privacy-preview.json)
+retains seven completed workflows and 1,648,102
+tokens in local history. Four arm/profile cohorts have only two trials each,
+below the unchanged minimum five, so all cohort numeric values are withheld.
+Source records retain the conservative internal label. The preview is **blocked**
+pending genuine aggregation/declassification authorization; its template has no
+authorizing evidence. No confirmation or package publication occurred. A larger
+sample alone would not guarantee disclosure: small outcome buckets are also
+suppressed by the existing recipe. This boundary is not bypassed by pooling CLI
+profiles or duplicating the same recorded attempts.
+An invalidation rehearsal deletes a source only in a disposable history copy;
+the next preview refuses with `metrics-export.source-invalidated`. All eight
+original projected records remain intact. Rehearsal copies are not trial units.
+
 ## Versioned post-run admission
 
 The 1.1.0 evaluation successor can now represent the original read-once campaign
