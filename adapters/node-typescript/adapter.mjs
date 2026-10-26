@@ -229139,7 +229139,7 @@ function resolveLiteralString(ctx, node, sourceFile, depth) {
 // src/scanner.mjs
 var IDENTITY_DOMAIN = "lekalo.ts.native.v1";
 var SIGNATURE_DOMAIN = "lekalo.ts.signature.v1";
-var SIGNATURE_POLICY_VERSION = 2;
+var SIGNATURE_POLICY_VERSION = 3;
 var MAX_SCAN_SOURCE_BYTES = 16 * 1024 * 1024;
 var MAX_SCAN_FILES = 4096;
 var MAX_ENUMERATION_DEPTH = 24;
@@ -229624,7 +229624,18 @@ function nativeIdentityTuple({ locator, modulePath, qualifiedName, family, slot 
 function nativeId(tuple) {
   return `ts1-${sha256Hex5(canonicalText2(tuple))}`;
 }
-function signatureGraphOfSymbol({ ts: ts2, checker, symbol, program, depthBudget }) {
+function signatureGraphOfSymbol({ ts: ts2, checker, symbol, program, depthBudget, context }) {
+  const stableName = (value) => {
+    if (!/^__@.*@\d+$/.test(value.name)) return value.name;
+    const declaration = value.declarations?.find((d) => d.name?.kind === ts2.SyntaxKind.ComputedPropertyName);
+    let key = declaration && checker.getSymbolAtLocation(declaration.name.expression);
+    if (key?.flags & ts2.SymbolFlags.Alias) key = checker.getAliasedSymbol(key);
+    const origin = key?.valueDeclaration ?? key?.declarations?.[0];
+    const file3 = origin?.getSourceFile().fileName;
+    const module = file3 && (isEmbeddedLibBase(file3) ? "typescript-lib/" + file3.split("/").pop() : context && normalizeModulePath(file3, context));
+    if (!key || !module) throw new RequestRefusal("compiler", "computed symbol identity is unavailable");
+    return canonicalText2(["unique-symbol", module, lexicalQualifiedName(ts2, checker, key)]);
+  };
   const seen = /* @__PURE__ */ new Set();
   const visit = (type2, depth) => {
     if (type2 === void 0 || depth > 6) return { kind: "cutoff" };
@@ -229657,7 +229668,7 @@ function signatureGraphOfSymbol({ ts: ts2, checker, symbol, program, depthBudget
     }
     const reference = {
       kind: "reference",
-      target: type2.symbol ? qualifiedNameOfSymbol(type2.symbol, ".") : checker.typeToString(type2, void 0, ts2.TypeFormatFlags.NoTruncation | ts2.TypeFormatFlags.UseFullyQualifiedType),
+      target: type2.symbol ? stableName(type2.symbol) : checker.typeToString(type2, void 0, ts2.TypeFormatFlags.NoTruncation | ts2.TypeFormatFlags.UseFullyQualifiedType),
       arguments: (type2.typeArguments ?? []).map((argument) => visit(argument, depth + 1))
     };
     return reference;
@@ -229691,20 +229702,13 @@ function signatureGraphOfSymbol({ ts: ts2, checker, symbol, program, depthBudget
     call: callGraph(callSignatures),
     construct: callGraph(constructSignatures),
     properties: (type.flags & ts2.TypeFlags.Object) === 0 ? [] : checker.getPropertiesOfType(type).map((member) => ({
-      name: member.name,
+      name: stableName(member),
       type: visit(checker.getTypeOfSymbolAtLocation(member, member.valueDeclaration ?? member.declarations?.[0] ?? location), 0),
       call: callGraph(checker.getSignaturesOfType(checker.getTypeOfSymbolAtLocation(member, member.valueDeclaration ?? member.declarations?.[0] ?? location), ts2.SignatureKind.Call)),
       optional: Boolean(member.declarations?.[0]?.questionToken)
     })).sort((left, right) => utf8Compare(left.name, right.name))
   };
   return graph;
-}
-function qualifiedNameOfSymbol(symbol, separator, guard = /* @__PURE__ */ new Set()) {
-  if (!symbol || guard.has(symbol)) return symbol?.name ?? "?";
-  guard.add(symbol);
-  const name = symbol.name ?? "?";
-  void separator;
-  return name;
 }
 function lexicalQualifiedName(ts2, checker, symbol) {
   const parts = [symbol.name];
@@ -229829,7 +229833,7 @@ function indexSourceFile({ ts: ts2, checker, sourceFile, modulePath, packageInde
         const end = node.getEnd();
         const startLine = sourceFile.getLineAndCharacterOfPosition(start);
         const endLine = sourceFile.getLineAndCharacterOfPosition(end);
-        const signatureGraph = signatureGraphOfSymbol({ ts: ts2, checker, symbol, program: context.program, depthBudget: 6 });
+        const signatureGraph = signatureGraphOfSymbol({ ts: ts2, checker, symbol, program: context.program, depthBudget: 6, context });
         const signature = signatureGraph ? signatureDigest(signatureGraph) : null;
         const jsdoc = symbol.getDocumentationComment ? symbol.getDocumentationComment(checker).map((part) => part.text ?? "").join("").slice(0, 256) : null;
         index.symbols.push(makeSymbolRow({

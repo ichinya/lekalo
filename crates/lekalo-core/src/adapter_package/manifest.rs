@@ -1015,7 +1015,7 @@ mod committed_exemplar_tests {
         // digest independently verified by test-adapter-manifest-golden.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:ab2088e34ea1db6964f54cb9aeb417e2ee05e310a142f41844652d7190f3c881"
+            "sha256:f51acd25d7a646872ec273c6f805d6e2f5c6b4b788d1f3b51fb6b9ff399877b4"
         );
     }
 

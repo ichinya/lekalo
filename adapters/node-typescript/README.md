@@ -8,6 +8,11 @@ artifact. The kernel itself uses only Node built-ins
 runtime installation, no `NODE_PATH`, no project `node_modules` — one
 physical file.
 
+Structural signature policy 3 binds unique-symbol keys to logical declaration
+modules and names. Compiler allocation counters never enter these signature
+keys. Updating the manifested adapter therefore requires fresh scan/binding
+evidence; it does not rewrite prior research receipts or historical indexes.
+
 ## Invocation
 
 The supported standalone/workspace public CLI recipe and its custody and

@@ -53,7 +53,7 @@ const IDENTITY_DOMAIN = "lekalo.ts.native.v1";
 /** The domain-separation prefix of the structural signature digest. */
 const SIGNATURE_DOMAIN = "lekalo.ts.signature.v1";
 /** The version of the signature policy (part of every signature key). */
-const SIGNATURE_POLICY_VERSION = 2;
+const SIGNATURE_POLICY_VERSION = 3;
 
 /** Maximum total source bytes one scan may read. */
 const MAX_SCAN_SOURCE_BYTES = 16 * 1024 * 1024;
@@ -667,7 +667,21 @@ function nativeId(tuple) {
  * sorted member sets for values. One display string is never used as
  * identity; recursion is cut at type-reference anchors.
  */
-function signatureGraphOfSymbol({ ts, checker, symbol, program, depthBudget }) {
+function signatureGraphOfSymbol({ ts, checker, symbol, program, depthBudget, context }) {
+  // Compiler-generated unique-symbol names contain process-global allocation
+  // counters (__@iterator@123). Bind keys to their declaration instead. Keep
+  // the module as well as the lexical name: two modules' `key` symbols differ.
+  const stableName = (value) => {
+    if (!/^__@.*@\d+$/.test(value.name)) return value.name;
+    const declaration = value.declarations?.find(d => d.name?.kind === ts.SyntaxKind.ComputedPropertyName);
+    let key = declaration && checker.getSymbolAtLocation(declaration.name.expression);
+    if (key?.flags & ts.SymbolFlags.Alias) key = checker.getAliasedSymbol(key);
+    const origin = key?.valueDeclaration ?? key?.declarations?.[0];
+    const file = origin?.getSourceFile().fileName;
+    const module = file && (isEmbeddedLibBase(file) ? "typescript-lib/" + file.split("/").pop() : context && normalizeModulePath(file,context));
+    if (!key || !module) throw new RequestRefusal("compiler", "computed symbol identity is unavailable");
+    return canonicalText(["unique-symbol",module,lexicalQualifiedName(ts,checker,key)]);
+  };
   const seen = new Set();
   const visit = (type, depth) => {
     if (type === undefined || depth > 6) return { kind: "cutoff" };
@@ -702,7 +716,7 @@ function signatureGraphOfSymbol({ ts, checker, symbol, program, depthBudget }) {
     }
     const reference = {
       kind: "reference",
-      target: type.symbol ? qualifiedNameOfSymbol(type.symbol, ".") : checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseFullyQualifiedType),
+      target: type.symbol ? stableName(type.symbol) : checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation | ts.TypeFormatFlags.UseFullyQualifiedType),
       arguments: (type.typeArguments ?? []).map((argument) => visit(argument, depth + 1)),
     };
     return reference;
@@ -741,7 +755,7 @@ function signatureGraphOfSymbol({ ts, checker, symbol, program, depthBudget }) {
     properties: (type.flags & ts.TypeFlags.Object) === 0 ? [] : checker
       .getPropertiesOfType(type)
       .map((member) => ({
-        name: member.name,
+        name: stableName(member),
         type: visit(checker.getTypeOfSymbolAtLocation(member, member.valueDeclaration ?? member.declarations?.[0] ?? location), 0),
         call: callGraph(checker.getSignaturesOfType(checker.getTypeOfSymbolAtLocation(member, member.valueDeclaration ?? member.declarations?.[0] ?? location), ts.SignatureKind.Call)),
         optional: Boolean(member.declarations?.[0]?.questionToken),
@@ -933,7 +947,7 @@ function indexSourceFile({ ts, checker, sourceFile, modulePath, packageIndex, in
         const end = node.getEnd();
         const startLine = sourceFile.getLineAndCharacterOfPosition(start);
         const endLine = sourceFile.getLineAndCharacterOfPosition(end);
-        const signatureGraph = signatureGraphOfSymbol({ ts, checker, symbol, program: context.program, depthBudget: 6 });
+        const signatureGraph = signatureGraphOfSymbol({ ts, checker, symbol, program: context.program, depthBudget: 6, context });
         const signature = signatureGraph ? signatureDigest(signatureGraph) : null;
         const jsdoc = symbol.getDocumentationComment
           ? symbol.getDocumentationComment(checker)

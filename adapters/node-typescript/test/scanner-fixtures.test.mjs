@@ -15,6 +15,27 @@ async function fresh() {
   return loadAdapter();
 }
 
+test("symbol-keyed signatures are stable across Programs and keep distinct declaration identities", async () => {
+  const {root,project}=materializeFixture("symbol-signature","esm");
+  try {
+    writeFileSync(join(project,"src/signature-a.ts"),'export const key: unique symbol = Symbol("same");\n');
+    writeFileSync(join(project,"src/signature-b.ts"),'export const key: unique symbol = Symbol("same");\n');
+    const source='import {key as first} from "./signature-a"; import {key as second} from "./signature-b"; export interface Bag { [first]: string; [second]: number; } export const methods = ["GET"];\n';
+    writeFileSync(join(project,"src/signature-user.ts"),source);
+    const adapter=await loadAdapter(),kernel=adapter.__lekaloKernel,scanner=adapter.__lekaloScanner;
+    const roots=[{kind:"tree",path:"src",scope:"src/**"},{kind:"file",path:"package.json",scope:"package.json"},{kind:"file",path:"tsconfig.json",scope:"tsconfig.json"}];
+    const profile=kernel.validateResolvedProjectProfile({id:"standalone",mode:"observed",target:"node-typescript",readRoots:roots.map(({kind,path})=>({kind,path})),exclusions:[],provenance:{origin:"declared",revision:"unique-symbols",disposition:"public-fixture"}});
+    const options={profile,readView:kernel.createReadView(project,roots,profile),permittedProjectRoot:project};
+    const session=new scanner.ScannerSession(),cold=session.scan(options).index,warm=session.scan(options).index;
+    assert.deepEqual(warm,cold,"compiler allocation counters must not enter index identities or signatures");
+    const bag=cold.symbols.find(s=>s.qualifiedName==="Bag"),methods=cold.symbols.find(s=>s.qualifiedName==="methods");assert.ok(bag?.signature&&methods?.signature);
+    writeFileSync(join(project,"src/signature-user.ts"),source.replace('[first]: string; [second]: number','[first]: number; [second]: string'));
+    const changed=session.scan(options).index;
+    assert.notEqual(changed.symbols.find(s=>s.qualifiedName==="Bag").signature,bag.signature,"same-named unique symbols in different modules cannot collapse");
+    assert.equal(changed.symbols.find(s=>s.qualifiedName==="methods").signature,methods.signature);
+  } finally { dispose(root); }
+});
+
 test("esm fixture: exports, overloads, aliases, classes, and interfaces are indexed", async () => {
   const { index, root } = await scanFixture("esm", "esm");
   try {
