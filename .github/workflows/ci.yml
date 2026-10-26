@@ -459,6 +459,8 @@ jobs:
           for family in baseline task campaign arm result; do
             NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-framework-lift-contracts.mjs --family "$family"
           done
+          node scripts/gen-framework-lift-v11.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-framework-lift-v11.mjs
       - name: Run the local run-history end-to-end gate (issue #121)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules

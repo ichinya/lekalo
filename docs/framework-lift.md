@@ -1,25 +1,27 @@
 # Framework Lift recorded evaluation protocols
 
 Status: **Implemented** offline protocol validation and recorded evidence comparison
-for issue #100. Actual external agent/provider runs and independently authenticated
-execution receipts remain an integration seam. Synthetic fixtures are recorded
+for issue #100, with a versioned post-run import for #167. Independently authenticated
+provider execution remains an integration seam. Synthetic fixtures are recorded
 simulations; they are never evidence of measured Framework Lift.
 
 Post-MVP issue [#167](https://github.com/ichinya/lekalo/issues/167) now has real
 public synthetic CLI runs, with an allowlisted
 [read-once result](../scripts/research/results/2026-10-26-read-once.json) and
 [receipt audit / admission notes](../scripts/research/README.md). These are
-research disclosures, not admitted `framework-lift-result` documents or product
-privacy exports. Unknown CLI sampling defaults/pricing, an uncapped token policy
-and a different timing window cannot be represented faithfully by the existing
-0.6.4 campaign recipe. Actual `record-arm/compare` remain NOTRUN; synthetic
-admission probes preserve that distinction. Historical simulations and the MVP
-1.0.0 acceptance limitation retain their original status.
+research disclosures, separate from local-private admitted records and product
+privacy exports. The 1.1.0 successor now admits all eight archived attempts through
+`record-arm/compare`, preserving unknown defaults/pricing, explicit uncapped
+policy, timing recipe and post-run translation provenance. Results remain
+`recorded-unverified`, with partial profile knowledge; admission does not
+authenticate the underlying execution. Historical simulations and the MVP 1.0.0
+acceptance limitation retain their original status.
 
 `lekalo evaluation` never launches an agent, shell, native gate, provider, judge or
 network request. It reads explicit bounded documents and emits local-only canonical
 JSON. The five closed `framework-lift-{baseline,task,campaign,arm,result}` families
-are product `0.6.4`; each has synthetic goldens and a mandatory live CI gate.
+have frozen product `0.6.4` and explicit `1.1.0` contracts. CI checks both with
+independent Ajv and the actual CLI. The examples below retain the 0.6.4 simulations.
 
 ```sh
 lekalo --json evaluation validate --family task --input tests/fixtures/framework-lift-task/golden/priority.json
@@ -142,3 +144,43 @@ baseline mutation, source provenance, stale receipts, arm contamination, provide
 costs, lost slots and a hard failure with judge score 100. No external agent is
 invoked. The gate checks the supplied-record evaluator; it does not establish
 real agent outcomes, provider billing or production qualification.
+
+## Explicit 1.1.0 import and measurement recipe
+
+All joined documents must use the same contract generation. There is no automatic
+upgrade of 0.6.4 records. `scripts/gen-framework-lift-v11.mjs --check` verifies the
+five committed successor schemas; `scripts/test-framework-lift-v11.mjs` checks
+live admission, arithmetic, unavailable state closure and privacy boundaries.
+
+Sampling numbers and pricing may retain `unknown/withheld/unsupported` states.
+Each resource limit is either a bounded integer, `{ "state": "unbounded" }` or
+`{ "state": "unknown" }`. An unknown limit prevents a successful acceptance;
+an explicit unbounded limit imposes no cap. Known breaches still fail, including
+token subset lower bounds. Unknown pricing cannot admit a known monetary charge
+or become a zero total, even when no attempt started.
+
+The distinct `public-synthetic-observed` pilot uses public synthetic data and
+hosted agents. Private `brownfield-observed` still requires local-only execution
+and disabled telemetry. Public telemetry may be unknown; that uncertainty remains
+visible. Requested CLI/model aliases never claim a known server model revision.
+
+`framework-lift-metrics-1` retains its original through-acceptance window.
+`framework-lift-agent-window-1` measures executor start to close, excluding later
+independent grading and maintenance. The result carries the exact profile,
+timing recipe, pricing state, profile completeness and campaign provenance.
+It never combines these windows into one timing claim.
+
+Post-run provenance binds the original frozen campaign digest, archive manifest
+digest and translator component. This is a later interpretation of immutable
+receipts, not a newly preregistered experiment. Baseline revision may be unknown
+when native files have content pins but no common Git revision. Dot-prefixed
+ordinary files such as `.gitignore` can be pinned; traversal and unsafe aliases
+remain refused. Exact `filesRead` stays unknown when only a subset was audited;
+`sourceFilesReadLowerBound` and `sourceMarkerBytes` preserve that separate evidence.
+
+The offline `scripts/research/framework-lift-import.mjs` verifies the original
+manifest and raw usage before writing to a fresh directory outside the archive.
+It checks record-arm/compare parity with the independently audited disclosure,
+retains the incomplete Devin B1 and unknown costs, and makes no provider request.
+Local-private result records remain ineligible for the existing product public
+export until the #102 admission boundary explicitly supports this artifact.

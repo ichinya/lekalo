@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {publicResult} from './framework-lift-public-result.mjs';
+import {importCampaign} from './framework-lift-import.mjs';
 const sha=b=>createHash('sha256').update(b).digest('hex');
 function scratch(fn){const root=fs.mkdtempSync(join(tmpdir(),'lekalo-public-result-test-'));try{fn(root);}finally{fs.rmSync(root,{recursive:true,force:true});}}
 test('published rows preserve usage subsets, all attempts and the incomplete native pass',()=>{
@@ -24,4 +25,17 @@ test('a matching manifest cannot escape its archive',()=>scratch(root=>{
 }));
 test('evidence content drift refuses before any public export',()=>scratch(root=>{
  fs.writeFileSync(join(root,'receipt.json'),'changed');const bytes=JSON.stringify({algorithm:'sha256',files:[{path:'receipt.json',sha256:sha('initial'),bytes:7}]});fs.writeFileSync(join(root,'SHA256-MANIFEST.json'),bytes);assert.throws(()=>publicResult(root,sha(bytes)),/archive content drift/);
+}));
+test('post-run import cannot create output inside its frozen source archive',()=>scratch(root=>{
+ assert.throws(()=>importCampaign(root,'0'.repeat(64),join(root,'new-import')),/outside archive/);
+ assert.deepEqual(fs.readdirSync(root),[]);
+}));
+test('import verifies the external manifest pin before creating any output',()=>scratch(root=>{
+ const source=join(root,'source'),out=join(root,'output');fs.mkdirSync(source);fs.writeFileSync(join(source,'SHA256-MANIFEST.json'),'{}');
+ assert.throws(()=>importCampaign(source,'0'.repeat(64),out),/manifest drift/);assert.equal(fs.existsSync(out),false);
+ assert.equal(fs.readFileSync(join(source,'SHA256-MANIFEST.json'),'utf8'),'{}');
+}));
+test('an output parent alias cannot redirect import writes into the archive',()=>scratch(root=>{
+ const source=join(root,'source'),alias=join(root,'alias');fs.mkdirSync(source);fs.symlinkSync(source,alias,process.platform==='win32'?'junction':'dir');
+ assert.throws(()=>importCampaign(source,'0'.repeat(64),join(alias,'new-import')),/outside archive/);assert.deepEqual(fs.readdirSync(source),[]);
 }));

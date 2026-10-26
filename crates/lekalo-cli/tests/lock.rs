@@ -5,9 +5,10 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-const GOLDEN: &str = include_str!("../../../tests/fixtures/lockfile/valid/contract-only.lock.json");
+const GOLDEN: &str =
+    include_str!("../../../tests/fixtures/lockfile/valid/contract-only.product-1.1.0.lock.json");
 const GOLDEN_EXPECT: &str =
-    include_str!("../../../tests/fixtures/lockfile/valid/contract-only.expect.json");
+    include_str!("../../../tests/fixtures/lockfile/valid/contract-only.product-1.1.0.expect.json");
 const REFERENCE_PROJECT: &str = "tests/fixtures/lockfile/project";
 
 fn lekalo_in(dir: &Path, args: &[&str]) -> Output {

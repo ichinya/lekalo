@@ -179,23 +179,46 @@ fn integer_literal(raw: &[u8]) -> Result<i64, ()> {
         magnitude as i64
     })
 }
-fn schema(family: &str) -> Result<Value, ()> {
-    let bytes = match family {
-        "baseline" => {
-            include_str!("../../../../contracts/framework-lift-baseline.schema.v0.6.4.json")
+fn schema(family: &str, successor: bool) -> Result<Value, ()> {
+    let bytes = if successor {
+        match family {
+            "baseline" => {
+                include_str!("../../../../contracts/framework-lift-baseline.schema.v1.1.0.json")
+            }
+            "task" => include_str!("../../../../contracts/framework-lift-task.schema.v1.1.0.json"),
+            "campaign" => {
+                include_str!("../../../../contracts/framework-lift-campaign.schema.v1.1.0.json")
+            }
+            "arm" => include_str!("../../../../contracts/framework-lift-arm.schema.v1.1.0.json"),
+            "result" => {
+                include_str!("../../../../contracts/framework-lift-result.schema.v1.1.0.json")
+            }
+            _ => return Err(()),
         }
-        "task" => include_str!("../../../../contracts/framework-lift-task.schema.v0.6.4.json"),
-        "campaign" => {
-            include_str!("../../../../contracts/framework-lift-campaign.schema.v0.6.4.json")
+    } else {
+        match family {
+            "baseline" => {
+                include_str!("../../../../contracts/framework-lift-baseline.schema.v0.6.4.json")
+            }
+            "task" => include_str!("../../../../contracts/framework-lift-task.schema.v0.6.4.json"),
+            "campaign" => {
+                include_str!("../../../../contracts/framework-lift-campaign.schema.v0.6.4.json")
+            }
+            "arm" => include_str!("../../../../contracts/framework-lift-arm.schema.v0.6.4.json"),
+            "result" => {
+                include_str!("../../../../contracts/framework-lift-result.schema.v0.6.4.json")
+            }
+            _ => return Err(()),
         }
-        "arm" => include_str!("../../../../contracts/framework-lift-arm.schema.v0.6.4.json"),
-        "result" => include_str!("../../../../contracts/framework-lift-result.schema.v0.6.4.json"),
-        _ => return Err(()),
     };
     serde_json::from_str(bytes).map_err(|_| ())
 }
+#[cfg(test)]
 pub fn unknown_metrics() -> Value {
-    let s = schema("arm").expect("embedded schema");
+    unknown_metrics_for(&serde_json::Value::Null)
+}
+pub fn unknown_metrics_for(value: &Value) -> Value {
+    let s = schema("arm", super::successor(value)).expect("embedded schema");
     s["$defs"]["metrics"]["properties"]
         .as_object()
         .unwrap()
@@ -205,7 +228,7 @@ pub fn unknown_metrics() -> Value {
         .into()
 }
 pub fn validate(family: &str, value: &Value) -> Result<(), ()> {
-    let root = schema(family)?;
+    let root = schema(family, super::successor(value))?;
     check(&root, &root, value, 0)
 }
 fn check(root: &Value, s: &Value, v: &Value, depth: usize) -> Result<(), ()> {
@@ -288,10 +311,11 @@ fn check(root: &Value, s: &Value, v: &Value, depth: usize) -> Result<(), ()> {
                                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
                     }
                     "^[A-Z]{3}$" => x.len() == 3 && x.bytes().all(|b| b.is_ascii_uppercase()),
-                    "^[a-zA-Z0-9][a-zA-Z0-9._/-]*$" => {
+                    "^[a-zA-Z0-9][a-zA-Z0-9._/-]*$" | "^[a-zA-Z0-9.][a-zA-Z0-9._/-]*$" => {
                         !x.is_empty()
                             && (x.as_bytes()[0].is_ascii_alphabetic()
-                                || x.as_bytes()[0].is_ascii_digit())
+                                || x.as_bytes()[0].is_ascii_digit()
+                                || (p.starts_with("^[a-zA-Z0-9.]") && x.as_bytes()[0] == b'.'))
                             && x.bytes().all(|b| {
                                 b.is_ascii_alphabetic()
                                     || b.is_ascii_digit()

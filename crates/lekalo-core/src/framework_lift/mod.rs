@@ -140,6 +140,31 @@ fn known(v: &Value) -> Option<u64> {
         None
     }
 }
+fn successor(v: &Value) -> bool {
+    v["schemaVersion"]
+        .as_str()
+        .is_some_and(|s| s.ends_with("/v1.1.0"))
+}
+fn limit(limits: &Value, key: &str) -> Option<u64> {
+    limits[key].as_u64()
+}
+fn unbounded(limits: &Value, key: &str) -> bool {
+    limits[key]["state"] == "unbounded"
+}
+fn priced(profile: &Value) -> bool {
+    profile["pricing"].get("digest").is_some()
+}
+fn complete_profile(p: &Value) -> bool {
+    priced(p)
+        && p["telemetry"] == "disabled"
+        && p["serverModelRevision"]["state"] == "known"
+        && ["temperatureMicros", "topPMicros", "maxOutputTokens"]
+            .iter()
+            .all(|k| p["sampling"][*k].is_number())
+        && p["limits"]
+            .as_object()
+            .is_some_and(|m| m.values().all(|v| v["state"] != "unknown"))
+}
 // Input/output are disjoint under framework-lift-metrics-1. Cache and reasoning
 // only lower-bound their respective parent when that parent is unavailable.
 fn token_lower_bound(m: &Value) -> u64 {
@@ -193,14 +218,18 @@ fn validate_schedule(c: &Value) -> Result<(), Failure> {
     if pairs.len() < 2 || pairs.values().any(|(_, arms)| arms.len() != 2) {
         return Err(("evaluation.protocol-invalid", "schedule-unpaired"));
     }
-    let p = &c["profile"];
-    if n(&p["sampling"], "temperatureMicros") > 2_000_000
-        || n(&p["sampling"], "topPMicros") > 1_000_000
-        || n(&p["sampling"], "maxOutputTokens") > n(&p["limits"], "maxTokens")
+    validate_profile(&c["profile"])
+}
+fn validate_profile(p: &Value) -> Result<(), Failure> {
+    if limit(&p["sampling"], "temperatureMicros").is_some_and(|v| v > 2_000_000)
+        || limit(&p["sampling"], "topPMicros").is_some_and(|v| v > 1_000_000)
+        || matches!((limit(&p["sampling"], "maxOutputTokens"),limit(&p["limits"], "maxTokens")), (Some(output),Some(total)) if output > total)
     {
         return Err(("evaluation.protocol-invalid", "sampling-budget"));
     }
-    if n(&p["limits"], "maxProviderRetries") > 16 || n(&p["limits"], "maxFixCycles") > 100 {
+    if limit(&p["limits"], "maxProviderRetries").is_some_and(|v| v > 16)
+        || limit(&p["limits"], "maxFixCycles").is_some_and(|v| v > 100)
+    {
         return Err(("evaluation.protocol-invalid", "retry-limit"));
     }
     Ok(())
@@ -229,6 +258,7 @@ fn validate_arm_shape(a: &Value) -> Result<(), Failure> {
         ("includedFacts", "candidateFacts"),
         ("includedRequiredFacts", "requiredFacts"),
         ("unrelatedFiles", "filesChanged"),
+        ("sourceFilesReadLowerBound", "filesRead"),
     ] {
         if let (Some(part), Some(total)) = (known(&m[part]), known(&m[total])) {
             if part > total {
@@ -247,7 +277,9 @@ fn matches_ref(reference: &Value, id: &str, doc: &Value) -> bool {
     reference["id"] == doc[id] && reference["digest"] == digest(doc)
 }
 pub fn preflight(b: &Value, t: &Value, c: &Value) -> Result<(), Failure> {
-    if !matches_ref(&t["baselineRef"], "baselineId", b)
+    if successor(b) != successor(t)
+        || successor(t) != successor(c)
+        || !matches_ref(&t["baselineRef"], "baselineId", b)
         || !matches_ref(&c["baselineRef"], "baselineId", b)
         || !matches_ref(&c["taskRef"], "taskId", t)
         || b["pilot"] != t["pilot"]
@@ -256,14 +288,20 @@ pub fn preflight(b: &Value, t: &Value, c: &Value) -> Result<(), Failure> {
     {
         return Err(("evaluation.arm-incomparable", "shared-pins"));
     }
-    if t["pilot"] == "brownfield-observed" && c["profile"]["network"] != "local-only" {
+    if t["pilot"] == "brownfield-observed"
+        && (c["profile"]["network"] != "local-only" || c["profile"]["telemetry"] != "disabled")
+    {
         return Err(("evaluation.private-egress-denied", "private-provider"));
+    }
+    if t["pilot"] == "public-synthetic-observed" && c["profile"]["network"] != "public-synthetic" {
+        return Err(("evaluation.arm-incomparable", "shared-pins"));
     }
     Ok(())
 }
 pub fn admit_arm(b: &Value, t: &Value, c: &Value, a: &Value) -> Result<(), Failure> {
     preflight(b, t, c)?;
-    if !matches_ref(&a["campaignRef"], "campaignId", c)
+    if successor(a) != successor(c)
+        || !matches_ref(&a["campaignRef"], "campaignId", c)
         || !matches_ref(&a["taskRef"], "taskId", t)
         || !matches_ref(&a["baselineRef"], "baselineId", b)
         || a["profileDigest"] != digest(&c["profile"])
@@ -280,8 +318,15 @@ pub fn admit_arm(b: &Value, t: &Value, c: &Value, a: &Value) -> Result<(), Failu
     {
         return Err(("evaluation.arm-incomparable", "treatment-policy"));
     }
-    if n(a, "attempt") > n(&c["profile"]["limits"], "maxProviderRetries") {
+    if n(a, "attempt") > 0
+        && !unbounded(&c["profile"]["limits"], "maxProviderRetries")
+        && limit(&c["profile"]["limits"], "maxProviderRetries")
+            .map_or(true, |v| n(a, "attempt") > v)
+    {
         return Err(("evaluation.protocol-invalid", "attempt-limit"));
+    }
+    if successor(c) && !priced(&c["profile"]) && known(&a["metrics"]["costMicros"]).is_some() {
+        return Err(("evaluation.metric-inconsistent", "price-unavailable"));
     }
     for assertion in arr(a, "assertions") {
         if assertion["candidateDigest"] != a["candidateDigest"]
@@ -325,7 +370,7 @@ fn acceptance(t: &Value, a: &Value) -> (&'static str, bool, bool) {
     if f.iter().any(|e| e["class"] == "custody-security") {
         return ("custody-security", false, false);
     }
-    if token_lower_bound(&a["metrics"]) > n(&t["limits"], "maxTokens") {
+    if limit(&t["limits"], "maxTokens").is_some_and(|cap| token_lower_bound(&a["metrics"]) > cap) {
         return ("task", false, false);
     }
     for (metric, limit) in [
@@ -335,7 +380,7 @@ fn acceptance(t: &Value, a: &Value) -> (&'static str, bool, bool) {
         ("fixCycles", "maxFixCycles"),
     ] {
         if let Some(value) = known(&a["metrics"][metric]) {
-            if value > n(&t["limits"], limit) {
+            if self::limit(&t["limits"], limit).is_some_and(|cap| value > cap) {
                 return ("task", false, false);
             }
         }
@@ -360,6 +405,13 @@ fn acceptance(t: &Value, a: &Value) -> (&'static str, bool, bool) {
         if known(&a["metrics"][metric]).is_none() {
             return ("unsupported", false, false);
         }
+    }
+    if successor(t)
+        && t["limits"]
+            .as_object()
+            .is_some_and(|m| m.values().any(|v| v["state"] == "unknown"))
+    {
+        return ("unsupported", false, false);
     }
     let required = [
         "requiredAssertions",
@@ -401,6 +453,22 @@ fn lift(numerator: i64, denominator: u64) -> Value {
 }
 fn validate_result(r: &Value) -> Result<(), Failure> {
     let invalid = ("evaluation.metric-inconsistent", "result-arithmetic");
+    if successor(r) {
+        validate_profile(&r["profile"])?;
+    }
+    if successor(r)
+        && (r["profileDigest"] != digest(&r["profile"])
+            || r["pricing"] != r["profile"]["pricing"]
+            || r["measurementRecipe"] != r["profile"]["measurementRecipe"]
+            || r["profileCompleteness"]
+                != if complete_profile(&r["profile"]) {
+                    "complete"
+                } else {
+                    "partial"
+                })
+    {
+        return Err(invalid);
+    }
     let mut keys = BTreeSet::new();
     let mut attempts = std::collections::BTreeMap::<(&str, &str), Vec<&Value>>::new();
     let mut external = false;
@@ -420,7 +488,7 @@ fn validate_result(r: &Value) -> Result<(), Failure> {
             if n(row, "attempt") != 0
                 || row["armDigest"] != json!({"state":"unknown"})
                 || row["origin"] != json!({"state":"unknown"})
-                || row["metrics"] != schema::unknown_metrics()
+                || row["metrics"] != schema::unknown_metrics_for(r)
             {
                 return Err(invalid);
             }
@@ -430,6 +498,10 @@ fn validate_result(r: &Value) -> Result<(), Failure> {
         external |= row["origin"]["value"] == "recorded-external";
         if row["verifiedSuccess"] == true
             && (known(&row["metrics"]["escapedRegressions"]) != Some(0)
+                || (successor(r)
+                    && r["profile"]["limits"]
+                        .as_object()
+                        .is_some_and(|m| m.values().any(|v| v["state"] == "unknown")))
                 || ["totalTokens", "toolCalls", "durationMs", "fixCycles"]
                     .iter()
                     .any(|m| known(&row["metrics"][*m]).is_none()))
@@ -506,7 +578,10 @@ fn validate_result(r: &Value) -> Result<(), Failure> {
             .iter()
             .try_fold(0u64, |sum, x| sum.checked_add(*x))
             .ok_or(invalid)?;
-        let complete = costs.len() == actual.len();
+        let complete = costs.len() == actual.len() && (!successor(r) || priced(&r["profile"]));
+        if successor(r) && !priced(&r["profile"]) && !costs.is_empty() {
+            return Err(invalid);
+        }
         if n(summary, "started") != started.len() as u64
             || n(summary, "attempts") != actual.len() as u64
             || n(summary, "costKnownRuns") != costs.len() as u64
@@ -651,7 +726,7 @@ pub fn compare(
             return Err(("evaluation.protocol-invalid", "retry-after-terminal"));
         }
         if attempts.is_empty() {
-            rows.push(json!({"slot":slot,"attempt":0,"armDigest":{"state":"unknown"},"origin":{"state":"unknown"},"status":"not-started","verifiedSuccess":false,"firstPassSuccess":false,"metrics":schema::unknown_metrics()}));
+            rows.push(json!({"slot":slot,"attempt":0,"armDigest":{"state":"unknown"},"origin":{"state":"unknown"},"status":"not-started","verifiedSuccess":false,"firstPassSuccess":false,"metrics":schema::unknown_metrics_for(c)}));
         }
         for a in attempts {
             let (status, pass, first) = acceptance(t, a);
@@ -703,7 +778,10 @@ pub fn compare(
             .try_fold(0u64, |sum, x| sum.checked_add(*x))
             .filter(|v| *v <= 9_007_199_254_740_991)
             .ok_or(("evaluation.metric-inconsistent", "cost-overflow"))?;
-        let complete = costs.len() == actual.len();
+        let complete = costs.len() == actual.len() && (!successor(c) || priced(&c["profile"]));
+        if successor(c) && !priced(&c["profile"]) && !costs.is_empty() {
+            return Err(("evaluation.metric-inconsistent", "price-unavailable"));
+        }
         let reason = if success == 0 {
             "no-success"
         } else if !complete {
@@ -744,7 +822,20 @@ pub fn compare(
     };
     let denom = n(&summaries[0], "scheduled");
     let difference = n(&summaries[1], "successes") as i64 - n(&summaries[0], "successes") as i64;
-    let result = json!({"schemaVersion":"lekalo/framework-lift-result/v0.6.4","identity":"dev.lekalo.framework-lift-result@0.6.4","campaignRef":{"id":c["campaignId"],"digest":digest(c)},"taskRef":{"id":t["taskId"],"digest":digest(t)},"baselineRef":{"id":b["baselineId"],"digest":digest(b)},"profileDigest":digest(&c["profile"]),"evidenceStatus":if arms.iter().all(|a|a["origin"]=="recorded-simulation"){"recorded-simulation"}else{"recorded-unverified"},"exportDisposition":"local-private","consumerRole":"consumer-repository","consumerAlias":alias,"pilot":t["pilot"],"analysis":c["analysis"],"rows":rows,"summaries":summaries,"paired":{"bothSuccess":paired[0],"aOnly":paired[1],"bOnly":paired[2],"neither":paired[3],"incomplete":paired[4]},"liftPercentagePoints":lift(difference,denom),"uncertainty":{"method":"attrition-bounds","minimumLift":lift(difference-incomplete("A"),denom),"maximumLift":lift(difference+incomplete("B"),denom)},"claim":"tested-task-profile-only"});
+    let mut result = json!({"schemaVersion":"lekalo/framework-lift-result/v0.6.4","identity":"dev.lekalo.framework-lift-result@0.6.4","campaignRef":{"id":c["campaignId"],"digest":digest(c)},"taskRef":{"id":t["taskId"],"digest":digest(t)},"baselineRef":{"id":b["baselineId"],"digest":digest(b)},"profileDigest":digest(&c["profile"]),"evidenceStatus":if arms.iter().all(|a|a["origin"]=="recorded-simulation"){"recorded-simulation"}else{"recorded-unverified"},"exportDisposition":"local-private","consumerRole":"consumer-repository","consumerAlias":alias,"pilot":t["pilot"],"analysis":c["analysis"],"rows":rows,"summaries":summaries,"paired":{"bothSuccess":paired[0],"aOnly":paired[1],"bOnly":paired[2],"neither":paired[3],"incomplete":paired[4]},"liftPercentagePoints":lift(difference,denom),"uncertainty":{"method":"attrition-bounds","minimumLift":lift(difference-incomplete("A"),denom),"maximumLift":lift(difference+incomplete("B"),denom)},"claim":"tested-task-profile-only"});
+    if successor(c) {
+        result["schemaVersion"] = json!("lekalo/framework-lift-result/v1.1.0");
+        result["identity"] = json!("dev.lekalo.framework-lift-result@1.1.0");
+        result["campaignProvenance"] = c["provenance"].clone();
+        result["profile"] = c["profile"].clone();
+        result["measurementRecipe"] = c["profile"]["measurementRecipe"].clone();
+        result["pricing"] = c["profile"]["pricing"].clone();
+        result["profileCompleteness"] = json!(if complete_profile(&c["profile"]) {
+            "complete"
+        } else {
+            "partial"
+        });
+    }
     schema::validate("result", &result)
         .map_err(|_| ("evaluation.metric-inconsistent", "result-bounds"))?;
     validate_result(&result)?;

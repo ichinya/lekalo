@@ -205,9 +205,16 @@ fn assert_report_matches_golden(dir: &Path, name: &str) {
         ),
         "{name}: live bytes must be canonical and LF-only"
     );
-    let golden_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/ci-report")
-        .join(name);
+    let golden_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/ci-report");
+    let golden_root = if matches!(
+        name,
+        "valid.verify.golden.json" | "valid.generate-check.golden.json"
+    ) {
+        golden_root.join("product-1.1.0")
+    } else {
+        golden_root
+    };
+    let golden_path = golden_root.join(name);
     let golden_bytes = std::fs::read_to_string(golden_path).expect("committed golden");
     let golden: serde_json::Value = serde_json::from_str(&golden_bytes).expect("golden JSON");
     let commit = live["provenance"]["git"]["commit"]["value"]
@@ -235,12 +242,8 @@ fn assert_report_matches_golden(dir: &Path, name: &str) {
         _ => None,
     };
     if let Some(markdown_name) = markdown_name {
-        let markdown = std::fs::read_to_string(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../tests/fixtures/ci-report")
-                .join(markdown_name),
-        )
-        .expect("committed Markdown golden");
+        let markdown = std::fs::read_to_string(golden_root.join(markdown_name))
+            .expect("committed Markdown golden");
         let commit = golden["provenance"]["git"]["commit"]["value"]
             .as_str()
             .expect("golden commit");

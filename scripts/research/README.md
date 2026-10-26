@@ -1,6 +1,33 @@
 # Framework Lift research helpers (#167)
 
-## Published read-once receipts and admission gap
+## Versioned post-run admission
+
+The 1.1.0 evaluation successor can now represent the original read-once campaign
+without inventing sampling defaults, prices, a token cap or a common Git revision.
+The explicit importer verifies the archived manifest and usage, creates one
+campaign per CLI profile and admits all eight original attempts. Comparison
+preserves seven completed workflows and 1,648,102 tokens, including Devin B1's
+failure. No new inference runs occur.
+
+The allowlisted [admission audit report](results/2026-10-26-admission-v11.json)
+pins the translator and actual CLI, retains both comparison digests and confirms
+usage/outcome parity. Full result/arm documents and CLI operation receipts remain
+in the local evidence bundle; the report is a research disclosure, not a product
+public-export receipt.
+
+```text
+node scripts/research/framework-lift-import.mjs ARCHIVE_ROOT MANIFEST_SHA256 NEW_OUTPUT_DIRECTORY
+```
+
+The output directory must be new and outside the source archive. Full normalized
+records and CLI operation receipts stay local-private. Provenance binds the
+original campaign, manifest and translator; the import is explicitly post-run.
+Both results remain `recorded-unverified`, with partial profiles and unknown
+prices/telemetry/server revisions. Source read lower bounds have separate fields;
+exact all-native `filesRead` stays unknown. This is admission and arithmetic
+parity, not provider authentication or product privacy-export qualification.
+
+## Original disclosure and 0.6.4 admission gap
 
 `results/2026-10-26-read-once.json` is an allowlisted research disclosure of the
 eight actual attempts discussed in issue #167. All eight native candidates pass
@@ -37,7 +64,7 @@ token limit each refuse with `evaluation.protocol-invalid / closed-contract`:
 node scripts/research/framework-lift-admission-probe.mjs
 ```
 
-Actual `record-arm/compare` remain **NOTRUN**. The existing protocol requires
+At the original disclosure, actual `record-arm/compare` were **NOTRUN**. The 0.6.4 protocol requires
 numeric sampling defaults and finite limits plus a tariff pin. The actual CLI
 defaults and prices are not fully exposed, and the authorized budget is uncapped.
 Also, agent wall time excludes independent grading, whereas the protocol's
@@ -50,8 +77,8 @@ The import also needs an explicit public synthetic observed profile: the old
 is public synthetic and the agents use hosted providers. Relabelling it as
 `greenfield-contracted` would misstate the actual adoption workflow. Keep the
 private brownfield restriction intact when introducing the new profile.
-Issue #167 stays open until formal admission, privacy-export and acceptance-ledger
-requirements are handled.
+The 1.1.0 import above addresses representation and admission. Issue #167 stays
+open pending the remaining evidence qualification and product privacy-export work.
 
 ## Source and capsule reuse for future campaigns
 
