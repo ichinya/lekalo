@@ -45,6 +45,11 @@ measurement window ends at acceptance. Filling these gaps with guessed values
 would corrupt custody. A versioned import must preserve unknowns, explicit
 unbounded policy and the original measurement window, and mark translation as
 post-run. Published 0.6.4 simulation records retain their original status.
+The import also needs an explicit public synthetic observed profile: the old
+`brownfield-observed` pilot enforces `local-only` egress, while the measured task
+is public synthetic and the agents use hosted providers. Relabelling it as
+`greenfield-contracted` would misstate the actual adoption workflow. Keep the
+private brownfield restriction intact when introducing the new profile.
 Issue #167 stays open until formal admission, privacy-export and acceptance-ledger
 requirements are handled.
 
