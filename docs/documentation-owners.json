@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "productVersion": "1.0.0",
+  "productVersion": "1.1.0",
   "cliSourceDigest": "sha256:4219d7171eaa2b1175fe006ebcb2657a8155db3f8f03d9faf1e178e702545f25",
   "p0Pages": [
     {
@@ -3732,10 +3732,28 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/framework-lift-arm.schema.v1.1.0.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-arm.schema.v1.1.0.json",
+      "sourceDigest": "sha256:f6bd1dcc9bb77a09993031d2210b5c3152fc247b89a7366d5812ca3cfa2a11e3",
+      "owner": "docs/framework-lift.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/framework-lift-baseline.schema.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/framework-lift-baseline.schema.v0.6.4.json",
       "sourceDigest": "sha256:d14a30add2e0d98cd8184a5e0239df92103d85c3a75925686710f14289db47bc",
+      "owner": "docs/framework-lift.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/framework-lift-baseline.schema.v1.1.0.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-baseline.schema.v1.1.0.json",
+      "sourceDigest": "sha256:fb1da2a92f023b80660370753334a2a98caa49ec9f36a69225bd32eb2f3bb677",
       "owner": "docs/framework-lift.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3750,6 +3768,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/framework-lift-campaign.schema.v1.1.0.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-campaign.schema.v1.1.0.json",
+      "sourceDigest": "sha256:af81638adaff5dc752708c3bd7c99855451bc21592456a903280a2f6c6f4de9d",
+      "owner": "docs/framework-lift.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/framework-lift-result.schema.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/framework-lift-result.schema.v0.6.4.json",
@@ -3759,10 +3786,28 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/framework-lift-result.schema.v1.1.0.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-result.schema.v1.1.0.json",
+      "sourceDigest": "sha256:eeed67159552f2d40fa906086076f62483536390ab8f4d3666a166808ed83f2d",
+      "owner": "docs/framework-lift.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/framework-lift-task.schema.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/framework-lift-task.schema.v0.6.4.json",
       "sourceDigest": "sha256:68cf61d605709804ad2dc6619d9a25d271d24aef82545f7029951c8b7e07b8e7",
+      "owner": "docs/framework-lift.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/framework-lift-task.schema.v1.1.0.json",
+      "kind": "contract",
+      "source": "contracts/framework-lift-task.schema.v1.1.0.json",
+      "sourceDigest": "sha256:ad25b7e55f028359b240075ab53374547d867e2747bf95fe27e925fbfd022bc5",
       "owner": "docs/framework-lift.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4380,10 +4425,28 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/observed-index.schema.v1.1.0.json",
+      "kind": "contract",
+      "source": "contracts/observed-index.schema.v1.1.0.json",
+      "sourceDigest": "sha256:1dd63309477b85f38056b36f599c128d6c6e1f167f5e39460a273d812999cbb9",
+      "owner": "docs/observed-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/observed-scan.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/observed-scan.schema.v0.2.16.json",
       "sourceDigest": "sha256:b549d60ac25fb98c48b906a19ab70c8ca5101924af485504164a2ca9afbe5a09",
+      "owner": "docs/observed-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/observed-scan.schema.v1.1.0.json",
+      "kind": "contract",
+      "source": "contracts/observed-scan.schema.v1.1.0.json",
+      "sourceDigest": "sha256:06daf73edd997fc42e4d9829800872c644ecdf03afeee10ba6203c284d72537a",
       "owner": "docs/observed-mode.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4996,6 +5059,15 @@
       "kind": "contract",
       "source": "contracts/target-protocol.schema.v0.9.1.json",
       "sourceDigest": "sha256:04689f0485be8a6fffa4860dc173fe29cb9ead7e49c2d34c18c3308653ff1b31",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/target-protocol.schema.v1.1.0.json",
+      "kind": "contract",
+      "source": "contracts/target-protocol.schema.v1.1.0.json",
+      "sourceDigest": "sha256:ab79316ae7a836c0d10ec1da235dbe7fa89ee4a27dc0ccd14831d1b298a6e019",
       "owner": "docs/target-protocol.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

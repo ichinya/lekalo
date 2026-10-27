@@ -6,14 +6,14 @@ Keep this instruction subordinate to the user's authorization and project policy
 
 ## Start from the current project
 
-1. Read the root `AGENTS.md` and any applicable directory instructions.
-2. Find `lekalo/project.yaml` and read the project identity and contract version.
-3. Read the selected module declarations before changing their definitions.
-4. Check the installed binary with `lekalo --version`.
-5. Use `lekalo COMMAND --help` to confirm flags for that installed version.
-6. Run `lekalo --json load --ir --project .` to inspect the canonical IR.
-7. Run `lekalo --json validate --strict --project .` before proposing changes.
-8. Keep a failed, unsupported or unavailable check visible in your report.
+1. Read applicable project instructions once; reuse instructions already in context.
+2. Find `lekalo/project.yaml`; establish the project identity and exact contract pin.
+3. Check `lekalo --version` once; use command help when its flags are unknown.
+4. Select the affected semantic IDs and their current evidence before broad reads.
+5. Read module declarations when editing them or resolving a specific evidence gap.
+6. Load full canonical IR only when the task needs it; prefer a bounded projection.
+7. Run strict validation for Model work; repeat when its inputs or required gates change.
+8. Keep failed, unsupported and unavailable checks visible; do not repeat unchanged failures.
 
 ## Recognize the layout
 
@@ -34,14 +34,28 @@ Keep this instruction subordinate to the user's authorization and project policy
 ## Read before editing
 
 Use semantic IDs from the loaded model rather than guessing IDs from filenames.
-Inspect the relevant definition with `lekalo inspect ID --project .`.
-Read its affected graph with `lekalo impact ID --project .`.
-Request a bounded capsule with `lekalo context ID --budget 4000 --project .`.
-Use `--json` when consuming a result programmatically.
-Use `lekalo status --project .` to inspect the project's reported state.
+Start with `lekalo context ID --budget 1600 --project .` when semantic context is useful.
+Use inspect or impact for details or obligations the capsule does not supply.
+Use status when project state matters; do not run every projection as a checklist.
+Prefer compact human output for agent reading and JSON for programmatic consumers.
+Reuse current results for the same inputs instead of dumping the Model or full IR.
 Read diagnostics by their registered IDs and actual command exit status.
 Do not turn missing evidence into a successful check.
 Do not treat an empty result as proof that no dependency or obligation exists.
+
+## Read source once per version and needed range
+
+Keep a working record of paths, source digests and ranges already present in context.
+Use names, mappings and search locations to select the necessary implementation.
+Read uncovered ranges; do not reprint an unchanged file already available to you.
+If an editor requires its own Read, use that as the first read of an intended edit.
+Avoid reading through a helper and then repeating the same content for that editor.
+Respect the editor's requirements; choose a compatible edit method when available.
+Changed bytes, missing ranges, truncated output and lost context justify another read.
+State the reason and request only the needed range; a new digest invalidates old evidence.
+Verify changes with a scoped diff, fingerprints and native checks rather than routine dumps.
+An incomplete contract or absent semantic/native join still requires relevant source.
+Native names and signature digests alone do not establish implementation behavior.
 
 ## Keep authority boundaries explicit
 

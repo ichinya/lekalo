@@ -25,7 +25,6 @@
 //!   adapter/version/fingerprint, and freshness state.
 
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 use crate::diagnostics::DiagnosticSet;
 use crate::project_fs::Fs;
@@ -162,7 +161,11 @@ pub struct BatchReceipt {
 /// unambiguous confirmation may resolve to.
 pub(crate) fn ranked_candidates(record: &SymbolRecord) -> Vec<CandidateRecord> {
     let mut candidates: Vec<CandidateRecord> = Vec::new();
-    if let Some(location) = &record.location {
+    // A stale confirmed location is the old fact, not a fresh candidate.
+    // Otherwise its old fingerprint wins deduplication over the new scan.
+    let reconfirming =
+        record.status == BindingStatus::Confirmed && record.state == BindingState::Stale;
+    if let Some(location) = record.location.as_ref().filter(|_| !reconfirming) {
         let native = record
             .stable_key
             .clone()
@@ -218,7 +221,7 @@ fn proposal_id(index: &ObservedIndex, symbol: &str, candidates: &[CandidateRecor
             })
         })
         .collect();
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "project": index.project,
         "symbol": symbol,
         "adapter": index.adapter.id,
@@ -227,10 +230,22 @@ fn proposal_id(index: &ObservedIndex, symbol: &str, candidates: &[CandidateRecor
         "profile": index.profile,
         "candidates": wire_candidates,
     });
+    if index.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION {
+        payload["binding_evidence"] = serde_json::to_value(
+            index
+                .binding_evidence
+                .iter()
+                .filter(|e| e.symbol == symbol)
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_default();
+    }
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
-    let mut hasher = Sha256::new();
-    hasher.update(&bytes);
-    format!("{}{:x}", version::PROPOSAL_ID_PREFIX, hasher.finalize())
+    format!(
+        "{}{}",
+        version::PROPOSAL_ID_PREFIX,
+        crate::digest::sha256_hex(&bytes)
+    )
 }
 
 /// Project one proposal from one inferred record; `None` for records
@@ -247,7 +262,11 @@ fn proposal_of(index: &ObservedIndex, record: &SymbolRecord) -> Option<Proposal>
         relation: RELATION_IMPLEMENTS,
         target: index.target.clone(),
         profile: index.profile.clone(),
-        source: "inferred",
+        source: if record.status == BindingStatus::Confirmed {
+            "user-confirmed"
+        } else {
+            "inferred"
+        },
         confidence: first.confidence.key().to_owned(),
         ambiguous: ambiguous(&candidates),
         candidates: candidates
@@ -268,9 +287,23 @@ fn proposal_of(index: &ObservedIndex, record: &SymbolRecord) -> Option<Proposal>
 pub(crate) fn proposals_of(index: &ObservedIndex) -> Vec<Proposal> {
     let mut proposals: Vec<Proposal> = Vec::new();
     for record in &index.symbols {
-        if record.status != BindingStatus::Inferred || record.promoted {
+        let native = index.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION;
+        let reconfirming = native
+            && record.status == BindingStatus::Confirmed
+            && record.state == BindingState::Stale;
+        if (record.status != BindingStatus::Inferred && !reconfirming) || record.promoted {
             // User-owned facts never gather proposals: explicit bindings
             // have priority, and a confirmed binding is already owned.
+            continue;
+        }
+        if native
+            && !ranked_candidates(record).iter().any(|c| {
+                index
+                    .binding_evidence
+                    .iter()
+                    .any(|e| e.symbol == record.id && e.native == c.native)
+            })
+        {
             continue;
         }
         if let Some(proposal) = proposal_of(index, record) {
@@ -328,11 +361,38 @@ fn resolve_candidate<'a>(
 
 /// Apply one confirmation to the recorded index: the binding becomes
 /// user-confirmed at the chosen native identity, provenance preserved.
+fn check_candidate_source(
+    ctx: &super::ObservedContext,
+    candidate: &CandidateRecord,
+) -> Result<(), DiagnosticSet> {
+    let fs = crate::project_fs::Fs::open(&ctx.root).map_err(|_| diagnostic::missing_index_set())?;
+    if candidate.fingerprint.is_some()
+        && index::read_fingerprint(&fs, &candidate.path)? != candidate.fingerprint
+    {
+        return Err(diagnostic::plan_mismatch_set("candidate-source-drift"));
+    }
+    Ok(())
+}
+
 pub(crate) fn apply_confirmation(
     index: &mut ObservedIndex,
     proposal: &Proposal,
     chosen: &CandidateRecord,
 ) -> Option<String> {
+    let fresh = index
+        .binding_evidence
+        .iter()
+        .find(|e| e.symbol == proposal.symbol && e.native == chosen.native)
+        .map(|e| e.evidence.clone());
+    if index.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION && fresh.is_none() {
+        return None;
+    }
+    let fresh_provenance = super::types::Provenance {
+        origin: super::types::Origin::Observed,
+        confidence: chosen.confidence,
+        adapter: index.adapter.id.clone(),
+        revision: index.revision.clone(),
+    };
     let record = index.symbols.iter_mut().find(|r| r.id == proposal.symbol)?;
     let previous_path = record.location.as_ref().map(|l| l.path.clone());
     record.status = BindingStatus::Confirmed;
@@ -343,8 +403,13 @@ pub(crate) fn apply_confirmation(
         line: chosen.line,
     });
     record.fingerprint = chosen.fingerprint.clone();
-    // Provenance is preserved: origin, adapter, and the exact scan
-    // revision stay exactly as the scan recorded them.
+    if let Some(evidence) = fresh {
+        record.evidence = evidence;
+        record.provenance = fresh_provenance;
+        record.candidates.clear();
+    }
+    // A successor reconfirmation adopts the reviewed scan's provenance;
+    // predecessor confirmations retain the originally recorded provenance.
     record.history.push(super::types::HistoryEntry {
         event: super::types::HistoryEvent::Confirmed,
         revision: index.revision.clone(),
@@ -379,6 +444,7 @@ pub fn confirm(
             .expect("proposal source exists"),
     );
     let chosen = resolve_candidate(&proposal, &candidates, candidate)?.clone();
+    check_candidate_source(ctx, &chosen)?;
     let mut owned = index;
     let confirmed = apply_confirmation(&mut owned, &proposal, &chosen)
         .ok_or_else(|| diagnostic::proposal_unknown_set(proposal_id))?;
@@ -434,9 +500,7 @@ fn batch_plan_id(index: &ObservedIndex, entries: &[BatchEntry]) -> String {
         payload.push_str(&entry.proposal);
         payload.push('\n');
     }
-    let mut hasher = Sha256::new();
-    hasher.update(payload.as_bytes());
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::digest::sha256_hex(payload.as_bytes()))
 }
 
 /// `bindings confirm --batch`: plan the batch (preview) with `None`, or
@@ -479,6 +543,7 @@ pub fn confirm_batch(
                 .expect("proposal source exists"),
         );
         let chosen = resolve_candidate(proposal, &candidates, None)?.clone();
+        check_candidate_source(ctx, &chosen)?;
         if let Some(symbol) = apply_confirmation(&mut index, proposal, &chosen) {
             confirmed.push(symbol);
         }

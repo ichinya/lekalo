@@ -101,7 +101,7 @@ const recomputeDigest = (fileText) => {
 };
 
 const validDir = "tests/fixtures/lockfile/valid";
-for (const name of ["contract-only.lock.json", "multi-adapter.lock.json"]) {
+for (const name of ["contract-only.lock.json", "contract-only.product-1.1.0.lock.json", "multi-adapter.lock.json"]) {
   const text = readText(`${validDir}/${name}`);
   let document;
   try {
@@ -139,7 +139,7 @@ for (const name of ["contract-only.lock.json", "multi-adapter.lock.json"]) {
 }
 
 // Golden digests recomputed independently must match the sidecar expects.
-for (const name of ["contract-only", "multi-adapter"]) {
+for (const name of ["contract-only", "contract-only.product-1.1.0", "multi-adapter"]) {
   const lockText = readText(`${validDir}/${name}.lock.json`);
   const expect = JSON.parse(readText(`${validDir}/${name}.expect.json`));
   const digest = recomputeDigest(lockText);
@@ -227,7 +227,7 @@ const embedded = readText("crates/lekalo-core/src/versioning/registry.rs")
   .match(/REGISTRY_BYTES[^;]*include_bytes!\("(contracts\/version-registry\.v[0-9.]+\.json)"\)/)?.[1];
 if (!embedded) throw new Error("the Rust embedded registry path is missing");
 const registry = JSON.parse(readText(`crates/lekalo-core/src/versioning/${embedded}`));
-const golden = JSON.parse(readText(`${validDir}/contract-only.lock.json`));
+const golden = JSON.parse(readText(`${validDir}/contract-only.product-1.1.0.lock.json`));
 if (golden.contracts.registry.version !== registry.registryVersion) {
   fail("parity:registry-pin", "the lock registry pin must match the embedded registry");
 }

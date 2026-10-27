@@ -6,36 +6,30 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
-rust-version = "1.80.0"
+rust-version = "1.89.0"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ichinya/lekalo"
 publish = false
 
 [workspace.dependencies]
-# Cargo.lock also keeps clap_lex at 1.0.1; 1.1.x requires Rust 1.85.
-clap = { version = "~4.5.61", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
 lekalo-core = { path = "crates/lekalo-core" }
-rusqlite = { version = "=0.32.1", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-saphyr-parser = "=0.0.8"
-sha2 = "0.10.9"
+saphyr-parser = "0.3"
+sha2 = "0.11"
 unicode-normalization = "0.1"
 tempfile = "3"
-# notify 6.1.1 declares Rust 1.60 in its released crate manifest.
-# The pinned dependency graph still needs the workspace's Rust 1.80
-# and Windows/Linux/macOS CI checks; no cross-platform pass is implied.
-notify = "=6.1.1"
-# Last ignore/globset editions compatible with the Rust 1.80 floor.
-# Cargo.lock pins globset 0.4.16; successors use edition 2024.
-ignore = "=0.4.23"
+notify = "8"
+ignore = "0.4"
 
 [workspace.dependencies.rustix]
 version = "1"
 features = ["fs"]
 
 [workspace.dependencies.windows-sys]
-version = "=0.61.2"
+version = "0.61"
 features = ["Win32_Foundation", "Win32_Storage_FileSystem"]

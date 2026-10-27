@@ -136,7 +136,8 @@ for (const name of scanFiles) {
 const versionSource = readText("crates/lekalo-core/src/observed/version.rs");
 for (const constant of [
   'SCHEMA_VERSION: &str = "lekalo/observed-index/v0.2.16"',
-  'SCAN_SCHEMA_VERSIONS: [&str; 1] =',
+  'SCAN_SCHEMA_VERSIONS: [&str; 2] =',
+  'NATIVE_SCAN_SCHEMA_VERSION: &str = "lekalo/observed-scan/v1.1.0";',
   '"lekalo/observed-scan/v0.2.16"',
   '"lekalo/observed-scan/v0.2.16"',
   'SCAN_SCHEMA_VERSION: &str = SCAN_SCHEMA_VERSIONS[0];',

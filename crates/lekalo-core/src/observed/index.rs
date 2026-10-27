@@ -12,7 +12,6 @@
 use std::collections::HashMap;
 
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 use crate::diagnostics::DiagnosticSet;
 
@@ -131,9 +130,25 @@ pub fn parse_index(bytes: &[u8]) -> Result<ObservedIndex, DiagnosticSet> {
     }
     let index: ObservedIndex =
         serde_json::from_slice(bytes).map_err(|_| diagnostic::index_io_set("index-malformed"))?;
-    if index.schema_version != version::SCHEMA_VERSION
-        || index.identity != version::INDEX_IDENTITY
+    let native_inventory = index.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION
+        && index.identity == version::NATIVE_INDEX_IDENTITY;
+    let predecessor = index.schema_version == version::SCHEMA_VERSION
+        && index.identity == version::INDEX_IDENTITY;
+    if (!native_inventory && !predecessor)
         || index.mode != version::MODE
+        || (predecessor
+            && (!index.native_symbols.is_empty()
+                || !index.binding_evidence.is_empty()
+                || !index.native_uncertainty.is_empty()))
+        || (native_inventory
+            && (!super::types::native_evidence_valid(
+                &index.native_symbols,
+                &index.binding_evidence,
+            ) || index
+                .binding_evidence
+                .iter()
+                .any(|e| index.symbol(&e.symbol).is_none())
+                || !crate::native_symbols::valid_uncertainty(&index.native_uncertainty)))
     {
         return Err(diagnostic::index_io_set("index-identity"));
     }
@@ -244,6 +259,25 @@ pub fn update_index(
         },
         &scan.revision,
     );
+    // Upgrading requires a successful explicitly versioned scan. Never
+    // downgrade a native inventory through a predecessor response.
+    if !scan.native_inventory
+        && previous
+            .as_ref()
+            .is_some_and(|p| p.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION)
+    {
+        return Err(diagnostic::scan_invalid_set(
+            "native-inventory-downgrade",
+            None,
+        ));
+    }
+    if scan.native_inventory {
+        index.schema_version = version::NATIVE_INDEX_SCHEMA_VERSION.to_owned();
+        index.identity = version::NATIVE_INDEX_IDENTITY.to_owned();
+        index.native_symbols = scan.native_symbols.clone();
+        index.binding_evidence = scan.binding_evidence.clone();
+        index.native_uncertainty = scan.native_uncertainty.clone();
+    }
 
     let mut moved: Vec<String> = Vec::new();
     let mut staled: Vec<String> = Vec::new();
@@ -739,9 +773,7 @@ fn split_logical(path: &str) -> (&str, &str) {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::digest::sha256_hex(bytes))
 }
 
 /// Keep the bounded history tail (the oldest entries fall off).

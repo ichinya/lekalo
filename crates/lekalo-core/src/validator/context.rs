@@ -83,7 +83,7 @@ impl<'a> Context<'a> {
             .definitions
             .iter()
             .filter(|definition| {
-                self.selected.as_ref().map_or(true, |modules| {
+                self.selected.as_ref().is_none_or(|modules| {
                     Self::owner(definition.id().as_str())
                         .is_some_and(|owner| modules.contains(owner))
                 })

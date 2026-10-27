@@ -195,7 +195,7 @@ try {
       const manifest = readFileSync(join(root, "Cargo.toml"), "utf8");
       check(manifest.includes(`name = "${pkg.name}"`), "manifest-name", language);
       check(manifest.includes(`version = "${pkg.version}"`), "manifest-version", language);
-      check(manifest.includes('rust-version = "1.80.0"'), "manifest-msrv", language);
+      check(manifest.includes('rust-version = "1.89.0"'), "manifest-msrv", language);
       check(manifest.includes("[workspace]"), "independent-workspace", language);
       check(!/^s*lekalo-cores*=/m.test(manifest), "core-coupling", "no lekalo-core dependency");
       // The crate must build WITH its tests (no --no-verify escape hatch:

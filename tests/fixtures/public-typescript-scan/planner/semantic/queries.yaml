@@ -1,0 +1,19 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.list_tasks",
+      "kind": "query",
+      "version": 1,
+      "description": "src/domain/planning.ts listForDay filters workspace, owner, day and not-done; orders by position then id. src/api/planner-view.ts projects through src/api/task-json.ts.",
+      "reads": [
+        "planner.task"
+      ],
+      "returns": {
+        "list": {
+          "ref": "planner.task"
+        }
+      }
+    }
+  ]
+}

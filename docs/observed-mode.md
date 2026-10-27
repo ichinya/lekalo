@@ -18,6 +18,14 @@ The contract is published as
 release, of the Model/IR/protocol contract versions, and of the diagnostic
 registry version.
 
+The exact `1.1.0` successors are
+[`observed-index`](../contracts/observed-index.schema.v1.1.0.json) and
+[`observed-scan`](../contracts/observed-scan.schema.v1.1.0.json). They add a
+bounded native declaration forest, fresh per-candidate binding evidence and
+explicit type uncertainty. Predecessor documents retain their bytes and
+admission rules. See [public TypeScript scan](public-typescript-scan.md) and
+[binding reconfirmation](bindings.md) for the negotiated workflow and limits.
+
 ## What the mode guarantees
 
 - **Adapter scans, never source parsing.** Lekalo never parses source code.

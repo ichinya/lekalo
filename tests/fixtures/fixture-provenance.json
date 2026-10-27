@@ -5,6 +5,11 @@
   "rule": "every public-facing fixture family is synthetic or carries explicit evidence refs",
   "families": [
     {
+      "family": "agent-instructions",
+      "origin": "synthetic",
+      "note": "Repository-authored previous managed prompt used only for installer upgrade and conflict regression checks; no consumer or agent-run data."
+    },
+    {
       "family": "adapter-conformance",
       "origin": "synthetic"
     },

@@ -424,7 +424,7 @@
     },
     "versions": {
       "artifactManifest": "lekalo/artifact-manifest/v0.2.16",
-      "core": "1.0.0",
+      "core": "1.1.0",
       "diagnostic": "lekalo/diagnostic/v0.2.16",
       "graph": "0.8.0",
       "impact": "0.8.0",

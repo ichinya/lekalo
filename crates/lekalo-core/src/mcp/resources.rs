@@ -266,7 +266,7 @@ impl Cursor {
 
     /// Decode one opaque cursor; unrelated spellings are a stale refusal.
     pub fn decode(text: &str) -> Option<Self> {
-        if text.is_empty() || text.len() > 1024 || text.len() % 2 != 0 {
+        if text.is_empty() || text.len() > 1024 || !text.len().is_multiple_of(2) {
             return None;
         }
         let mut raw = Vec::with_capacity(text.len() / 2);

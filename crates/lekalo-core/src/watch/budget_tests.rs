@@ -13,7 +13,7 @@ fn model_admission_precedes_materialization_and_cannot_commit() {
     let mut captured = fixture();
     let record = captured.files.get_mut("lekalo/project.yaml").unwrap();
     let bytes = record.bytes.as_mut().unwrap();
-    bytes.extend(std::iter::repeat(b' ').take(MAX_MODEL_BYTES as usize));
+    bytes.extend(std::iter::repeat_n(b' ', MAX_MODEL_BYTES as usize));
     record.len = bytes.len() as u64;
     record.sha256 = format!("sha256:{}", crate::digest::sha256_hex(bytes));
     let mut service = WatchService::new(WatchRequest::default()).unwrap();

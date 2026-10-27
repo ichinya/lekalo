@@ -136,7 +136,7 @@ impl InputSnapshot {
             digest.update(record.sha256.as_bytes());
             digest.update(b"\n");
         }
-        format!("sha256:{:x}", digest.finalize())
+        format!("sha256:{}", crate::digest::hex(&digest.finalize()))
     }
     pub fn generated_digest(&self) -> String {
         use sha2::{Digest, Sha256};
@@ -147,7 +147,7 @@ impl InputSnapshot {
             digest.update(record.sha256.as_bytes());
             digest.update(b"\n");
         }
-        format!("sha256:{:x}", digest.finalize())
+        format!("sha256:{}", crate::digest::hex(&digest.finalize()))
     }
     pub fn total_bytes(&self) -> u64 {
         self.files

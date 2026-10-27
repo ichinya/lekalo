@@ -157,7 +157,7 @@ fn selection_valid(s: &Selection, rule: &Rule) -> bool {
         && (!s.required
             || (s.enabled && matches!(rule.blocking_basis.as_str(), "semantic" | "measured")))
         && matches!(s.limit, State::Unknown | State::Known { .. })
-        && s.limit.value().map_or(true, |l| {
+        && s.limit.value().is_none_or(|l| {
             rule.blocking_basis == "measured"
                 && s.enabled
                 && l.maximum <= 10_000_000

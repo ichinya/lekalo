@@ -660,7 +660,7 @@ fn validate_endpoint(
                     || pagination
                         .cursor_param
                         .as_ref()
-                        .map_or(true, |param| param.as_str() != key)
+                        .is_none_or(|param| param.as_str() != key)
                 {
                     return Err(diagnostic::rule_invalid(
                         diagnostic::PAGINATION_INVALID,

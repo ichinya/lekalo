@@ -12,7 +12,6 @@
 use std::collections::{BTreeSet, HashMap};
 
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 use crate::diagnostics::DiagnosticSet;
 
@@ -476,9 +475,7 @@ fn plan_digest(index: &types::ObservedIndex, entries: &[PlanEntry]) -> String {
         payload.push_str(&entry.yaml);
         payload.push('\n');
     }
-    let mut hasher = Sha256::new();
-    hasher.update(payload.as_bytes());
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::digest::sha256_hex(payload.as_bytes()))
 }
 
 /// Validate that appending definition blocks to an existing canonical

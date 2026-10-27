@@ -201,7 +201,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   msrv:
-    name: Rust 1.80.0 MSRV (${{ matrix.os }})
+    name: Rust 1.89.0 MSRV (${{ matrix.os }})
     runs-on: ${{ startsWith(matrix.os, 'ubuntu-') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || matrix.os }}
     strategy:
       fail-fast: false
@@ -209,7 +209,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.80.0
+      - uses: dtolnay/rust-toolchain@1.89.0
         with:
           components: clippy
       - run: cargo check --workspace --all-targets --locked
@@ -459,6 +459,8 @@ jobs:
           for family in baseline task campaign arm result; do
             NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-framework-lift-contracts.mjs --family "$family"
           done
+          node scripts/gen-framework-lift-v11.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-framework-lift-v11.mjs
       - name: Run the local run-history end-to-end gate (issue #121)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
@@ -751,10 +753,18 @@ jobs:
         run: |
           node scripts/gen-public-scan-protocol.mjs --check
           node scripts/test-public-typescript-scan.mjs
+          node scripts/gen-native-symbols-protocol.mjs --check
+          node scripts/test-public-typescript-roundtrip.mjs
       - name: Qualify the domain/client workspace without a backend (issue #153)
         run: node scripts/test-domain-workspace.mjs
       - name: Qualify managed agent instruction installation (issue #157)
         run: node scripts/test-install-prompt.mjs
+      - name: Check source and context reuse in the research harness (issue #167)
+        run: |
+          node --test scripts/research/test-framework-lift-workspace.mjs
+          node --test scripts/research/test-framework-lift-public-result.mjs
+          node --test scripts/research/test-framework-lift-history-preview.mjs
+          node --test scripts/research/test-framework-lift-research-report.mjs
       - name: Run the Hono framework-binding suites (issue #115)
         timeout-minutes: 15
         run: node scripts/test-node-hono-bindings.mjs

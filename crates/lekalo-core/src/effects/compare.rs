@@ -309,7 +309,7 @@ pub(crate) fn compare(
 fn select<'a>(edges: &'a [EffectEdge], operation: Option<&OperationId>) -> Vec<&'a EffectEdge> {
     edges
         .iter()
-        .filter(|edge| operation.map_or(true, |operation| edge.key().operation() == operation))
+        .filter(|edge| operation.is_none_or(|operation| edge.key().operation() == operation))
         .collect()
 }
 

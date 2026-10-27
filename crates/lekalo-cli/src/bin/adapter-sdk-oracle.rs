@@ -63,7 +63,7 @@ fn response_verdict(bytes: &[u8]) -> Value {
 /// — including CR/LF and non-UTF-8 spellings — travel line-safely as
 /// lowercase hex and reach the decoder unchanged.
 fn decode_hex(text: &str) -> Option<Vec<u8>> {
-    if text.len() % 2 != 0 {
+    if !text.len().is_multiple_of(2) {
         return None;
     }
     let bytes = text.as_bytes();

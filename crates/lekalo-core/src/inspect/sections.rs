@@ -177,10 +177,10 @@ fn project_header(project: &CompiledProject) -> Option<ProjectHeader> {
 
 /// The `sha256` digest of the canonical IR bytes.
 pub(crate) fn ir_digest(project: &CompiledProject) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(project.to_canonical_json().as_bytes());
-    format!("sha256:{:x}", hasher.finalize())
+    format!(
+        "sha256:{}",
+        crate::digest::sha256_hex(project.to_canonical_json().as_bytes())
+    )
 }
 
 /// The logical source location of one definition: the first source-map

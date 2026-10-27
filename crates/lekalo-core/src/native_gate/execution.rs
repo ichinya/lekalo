@@ -737,7 +737,9 @@ fn prepare(
     let discovered = Discovery::run_with_cancel(&mut client, &command, &source_root, cancel)
         .map_err(|failure| adapter_failure(failure, "execution-adapter-describe"))?;
     consistency::check(adapter, &discovered).map_err(|_| invalid("execution-adapter-manifest"))?;
-    if discovered.negotiated_version != "0.9.1" {
+    // Both revisions carry the full v0.4 native plan. Newer scan evidence
+    // must not disable the independently versioned native planning surface.
+    if !matches!(discovered.negotiated_version, "0.9.1" | "1.1.0") {
         return Err(Failure::CapabilityMissing {
             detail: "native-full-plan-protocol",
         });

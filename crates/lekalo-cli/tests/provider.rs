@@ -512,7 +512,7 @@ fn count_entries(root: &std::path::Path) -> usize {
 /// core `GenerateService::inputs` pins), then a custom-lifecycle file is
 /// drifted and the read-only check reports it without blocking. The live
 /// receipt must equal the committed golden fixture byte-for-byte as JSON
-/// (`tests/fixtures/provider/drift-reported.golden.json`): the Node
+/// (`tests/fixtures/provider/drift-reported.product-1.1.0.golden.json`): the Node
 /// boundary gate Ajv-validates exactly those committed bytes against the
 /// published `lekalo/generate-check/v0.6.3` schema, so live equivalence
 /// is what makes the golden a faithful representative of the wire class
@@ -650,7 +650,7 @@ fn drift_reported_receipt_matches_the_published_golden() {
     let golden: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../tests/fixtures/provider/drift-reported.golden.json"),
+                .join("../../tests/fixtures/provider/drift-reported.product-1.1.0.golden.json"),
         )
         .expect("committed golden receipt"),
     )

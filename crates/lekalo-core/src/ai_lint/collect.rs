@@ -91,9 +91,10 @@ pub fn collect(
             | crate::target_protocol::version::WATCH_VERSION
             | crate::target_protocol::version::SCAN_VERSION
             | crate::target_protocol::version::EXEC_VERSION
+            | crate::target_protocol::version::NATIVE_SCAN_VERSION
     ) || discovered
         .capability("lint.ai-readability")
-        .map_or(true, |c| {
+        .is_none_or(|c| {
             !matches!(
                 c.state,
                 crate::target_protocol::wire::SupportState::Full

@@ -1,0 +1,18 @@
+{
+  "recipe": "public-fixture-research/2",
+  "purpose": "Descriptive disclosure of explicitly reviewed public fixture campaigns with campaign-specific outcomes; no private-data export authority.",
+  "campaigns": [
+    {
+      "id": "priority-planner-compact-context-2026-10-27",
+      "originalManifestSha256": "c368daf597aee29d47353e19875059f8399f563a3ca11ae6831dd6fa6f59ecad",
+      "admissionManifestSha256": "2e99ba296d694729aa5c5d20b58fecb55ffb859e1d4f6437316ba243fe3ae4dd",
+      "campaignSha256": "47a819db10b0eb7ecbf0dcfef854a0e3041a1caa92a013654975e6c7560632d5",
+      "taskSha256": "fa2510b1ddd2a6c883e84a1e3187fe05ad5f0edc7e44e46be7ad079bb1b7a88d",
+      "oracleSha256": "b23724511a7316380f8a13c4e26495af1921f03e139db2d044c070a8954fbef0",
+      "nativeSha256": "d1a073099688f913d2196c824b1bdea27c543cb14aa5e8e64d5cc8524d089b0b",
+      "preregistration": "https://github.com/ichinya/lekalo/issues/167#issuecomment-6439183338"
+    }
+  ],
+  "statistics": "All scheduled attempts, per-profile paired B-minus-A counts and exact rational relative changes; no significance or population inference.",
+  "privacy": "Explicit output allowlist only. Raw account exports stay private. This recipe does not change #102 thresholds, classify or declassify records, issue consent, or confirm an export."
+}
