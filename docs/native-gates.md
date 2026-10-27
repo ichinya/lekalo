@@ -134,8 +134,10 @@ validation alone cannot produce passing native evidence.
 
 ## Protocol and historical boundary
 
-Protocol 0.9.1 carries the complete native plan and matching digest. Core checks
-its document, adapter identity and optional summary counts independently.
+Target protocols 0.9.1 and 1.1.0 carry the complete native plan and matching
+digest. The 1.1.0 scan evidence does not change the independently versioned
+native plan. Core checks its document, adapter identity and optional summary
+counts independently.
 Predecessors retain their summary-only wire members; summaries cannot authorize
 execution. The issue #48 fixture harness and frozen v0.4.0 documents retain their
 historical meaning. A raw v0.4.0 `native run PLAN` still returns plan-only refusal.
