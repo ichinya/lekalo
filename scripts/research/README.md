@@ -49,6 +49,50 @@ Reproduce without agent CLIs or dependency installation:
 node scripts/research/framework-lift-context-preflight.mjs NEW_OUTPUT_JSON
 ```
 
+### Actual compact-context campaign (2026-10-27)
+
+The [preregistration](https://github.com/ichinya/lekalo/issues/167#issuecomment-6439183338)
+froze eight new independent slots at `afeb423187ba05c6353a6bb692a3f6c824ac9a76`.
+All eight executor workflows finished. Six candidates passed all 20 holdout
+assertions; Codex B2 passed 19/20 and A2 passed 17/20. Both stay in the denominator;
+there were no reruns. The [new descriptive report](results/2026-10-27-compact-context-research.json)
+uses the separately pinned `public-fixture-research/2` recipe and joins all eight
+arms to their [post-run 1.1 admission](results/2026-10-27-compact-admission-v11.json).
+The v1 recipe and historical reports remain unchanged. For this report, append
+`2` after the new output path in the research-report command above.
+
+| Profile | A mean total tokens | B mean total tokens | B total change | B uncached input change | Successes A / B |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Devin / swe-2-high | 190,865.5 | 324,286 | +69.9% | +2.9% | 2/2 / 2/2 |
+| Codex / gpt-6-luna medium | 181,076.5 | 223,373 | +23.4% | +15.9% | 1/2 / 1/2 |
+
+Total usage was 1,839,202 tokens, including 1,514,688 cached input tokens as a
+subset; monetary cost remains unknown. No token savings were demonstrated.
+Devin read the full installed instruction in both B runs despite the compact
+initial entrypoint. Its B1 used 13 measured agent steps versus A1's seven and
+included a 14,312-output-token step. Codex's B runs did not show that full-prompt
+read, yet still used more tokens. Verified source-file lower bounds stayed at
+nine per Devin run and nine versus 8.5 on average for Codex A versus B. The
+observed workflow therefore added semantic context while reading nearly the
+same small implementation. These facts identify overhead and failed progressive
+disclosure; they do not isolate a causal token share or provider-side variance.
+
+The reader also refused attempts to include tests/package metadata in its
+`src/**/*.ts`-only interface (both Devin B runs and A2). The next instruction
+revision should state that boundary explicitly. A future compact managed prompt
+should place the short instruction in the file agents actually read, with full
+reference material disclosed when needed. Neither follow-up is claimed measured
+by this campaign. There are no further automatic inference runs.
+
+Raw tool receipts and before/after candidates remain local in the immutable
+622-file campaign bundle (manifest
+`c368daf597aee29d47353e19875059f8399f563a3ca11ae6831dd6fa6f59ecad`),
+with a separate 19-file admitted bundle (manifest
+`2e99ba296d694729aa5c5d20b58fecb55ffb859e1d4f6437316ba243fe3ae4dd`).
+All eight supplementary scan/reconfirmation cycles preserved native source and
+were deterministic. This is native evidence maintenance outside agent timing,
+not semantic Model conformance or human review. Private export rules stay intact.
+
 ## Actual history / privacy preview
 
 `framework-lift-history-preview.mjs` verifies both immutable evidence manifests,
