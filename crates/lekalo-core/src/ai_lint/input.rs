@@ -2,14 +2,13 @@
 use super::{diagnostic::failure, wire::*};
 use crate::{project_fs::Fs, result::DomainResult};
 use serde::{de::DeserializeOwned, Serialize};
-use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
 pub const VERSION: &str = "0.6.4";
 pub const MAX_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_ROWS: usize = 10_000;
 pub const MAX_WORK: usize = 10_000_000;
 pub fn digest(bytes: &[u8]) -> String {
-    format!("sha256:{:x}", Sha256::digest(bytes))
+    format!("sha256:{}", crate::digest::sha256_hex(bytes))
 }
 pub fn canonical<T: Serialize>(value: &T) -> Vec<u8> {
     serde_json::to_vec(&serde_json::to_value(value).expect("typed wire")).expect("canonical wire")
@@ -96,7 +95,7 @@ fn validate_tree(v: &serde_json::Value, key: &str, depth: usize) -> Result<(), D
         }
         serde_json::Value::Number(n)
             if n.as_i64()
-                .map_or(true, |n| !(-10_000_000..=10_000_000).contains(&n)) =>
+                .is_none_or(|n| !(-10_000_000..=10_000_000).contains(&n)) =>
         {
             return Err(invalid())
         }

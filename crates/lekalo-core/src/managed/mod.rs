@@ -266,12 +266,12 @@ fn requirement(requirement: &Requirement) -> bool {
         && requirement
             .witness
             .value()
-            .map_or(true, |witness| pin(witness))
+            .is_none_or(|witness| pin(witness))
         && requirement
             .detail
             .as_ref()
-            .map_or(true, |detail| prose(detail))
-        && requirement.sample.value().map_or(true, sample)
+            .is_none_or(|detail| prose(detail))
+        && requirement.sample.value().is_none_or(sample)
 }
 
 /// Whether the ordered projection contains duplicates.

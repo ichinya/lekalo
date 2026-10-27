@@ -687,7 +687,7 @@ fn compare_indexes(
             observed.columns() == declared_columns
                 && index
                     .name()
-                    .map_or(true, |name| observed.name() == Some(name.as_str()))
+                    .is_none_or(|name| observed.name() == Some(name.as_str()))
         });
         match observed_index {
             None => {

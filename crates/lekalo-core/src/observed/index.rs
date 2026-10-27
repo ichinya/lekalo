@@ -12,7 +12,6 @@
 use std::collections::HashMap;
 
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 use crate::diagnostics::DiagnosticSet;
 
@@ -774,9 +773,7 @@ fn split_logical(path: &str) -> (&str, &str) {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::digest::sha256_hex(bytes))
 }
 
 /// Keep the bounded history tail (the oldest entries fall off).

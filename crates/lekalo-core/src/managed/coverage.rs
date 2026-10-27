@@ -125,7 +125,7 @@ pub fn admit(
         if requirement
             .witness
             .value()
-            .map_or(true, |witness| !pin(witness))
+            .is_none_or(|witness| !pin(witness))
         {
             return Err(capability_gap(&requirement.id, "witness"));
         }

@@ -36,7 +36,7 @@ ENV HOME=/home/ci-runner \
     PATH=/home/ci-runner/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RUN curl --proto '=https' --tlsv1.2 -fsS https://sh.rustup.rs -o /tmp/install-rust.sh \
     && sh /tmp/install-rust.sh -y --profile minimal --default-toolchain stable --component clippy,rustfmt \
-    && rustup toolchain install 1.80.0 --profile minimal --component clippy \
+    && rustup toolchain install 1.89.0 --profile minimal --component clippy \
     && rm /tmp/install-rust.sh
 USER root
 RUN add-apt-repository -y ppa:ondrej/php \

@@ -480,7 +480,7 @@ fn scan_target(
         || !discovered.operations.iter().any(|o| o == "validate")
         || discovered
             .capability("scan.symbols")
-            .map_or(true, |c| c.state != SupportState::Full)
+            .is_none_or(|c| c.state != SupportState::Full)
     {
         return Err(unsupported("watch-scan-validation"));
     }

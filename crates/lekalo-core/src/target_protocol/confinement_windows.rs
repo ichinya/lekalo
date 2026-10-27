@@ -366,11 +366,14 @@ fn quote(value: &str) -> Result<String, Failure> {
             slashes += 1;
             continue;
         }
-        out.extend(std::iter::repeat('\\').take(if ch == '"' { slashes * 2 + 1 } else { slashes }));
+        out.extend(std::iter::repeat_n(
+            '\\',
+            if ch == '"' { slashes * 2 + 1 } else { slashes },
+        ));
         out.push(ch);
         slashes = 0;
     }
-    out.extend(std::iter::repeat('\\').take(slashes * 2));
+    out.extend(std::iter::repeat_n('\\', slashes * 2));
     out.push('"');
     Ok(out)
 }

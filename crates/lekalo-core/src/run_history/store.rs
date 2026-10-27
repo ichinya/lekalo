@@ -1259,7 +1259,12 @@ impl Store {
                 .execute(
                     "INSERT INTO dependents(tenant_scope_id, dependent_id, kind, state, generation)
                      VALUES (?1, ?2, ?3, 'valid', ?4)",
-                    rusqlite::params![scope_id, dependent_id, kind.as_str(), generation],
+                    rusqlite::params![
+                        scope_id,
+                        dependent_id,
+                        kind.as_str(),
+                        i64::try_from(generation).unwrap_or(i64::MAX)
+                    ],
                 )
                 .map_err(StoreError::classify_write)?;
             for (run_id, record_digest, assertion_digest) in &bound {

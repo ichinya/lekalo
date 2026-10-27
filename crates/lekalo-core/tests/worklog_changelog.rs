@@ -1030,7 +1030,7 @@ fn required_file_witnesses_survive_oracle_pruning() {
             report["consumers"].as_array_mut().unwrap().retain(|row| {
                 row["consumer"]
                     .as_str()
-                    .map_or(true, |c| !c.starts_with("taskhub."))
+                    .is_none_or(|c| !c.starts_with("taskhub."))
             });
         },
         pruned,

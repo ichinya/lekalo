@@ -206,7 +206,7 @@ pub fn module_hop_attribution(
                 return attribution;
             }
             let recorded = best.get(target.as_str()).copied();
-            if recorded.map_or(true, |previous| next < previous) {
+            if recorded.is_none_or(|previous| next < previous) {
                 best.insert(target.as_str().to_owned(), next);
                 attribution.hops.insert(target.as_str().to_owned(), next);
                 queue.push_back((target, next));

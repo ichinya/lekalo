@@ -613,7 +613,7 @@ fn is_utc_clock(text: &str) -> bool {
         && parts
             .iter()
             .all(|part| part.len() == 2 && digits(part.as_bytes()))
-        && fraction.map_or(true, |fraction| {
+        && fraction.is_none_or(|fraction| {
             !fraction.is_empty() && fraction.bytes().all(|byte| byte.is_ascii_digit())
         })
 }

@@ -22,8 +22,6 @@
 
 use std::collections::HashMap;
 
-use sha2::{Digest, Sha256};
-
 use crate::classification::resolve::Resolution;
 use crate::classification::types::SubjectPath;
 use crate::diagnostics::types::DataObject;
@@ -82,9 +80,10 @@ fn definition_kinds(project: &CompiledProject) -> HashMap<&str, DefinitionKind> 
 /// The `sha256` digest of the canonical IR bytes: the exact revision the
 /// declared projection was built from.
 fn ir_digest(project: &CompiledProject) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(project.to_canonical_json().as_bytes());
-    format!("sha256:{:x}", hasher.finalize())
+    format!(
+        "sha256:{}",
+        crate::digest::sha256_hex(project.to_canonical_json().as_bytes())
+    )
 }
 
 /// The single-pass declared construction state.

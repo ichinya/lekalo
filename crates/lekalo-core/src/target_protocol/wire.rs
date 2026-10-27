@@ -92,7 +92,7 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
             return invalid("lint-request");
         }
         for pin in [&lint.pins.model, &lint.pins.ir] {
-            if pin.known().map_or(true, |p| !is_sha256_digest(p)) {
+            if pin.known().is_none_or(|p| !is_sha256_digest(p)) {
                 return invalid("lint-pin");
             }
         }
@@ -371,7 +371,7 @@ pub fn is_plan_id(value: &str) -> bool {
 /// Whether every declared optional constraint value is inside the closed
 /// bound (issue #28).
 fn constraints_bounded(constraints: Option<&AdapterConstraints>) -> bool {
-    constraints.map_or(true, |constraints| {
+    constraints.is_none_or(|constraints| {
         [constraints.max_entries, constraints.max_writes]
             .into_iter()
             .all(|value| match value {
@@ -393,7 +393,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
             .evidence
             .scan_profile_digest
             .as_deref()
-            .map_or(true, |v| !is_sha256_digest(v))
+            .is_none_or(|v| !is_sha256_digest(v))
             || response
                 .result
                 .as_ref()
@@ -410,7 +410,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
             .evidence
             .native_uncertainty
             .as_ref()
-            .map_or(true, |rows| !crate::native_symbols::valid_uncertainty(rows))
+            .is_none_or(|rows| !crate::native_symbols::valid_uncertainty(rows))
         {
             return invalid;
         }
@@ -585,7 +585,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
             entries.len() > 10000
                 || entries.iter().any(|e| {
                     !scopes::is_logical_path(&e.path)
-                        || (public_scan && e.evidence.as_ref().and_then(|v| v.source_digest.as_deref()).map_or(true, |v| !is_sha256_digest(v)))
+                        || (public_scan && e.evidence.as_ref().and_then(|v| v.source_digest.as_deref()).is_none_or(|v| !is_sha256_digest(v)))
                         || (!public_scan && e.evidence.as_ref().is_some_and(|v| v.source_digest.is_some()))
                         || !bounded(&e.kind, 128)
                         || e.detail.as_ref().is_some_and(|v| {
@@ -598,10 +598,10 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                         || e.evidence.as_ref().is_some_and(|ev| {
                             ev.references.len() > if response.protocol_version == super::version::NATIVE_SCAN_VERSION { 256 } else { 8 }
                                 || if response.protocol_version == super::version::NATIVE_SCAN_VERSION {
-                                    ev.native_symbols.as_ref().map_or(true, |symbols| {
+                                    ev.native_symbols.as_ref().is_none_or(|symbols| {
                                         let detail = e.detail.as_ref().and_then(|d|serde_json::from_str::<serde_json::Value>(d).ok());
                                         let native = detail.as_ref().and_then(|d|d.get("n")).and_then(|n|n.as_str());
-                                        native.map_or(true,|n| !crate::native_symbols::valid_entry(symbols,n,&e.path)
+                                        native.is_none_or(|n| !crate::native_symbols::valid_entry(symbols,n,&e.path)
                                             || symbols.iter().find(|s|s.native==n).map(|s|&s.signature)!=Some(&ev.signature))
                                     })
                                 } else { ev.native_symbols.is_some() }

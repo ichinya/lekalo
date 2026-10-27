@@ -580,7 +580,7 @@ impl Transaction {
         }
         self.module_move
             .as_ref()
-            .map_or(true, |movement| movement.restore(&self.root).is_ok())
+            .is_none_or(|movement| movement.restore(&self.root).is_ok())
     }
 
     /// Decide rollback custody using fresh no-follow reads. `None` means

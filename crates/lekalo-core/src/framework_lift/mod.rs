@@ -320,8 +320,7 @@ pub fn admit_arm(b: &Value, t: &Value, c: &Value, a: &Value) -> Result<(), Failu
     }
     if n(a, "attempt") > 0
         && !unbounded(&c["profile"]["limits"], "maxProviderRetries")
-        && limit(&c["profile"]["limits"], "maxProviderRetries")
-            .map_or(true, |v| n(a, "attempt") > v)
+        && limit(&c["profile"]["limits"], "maxProviderRetries").is_none_or(|v| n(a, "attempt") > v)
     {
         return Err(("evaluation.protocol-invalid", "attempt-limit"));
     }

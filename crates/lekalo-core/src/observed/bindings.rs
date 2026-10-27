@@ -25,7 +25,6 @@
 //!   adapter/version/fingerprint, and freshness state.
 
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 use crate::diagnostics::DiagnosticSet;
 use crate::project_fs::Fs;
@@ -242,9 +241,11 @@ fn proposal_id(index: &ObservedIndex, symbol: &str, candidates: &[CandidateRecor
         .unwrap_or_default();
     }
     let bytes = serde_json::to_vec(&payload).unwrap_or_default();
-    let mut hasher = Sha256::new();
-    hasher.update(&bytes);
-    format!("{}{:x}", version::PROPOSAL_ID_PREFIX, hasher.finalize())
+    format!(
+        "{}{}",
+        version::PROPOSAL_ID_PREFIX,
+        crate::digest::sha256_hex(&bytes)
+    )
 }
 
 /// Project one proposal from one inferred record; `None` for records
@@ -499,9 +500,7 @@ fn batch_plan_id(index: &ObservedIndex, entries: &[BatchEntry]) -> String {
         payload.push_str(&entry.proposal);
         payload.push('\n');
     }
-    let mut hasher = Sha256::new();
-    hasher.update(payload.as_bytes());
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::digest::sha256_hex(payload.as_bytes()))
 }
 
 /// `bindings confirm --batch`: plan the batch (preview) with `None`, or

@@ -269,7 +269,7 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
         + request.transitions.map_or(0, |t| t.transitions().len());
     if request.evidence.len() > 64
         || rows > input::MAX_ROWS
-        || source_bytes.map_or(true, |n| n > input::MAX_BYTES)
+        || source_bytes.is_none_or(|n| n > input::MAX_BYTES)
         || rows
             .saturating_mul(join_rows.saturating_add(rows))
             .saturating_mul(4)
@@ -367,9 +367,9 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
             .and_then(|b| crate::lockfile::Lockfile::parse_canonical(&b).ok());
         if a.model().digest().as_str() != request.artifact_model_ref
             || a.ir().digest().as_str() != ir_ref
-            || lock.as_ref().map_or(true, |l| {
-                l.digest().as_str() != a.lock_ref().digest().as_str()
-            })
+            || lock
+                .as_ref()
+                .is_none_or(|l| l.digest().as_str() != a.lock_ref().digest().as_str())
         {
             return Err(diagnostic::failure("ai-lint.input-invalid", "artifact-pin"));
         }
@@ -390,7 +390,7 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
         if e.pins
             .observed
             .known()
-            .is_some_and(|pin| request.observed.map_or(true, |o| &hash(o) != pin))
+            .is_some_and(|pin| request.observed.is_none_or(|o| &hash(o) != pin))
         {
             return Err(diagnostic::failure("ai-lint.input-invalid", "observed-pin"));
         }
@@ -428,7 +428,7 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
                 }
             }
             if let Some(resource) = r.resource.known() {
-                if !request.compilation.project.definitions.iter().any(|d| matches!(d, Definition::Entity(entity) if entity.id.as_str()==resource && r.field.known().map_or(true, |field| entity.fields.iter().any(|f| f.name.as_str()==field)))) { return Err(diagnostic::failure("ai-lint.input-invalid", "record-resource-field")); }
+                if !request.compilation.project.definitions.iter().any(|d| matches!(d, Definition::Entity(entity) if entity.id.as_str()==resource && r.field.known().is_none_or(|field| entity.fields.iter().any(|f| f.name.as_str()==field)))) { return Err(diagnostic::failure("ai-lint.input-invalid", "record-resource-field")); }
             }
         }
     }
@@ -533,17 +533,17 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
                     c.limitations = vec!["custody-or-currency-unknown".into()];
                 }
                 let incomplete_trace = rule == "hidden.path-without-trace-owner"
-                    && request.trace.map_or(true, |t| {
+                    && request.trace.is_none_or(|t| {
                         let m = t.manifest();
                         m.completeness != crate::trace::Completeness::Full
                             || (m.model_ref.digest != request.model_ref
                                 && m.model_ref.digest != request.artifact_model_ref)
-                            || m.ir_ref.as_ref().map_or(true, |v| v.digest != ir_ref)
+                            || m.ir_ref.as_ref().is_none_or(|v| v.digest != ir_ref)
                             || e.pins.revision.known() != Some(&m.source_revision)
-                            || request.artifacts.map_or(true, |a| {
+                            || request.artifacts.is_none_or(|a| {
                                 m.artifact_manifest_ref
                                     .as_ref()
-                                    .map_or(true, |pin| pin.digest != a.manifest_digest().as_str())
+                                    .is_none_or(|pin| pin.digest != a.manifest_digest().as_str())
                             })
                     });
                 if enabled(p, rule)
@@ -634,12 +634,12 @@ pub fn analyze(request: &Request<'_>) -> Result<Report, DomainResult> {
                         let m = t.manifest();
                         if m.completeness != crate::trace::Completeness::Full
                             || m.model_ref.digest != request.model_ref
-                            || m.ir_ref.as_ref().map_or(true, |ir| ir.digest != ir_ref)
+                            || m.ir_ref.as_ref().is_none_or(|ir| ir.digest != ir_ref)
                             || (e.pins.revision.known() != Some(&m.source_revision))
-                            || request.artifacts.map_or(true, |a| {
+                            || request.artifacts.is_none_or(|a| {
                                 m.artifact_manifest_ref
                                     .as_ref()
-                                    .map_or(true, |pin| pin.digest != a.manifest_digest().as_str())
+                                    .is_none_or(|pin| pin.digest != a.manifest_digest().as_str())
                             })
                         {
                             return None;
@@ -1236,12 +1236,12 @@ pub fn render(report: &Report, config: &Config, check: bool) -> DomainResult {
                         .any(|c| c.state != CoverageState::Complete)
             })
             || p.gate.require_comparable_baseline
-                && report.comparison.known().map_or(true, |c| !c.comparable)
+                && report.comparison.known().is_none_or(|c| !c.comparable)
             || p.gate.fail_on_regression
                 && report
                     .comparison
                     .known()
-                    .map_or(true, |c| c.regression != State::Known(false)));
+                    .is_none_or(|c| c.regression != State::Known(false)));
     let status = if denied {
         Status::Denied
     } else {

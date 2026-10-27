@@ -924,7 +924,6 @@ fn compile_digests(
     crate::lockfile::types::Sha256Digest,
     crate::lockfile::types::Sha256Digest,
 ) {
-    use sha2::Digest as _;
     // The modelRef pin is the exact canonical Model bytes — the same
     // spelling validate_custody verifies (r4 F-2). Hashing the version
     // string emitted a digest that matched no custody pin.
@@ -932,9 +931,10 @@ fn compile_digests(
         "sha256:{}",
         crate::digest::sha256_hex(model_json.as_bytes())
     );
-    let mut hasher = sha2::Sha256::new();
-    hasher.update(compilation.project.to_canonical_json().as_bytes());
-    let ir = format!("sha256:{:x}", hasher.finalize());
+    let ir = format!(
+        "sha256:{}",
+        crate::digest::sha256_hex(compilation.project.to_canonical_json().as_bytes())
+    );
     (
         crate::lockfile::types::Sha256Digest::parse(&model)
             .unwrap_or_else(|_| crate::lockfile::types::Sha256Digest::from_hex(&"0".repeat(64))),

@@ -33,7 +33,7 @@ pub fn valid_uncertainty(rows: &[NativeUncertainty]) -> bool {
             crate::project_fs::path_violation(&r.path).is_none()
                 && r.kind == "any-surface"
                 && text(&r.detail, 64)
-                && r.line.map_or(true, |l| l > 0 && l <= 1_000_000)
+                && r.line.is_none_or(|l| l > 0 && l <= 1_000_000)
                 && crate::trace::id::is_digest(&r.source_digest)
         })
 }
