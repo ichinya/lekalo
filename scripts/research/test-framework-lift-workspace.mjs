@@ -116,3 +116,12 @@ test('generated semantic helper is standalone within the workspace tools directo
  fs.writeFileSync(join(root,'tools/semantic.mjs'),semanticToolSource({binary:'unused-for-syntax-check',symbol:'planner.task'}));
  const result=spawnSync(process.execPath,['--check','tools/semantic.mjs'],{cwd:root,encoding:'utf8'});assert.equal(result.status,0,result.stderr);
 }));
+
+test('experimental compact pointers retain every evidence state and the full capsule body',()=>{
+ const capsule='# context capsule\n- complete: false\nwarning: missing behavior\n## symbol\nTask fields: id, title\n## gaps\nno-policies\n';
+ const mappings={bindings:[{path:'src/task.ts',line:1,semantic:'planner.Task',source:'user-confirmed',state:'current'},{path:'src/task.ts',line:1,semantic:'planner.NewTask',source:'inferred',state:'stale'},{path:'src/task.ts',semantic:'planner.Other',state:'unknown'}]};
+ const result=renderSemanticContext(capsule,mappings,'planner.task','No automatic join.',true);
+ for(const value of ['complete: false','warning: missing behavior','Task fields: id, title','no-policies','user-confirmed/current:1','inferred/stale:1','unknown/unknown:1','lines 1,unknown','No automatic join.','Pointer names omitted'])assert.ok(result.includes(value),value);
+ assert.equal(result.split('\n').filter(l=>l.startsWith('src/task.ts ->')).length,1);
+ assert.ok(!result.includes('planner.NewTask'));
+});

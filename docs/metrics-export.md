@@ -13,6 +13,12 @@ the preview withholds cohort numbers and stays blocked without authorizing
 aggregation/declassification evidence. It does not qualify a numeric public
 export or authorize lowering this recipe's disclosure thresholds.
 
+The separate research-only `public-fixture-research/1` recipe is documented in
+the [research helpers](../scripts/research/README.md). It admits only explicitly
+reviewed, digest-pinned public fixture campaigns and publishes selected original
+observations with small-sample caveats. It does not consume arbitrary private
+history, change this exporter, declassify sources, or supply #119 authorization.
+
 `lekalo metrics export` consumes a named `evaluation-export-input@0.6.4`
 selection and the live versioned records in the current repository's tenant
 scope. It reads no source files, observed indexes, prompts, raw tool output,

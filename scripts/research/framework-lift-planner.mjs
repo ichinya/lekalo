@@ -13,7 +13,7 @@ const defaultBinary=process.env.LEKALO_BIN??join(repo,'target/debug/lekalo'+(pro
 const defaultTsc=process.env.LEKALO_TSC??join(repo,'adapters/node-typescript/node_modules/typescript/bin/tsc');
 const adapter=join(repo,'adapters/node-typescript/adapter.mjs');
 const fixture=join(repo,'tests/fixtures/public-typescript-scan/planner');
-export function helper(binary=defaultBinary){return semanticToolSource({binary,symbol:'synthetic_priority_planner.task',note:'Canonical lowercase IDs and native proposal IDs are separate; no automatic join is claimed. Semantic fields use snake_case aliases.'});}
+export function helper(binary=defaultBinary,compact=false){return semanticToolSource({binary,symbol:'synthetic_priority_planner.task',compact,note:'Canonical lowercase IDs and native proposal IDs are separate; no automatic join is claimed. Semantic fields use snake_case aliases.'});}
 
 export function prepare(options={}){
  const binary=options.binary??defaultBinary,tsc=options.tsc??defaultTsc;
@@ -69,7 +69,7 @@ export function prepare(options={}){
  write(root,'adoption-receipts.private.json',receipts);write(root,'oracle-preflight.json',{reference:referenceGrade,baseline:baselineGrade});write(root,'context.md',context);write(root,'impact.txt',impact);
  const p={task:'priority-planner-read-once-v1',root,binary,tsc,builderPath:'scripts/research/framework-lift-planner.mjs',builderDigest:sha(fs.readFileSync(fileURLToPath(import.meta.url))),sourceCommit:exec('git',['rev-parse','HEAD'],repo).stdout.trim(),sourceDirty:exec('git',['status','--porcelain','--untracked-files=no'],repo).stdout.trim().length>0,nativeFiles:before,nativeDigest:sha(JSON.stringify(before)),modelDigest:sha(JSON.stringify(inventory(join(adopted,'lekalo')))),irDigest:sha(JSON.stringify(ir.ir)),adoption:{adoptionMs,cliMs:receipts.slice(0,-2).reduce((n,r)=>n+r.durationMs,0),sourcePreserved:true,roots:14,nativeDeclarations:38,nestedDeclarations:24,inference:false,authoringTime:'unknown; authoring baseline Model excluded',authoringTokens:'unknown; not zero'},context:{humanBytes:Buffer.byteLength(context),impactBytes:Buffer.byteLength(impact)},limitations:['Same original native planner/task/oracle; harness now has a pinned compiler helper and measured compact semantic helper, so not an isolated product-version causal experiment.','Two pairs per CLI; no general savings claim.','Cold CLI setup timed separately; semantic authoring labor/tokens and monetary charges unknown.','Warm measurement includes agent and B semantic helper, excludes independent grading and automated post-change maintenance.','Automated post-change scan/reconfirmation will be measured separately without inference; human review cost unknown.']};
  write(root,'preparation.json',p);
- const campaign=options.configure===false?null:configure(root,{devin,codex,...(options.profiles?{profiles:options.profiles}:{}),execReadPrefixes:['cat','type','ls','rg','dir'],semanticToolSource:helper(binary),agentInstructionPath:'.agents/lekalo.md'});
+ const campaign=options.configure===false?null:configure(root,{devin,codex,...(options.profiles?{profiles:options.profiles}:{}),execReadPrefixes:['cat','type','ls','rg','dir'],semanticToolSource:helper(binary,options.compactContext===true),compactContext:options.compactContext===true,agentInstructionPath:'.agents/lekalo.md'});
  console.log(JSON.stringify({root,campaign,adoption:p.adoption,context:p.context,baselineHoldout:baselineGrade.passed,referenceHoldout:referenceGrade.passed}));return root;
 }
 if(process.argv[1]===fileURLToPath(import.meta.url))prepare();

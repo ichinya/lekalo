@@ -1,5 +1,54 @@
 # Framework Lift research helpers (#167)
 
+## Public-fixture research recipe
+
+`public-fixture-research/1` is a separate descriptive research format. Its
+[reviewed campaign allowlist](public-fixture-research.recipe.v1.json) binds exact
+original/admission archive manifests and public task/oracle/native pins. There is
+no caller-supplied `public` flag. Adding a campaign requires reviewing its public
+fixture and the selected output fields; arbitrary private campaigns refuse.
+The recipe neither changes #102's minimum sample/rare-bucket rules nor issues
+classification, declassification or consent evidence. Raw account exports and
+the conservative internal history records remain private.
+
+```text
+node scripts/research/framework-lift-research-report.mjs ORIGINAL_ARCHIVE ORIGINAL_MANIFEST_SHA256 ADMISSION_ARCHIVE ADMISSION_MANIFEST_SHA256 NEW_OUTPUT_JSON
+node --test scripts/research/test-framework-lift-research-report.mjs
+```
+
+The helper rehashes both archives, checks admitted arm/result joins and original
+usage parity, then emits an allowlisted report with all attempts, per-profile
+paired deltas, and exact rational means/relative changes. Outputs must be new and
+outside both archives, including through aliases. The
+[current research report](results/2026-10-27-public-fixture-research.json)
+retains all eight attempts and the incomplete Devin B1. Total-token B-minus-A
+changes are +17.1% for Devin and +30.5% for Codex; two pairs per CLI on one small
+fixture establish no general savings or causal attribution. Post-run 1.1
+admission is recorded-unverified; the historical 0.6.4 NOTRUN report stays intact.
+
+## Experimental compact context
+
+`prepare({compactContext: true, ...})` selects an experimental native-only entry
+instruction and grouped pointer identities. It leaves the full installed product
+instruction available, requiring it before Model/binding/integration operations.
+The experiment keeps the Model unchanged, reports stale semantics, and preserves
+the full CLI capsule body, gaps, incompleteness and pointer evidence-state counts.
+Exact native names remain available through the owning bindings command.
+The default still reads the full installed instruction.
+
+The [offline preflight](results/2026-10-27-compact-context-final.json)
+measures 11,905 bytes for the full instruction plus capsule and 4,598 bytes for
+the compact variant (about 61% less). These are UTF-8 delivery bytes, not tokens,
+paid usage, or measured token savings. Both variants suppress repeated unchanged
+capsules; the public native baseline/reference controls and source preservation
+passed without inference. A fresh pinned campaign must measure actual usage;
+never reuse old workspaces or pool changed harnesses into the original campaign.
+Reproduce without agent CLIs or dependency installation:
+
+```text
+node scripts/research/framework-lift-context-preflight.mjs NEW_OUTPUT_JSON
+```
+
 ## Actual history / privacy preview
 
 `framework-lift-history-preview.mjs` verifies both immutable evidence manifests,

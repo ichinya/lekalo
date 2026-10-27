@@ -764,6 +764,7 @@ jobs:
           node --test scripts/research/test-framework-lift-workspace.mjs
           node --test scripts/research/test-framework-lift-public-result.mjs
           node --test scripts/research/test-framework-lift-history-preview.mjs
+          node --test scripts/research/test-framework-lift-research-report.mjs
       - name: Run the Hono framework-binding suites (issue #115)
         timeout-minutes: 15
         run: node scripts/test-node-hono-bindings.mjs

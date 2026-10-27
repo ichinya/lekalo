@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Controlled #167 runner. Preparing does not invoke a model. Running is explicit.
-import {semanticToolSource} from './framework-lift-context.mjs';
+import {semanticToolSource,compactResearchInstructions} from './framework-lift-context.mjs';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {spawn,spawnSync} from 'node:child_process';
@@ -29,7 +29,7 @@ export function configure(root,options){
     assert.equal(sha(fs.readFileSync(join(workspace,'tools/workspace.mjs'))),sha(workspaceToolSource()),'prepare with the current source reader');
     const common='Work only in this disposable synthetic repository. Keep inference and subprocess work scoped to this task. Source reading tools and accounting are identical in both arms. '+sourceReadInstructions+' Do not inspect sibling directories or parent projects.\n';
     if(arm==='B'&&options.agentInstructionPath)assert.ok(fs.existsSync(join(workspace,options.agentInstructionPath)),'install the instruction during preparation');
-    const extra=arm==='B'?(options.agentInstructionPath?'Read the installed Lekalo instruction '+options.agentInstructionPath+' once within this run and follow it; its reading cost is part of B. ':'')+'Lekalo-assisted workflow: before source reads, run node tools/semantic.mjs once for a bounded project capsule. Reuse its facts to select required source ranges; inspect implementation only where that evidence is insufficient. Do not run overlapping projections, dump the Model, or read all files as a checklist. Native inventory is not a behavior contract. Model maintenance is optional in this one-change pilot; report stale or unsupported evidence honestly.\n':'Use the ordinary native workflow and the available native tools.\n';
+    const extra=arm==='B'?(options.compactContext?compactResearchInstructions(options.agentInstructionPath):(options.agentInstructionPath?'Read the installed Lekalo instruction '+options.agentInstructionPath+' once within this run and follow it; its reading cost is part of B. ':'')+'Lekalo-assisted workflow: before source reads, run node tools/semantic.mjs once for a bounded project capsule. Reuse its facts to select required source ranges; inspect implementation only where that evidence is insufficient. Do not run overlapping projections, dump the Model, or read all files as a checklist. Native inventory is not a behavior contract. Model maintenance is optional in this one-change pilot; report stale or unsupported evidence honestly.\n'):'Use the ordinary native workflow and the available native tools.\n';
     save(workspace,'AGENTS.md',common+extra);
     if(arm==='B')save(workspace,'tools/semantic.mjs',options.semanticToolSource??semanticTool(p.binary));
     const initial=tree(workspace);
@@ -49,6 +49,7 @@ export function configure(root,options){
   config.sourceReaderDigest=sha(workspaceToolSource());
   config.agentInstructionPath=options.agentInstructionPath??null;
   config.agentInstructionDigest=options.agentInstructionPath?sha(fs.readFileSync(join(root,'adopted',options.agentInstructionPath))):null;
+  config.contextMode=options.compactContext?'experimental-compact-native-only':'installed-full-instruction';
   config.measurement.acceptance+='; final agent response required and no non-interactive confirmation rejection';
   config.predecessorCampaign=options.predecessorCampaign??null;
   save(root,'campaign.json',config);save(root,'campaign.sha256',sha(fs.readFileSync(join(root,'campaign.json')))+'\n');

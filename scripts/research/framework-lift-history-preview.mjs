@@ -34,7 +34,7 @@ export function projectObservation(arm,row,campaign,timestamp){
  return {schema_version:'lekalo/run-observation/v0.4.0',identity:'dev.lekalo.run-observation@0.4.0',runId:armPin.slice(7,39),timestamp,pilot:{mode:'brownfield',scopeState:'observed'},operation:{kind:'evaluation',affectedSemanticIds:[]},status:{outcome:completed?'pass':'infrastructure',coverageState:completed?'complete':'incomplete'},provenance:{git:{},model:{},lock:{},core:{},adapters:[],profile:{id:known(campaign.campaignId),version:unknown(),digest:known(digest(campaign.profile))},harness:{id:known(campaign.profile.executor.id),version:unknown(),modelId:known(campaign.profile.model.id),modelRevision:unknown()}},dataSensitivity:'internal',metrics,measurementSources,testGateSummaries:[],diagnostics:[],assertions:{rows:assertions},repeatParentRunId:null};
 }
 
-function verifiedFiles(root,pin){
+export function verifiedFiles(root,pin){
  assert.match(pin,/^[0-9a-f]{64}$/);const bytes=fs.readFileSync(join(root,'SHA256-MANIFEST.json'));assert.equal(sha(bytes),pin,'admission archive manifest drift');const manifest=JSON.parse(bytes),files=new Map();assert.equal(manifest.algorithm,'sha256');
  for(const entry of manifest.files){assert.ok(entry.path.split('/').every(p=>p&&p!=='.'&&p!=='..'&&!p.includes('\\')&&!p.includes(':')));let path=root;for(const p of entry.path.split('/')){path=join(path,p);assert.ok(!fs.lstatSync(path).isSymbolicLink());}const data=fs.readFileSync(path);assert.equal(data.length,entry.bytes);assert.equal(sha(data),entry.sha256,'admission evidence drift');assert.ok(!files.has(entry.path));files.set(entry.path,data);}
  return files;
