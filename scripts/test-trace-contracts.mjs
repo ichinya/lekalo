@@ -138,7 +138,7 @@ const pathOk = (path) => {
     const normalized = segment.normalize("NFKC");
     if (DOS_DEVICES.has(normalized.split(".")[0].toLowerCase())) return false;
     if (char_upper(segment)) return false;
-    if (!/^[a-z0-9][a-z0-9._-]*$/.test(segment) || segment.length > 64) return false;
+    if (!/^[a-z0-9_][a-z0-9._-]*$/.test(segment) || segment.length > 64) return false;
   }
   return true;
 };

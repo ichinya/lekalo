@@ -447,7 +447,7 @@ function php_verify_one_confirmation(array $confirmation, string $packageId, str
     if (!is_bool($confirmation['required'])) {
         return ['ok' => false, 'reason' => 'confirmation-required-invalid'];
     }
-    if ($confirmation['cwd'] !== '.' && !(bool) preg_match('/^[a-z0-9.][a-z0-9._-]*(\/[a-z0-9.][a-z0-9._-]*)*$/', (string) $confirmation['cwd'])) {
+    if ($confirmation['cwd'] !== '.' && !(bool) preg_match('/^[a-z0-9._][a-z0-9._-]*(\/[a-z0-9._][a-z0-9._-]*)*$/', (string) $confirmation['cwd'])) {
         return ['ok' => false, 'reason' => 'confirmation-cwd-invalid'];
     }
     // Custody: the confirmation names the exact manifest bytes this
