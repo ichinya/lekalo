@@ -1,0 +1,15 @@
+{
+  "id": "standalone",
+  "mode": "observed",
+  "target": "python",
+  "readRoots": [
+    { "kind": "file", "path": "pyproject.toml" },
+    { "kind": "tree", "path": "src" }
+  ],
+  "exclusions": [],
+  "provenance": {
+    "origin": "declared",
+    "revision": "public-scan-v1",
+    "disposition": "public-fixture"
+  }
+}

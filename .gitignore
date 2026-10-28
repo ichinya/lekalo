@@ -2,6 +2,7 @@
 /target/
 /crates/**/target/
 /sdk/**/target/
+/adapters/**/target/
 
 # Installed JavaScript dependencies and packaged release artifacts.
 node_modules/
