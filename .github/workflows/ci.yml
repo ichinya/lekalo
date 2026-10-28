@@ -3,9 +3,16 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+# A superseded run of this suite is dead weight: cancel it everywhere
+# except main, where each push keeps a complete record.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   release-version:
@@ -42,6 +49,10 @@ jobs:
           node-version: ${{ matrix.node-version }}
           package-manager-cache: false
       - uses: dtolnay/rust-toolchain@stable
+      # The self-hosted worker keeps a warm target dir; cache only
+      # pays off on the disposable hosted fallback.
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
       - name: Build the checkout CLI for live contract probes
         run: cargo build --workspace --locked
       - name: Provision exact Ajv 8.20.0 and the OpenAPI validator outside the checkout
@@ -188,13 +199,19 @@ jobs:
         run: cargo fmt --all -- --check
 
   clippy:
-    name: Clippy
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
+    name: Clippy (${{ matrix.os }})
+    runs-on: ${{ startsWith(matrix.os, 'ubuntu-') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Clippy (adapter SDK workspace)
         working-directory: sdk/rust
@@ -212,6 +229,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.89.0
         with:
           components: clippy
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
       - run: cargo check --workspace --all-targets --locked
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
@@ -231,6 +250,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # The job builds the debug workspace AND the release CLI:
+          # caching target cuts the largest compile bill in CI.
+          shared-key: build-test
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -937,6 +961,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -955,6 +981,67 @@ jobs:
           NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
           LEKALO_DOCS_MYSQL_PORT: '3306'
         run: node scripts/test-docs-examples.mjs --lane mysql
+
+  postgres-migrations:
+    name: PostgreSQL migration execution lane (issue #57)
+    # The migration gate's stage 3 executes the emitted up()/down()
+    # SQL on a real server. The build-test lanes reach it only when a
+    # docker engine happens to exist; this job provisions a
+    # digest-pinned services: PostgreSQL and hands it to the harness
+    # through LEKALO_MIGRATIONS_PG*, so execution is guaranteed and
+    # the server version stops floating with the postgres:16-alpine
+    # tag. A configured-but-unreachable service fails the harness
+    # (db:service-execution) — never a silent skip.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+        env:
+          POSTGRES_DB: lekalo
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: synthetic-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d lekalo"
+          --health-interval=10s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: none
+          extensions: none
+      - name: Provision the PostgreSQL client tools
+        # The harness drives the service through the runner's psql;
+        # ubuntu-latest ships it, the self-hosted image may not.
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes postgresql-client
+          fi
+          psql --version
+          pg_isready --version
+      - name: Build the locked CLI and run the migration pipeline gate
+        env:
+          LEKALO_MIGRATIONS_PGHOST: localhost
+          LEKALO_MIGRATIONS_PGPORT: '5432'
+          LEKALO_MIGRATIONS_PGUSER: postgres
+          LEKALO_MIGRATIONS_PGPASSWORD: synthetic-ci-only
+          LEKALO_MIGRATIONS_PGDATABASE: lekalo
+        run: |
+          set -euo pipefail
+          cargo build -p lekalo-cli --locked
+          node scripts/test-php-laravel-migrations.mjs
 
   mago-real:
     name: Mago real-toolchain gate (issue #55)
@@ -1030,6 +1117,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
