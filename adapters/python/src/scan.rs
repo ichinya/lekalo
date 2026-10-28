@@ -23,10 +23,16 @@ const MAX_DEPTH: usize = 24;
 const MAX_ENTRY_SYMBOLS: usize = 256;
 /// `result.entries` wire bound.
 const MAX_RESULT_ENTRIES: usize = 10_000;
+/// The host's total native-inventory bound across the whole response:
+/// the sum of every entry's `native_symbols` may never exceed it.
+const MAX_TOTAL_SYMBOLS: usize = 10_000;
 /// `evidence.native_uncertainty` wire bound.
 const MAX_UNCERTAINTY: usize = 4096;
 const REFS_PREDECESSOR: usize = 8;
 const REFS_SUCCESSOR: usize = 256;
+/// Predecessor entries keep the closed detail token (128 chars); the
+/// custody successors widen `scanEntry.detail` to 2048.
+const DETAIL_PREDECESSOR: usize = 128;
 
 /// Version tier of the negotiated protocol: predecessor entries carry
 /// signature + ≤8 references, 0.9.x adds custody, 1.1.0 adds native.
@@ -89,6 +95,7 @@ pub fn run(profile: &Profile, version: &str) -> Result<Scan, &'static str> {
     // references. A declaration-free module reports its module root so
     // the file stays visible to custody.
     let mut entries: Vec<Value> = Vec::new();
+    let mut total_symbols = 0usize;
     let mut uncertainty: Vec<symbols::UncRow> = Vec::new();
     for file in files {
         let digest = ids::source_digest(&file.bytes);
@@ -117,16 +124,9 @@ pub fn run(profile: &Profile, version: &str) -> Result<Scan, &'static str> {
             } else {
                 REFS_PREDECESSOR
             });
-        let remaining = MAX_RESULT_ENTRIES.saturating_sub(entries.len());
-        let (mut produced, bounded) = file_entries(&file.path, &scan, &digest, stub, tier);
-        let mut bound = overflow > 0;
-        if produced.len() > remaining {
-            produced.truncate(remaining);
-            bound = true;
-        }
-        if bounded {
-            bound = true;
-        }
+        let (produced, bounded) = file_entries(&file.path, &scan, &digest, stub, tier);
+        let mut bound = overflow > 0 || bounded;
+        bound |= accept_entries(produced, &mut entries, &mut total_symbols);
         if bound {
             truncated = true;
             uncertainty.push(symbols::UncRow {
@@ -137,7 +137,6 @@ pub fn run(profile: &Profile, version: &str) -> Result<Scan, &'static str> {
             });
         }
         uncertainty.extend(scan.uncertainty.drain(..));
-        entries.extend(produced);
     }
 
     uncertainty.sort();
@@ -312,6 +311,25 @@ fn is_reparse(_path: &Path) -> bool {
     false
 }
 
+/// Accept produced entries under the response-wide bounds: 10 000
+/// entries and 10 000 total native symbols. The first entry that does
+/// not fit ends the intake — the remainder is reported as bounded
+/// rather than silently merged into a partial inventory.
+fn accept_entries(
+    produced: Vec<(Value, usize)>,
+    entries: &mut Vec<Value>,
+    total_symbols: &mut usize,
+) -> bool {
+    for (value, count) in produced {
+        if entries.len() >= MAX_RESULT_ENTRIES || *total_symbols + count > MAX_TOTAL_SYMBOLS {
+            return true;
+        }
+        *total_symbols += count;
+        entries.push(value);
+    }
+    false
+}
+
 /// The closed `ScanEntry` set of one file: one row per top-level
 /// declaration, each carrying its own symbol forest in `native_symbols`
 /// and the module's bounded outbound references — the node kernel's
@@ -322,7 +340,7 @@ fn file_entries(
     digest: &str,
     stub: bool,
     tier: Tier,
-) -> (Vec<Value>, bool) {
+) -> (Vec<(Value, usize)>, bool) {
     let ref_cap = if tier == Tier::Native {
         REFS_SUCCESSOR
     } else {
@@ -356,10 +374,21 @@ fn file_entries(
         }
     }
     let mut bounded = false;
-    let produced = carriers
+    let mut produced: Vec<(Value, usize)> = carriers
         .into_iter()
-        .map(|sym| entry(path, sym, scan, &references, digest, stub, tier, &mut bounded))
+        .filter_map(|sym| entry(path, sym, scan, &references, digest, stub, tier, &mut bounded))
         .collect();
+    if produced.is_empty() {
+        // Every carrier was unrepresentable — the declaration-free
+        // fallback still keeps the file visible through its module
+        // root when that root itself fits the tier's detail budget.
+        if let Some(root) = scan.symbols.first() {
+            if let Some(row) = entry(path, root, scan, &references, digest, stub, tier, &mut bounded)
+            {
+                produced.push(row);
+            }
+        }
+    }
     (produced, bounded)
 }
 
@@ -372,18 +401,42 @@ fn entry(
     stub: bool,
     tier: Tier,
     bounded: &mut bool,
-) -> Value {
-    let mut detail = vec![
-        ("n".to_owned(), Value::Str(sym.native.clone())),
-        ("s".to_owned(), Value::Str(sym.qualified_name.clone())),
-        ("l".to_owned(), Value::Int(sym.line as i64)),
-        (
-            "q".to_owned(),
-            Value::Str(if stub { "low" } else { "medium" }.to_owned()),
-        ),
-    ];
+) -> Option<(Value, usize)> {
+    // Predecessor detail is the closed 128-char token: the mandatory
+    // `s`/`n` pair still fits once the optional members are dropped and
+    // `n` carries a stable 64-bit prefix instead of the full digest. A
+    // name that cannot fit even that minimal form is bounded away —
+    // never a truncated or fabricated proposal.
+    let mut detail = match tier {
+        Tier::Predecessor => {
+            let mut members = vec![
+                (
+                    "n".to_owned(),
+                    Value::Str(sym.native.get(..20).unwrap_or(&sym.native).to_owned()),
+                ),
+                ("s".to_owned(), Value::Str(sym.qualified_name.clone())),
+            ];
+            if stub {
+                members.push(("q".to_owned(), Value::Str("low".to_owned())));
+            }
+            members
+        }
+        _ => vec![
+            ("n".to_owned(), Value::Str(sym.native.clone())),
+            ("s".to_owned(), Value::Str(sym.qualified_name.clone())),
+            ("l".to_owned(), Value::Int(sym.line as i64)),
+            (
+                "q".to_owned(),
+                Value::Str(if stub { "low" } else { "medium" }.to_owned()),
+            ),
+        ],
+    };
     detail.sort_by(|a, b| a.0.cmp(&b.0));
     let detail = canonical(&Value::Object(detail));
+    if tier == Tier::Predecessor && detail.len() > DETAIL_PREDECESSOR {
+        *bounded = true;
+        return None;
+    }
     let mut evidence = Vec::new();
     if !references.is_empty() {
         evidence.push((
@@ -403,6 +456,7 @@ fn entry(
             Value::Str(digest.to_owned()),
         ));
     }
+    let mut forest = 0usize;
     if tier == Tier::Native {
         // The carrier plus every symbol transitively owned by it. On the
         // wire each entry is its own closed forest: the carrier is the
@@ -426,6 +480,7 @@ fn entry(
             owned.truncate(MAX_ENTRY_SYMBOLS);
             *bounded = true;
         }
+        forest = owned.len();
         for row in &mut owned {
             if row.native == sym.native {
                 row.member_of = None;
@@ -437,12 +492,15 @@ fn entry(
             Value::Array(owned.iter().map(|row| row.value()).collect()),
         ));
     }
-    Value::Object(vec![
-        ("detail".to_owned(), Value::Str(detail)),
-        ("evidence".to_owned(), Value::Object(evidence)),
-        ("kind".to_owned(), Value::Str("entity".to_owned())),
-        ("path".to_owned(), Value::Str(path.to_owned())),
-    ])
+    Some((
+        Value::Object(vec![
+            ("detail".to_owned(), Value::Str(detail)),
+            ("evidence".to_owned(), Value::Object(evidence)),
+            ("kind".to_owned(), Value::Str("entity".to_owned())),
+            ("path".to_owned(), Value::Str(path.to_owned())),
+        ]),
+        forest,
+    ))
 }
 
 /// Member's `member_of` chain length within the file forest — the
@@ -555,6 +613,43 @@ mod tests {
             file_entries("pkg/mod.py", &scan, "sha256:x", false, Tier::Native);
         assert!(bounded);
         assert_eq!(entries.len(), 1);
-        assert_eq!(native_count(&entries[0]), MAX_ENTRY_SYMBOLS);
+        assert_eq!(native_count(&entries[0].0), MAX_ENTRY_SYMBOLS);
+    }
+
+    #[test]
+    fn total_symbol_bound_ends_intake() {
+        // The response-wide 10 000-symbol budget is cumulative across
+        // entries: the first entry whose forest does not fit closes the
+        // intake and the overflow is reported as bounded.
+        let mut entries = Vec::new();
+        let mut total = 0usize;
+        let produced: Vec<(Value, usize)> = (0..45)
+            .map(|_| (Value::Object(vec![]), MAX_ENTRY_SYMBOLS))
+            .collect();
+        assert!(accept_entries(produced, &mut entries, &mut total));
+        assert_eq!(entries.len(), 39);
+        assert_eq!(total, 39 * MAX_ENTRY_SYMBOLS);
+    }
+
+    #[test]
+    fn predecessor_detail_stays_under_its_bound() {
+        // A long qualified name cannot fit the closed 128-char token:
+        // the entry is dropped and the file reports the bound rather
+        // than emitting oversized detail or a fabricated proposal.
+        let name = "a".repeat(100);
+        let source = format!("def {name}_x():\n    pass\ndef short():\n    pass\n");
+        let scan = symbols::extract("pkg/mod.py", "pkg.mod", &source, false, "sha256:x");
+        let (entries, bounded) =
+            file_entries("pkg/mod.py", &scan, "sha256:x", false, Tier::Predecessor);
+        assert!(bounded);
+        assert_eq!(entries.len(), 1);
+        let Value::Object(members) = &entries[0].0 else {
+            panic!("entry is an object");
+        };
+        let Some((_, Value::Str(detail))) = members.iter().find(|(key, _)| key == "detail")
+        else {
+            panic!("entry carries detail");
+        };
+        assert!(detail.len() <= DETAIL_PREDECESSOR);
     }
 }

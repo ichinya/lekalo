@@ -10,12 +10,12 @@
     "adapter": {
       "id": "lekalo-target-python",
       "version": "0.1.0",
-      "digest": "sha256:e0c3e7aa20c81ebd33f615154166fabc3cf0591dd69ebb859e879c8ea98ad5b6"
+      "digest": "sha256:d5d8b031109a448034357aee610ff7467b6ca5490403b7015073d67d426878e9"
     },
     "session": {
       "protocol": "1.1.0",
       "ir": "0.2.16",
-      "capability_digest": "sha256:ca5590b1d233fa3b6a4352858fd0f9815dc631457e7480b54d78de5eeaa1e09a",
+      "capability_digest": "sha256:f4900d0173c45722abf3a59dfa5db10e58edc20ff1d30d16339e988389574791",
       "timeout_ms": 60000,
       "repeats": 2
     },

@@ -314,7 +314,7 @@ fn walk_block(
                 let params: Vec<lekalo_adapter_sdk::json::Value> = def
                     .parameters
                     .iter_source_order()
-                    .map(|param| param_value(ctx.source, param))
+                    .map(|param| param_value(ctx.source, &def.parameters, param))
                     .collect();
                 let signature = ids::signature(lekalo_adapter_sdk::json::Value::Array(vec![
                     lekalo_adapter_sdk::json::Value::Str(ids::SIGNATURE_DOMAIN.to_owned()),
@@ -532,7 +532,32 @@ fn walk_block(
     }
 }
 
-fn param_value(source: &str, param: AnyParameterRef<'_>) -> lekalo_adapter_sdk::json::Value {
+/// The source-order slot of one parameter inside the call contract:
+/// `posonly`/`kwonly` markers carry the `/` and `*` separators that
+/// bare name lists lose, so `f(a, /)` and `f(*, a)` can never share a
+/// signature digest.
+fn param_kind(parameters: &ruff_python_ast::Parameters, param: AnyParameterRef<'_>) -> &'static str {
+    let range = param.range();
+    if parameters.vararg.as_deref().is_some_and(|p| p.range() == range) {
+        return "*";
+    }
+    if parameters.kwarg.as_deref().is_some_and(|p| p.range() == range) {
+        return "**";
+    }
+    if parameters.kwonlyargs.iter().any(|p| p.range() == range) {
+        return "kwonly";
+    }
+    if parameters.posonlyargs.iter().any(|p| p.range() == range) {
+        return "posonly";
+    }
+    "regular"
+}
+
+fn param_value(
+    source: &str,
+    parameters: &ruff_python_ast::Parameters,
+    param: AnyParameterRef<'_>,
+) -> lekalo_adapter_sdk::json::Value {
     use lekalo_adapter_sdk::json::Value;
     Value::Array(vec![
         Value::Str(param.name().as_str().to_owned()),
@@ -542,6 +567,7 @@ fn param_value(source: &str, param: AnyParameterRef<'_>) -> lekalo_adapter_sdk::
             .unwrap_or(Value::Null),
         Value::Bool(param.default().is_some()),
         Value::Bool(param.is_variadic()),
+        Value::Str(param_kind(parameters, param).to_owned()),
     ])
 }
 
@@ -802,5 +828,28 @@ mod tests {
             .uncertainty
             .iter()
             .any(|row| row.detail == "unresolved-relative-import"));
+    }
+
+    #[test]
+    fn call_contract_kind_changes_the_signature() {
+        // `f(a, /)` and `f(*, a)` are different public contracts: the
+        // signature digest must see the separator slot, not just names.
+        fn signature_of(source: &str) -> Option<String> {
+            scan("pkg/mod.py", "pkg.mod", source)
+                .symbols
+                .into_iter()
+                .find(|sym| sym.qualified_name == "pkg.mod.f")
+                .and_then(|sym| sym.signature)
+        }
+        let posonly = signature_of("def f(a, /):\n    pass\n");
+        let kwonly = signature_of("def f(*, a):\n    pass\n");
+        let regular = signature_of("def f(a):\n    pass\n");
+        assert_ne!(posonly, kwonly);
+        assert_ne!(posonly, regular);
+        assert_ne!(kwonly, regular);
+        // *args and **kwargs are distinct kinds too.
+        let vararg = signature_of("def f(*a):\n    pass\n");
+        let kwarg = signature_of("def f(**a):\n    pass\n");
+        assert_ne!(vararg, kwarg);
     }
 }
