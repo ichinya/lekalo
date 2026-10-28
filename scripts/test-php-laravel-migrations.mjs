@@ -550,6 +550,11 @@ const servicePg = process.env.LEKALO_MIGRATIONS_PGHOST
       database: process.env.LEKALO_MIGRATIONS_PGDATABASE ?? "lekalo",
     }
   : null;
+// The working database for schema-scoped execution: the service's
+// configured database, or the container's POSTGRES_DB. Callers must
+// name it explicitly — a literal "lekalo" would silently detach the
+// schema work from a service running any other database.
+const pgDatabase = servicePg?.database ?? "lekalo";
 
 let executed = false;
 let skipped = false;
@@ -636,7 +641,7 @@ if (servicePg || dockerAvailable()) {
     for (const [golden, schema] of Object.entries(SCHEMAS)) {
       psql(`DROP SCHEMA IF EXISTS ${schema} CASCADE;`);
       psql(`CREATE SCHEMA ${schema};`);
-      const schemaPsql = (sql) => psql(sql, "lekalo", schema);
+      const schemaPsql = (sql) => psql(sql, pgDatabase, schema);
       for (const statement of baseStatements) {
         schemaPsql(statement);
       }
@@ -686,7 +691,7 @@ if (servicePg || dockerAvailable()) {
       const schema = "t_down";
       psql(`DROP SCHEMA IF EXISTS ${schema} CASCADE;`);
       psql(`CREATE SCHEMA ${schema};`);
-      const downPsql = (sql) => psql(sql, "lekalo", schema);
+      const downPsql = (sql) => psql(sql, pgDatabase, schema);
       for (const statement of baseStatements) {
         downPsql(statement);
       }
@@ -802,7 +807,7 @@ if (servicePg || dockerAvailable()) {
       const schema = "t_one_focus";
       psql(`DROP SCHEMA IF EXISTS ${schema} CASCADE;`);
       psql(`CREATE SCHEMA ${schema};`);
-      const oneFocusPsql = (sql) => psql(sql, "lekalo", schema);
+      const oneFocusPsql = (sql) => psql(sql, pgDatabase, schema);
       for (const statement of baseStatements) {
         oneFocusPsql(statement);
       }
