@@ -310,8 +310,7 @@ fn contains_short_name(segment: &str) -> bool {
 fn segment_is_portable(segment: &str) -> bool {
     let mut chars = segment.chars();
     match chars.next() {
-        Some(first)
-            if first.is_ascii_lowercase() || first.is_ascii_digit() || first == '_' => {}
+        Some(first) if first.is_ascii_lowercase() || first.is_ascii_digit() || first == '_' => {}
         _ => return false,
     }
     chars.count() <= 63

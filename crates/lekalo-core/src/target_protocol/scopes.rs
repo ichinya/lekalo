@@ -63,9 +63,7 @@ fn segment_ok(segment: &str) -> bool {
             if first.is_ascii_lowercase()
                 || first.is_ascii_digit()
                 || first == '.'
-                || first == '_' =>
-        {
-        }
+                || first == '_' => {}
         _ => return false,
     }
     segment

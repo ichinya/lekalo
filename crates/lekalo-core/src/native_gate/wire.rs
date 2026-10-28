@@ -435,12 +435,14 @@ mod tests {
         assert!(!is_package_id("-tools=@fixture/tools"));
 
         let mut plan = golden_plan();
-        plan.workspace.packages.push(crate::native_gate::NativePackage {
-            id: "packages/_tools=@fixture/tools".into(),
-            name: Some("@fixture/tools".into()),
-            root: "packages/_tools".into(),
-            manifest_digest: format!("sha256:{}", "4".repeat(64)),
-        });
+        plan.workspace
+            .packages
+            .push(crate::native_gate::NativePackage {
+                id: "packages/_tools=@fixture/tools".into(),
+                name: Some("@fixture/tools".into()),
+                root: "packages/_tools".into(),
+                manifest_digest: format!("sha256:{}", "4".repeat(64)),
+            });
         plan.plan_digest = plan_digest(&plan);
         assert!(validate_plan(&plan).is_ok());
     }
