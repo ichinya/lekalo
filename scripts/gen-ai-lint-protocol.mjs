@@ -12,6 +12,11 @@ wire.$defs.operation.enum.push('lint');
 wire.$defs.capabilities.properties.operations.maxItems=10;
 const evidence = read('contracts/ai-lint-evidence.schema.v0.6.4.json');
 Object.assign(wire.$defs,evidence.$defs);
+// The published 0.6.4 artifact is frozen: Source.path keeps the historical path
+// grammar even though the evidence contract and the runtime validator admit
+// leading-underscore segments. check-contract-versions forbids editing the
+// artifact, so the successor pins the grammar it shipped with.
+wire.$defs.Source.properties.path.pattern='^(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\.(?:/|$))[a-z0-9.][a-z0-9._-]{0,63}(?:/[a-z0-9.][a-z0-9._-]{0,63})*$';
 wire.$defs.LintEvidence = Object.fromEntries(Object.entries(evidence).filter(([k])=>!['$schema','$id','$defs','title'].includes(k)));
 wire.$defs.LintBinding = closed({path:{$ref:'#/$defs/logicalPath'},nativeId:{$ref:'#/$defs/StateString/oneOf/0/properties/value'},symbol:{$ref:'#/$defs/StateString/oneOf/0/properties/value'},kind:{enum:['command','entity']},fingerprint:sha});
 wire.$defs.LintRequest = closed({scope:{type:'array',minItems:1,maxItems:10000,uniqueItems:true,items:{$ref:'#/$defs/StateString/oneOf/0/properties/value'}},pins:{$ref:'#/$defs/Pins'},bindings:{type:'array',maxItems:10000,items:{$ref:'#/$defs/LintBinding'}},files:{type:'array',maxItems:4096,uniqueItems:true,items:{$ref:'#/$defs/logicalPath'}}});
