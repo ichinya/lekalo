@@ -1,0 +1,48 @@
+name: Audit
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Advisories land between commits: re-audit the committed
+    # lockfiles every week even when nothing changed.
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  audit:
+    name: cargo audit
+    # cargo-audit is installed from crates.io, so the lane stays on a
+    # disposable hosted runner instead of the persistent worker.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: true
+      - run: cargo install cargo-audit --locked
+      - name: Audit every committed Cargo.lock
+        # Lockfiles come from the index, not a hardcoded list: an
+        # uncommitted lockfile can never be audited (it is not in the
+        # checkout) and a new one is covered the day it lands. Every
+        # lockfile reports before the job fails.
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r lock; do
+            echo "::group::cargo audit ($lock)"
+            (cd "$(dirname "$lock")" && cargo audit) || failed=1
+            echo "::endgroup::"
+          done < <(git ls-files '*Cargo.lock')
+          exit "$failed"
