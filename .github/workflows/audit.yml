@@ -32,11 +32,17 @@ jobs:
         with:
           cache-bin: true
       - run: cargo install cargo-audit --locked
-      - name: Audit the main workspace lockfile
-        run: cargo audit
-      - name: Audit the adapter SDK workspace lockfile
-        working-directory: sdk/rust
-        run: cargo audit
-      - name: Audit the Python adapter lockfile
-        working-directory: adapters/python
-        run: cargo audit
+      - name: Audit every committed Cargo.lock
+        # Lockfiles come from the index, not a hardcoded list: an
+        # uncommitted lockfile can never be audited (it is not in the
+        # checkout) and a new one is covered the day it lands. Every
+        # lockfile reports before the job fails.
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r lock; do
+            echo "::group::cargo audit ($lock)"
+            (cd "$(dirname "$lock")" && cargo audit) || failed=1
+            echo "::endgroup::"
+          done < <(git ls-files '*Cargo.lock')
+          exit "$failed"
