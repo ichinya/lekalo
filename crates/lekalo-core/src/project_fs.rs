@@ -310,7 +310,7 @@ fn contains_short_name(segment: &str) -> bool {
 fn segment_is_portable(segment: &str) -> bool {
     let mut chars = segment.chars();
     match chars.next() {
-        Some(first) if first.is_ascii_lowercase() || first.is_ascii_digit() => {}
+        Some(first) if first.is_ascii_lowercase() || first.is_ascii_digit() || first == '_' => {}
         _ => return false,
     }
     chars.count() <= 63
@@ -1473,7 +1473,7 @@ mod path_tests {
 
     #[test]
     fn path_grammar_ports_the_closed_rules_in_fixed_order() {
-        let cases: [(&str, Option<&str>); 20] = [
+        let cases: [(&str, Option<&str>); 24] = [
             ("", Some("structure.path-empty")),
             ("le\u{0301}kalo", Some("structure.path-not-nfc")),
             ("/etc", Some("structure.path-absolute")),
@@ -1494,6 +1494,10 @@ mod path_tests {
             ("a/-bad", Some("structure.path-segment")),
             ("a/ok_yaml.2", None),
             ("lekalo/modules/planner_v2/module.yaml", None),
+            ("src/shop/__init__.py", None),
+            ("src/shop/__main__.py", None),
+            ("pkg/_private.py", None),
+            ("pkg/__pycache__/cache.pyc", None),
         ];
         for (input, expected) in cases {
             assert_eq!(path_violation(input), expected, "input {input:?}");

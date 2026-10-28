@@ -16,10 +16,10 @@ export { canonicalJsonText, planDigest } from "./native-plan.mjs";
 
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const CONTRACT_VERSION = /^[0-9]+\.[0-9]+\.[0-9]+$/;
-const PACKAGE_ID = /^[a-z0-9.][a-z0-9._/-]{0,63}=[a-z0-9@/._-]{1,192}$/;
+const PACKAGE_ID = /^[a-z0-9._][a-z0-9._/-]{0,63}=[a-z0-9@/._-]{1,192}$/;
 const COMMAND_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const CAPABILITY_ID = /^[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)+$/;
-const LOGICAL_PATH = /^(?!(?:.*[/])?(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[./]|$))(?!(?:.*[/])?\.{1,2}(?:\/|$))(?!.*\.(?:\/|$))[a-z0-9.][a-z0-9._-]{0,63}(?:\/[a-z0-9.][a-z0-9._-]{0,63})*$/;
+const LOGICAL_PATH = /^(?!(?:.*[/])?(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[./]|$))(?!(?:.*[/])?\.{1,2}(?:\/|$))(?!.*\.(?:\/|$))[a-z0-9._][a-z0-9._-]{0,63}(?:\/[a-z0-9._][a-z0-9._-]{0,63})*$/;
 
 export const PLAN_SCHEMA_VERSION = "lekalo/native-gate-plan/v0.4.0";
 export const POLICY_SCHEMA_VERSION = "lekalo/native-gate-policy/v0.4.0";

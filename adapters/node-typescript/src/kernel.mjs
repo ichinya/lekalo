@@ -391,7 +391,7 @@ export function isScopeSegment(segment) {
     && !segment.endsWith(" ")
     && !/~\d/.test(segment)
     && !isDosDevice(segment)
-    && /^[a-z0-9.][a-z0-9._-]*$/.test(segment)
+    && /^[a-z0-9._][a-z0-9._-]*$/.test(segment)
     && !isDriveOrScheme(segment);
 }
 
@@ -1792,7 +1792,7 @@ export function validateExtensionDescriptor(descriptor) {
       || descriptor.writeRoots.length === 0
       || descriptor.writeRoots.length > 8
       || !descriptor.writeRoots.every((root) =>
-        typeof root === "string" && /^([a-z0-9][a-z0-9._-]*\/)+\*\*$/.test(root)
+        typeof root === "string" && /^([a-z0-9_][a-z0-9._-]*\/)+\*\*$/.test(root)
           && !root.includes(".."))) {
       invalid("writeRoots");
     }

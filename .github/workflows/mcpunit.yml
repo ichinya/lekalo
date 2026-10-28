@@ -1,0 +1,59 @@
+name: MCP Unit
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mcpunit:
+    name: MCP tool-surface score
+    # A third-party action and its downloaded binary stay on the
+    # disposable hosted runner, never the persistent worker.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked -p lekalo-cli
+      - name: Stage the served root the stdio harness uses
+        # `mcp serve` requires explicit project selection: the same
+        # catalog + planner fixture layout as
+        # crates/lekalo-cli/tests/mcp_harness.rs, staged at the
+        # checkout root because the action spawns `cmd` there.
+        run: |
+          set -euo pipefail
+          cp -r tests/fixtures/inspect/planner planner
+          mkdir -p planner/traces
+          cp tests/fixtures/trace/full.trace.json planner/traces/full.trace.json
+          cat > mcp.local.json <<'JSON'
+          {"schemaVersion":"lekalo/mcp-server-config/v0.8.0","identity":"dev.lekalo.mcp-server-config@0.8.0","projects":[{"id":"planner","root":"planner"}],"groups":[{"id":"planner-review","projectId":"planner","modules":["planner"]}],"manifests":[{"id":"baseline","projectId":"planner","path":"traces/full.trace.json"}],"git":{"changedMode":false}}
+          JSON
+      # Measured locally: 100/100, zero findings — min-score 80 gates
+      # regressions while leaving headroom for scoring drift.
+      - uses: lee-to/mcpunit@7e85998373fa969cd024acd477099822ed5771d6 # v1.0.0
+        with:
+          cmd: ./target/debug/lekalo mcp serve --stdio --project planner
+          min-score: "80"
+          markdown-out: mcpunit.md
+          upload-sarif: "false"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mcpunit-report
+          path: |
+            mcpunit.json
+            mcpunit.sarif
+            mcpunit.md
+          if-no-files-found: ignore
+          retention-days: 14

@@ -133,7 +133,7 @@ fn segment_ok(segment: &str) -> bool {
         return false;
     }
     let first = segment.chars().next().unwrap_or(' ');
-    if !(first.is_ascii_lowercase() || first.is_ascii_digit() || first == '.') {
+    if !(first.is_ascii_lowercase() || first.is_ascii_digit() || first == '.' || first == '_') {
         return false;
     }
     segment

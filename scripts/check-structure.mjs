@@ -107,7 +107,7 @@ export function checkPathGrammar(path) {
     if (DOS_DEVICES.has(compatibilityBase)) return "structure.path-device";
     if (/~[0-9]/.test(segment)) return "structure.path-short-name";
     if (/[A-Z]/.test(segment)) return "structure.path-case";
-    if (!/^[a-z0-9][a-z0-9._-]{0,63}$/.test(segment)) return "structure.path-segment";
+    if (!/^[a-z0-9_][a-z0-9._-]{0,63}$/.test(segment)) return "structure.path-segment";
   }
   return null;
 }

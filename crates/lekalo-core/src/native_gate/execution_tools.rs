@@ -215,9 +215,9 @@ pub(super) fn capture(bytes: &[u8]) -> Result<CapturedTools, Failure> {
             || !asset_path(&tool.entry)
             || entries.contains_key(&tool.id)
             || tool.artifact_digest != source.assets.manifest_digest
-            || !files
+            || files
                 .get(&tool.entry)
-                .is_some_and(|bytes| hash(bytes) == tool.entry_digest)
+                .is_none_or(|bytes| hash(bytes) != tool.entry_digest)
         {
             return Err(Failure::PlanStale);
         }

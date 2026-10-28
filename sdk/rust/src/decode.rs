@@ -855,7 +855,7 @@ fn admit_state_string(value: &Value) -> Result<Value, Refusal> {
         Some("unknown" | "withheld" | "unsupported") => {
             // Serde treats absent and explicit-null unit content alike (r10).
             if !is_closed_object(value, &["state", "value"])
-                || !value.get("value").map_or(true, Value::is_null)
+                || !value.get("value").is_none_or(Value::is_null)
             {
                 return Err(Refusal::new("decode", "shape"));
             }
@@ -1317,7 +1317,7 @@ fn lint_state_string(value: &Value) -> Option<&'static str> {
             None => Some("shape"),
         },
         Some("unknown" | "withheld" | "unsupported") => {
-            if value.get("value").map_or(true, Value::is_null) {
+            if value.get("value").is_none_or(Value::is_null) {
                 None
             } else {
                 Some("shape")
@@ -1350,7 +1350,7 @@ fn lint_state_bool(value: &Value) -> Option<&'static str> {
             }
         }
         Some("unknown" | "withheld" | "unsupported") => {
-            if value.get("value").map_or(true, Value::is_null) {
+            if value.get("value").is_none_or(Value::is_null) {
                 None
             } else {
                 Some("shape")
@@ -1382,7 +1382,7 @@ fn lint_state_u64(value: &Value) -> Option<&'static str> {
             None => Some("shape"),
         },
         Some("unknown" | "withheld" | "unsupported") => {
-            if value.get("value").map_or(true, Value::is_null) {
+            if value.get("value").is_none_or(Value::is_null) {
                 None
             } else {
                 Some("shape")

@@ -83,7 +83,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 1024,
-          "pattern": "^(?!lekalo/|\\.lekalo/)[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+          "pattern": "^(?!lekalo/|\\.lekalo/)[a-z0-9_][a-z0-9._-]*(/[a-z0-9_][a-z0-9._-]*)*$"
         },
         "line": {
           "type": "integer",
@@ -201,7 +201,7 @@
           "type": "string",
           "minLength": 20,
           "maxLength": 1024,
-          "pattern": "^\\.lekalo/generated/[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
+          "pattern": "^\\.lekalo/generated/[a-z0-9_][a-z0-9._-]*(/[a-z0-9_][a-z0-9._-]*)*$"
         },
         "lifecycle": {
           "$ref": "#/$defs/supportLifecycle"

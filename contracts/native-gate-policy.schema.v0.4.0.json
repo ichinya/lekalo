@@ -319,7 +319,7 @@
     "packageId": {
       "description": "The stable native package id: the workspace-relative root with its declared package name, joined by '=' (lowercase portable segments only).",
       "type": "string",
-      "pattern": "^[a-z0-9.][a-z0-9._/-]{0,63}=[a-z0-9@/._-]{1,192}$",
+      "pattern": "^[a-z0-9._][a-z0-9._/-]{0,63}=[a-z0-9@/._-]{1,192}$",
       "maxLength": 256
     },
     "argv": {
@@ -536,7 +536,7 @@
     },
     "logicalPath": {
       "type": "string",
-      "pattern": "^(?!(?:.*[/])?(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[./]|$))(?!(?:.*[/])?\\.{1,2}(?:/|$))(?!.*\\.(?:/|$))[a-z0-9.][a-z0-9._-]{0,63}(?:/[a-z0-9.][a-z0-9._-]{0,63})*$",
+      "pattern": "^(?!(?:.*[/])?(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[./]|$))(?!(?:.*[/])?\\.{1,2}(?:/|$))(?!.*\\.(?:/|$))[a-z0-9._][a-z0-9._-]{0,63}(?:/[a-z0-9._][a-z0-9._-]{0,63})*$",
       "maxLength": 512
     },
     "gateId": {

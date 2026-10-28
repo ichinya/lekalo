@@ -171,12 +171,22 @@ decoder, client and exact Ajv gate at and beyond the boundary.
 
 ## Scopes and plans
 
-Paths are canonical lowercase portable segments, at most 64 bytes per
-segment and 512 bytes overall. Dot/traversal segments, trailing-dot aliases,
+Paths are canonical lowercase portable segments (`[a-z0-9_]` first, then
+`[a-z0-9._-]`), at most 64 bytes per segment and 512 bytes overall; the
+leading `_` keeps ordinary Python names (`__init__.py`, `__pycache__`,
+`_private.py`) verifiable. Dot/traversal segments, trailing-dot aliases,
 DOS devices, absolute paths and backslashes are rejected. Scopes optionally
 end with `/**`; the unbounded root `**` is forbidden. Protected write homes
 are `lekalo/`, `lekalo.lock`, `.lekalo/{ir,cache,import,privacy,consumer}/`
 and `openspec/`.
+
+Versioned schema texts are immutable once published: the frozen
+`v0.3.2`/`v0.6.4`/`v0.8.0`/`v0.9.0` protocol schemas still describe the
+earlier `[a-z0-9.]` segment grammar, while the runtime decoder applies
+the current grammar above at every negotiated tier (embedded-schema
+validation gates only the `0.9.1`/`1.1.0` tiers). Underscore-leading
+paths are therefore accepted on every supported version; the divergence
+is the frozen text, never the wire behavior.
 
 An IR path must exist as a readable regular file and be covered by a read
 scope. An empty read-scope list grants no input access. Only read-scope bytes

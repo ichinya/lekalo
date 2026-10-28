@@ -6,8 +6,10 @@
 //!
 //! 1. Scope grammar: portable lowercase segments joined by `/`, optionally
 //!    ending in the recursive `/**` segment. Segments may start with `.`
-//!    (the governed `.lekalo` homes), but the traversal segment `..` never
-//!    parses, and absolute paths, backslashes, and drive letters never do.
+//!    (the governed `.lekalo` homes) or `_` (ordinary Python names like
+//!    `__init__.py`, `__pycache__/`, `_private.py`), but the traversal
+//!    segment `..` never parses, and absolute paths, backslashes, and
+//!    drive letters never do.
 //! 2. Protected homes: the canonical Lekalo and OpenSpec trees can never be
 //!    covered by a declared write scope and can never appear in a write
 //!    plan. Reading them through a read scope stays legal (the IR home is
@@ -57,7 +59,11 @@ fn segment_ok(segment: &str) -> bool {
     }
     let mut chars = segment.chars();
     match chars.next() {
-        Some(first) if first.is_ascii_lowercase() || first.is_ascii_digit() || first == '.' => {}
+        Some(first)
+            if first.is_ascii_lowercase()
+                || first.is_ascii_digit()
+                || first == '.'
+                || first == '_' => {}
         _ => return false,
     }
     segment
@@ -188,6 +194,12 @@ mod tests {
         assert!(!is_logical_path("src/**"));
         assert!(!is_logical_path("a/../b"));
         assert!(is_logical_path(".lekalo/ir/planner.json"));
+        assert!(is_logical_path("src/shop/__init__.py"));
+        assert!(is_logical_path("src/shop/__main__.py"));
+        assert!(is_logical_path("pkg/_private.py"));
+        assert!(is_logical_path("pkg/__pycache__/cache.pyc"));
+        assert!(is_scope("src/_internal/**"));
+        assert!(!is_logical_path("a/_bad seg/x"));
     }
 
     #[test]
