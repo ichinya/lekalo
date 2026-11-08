@@ -3,6 +3,7 @@
 //! symlinks/junctions by skipping them, and never reads outside the
 //! staged view — `project_root` is always the confined `"."`.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -26,6 +27,8 @@ const MAX_RESULT_ENTRIES: usize = 10_000;
 /// The host's total native-inventory bound across the whole response:
 /// the sum of every entry's `native_symbols` may never exceed it.
 const MAX_TOTAL_SYMBOLS: usize = 10_000;
+/// `native_symbols.qualified_name` is bounded by Unicode scalar count.
+const MAX_QUALIFIED_NAME_CHARS: usize = 256;
 /// `evidence.native_uncertainty` wire bound.
 const MAX_UNCERTAINTY: usize = 4096;
 const REFS_PREDECESSOR: usize = 8;
@@ -59,7 +62,7 @@ pub struct Scan {
 
 struct FileRec {
     path: String,
-    module: String,
+    root: String,
     bytes: Vec<u8>,
 }
 
@@ -74,13 +77,31 @@ pub fn run(profile: &Profile, version: &str) -> Result<Scan, &'static str> {
                 if !is_python(&root.path) || profile.excludes(&root.path) {
                     continue;
                 }
-                if !push_file(&root.path, &root.path, &mut files, &mut total_bytes, &mut truncated) {
+                if !push_file(
+                    &root.path,
+                    &root.path,
+                    &mut files,
+                    &mut total_bytes,
+                    &mut truncated,
+                ) {
                     break 'roots;
                 }
             }
             RootKind::Tree => {
-                let base = PathBuf::from(root.path.replace('/', &std::path::MAIN_SEPARATOR.to_string()));
-                walk_tree(&base, &root.path, &root.path, 0, profile, &mut files, &mut total_bytes, &mut truncated);
+                let base = PathBuf::from(
+                    root.path
+                        .replace('/', &std::path::MAIN_SEPARATOR.to_string()),
+                );
+                walk_tree(
+                    &base,
+                    &root.path,
+                    &root.path,
+                    0,
+                    profile,
+                    &mut files,
+                    &mut total_bytes,
+                    &mut truncated,
+                );
                 if truncated {
                     break 'roots;
                 }
@@ -88,6 +109,21 @@ pub fn run(profile: &Profile, version: &str) -> Result<Scan, &'static str> {
         }
     }
     files.sort_by(|a, b| a.path.cmp(&b.path));
+    // Infer package roots only from files already admitted by the read
+    // inventory. No marker lookup may escape the declared read roots or
+    // bypass exclusions (file scopes never imply sibling read authority).
+    let package_roots: BTreeSet<&str> = profile
+        .roots
+        .iter()
+        .filter(|root| {
+            root.kind == RootKind::Tree
+                && files.iter().any(|file| {
+                    file.path == format!("{}/__init__.py", root.path)
+                        || file.path == format!("{}/__init__.pyi", root.path)
+                })
+        })
+        .map(|root| root.path.as_str())
+        .collect();
 
     // One entry per top-level declaration — the node kernel's shape:
     // `detail` proposes the semantic id, the evidence block carries the
@@ -112,7 +148,12 @@ pub fn run(profile: &Profile, version: &str) -> Result<Scan, &'static str> {
                 String::new()
             }
         };
-        let mut scan = symbols::extract(&file.path, &file.module, &text, stub, &digest);
+        let module = module_name(
+            &file.path,
+            &file.root,
+            package_roots.contains(file.root.as_str()),
+        );
+        let mut scan = symbols::extract(&file.path, &module, &text, stub, &digest);
         if text.is_empty() {
             scan.symbols.truncate(1); // module root only
         }
@@ -159,10 +200,7 @@ pub fn run(profile: &Profile, version: &str) -> Result<Scan, &'static str> {
                 }
                 members.extend([
                     ("path".to_owned(), Value::Str(row.path)),
-                    (
-                        "source_digest".to_owned(),
-                        Value::Str(row.source_digest),
-                    ),
+                    ("source_digest".to_owned(), Value::Str(row.source_digest)),
                 ]);
                 Value::Object(members)
             })
@@ -179,7 +217,7 @@ fn is_python(path: &str) -> bool {
 /// root, extension stripped, separators folded to dots. `__init__.py[i]`
 /// is the package marker — its module is the package directory itself,
 /// so `pkg/__init__.py` declares `pkg.*`, not `pkg.__init__.*`.
-fn module_name(logical: &str, root: &str) -> String {
+fn module_name(logical: &str, root: &str, package_root: bool) -> String {
     let relative = logical
         .strip_prefix(root)
         .and_then(|rest| rest.strip_prefix('/'))
@@ -191,6 +229,9 @@ fn module_name(logical: &str, root: &str) -> String {
     let mut segments: Vec<&str> = stem.split('/').collect();
     if segments.last() == Some(&"__init__") {
         segments.pop();
+    }
+    if package_root {
+        segments.insert(0, root.rsplit('/').next().unwrap_or(root));
     }
     if segments.is_empty() {
         // `__init__.py` at the read root: the package is the containing
@@ -230,7 +271,7 @@ fn push_file(
     *total += bytes.len() as u64;
     files.push(FileRec {
         path: logical.to_owned(),
-        module: module_name(logical, root),
+        root: root.to_owned(),
         bytes,
     });
     true
@@ -361,6 +402,24 @@ fn file_entries(
             ])
         })
         .collect();
+    let excluded = if tier == Tier::Native {
+        unrepresentable_native_ids(scan)
+    } else {
+        BTreeSet::new()
+    };
+    let mut bounded = !excluded.is_empty();
+    let filtered = bounded.then(|| symbols::FileScan {
+        root_native: scan.root_native.clone(),
+        symbols: scan
+            .symbols
+            .iter()
+            .filter(|symbol| !excluded.contains(symbol.native.as_str()))
+            .cloned()
+            .collect(),
+        references: scan.references.clone(),
+        uncertainty: Vec::new(),
+    });
+    let scan = filtered.as_ref().unwrap_or(scan);
     // Top-level carriers are the symbols owned directly by the module
     // root; a declaration-free file reports the module root itself.
     let mut carriers: Vec<&Sym> = scan
@@ -373,23 +432,71 @@ fn file_entries(
             carriers.push(root);
         }
     }
-    let mut bounded = false;
     let mut produced: Vec<(Value, usize)> = carriers
         .into_iter()
-        .filter_map(|sym| entry(path, sym, scan, &references, digest, stub, tier, &mut bounded))
+        .filter_map(|sym| {
+            entry(
+                path,
+                sym,
+                scan,
+                &references,
+                digest,
+                stub,
+                tier,
+                &mut bounded,
+            )
+        })
         .collect();
     if produced.is_empty() {
         // Every carrier was unrepresentable — the declaration-free
         // fallback still keeps the file visible through its module
         // root when that root itself fits the tier's detail budget.
         if let Some(root) = scan.symbols.first() {
-            if let Some(row) = entry(path, root, scan, &references, digest, stub, tier, &mut bounded)
-            {
+            if let Some(row) = entry(
+                path,
+                root,
+                scan,
+                &references,
+                digest,
+                stub,
+                tier,
+                &mut bounded,
+            ) {
                 produced.push(row);
             }
         }
     }
     (produced, bounded)
+}
+
+/// An omitted owner must take all descendants with it, even if a future
+/// name projection makes a descendant shorter than its owner.
+fn unrepresentable_native_ids(scan: &symbols::FileScan) -> BTreeSet<&str> {
+    let mut excluded: BTreeSet<&str> = scan
+        .symbols
+        .iter()
+        .filter(|symbol| {
+            symbol.qualified_name.is_empty()
+                || symbol.qualified_name.chars().count() > MAX_QUALIFIED_NAME_CHARS
+                || symbol.qualified_name.chars().any(char::is_control)
+        })
+        .map(|symbol| symbol.native.as_str())
+        .collect();
+    loop {
+        let mut changed = false;
+        for symbol in &scan.symbols {
+            if symbol
+                .member_of
+                .as_deref()
+                .is_some_and(|owner| excluded.contains(owner))
+            {
+                changed |= excluded.insert(symbol.native.as_str());
+            }
+        }
+        if !changed {
+            return excluded;
+        }
+    }
 }
 
 fn entry(
@@ -439,22 +546,13 @@ fn entry(
     }
     let mut evidence = Vec::new();
     if !references.is_empty() {
-        evidence.push((
-            "references".to_owned(),
-            Value::Array(references.to_vec()),
-        ));
+        evidence.push(("references".to_owned(), Value::Array(references.to_vec())));
     }
     if let Some(signature) = &sym.signature {
-        evidence.push((
-            "signature".to_owned(),
-            Value::Str(signature.clone()),
-        ));
+        evidence.push(("signature".to_owned(), Value::Str(signature.clone())));
     }
     if tier != Tier::Predecessor {
-        evidence.push((
-            "source_digest".to_owned(),
-            Value::Str(digest.to_owned()),
-        ));
+        evidence.push(("source_digest".to_owned(), Value::Str(digest.to_owned())));
     }
     let mut forest = 0usize;
     if tier == Tier::Native {
@@ -552,36 +650,134 @@ mod tests {
 
     #[test]
     fn init_file_names_its_package_not_the_marker() {
-        assert_eq!(module_name("src/shop/__init__.py", "src"), "shop");
-        assert_eq!(module_name("src/a/b/__init__.pyi", "src"), "a.b");
+        assert_eq!(module_name("src/shop/__init__.py", "src", false), "shop");
+        assert_eq!(module_name("src/a/b/__init__.pyi", "src", false), "a.b");
         assert_eq!(
-            module_name("src/shop/__init__.py", "src/shop/__init__.py"),
+            module_name("src/shop/__init__.py", "src/shop/__init__.py", false),
             "shop"
         );
-        assert_eq!(module_name("src/__init__.py", "src"), "src");
-        assert_eq!(module_name("__init__.py", "__init__.py"), "__init__");
+        assert_eq!(module_name("src/__init__.py", "src", false), "src");
+        assert_eq!(module_name("__init__.py", "__init__.py", false), "__init__");
     }
 
     #[test]
     fn ordinary_modules_fold_to_dotted_names() {
-        assert_eq!(module_name("src/shop/orders.py", "src"), "shop.orders");
-        assert_eq!(module_name("src/shop/__main__.py", "src"), "shop.__main__");
-        assert_eq!(module_name("src/shop/_private.py", "src"), "shop._private");
+        assert_eq!(
+            module_name("src/shop/orders.py", "src", false),
+            "shop.orders"
+        );
+        assert_eq!(
+            module_name("src/shop/__main__.py", "src", false),
+            "shop.__main__"
+        );
+        assert_eq!(
+            module_name("src/shop/_private.py", "src", false),
+            "shop._private"
+        );
+    }
+
+    #[test]
+    fn package_read_roots_keep_the_prefix_for_every_child() {
+        for (path, expected) in [
+            ("src/shop/__init__.py", "shop"),
+            ("src/shop/orders.py", "shop.orders"),
+            ("src/shop/models.pyi", "shop.models"),
+            ("src/shop/sub/__init__.pyi", "shop.sub"),
+            ("src/shop/sub/orders.py", "shop.sub.orders"),
+        ] {
+            assert_eq!(module_name(path, "src/shop", true), expected);
+        }
+    }
+
+    fn native_names(entries: &[(Value, usize)]) -> Vec<String> {
+        entries
+            .iter()
+            .flat_map(|(entry, _)| {
+                entry
+                    .get("evidence")
+                    .unwrap()
+                    .get("native_symbols")
+                    .unwrap()
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|symbol| {
+                        symbol
+                            .get("qualified_name")
+                            .unwrap()
+                            .as_str()
+                            .unwrap()
+                            .to_owned()
+                    })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn unrepresentable_declarations_do_not_discard_healthy_inventory() {
+        let source = format!(
+            "def {}():\n    pass\ndef short():\n    pass\n",
+            "a".repeat(249)
+        );
+        let scan = symbols::extract("pkg/mod.py", "pkg.mod", &source, false, "sha256:x");
+        let (entries, bounded) = file_entries("pkg/mod.py", &scan, "sha256:x", false, Tier::Native);
+        assert!(bounded);
+        assert_eq!(native_names(&entries), ["pkg.mod.short"]);
+    }
+
+    #[test]
+    fn name_bounds_count_unicode_scalars_and_admit_the_exact_limit() {
+        let source = format!("def {}():\n    pass\n", "я".repeat(248));
+        let scan = symbols::extract("pkg/mod.py", "pkg.mod", &source, false, "sha256:x");
+        let (entries, bounded) = file_entries("pkg/mod.py", &scan, "sha256:x", false, Tier::Native);
+        assert!(!bounded);
+        let names = native_names(&entries);
+        assert_eq!(names.len(), 1);
+        assert_eq!(names[0].chars().count(), MAX_QUALIFIED_NAME_CHARS);
+        assert!(names[0].len() > MAX_QUALIFIED_NAME_CHARS);
+    }
+
+    #[test]
+    fn omitted_owners_also_omit_their_short_named_descendants() {
+        let source = "class A:\n    def member(self):\n        pass\ndef healthy():\n    pass\n";
+        let mut scan = symbols::extract("pkg/mod.py", "pkg.mod", source, false, "sha256:x");
+        // Exercise ancestor closure independently of the current dotted-name
+        // projection, which normally makes descendants longer as well.
+        scan.symbols
+            .iter_mut()
+            .find(|row| row.qualified_name == "pkg.mod.A")
+            .unwrap()
+            .qualified_name = "a".repeat(257);
+        let (entries, bounded) = file_entries("pkg/mod.py", &scan, "sha256:x", false, Tier::Native);
+        assert!(bounded);
+        assert_eq!(native_names(&entries), ["pkg.mod.healthy"]);
+    }
+
+    #[test]
+    fn long_members_leave_an_admissible_carrier_forest() {
+        let source = format!(
+            "class A:\n    def {}(self):\n        pass\n    def short(self):\n        pass\n",
+            "a".repeat(249)
+        );
+        let scan = symbols::extract("pkg/mod.py", "pkg.mod", &source, false, "sha256:x");
+        let (entries, bounded) = file_entries("pkg/mod.py", &scan, "sha256:x", false, Tier::Native);
+        assert!(bounded);
+        let mut names = native_names(&entries);
+        names.sort();
+        assert_eq!(names, ["pkg.mod.A", "pkg.mod.A.short"]);
+        assert_eq!(native_count(&entries[0].0), 2);
     }
 
     fn native_count(entry: &Value) -> usize {
         let Value::Object(members) = entry else {
             panic!("entry is an object");
         };
-        let Some((_, Value::Object(evidence))) = members
-            .iter()
-            .find(|(key, _)| key == "evidence")
+        let Some((_, Value::Object(evidence))) = members.iter().find(|(key, _)| key == "evidence")
         else {
             panic!("entry carries evidence");
         };
-        let Some((_, Value::Array(symbols))) = evidence
-            .iter()
-            .find(|(key, _)| key == "native_symbols")
+        let Some((_, Value::Array(symbols))) =
+            evidence.iter().find(|(key, _)| key == "native_symbols")
         else {
             panic!("evidence carries native_symbols");
         };
@@ -594,8 +790,7 @@ mod tests {
         // one truncated file: the wire bound is per entry, not per file.
         let source: String = (0..300).map(|i| format!("v{i} = {i}\n")).collect();
         let scan = symbols::extract("pkg/mod.py", "pkg.mod", &source, false, "sha256:x");
-        let (entries, bounded) =
-            file_entries("pkg/mod.py", &scan, "sha256:x", false, Tier::Native);
+        let (entries, bounded) = file_entries("pkg/mod.py", &scan, "sha256:x", false, Tier::Native);
         assert!(!bounded);
         assert_eq!(entries.len(), 300);
     }
@@ -609,8 +804,7 @@ mod tests {
             .collect();
         let source = format!("class A:\n{methods}");
         let scan = symbols::extract("pkg/mod.py", "pkg.mod", &source, false, "sha256:x");
-        let (entries, bounded) =
-            file_entries("pkg/mod.py", &scan, "sha256:x", false, Tier::Native);
+        let (entries, bounded) = file_entries("pkg/mod.py", &scan, "sha256:x", false, Tier::Native);
         assert!(bounded);
         assert_eq!(entries.len(), 1);
         assert_eq!(native_count(&entries[0].0), MAX_ENTRY_SYMBOLS);
@@ -646,8 +840,7 @@ mod tests {
         let Value::Object(members) = &entries[0].0 else {
             panic!("entry is an object");
         };
-        let Some((_, Value::Str(detail))) = members.iter().find(|(key, _)| key == "detail")
-        else {
+        let Some((_, Value::Str(detail))) = members.iter().find(|(key, _)| key == "detail") else {
             panic!("entry carries detail");
         };
         assert!(detail.len() <= DETAIL_PREDECESSOR);
