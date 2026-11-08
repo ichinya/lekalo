@@ -50,8 +50,8 @@ jobs:
               fi
             done
           } | tee "$RUNNER_TEMP/confinement/host.txt"
-      - name: Load the existing CI profile
-        run: sudo apparmor_parser --skip-cache --add .github/ci/bwrap.apparmor
+      - name: Load the CI profile without a conflicting system attachment
+        run: bash .github/ci/bwrap-apparmor.sh load
       - name: Compare automatic and explicit profile selection
         id: probes
         run: |
@@ -77,12 +77,22 @@ jobs:
           grep -E 'apparmor=|audit:|bwrap' "$RUNNER_TEMP/confinement/kernel.txt" || true
       - name: Remove the temporary CI profile
         if: always()
-        run: sudo apparmor_parser --skip-cache --remove .github/ci/bwrap.apparmor
+        run: bash .github/ci/bwrap-apparmor.sh remove
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: linux-confinement-${{ matrix.os }}
           path: ${{ runner.temp }}/confinement/
           retention-days: 7
-      - name: Require the namespace probe to pass
-        run: grep -qx 'automatic=0' "$RUNNER_TEMP/confinement/results.txt"
+      - name: Require the namespace and child capability boundaries
+        run: |
+          set -euo pipefail
+          grep -qx 'automatic=0' "$RUNNER_TEMP/confinement/results.txt"
+          grep -qx 'explicit=0' "$RUNNER_TEMP/confinement/results.txt"
+          grep -qx 'child=0' "$RUNNER_TEMP/confinement/results.txt"
+          grep -qx 'lekalo-ci-bwrap//&lekalo-ci-bwrap-child (enforce)' "$RUNNER_TEMP/confinement/child.txt"
+          for field in CapInh CapPrm CapEff CapBnd CapAmb; do
+            grep -Eq "^$field:[[:space:]]+0+$" "$RUNNER_TEMP/confinement/child.txt"
+          done
+          grep -Eq '^NoNewPrivs:[[:space:]]+1$' "$RUNNER_TEMP/confinement/child.txt"
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
