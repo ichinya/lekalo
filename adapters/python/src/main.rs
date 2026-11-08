@@ -247,7 +247,11 @@ fn describe(request: &Value, identity: &Value, profile: Option<&profile::Profile
         Some(profile) => (
             vec!["describe", "scan"],
             vec![("scan.symbols", "full")],
-            profile.roots.iter().map(|root| root.scope.as_str()).collect(),
+            profile
+                .roots
+                .iter()
+                .map(|root| root.scope.as_str())
+                .collect(),
             vec![profile.id.clone()],
         ),
         None => (
@@ -320,16 +324,14 @@ fn scan_request(request: &Value, identity: &Value, profile: Option<&profile::Pro
             );
         }
     }
-    if let Some(digest) = request.get("profile_digest").and_then(Value::as_str) {
-        if digest != profile.digest {
-            return error_envelope(
-                request,
-                identity,
-                "invalid",
-                "profile-digest-mismatch",
-                "the bound profile digest differs from the injected profile",
-            );
-        }
+    if let Err(reason) = profile.validate_resolution(request) {
+        return error_envelope(
+            request,
+            identity,
+            "invalid",
+            reason,
+            "the bound target resolution differs from the injected snapshot",
+        );
     }
     let version = request
         .get("protocol_version")

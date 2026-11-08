@@ -767,6 +767,13 @@ jobs:
           node adapters/node-typescript/build.mjs --check
       - name: Run the TypeScript scanner suite (issue #44)
         run: node scripts/test-node-typescript-scanner.mjs
+      - name: Run Python adapter unit and protocol regressions (issue #146)
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path adapters/python/Cargo.toml --locked
+          cargo build --manifest-path adapters/python/Cargo.toml --locked
+          node --test adapters/python/tests/scan-protocol.test.mjs
       - name: Qualify the public manifested TypeScript scan (issue #150)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
