@@ -242,7 +242,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # ubuntu-latest flipped to ubuntu-26.04 on 2026-11-08; its AppArmor 4
+        # policy denies bwrap's loopback setup inside the probe namespace
+        # (RTM_NEWADDR: Operation not permitted), so the confinement probe
+        # fails before any build. Pin the hosted image the validated
+        # .github/ci/bwrap.apparmor profile supports until the policy is
+        # adapted for 26.04.
+        os: [ubuntu-24.04, windows-latest, macos-latest]
     # Steps are written in bash; Windows runners default to pwsh otherwise.
     defaults:
       run:
