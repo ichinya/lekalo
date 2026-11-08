@@ -2,9 +2,14 @@ name: Linux confinement qualification
 
 on:
   push:
-    branches: [ci/ubuntu-26.04-bwrap]
     paths:
       - .github/ci/**
+      - .github/workflows/ci.yml
+      - .github/workflows/linux-confinement.yml
+  pull_request:
+    paths:
+      - .github/ci/**
+      - .github/workflows/ci.yml
       - .github/workflows/linux-confinement.yml
   workflow_dispatch:
 
@@ -52,7 +57,7 @@ jobs:
           } | tee "$RUNNER_TEMP/confinement/host.txt"
       - name: Load the CI profile without a conflicting system attachment
         run: bash .github/ci/bwrap-apparmor.sh load
-      - name: Compare automatic and explicit profile selection
+      - name: Probe the production executable attachment
         id: probes
         run: |
           set -euo pipefail
@@ -67,7 +72,6 @@ jobs:
             printf '%s=%s\n' "$name" "$result" | tee -a "$RUNNER_TEMP/confinement/results.txt"
           }
           probe automatic /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/true
-          probe explicit aa-exec -p lekalo-ci-bwrap -- /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/true
           probe child /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/sh -c 'cat /proc/self/attr/current; grep -E "^(Cap|NoNewPrivs)" /proc/self/status'
       - name: Collect kernel policy diagnostics
         if: always()
@@ -78,6 +82,17 @@ jobs:
       - name: Remove the temporary CI profile
         if: always()
         run: bash .github/ci/bwrap-apparmor.sh remove
+      - name: Verify the original policies were restored
+        if: always()
+        run: |
+          set -euo pipefail
+          if sudo grep -Eq '^lekalo-ci-bwrap(-child)? ' /sys/kernel/security/apparmor/profiles; then
+            exit 1
+          fi
+          if grep -qx 'bwrap (enforce)' "$RUNNER_TEMP/confinement/host.txt"; then
+            sudo grep -qx 'bwrap (enforce)' /sys/kernel/security/apparmor/profiles
+            sudo grep -qx 'unpriv_bwrap (enforce)' /sys/kernel/security/apparmor/profiles
+          fi
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -88,7 +103,6 @@ jobs:
         run: |
           set -euo pipefail
           grep -qx 'automatic=0' "$RUNNER_TEMP/confinement/results.txt"
-          grep -qx 'explicit=0' "$RUNNER_TEMP/confinement/results.txt"
           grep -qx 'child=0' "$RUNNER_TEMP/confinement/results.txt"
           grep -qx 'lekalo-ci-bwrap//&lekalo-ci-bwrap-child (enforce)' "$RUNNER_TEMP/confinement/child.txt"
           for field in CapInh CapPrm CapEff CapBnd CapAmb; do

@@ -242,13 +242,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # ubuntu-latest flipped to ubuntu-26.04 on 2026-11-08; its AppArmor 4
-        # policy denies bwrap's loopback setup inside the probe namespace
-        # (RTM_NEWADDR: Operation not permitted), so the confinement probe
-        # fails before any build. Pin the hosted image the validated
-        # .github/ci/bwrap.apparmor profile supports until the policy is
-        # adapted for 26.04.
-        os: [ubuntu-24.04, windows-latest, macos-latest]
+        # Qualify the current Ubuntu LTS explicitly. The CI loader temporarily
+        # replaces its packaged bwrap attachment and restores it after probes.
+        os: [ubuntu-26.04, windows-latest, macos-latest]
     # Steps are written in bash; Windows runners default to pwsh otherwise.
     defaults:
       run:
@@ -312,12 +308,7 @@ jobs:
         timeout-minutes: 1
         run: |
           set -euo pipefail
-          test "$GITHUB_ACTIONS" = true
-          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
-          if sudo grep -Eq '^lekalo-ci-bwrap(-child)? ' /sys/kernel/security/apparmor/profiles; then
-            exit 1
-          fi
-          sudo apparmor_parser --skip-cache --add .github/ci/bwrap.apparmor
+          bash .github/ci/bwrap-apparmor.sh load
       - name: Verify the Linux namespace backend before adapter probes
         if: runner.os == 'Linux'
         run: /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/true
@@ -937,11 +928,11 @@ jobs:
           node scripts/test-adapter-sdk-conformance.mjs --language all --profile strict --repeats 3 --timeout-ms 60000
           node scripts/test-adapter-sdk-packages.mjs --verify
       - name: Remove the CI-only AppArmor launcher prerequisite
-        if: always() && runner.os == 'Linux' && steps.apparmor.outcome == 'success'
+        if: always() && runner.os == 'Linux'
         timeout-minutes: 1
         run: |
           set -euo pipefail
-          sudo apparmor_parser --skip-cache --remove .github/ci/bwrap.apparmor
+          bash .github/ci/bwrap-apparmor.sh remove
           test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
           if sudo grep -Eq '^lekalo-ci-bwrap(-child)? ' /sys/kernel/security/apparmor/profiles; then
             exit 1
