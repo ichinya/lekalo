@@ -32,17 +32,25 @@ jobs:
         with:
           cache-bin: true
       - run: cargo install cargo-audit --locked
-      - name: Audit every committed Cargo.lock
-        # Lockfiles come from the index, not a hardcoded list: an
-        # uncommitted lockfile can never be audited (it is not in the
-        # checkout) and a new one is covered the day it lands. Every
-        # lockfile reports before the job fails.
+      - name: Audit every tracked Cargo.lock
+        # Include SDK template locks, exclude untracked files, and preserve
+        # spaces and Unicode paths. Report every workspace before returning
+        # an aggregate failure; failed discovery must never become a pass.
         run: |
           set -euo pipefail
+          lockfiles="$(mktemp)"
+          trap 'rm -f -- "$lockfiles"' EXIT
+          git ls-files -z -- Cargo.lock '**/Cargo.lock' > "$lockfiles"
           failed=0
-          while IFS= read -r lock; do
+          count=0
+          while IFS= read -r -d '' lock; do
+            count=$((count + 1))
             echo "::group::cargo audit ($lock)"
             (cd "$(dirname "$lock")" && cargo audit) || failed=1
             echo "::endgroup::"
-          done < <(git ls-files '*Cargo.lock')
+          done < "$lockfiles"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No tracked Cargo.lock files were found"
+            exit 1
+          fi
           exit "$failed"
