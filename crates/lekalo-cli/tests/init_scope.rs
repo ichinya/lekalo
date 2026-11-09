@@ -47,8 +47,10 @@ fn fixture() -> (tempfile::TempDir, PathBuf) {
         r#"{"name":"ARCHIVE-TRAP","dependencies":{"react":"1"},"scripts":{"lint":"DO-NOT-EXECUTE"}}"#,
     );
     // Reading this excluded subtree's ignore file must fail the negative
-    // control, so a successful scoped run proves it was pruned first.
-    put(&root, "archives/.gitignore", "[\n");
+    // control, so a successful scoped run proves it was pruned first. The
+    // payload is invalid UTF-8: the current ignore parser accepts an
+    // unclosed character class, so a syntax-only trap no longer fails.
+    fs::write(root.join("archives/.gitignore"), b"\xff\xfe[\n").unwrap();
     put(
         &root,
         "ignored/package.json",

@@ -71,7 +71,7 @@ function segmentOk(segment) {
   if (pathViolation(portable) !== null) return false;
   if (segment === "" || segment.length > MAX_SEGMENT_BYTES) return false;
   const first = segment[0];
-  if (!(first >= "a" && first <= "z") && !(first >= "0" && first <= "9") && first !== ".") return false;
+  if (!(first >= "a" && first <= "z") && !(first >= "0" && first <= "9") && first !== "." && first !== "_") return false;
   return [...segment].every((c) => (c >= "a" && c <= "z") || (c >= "0" && c <= "9") || c === "." || c === "-" || c === "_");
 }
 

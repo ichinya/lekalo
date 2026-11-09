@@ -1,0 +1,42 @@
+name: Audit
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Advisories land between commits: re-audit the committed
+    # lockfiles every week even when nothing changed.
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  audit:
+    name: cargo audit
+    # cargo-audit is installed from crates.io, so the lane stays on a
+    # disposable hosted runner instead of the persistent worker.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: true
+      - run: cargo install cargo-audit --locked
+      - name: Audit the main workspace lockfile
+        run: cargo audit
+      - name: Audit the adapter SDK workspace lockfile
+        working-directory: sdk/rust
+        run: cargo audit
+      - name: Audit the Python adapter lockfile
+        working-directory: adapters/python
+        run: cargo audit

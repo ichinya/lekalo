@@ -99,12 +99,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:f51acd25d7a646872ec273c6f805d6e2f5c6b4b788d1f3b51fb6b9ff399877b4",
+    "packageDigest": "sha256:2827fd8ed1fbcac59c66adc969920b974bf20fdf9a94d69830b0f006c287ff92",
     "files": [
       {
         "path": "adapter.mjs",
-        "digest": "sha256:eb3eecde1a24fee94283148141ad6394373f2f2ffc8e257510f7fea26ae6fea8",
-        "bytes": 14787112
+        "digest": "sha256:e0f9b6aa0da746a83255f6270da6c479fea96679c11985700d4938cb57e46d30",
+        "bytes": 14787114
       }
     ],
     "signaturePolicy": "unsigned",

@@ -90,7 +90,7 @@ pub fn assess(trace: &TraceManifest, bytes: &[u8]) -> Result<AssessmentReport, D
             (&chain.artifact, NodeKind::Artifact),
             (&chain.scenario, NodeKind::Scenario),
         ] {
-            if !nodes.get(key.as_str()).is_some_and(|n| n.node_kind == kind) {
+            if nodes.get(key.as_str()).is_none_or(|n| n.node_kind != kind) {
                 finding(
                     &mut findings,
                     diagnostic::UNRESOLVED,
@@ -133,7 +133,7 @@ pub fn assess(trace: &TraceManifest, bytes: &[u8]) -> Result<AssessmentReport, D
         ] {
             match key {
                 None => finding(&mut findings, diagnostic::MISSING, &chain.id, kind.as_str()),
-                Some(key) if !nodes.get(key.as_str()).is_some_and(|n| n.node_kind == kind) => {
+                Some(key) if nodes.get(key.as_str()).is_none_or(|n| n.node_kind != kind) => {
                     finding(
                         &mut findings,
                         diagnostic::UNRESOLVED,
@@ -454,7 +454,7 @@ pub fn assess(trace: &TraceManifest, bytes: &[u8]) -> Result<AssessmentReport, D
         (&input.scope.scenarios, NodeKind::Scenario),
     ] {
         for id in scope {
-            if !nodes.get(id.as_str()).is_some_and(|n| n.node_kind == kind) {
+            if nodes.get(id.as_str()).is_none_or(|n| n.node_kind != kind) {
                 finding(&mut findings, diagnostic::UNRESOLVED, id, "scope-node");
             }
             let covered = match kind {

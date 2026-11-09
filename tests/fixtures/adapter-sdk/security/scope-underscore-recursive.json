@@ -1,0 +1,7 @@
+{
+  "covers": true,
+  "logical": true,
+  "name": "scope-underscore-recursive",
+  "path": "src/_internal/mod.py",
+  "scope": "src/_internal/**"
+}

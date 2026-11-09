@@ -1,0 +1,45 @@
+version: 2
+
+# Test fixtures and SDK templates keep their committed lockfiles on
+# purpose (deterministic bytes under test) — only the real packages
+# are tracked here.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: cargo
+    directory: /sdk/rust
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: cargo
+    directory: /adapters/python
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /adapters/node-typescript
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: gomod
+    directory: /sdk/go
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: composer
+    directory: /sdk/php
+    schedule:
+      interval: weekly

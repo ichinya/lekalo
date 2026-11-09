@@ -1719,7 +1719,7 @@ fn decode_ownership_profile_envelope(
             && path.split('/').all(|segment| {
                 !segment.is_empty()
                     && segment.starts_with(|first: char| {
-                        first.is_ascii_lowercase() || first.is_ascii_digit()
+                        first.is_ascii_lowercase() || first.is_ascii_digit() || first == '_'
                     })
                     && segment.chars().all(|character| {
                         character.is_ascii_lowercase()

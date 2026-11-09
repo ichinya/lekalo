@@ -807,7 +807,7 @@
     "trace.logicalPath": {
       "description": "A privacy-safe project-relative POSIX logical path; lexical grammar only, never resolved physically.",
       "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$",
+      "pattern": "^[a-z0-9_][a-z0-9._-]*(/[a-z0-9_][a-z0-9._-]*)*$",
       "maxLength": 512
     },
     "trace.externalRef": {

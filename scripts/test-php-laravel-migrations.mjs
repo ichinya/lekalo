@@ -12,11 +12,13 @@
 //      from a bounded input document (dry run + staged apply), a
 //      blocked input generates zero bytes, and clean planning never
 //      names a published migration or its ledger.
-//   3. When Docker IS available, the emitted up() SQL executes on a
-//      disposable PostgreSQL 16 container for the additive, rename,
-//      destructive, and backfill transitions on separate schemas.
-//      Without Docker the harness records an honest platform skip —
-//      never a fabricated pass.
+//   3. When PostgreSQL is reachable, the emitted up() SQL executes on
+//      it for the additive, rename, destructive, and backfill
+//      transitions on separate schemas. The server is either a CI
+//      services: database handed over through LEKALO_MIGRATIONS_PG*
+//      (a configured service that fails to execute fails the gate) or
+//      a disposable Docker container. With neither, the harness
+//      records an honest platform skip — never a fabricated pass.
 //
 // Dependency-free (node:*, no npm packages); run from the repo root.
 import { execFileSync, spawnSync } from "node:child_process";
@@ -526,45 +528,100 @@ for (const golden of [
   );
 }
 
-// --- stage 3: real PostgreSQL execution (Docker-gated) ---
+// --- stage 3: real PostgreSQL execution (service- or Docker-gated) ---
 function dockerAvailable() {
   const probe = spawnSync("docker", ["info", "--format", "ok"], { encoding: "utf8", timeout: 30000 });
   return probe.status === 0 && probe.stdout.includes("ok");
 }
 
+// A CI job may hand the stage a services:-provisioned PostgreSQL
+// instead of a disposable container: LEKALO_MIGRATIONS_PGHOST (plus
+// optional PGPORT/PGUSER/PGPASSWORD/PGDATABASE) switches the harness
+// to the runner's psql over TCP. The workflow pins the server image
+// by digest, so the executed version stops floating with a tag. A
+// configured service that does not execute is a gate failure, not a
+// platform skip — CI provisioned it deliberately.
+const servicePg = process.env.LEKALO_MIGRATIONS_PGHOST
+  ? {
+      host: process.env.LEKALO_MIGRATIONS_PGHOST,
+      port: process.env.LEKALO_MIGRATIONS_PGPORT ?? "5432",
+      user: process.env.LEKALO_MIGRATIONS_PGUSER ?? "postgres",
+      password: process.env.LEKALO_MIGRATIONS_PGPASSWORD ?? "",
+      database: process.env.LEKALO_MIGRATIONS_PGDATABASE ?? "lekalo",
+    }
+  : null;
+// The working database for schema-scoped execution: the service's
+// configured database, or the container's POSTGRES_DB. Callers must
+// name it explicitly — a literal "lekalo" would silently detach the
+// schema work from a service running any other database.
+const pgDatabase = servicePg?.database ?? "lekalo";
+
 let executed = false;
 let skipped = false;
-if (dockerAvailable()) {
+if (servicePg || dockerAvailable()) {
   let serverVersion = "";
   let container = "";
+  let psql;
   try {
-    container = "lekalo-issue57-" + Date.now().toString(36);
-    // Trust auth keeps the disposable container passwordless: no
-    // credential travels through this script, and psql inside the
-    // container needs none.
-    execFileSync("docker", [
-      "run", "-d", "--name", container,
-      "-e", "POSTGRES_HOST_AUTH_METHOD=trust", "-e", "POSTGRES_DB=lekalo",
-      "-p", "54329:5432", "postgres:16-alpine",
-    ], { encoding: "utf8", timeout: 240000 });
-    let ready = false;
-    for (let attempt = 0; attempt < 120 && !ready; attempt += 1) {
-      const probe = spawnSync("docker", ["exec", container, "pg_isready", "-U", "postgres"], { encoding: "utf8" });
-      ready = probe.status === 0 && probe.stdout.includes("accepting connections");
-      if (!ready) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
-    }
-    check(ready, "db:ready", "postgres never became ready");
-    const psql = (sql, database = "lekalo", schema = null) => {
-      const dockerArgs = ["exec"];
-      if (schema) {
-        dockerArgs.push("-e", "PGOPTIONS=-c search_path=" + schema);
+    if (servicePg) {
+      let ready = false;
+      for (let attempt = 0; attempt < 120 && !ready; attempt += 1) {
+        const probe = spawnSync(
+          "pg_isready",
+          ["-h", servicePg.host, "-p", servicePg.port, "-U", servicePg.user, "-d", servicePg.database],
+          { encoding: "utf8" },
+        );
+        ready = probe.status === 0;
+        if (!ready) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
       }
-      dockerArgs.push(
-        container, "psql", "-U", "postgres", "-d", database,
-        "-t", "-v", "ON_ERROR_STOP=1", "-c", sql,
-      );
-      return execFileSync("docker", dockerArgs, { encoding: "utf8", timeout: 60000 });
-    };
+      if (!ready) throw new Error("postgres service never became ready");
+      // Service mode: psql on the runner talks to the provisioned
+      // server over TCP; the credential arrives through PGPASSWORD,
+      // never on the command line.
+      psql = (sql, database = servicePg.database, schema = null) => {
+        const env = { ...process.env, PGPASSWORD: servicePg.password };
+        if (schema) {
+          env.PGOPTIONS = "-c search_path=" + schema;
+        }
+        return execFileSync(
+          "psql",
+          [
+            "-h", servicePg.host, "-p", servicePg.port,
+            "-U", servicePg.user, "-d", database,
+            "-t", "-v", "ON_ERROR_STOP=1", "-c", sql,
+          ],
+          { encoding: "utf8", timeout: 60000, env },
+        );
+      };
+    } else {
+      container = "lekalo-issue57-" + Date.now().toString(36);
+      // Trust auth keeps the disposable container passwordless: no
+      // credential travels through this script, and psql inside the
+      // container needs none.
+      execFileSync("docker", [
+        "run", "-d", "--name", container,
+        "-e", "POSTGRES_HOST_AUTH_METHOD=trust", "-e", "POSTGRES_DB=lekalo",
+        "-p", "54329:5432", "postgres:16-alpine",
+      ], { encoding: "utf8", timeout: 240000 });
+      let ready = false;
+      for (let attempt = 0; attempt < 120 && !ready; attempt += 1) {
+        const probe = spawnSync("docker", ["exec", container, "pg_isready", "-U", "postgres"], { encoding: "utf8" });
+        ready = probe.status === 0 && probe.stdout.includes("accepting connections");
+        if (!ready) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+      }
+      check(ready, "db:ready", "postgres never became ready");
+      psql = (sql, database = "lekalo", schema = null) => {
+        const dockerArgs = ["exec"];
+        if (schema) {
+          dockerArgs.push("-e", "PGOPTIONS=-c search_path=" + schema);
+        }
+        dockerArgs.push(
+          container, "psql", "-U", "postgres", "-d", database,
+          "-t", "-v", "ON_ERROR_STOP=1", "-c", sql,
+        );
+        return execFileSync("docker", dockerArgs, { encoding: "utf8", timeout: 60000 });
+      };
+    }
     serverVersion = psql("SELECT current_setting('server_version');", "postgres").trim().split(NL)[0];
     check(/^1[5-8]\.\d/.test(serverVersion), "db:server-version", serverVersion);
 
@@ -584,7 +641,7 @@ if (dockerAvailable()) {
     for (const [golden, schema] of Object.entries(SCHEMAS)) {
       psql(`DROP SCHEMA IF EXISTS ${schema} CASCADE;`);
       psql(`CREATE SCHEMA ${schema};`);
-      const schemaPsql = (sql) => psql(sql, "lekalo", schema);
+      const schemaPsql = (sql) => psql(sql, pgDatabase, schema);
       for (const statement of baseStatements) {
         schemaPsql(statement);
       }
@@ -634,7 +691,7 @@ if (dockerAvailable()) {
       const schema = "t_down";
       psql(`DROP SCHEMA IF EXISTS ${schema} CASCADE;`);
       psql(`CREATE SCHEMA ${schema};`);
-      const downPsql = (sql) => psql(sql, "lekalo", schema);
+      const downPsql = (sql) => psql(sql, pgDatabase, schema);
       for (const statement of baseStatements) {
         downPsql(statement);
       }
@@ -750,7 +807,7 @@ if (dockerAvailable()) {
       const schema = "t_one_focus";
       psql(`DROP SCHEMA IF EXISTS ${schema} CASCADE;`);
       psql(`CREATE SCHEMA ${schema};`);
-      const oneFocusPsql = (sql) => psql(sql, "lekalo", schema);
+      const oneFocusPsql = (sql) => psql(sql, pgDatabase, schema);
       for (const statement of baseStatements) {
         oneFocusPsql(statement);
       }
@@ -791,6 +848,10 @@ if (dockerAvailable()) {
     );
   } catch (error) {
     skipped = true;
+    // A configured service must execute: its skip is a gate failure.
+    if (servicePg) {
+      check(false, "db:service-execution", String(error).slice(0, 400));
+    }
     process.stdout.write(
       JSON.stringify({ stage: "postgres-skip", reason: String(error).slice(0, 400) }) + NL,
     );
@@ -806,7 +867,7 @@ if (dockerAvailable()) {
 } else {
   skipped = true;
   process.stdout.write(
-    JSON.stringify({ stage: "postgres-skip", reason: "docker unavailable" }) + NL,
+    JSON.stringify({ stage: "postgres-skip", reason: "no postgres service configured and docker unavailable" }) + NL,
   );
 }
 

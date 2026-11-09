@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "1.1.0",
-  "cliSourceDigest": "sha256:4219d7171eaa2b1175fe006ebcb2657a8155db3f8f03d9faf1e178e702545f25",
+  "cliSourceDigest": "sha256:d6fb8721f042ae95aff6d101a4a167a8e4cdc5f2eb2f41d9f97064b304414b10",
   "p0Pages": [
     {
       "page": "README.md",
@@ -2889,7 +2889,7 @@
       "id": "contract:contracts/adoption-analysis.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adoption-analysis.schema.v0.8.0.json",
-      "sourceDigest": "sha256:6124509a57c077c6c6ea5ba477107d4cfd6bcfeb01be53dcb75ce00df9ed3cc5",
+      "sourceDigest": "sha256:68d8f671e0dbb2d0742d40e1a034a64b874f8fbe574abd6098b424beb56b57c9",
       "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2898,7 +2898,7 @@
       "id": "contract:contracts/adoption-confirmation-plan.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adoption-confirmation-plan.schema.v0.8.0.json",
-      "sourceDigest": "sha256:1fca677f7d3f724bff18241f693a7e3c1a3c1603a0249336af346560eb4ed324",
+      "sourceDigest": "sha256:b93c5d9881554cd852a66cafd8903b68d82fb95f162a14c071baa340a0e9ed5a",
       "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2907,7 +2907,7 @@
       "id": "contract:contracts/adoption-coverage.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adoption-coverage.schema.v0.8.0.json",
-      "sourceDigest": "sha256:75480b06e45df5400612b078dc0b3f7493fae9be3b8e1683ee6eb3b8af0b9dc8",
+      "sourceDigest": "sha256:9f5146df9948b5b19253921126df07386c970e9a4c114da8d3e76e5c3a7348bf",
       "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2916,7 +2916,7 @@
       "id": "contract:contracts/adoption-impact-report.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adoption-impact-report.schema.v0.8.0.json",
-      "sourceDigest": "sha256:f0f24161af15883a4f0ffe65932d47868ba8d336b4454843569f1206ba0c449a",
+      "sourceDigest": "sha256:78c627fe5cf8cd54905255abb333c21ab5da6c08d69b61d8ca85d42abb681330",
       "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2925,7 +2925,7 @@
       "id": "contract:contracts/adoption-patch.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adoption-patch.schema.v0.8.0.json",
-      "sourceDigest": "sha256:b1b31c837e42a9aa27b6c049be5b30a16eca84c186f919ca8f1d0b9a3d61fb79",
+      "sourceDigest": "sha256:3fe4df02578eda8a9d34725e7782c439224512fa06ee558724d8fda570cc9c02",
       "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2934,7 +2934,7 @@
       "id": "contract:contracts/adoption-receipt.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adoption-receipt.schema.v0.8.0.json",
-      "sourceDigest": "sha256:6d2c238a3c04583f653207caa42e6768f4f296217c0299a4765293d10d409f21",
+      "sourceDigest": "sha256:2c38df68173496899f49284643536b34bec46aa99b5596ce14c340a4089bf238",
       "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2943,7 +2943,7 @@
       "id": "contract:contracts/adoption-refactor-plan.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adoption-refactor-plan.schema.v0.8.0.json",
-      "sourceDigest": "sha256:11f1dd3c94c3f7afa70794ab50e4c67ced2066ff7cb94559bf2cf87ef7547687",
+      "sourceDigest": "sha256:f144ca64922dee0a0cc90f8cfcb44b804dff28d94642e345e7e954dd2e153e3e",
       "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2952,7 +2952,7 @@
       "id": "contract:contracts/adoption-status-report.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adoption-status-report.schema.v0.8.0.json",
-      "sourceDigest": "sha256:45956aeb7d52fa15500a75776ab4faf9134f23b8b222c499758ddfb833ff798b",
+      "sourceDigest": "sha256:7dc935775c23ad73f375c4c14eec3917216e3bcbc07a170faa98cc49a2f38f64",
       "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2961,7 +2961,7 @@
       "id": "contract:contracts/adoption-trace-report.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adoption-trace-report.schema.v0.8.0.json",
-      "sourceDigest": "sha256:65f1e505c8130184fd980f9a303f083d886af9c777d6220d290f162cb423641e",
+      "sourceDigest": "sha256:782c11b80a9d4f87833abade0ec4c2ff11826aed97e038bd011467f13a1a6ff6",
       "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2970,7 +2970,7 @@
       "id": "contract:contracts/adoption-verification.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/adoption-verification.schema.v0.8.0.json",
-      "sourceDigest": "sha256:c4dfcd84b6e022c62fd6b4b301e34cded12547d1e8d1c7586c5e24f1a5f1fe9a",
+      "sourceDigest": "sha256:186b069f40f30ac35e6b36af43c6f3d7635c7ddc91baa8e866847bd4e6167536",
       "owner": "docs/adoption.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2979,7 +2979,7 @@
       "id": "contract:contracts/ai-lint-comparison.schema.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/ai-lint-comparison.schema.v0.6.4.json",
-      "sourceDigest": "sha256:4c0739a01d1f06af8f254268f4d2c0ad7faefef128321c7bb9bccd2ae2ef0a8c",
+      "sourceDigest": "sha256:37857180914ea47d457f58dc255655a57b82fb312b8a5f99b788e74b2ade7955",
       "owner": "docs/ai-lint.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2988,7 +2988,7 @@
       "id": "contract:contracts/ai-lint-config.schema.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/ai-lint-config.schema.v0.6.4.json",
-      "sourceDigest": "sha256:5dd4be99860b0ab1c89aaa4b12597bcc88e63719412497ed1355ad9cff0a4e60",
+      "sourceDigest": "sha256:131fa09345dae813eec26d60b0ad7139fd8dcda121c9e425ad8ec9e62fb62373",
       "owner": "docs/ai-lint.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -2997,7 +2997,7 @@
       "id": "contract:contracts/ai-lint-evidence.schema.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/ai-lint-evidence.schema.v0.6.4.json",
-      "sourceDigest": "sha256:51b5aa3086aaa5f22e98db638e8532ed3e6f28f06d32f948025936b4968df96c",
+      "sourceDigest": "sha256:2030fc4a31355b74a1fdabe85d09a9d93fefc33554f22823768b780b95b1b027",
       "owner": "docs/ai-lint.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3006,7 +3006,7 @@
       "id": "contract:contracts/ai-lint-report.schema.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/ai-lint-report.schema.v0.6.4.json",
-      "sourceDigest": "sha256:3de6c1cd26d2e04c6c5a6a2c3c9c2a78ef2f2566696e6471c5c69bdd196660b2",
+      "sourceDigest": "sha256:f36b50bcf5acb20436552d1dac2ca4863d281f980c2b0b927f823ed2a7b16ddb",
       "owner": "docs/ai-lint.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3015,7 +3015,7 @@
       "id": "contract:contracts/ai-lint-waivers.schema.v0.6.4.json",
       "kind": "contract",
       "source": "contracts/ai-lint-waivers.schema.v0.6.4.json",
-      "sourceDigest": "sha256:593404cec8a7a727894d3ba41e060d7a208ac6c24390a870bccb4d0caa983715",
+      "sourceDigest": "sha256:faf190dbae85874873887ea3698b6b587d2b369bcf7f06e64cd23610878bb258",
       "owner": "docs/ai-lint.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3123,7 +3123,7 @@
       "id": "contract:contracts/artifact-manifest.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/artifact-manifest.schema.v0.2.16.json",
-      "sourceDigest": "sha256:327d4a4b8d42b603bbb178213f0308a3a777e61769bb40159f7af56eea2c9205",
+      "sourceDigest": "sha256:21c1bb5a3aacf8a63fb8dc3c526cbbf19d73a3449cd825c9441c432e96421d8a",
       "owner": "docs/artifact-manifest.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3159,7 +3159,7 @@
       "id": "contract:contracts/authorization.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/authorization.schema.v0.2.16.json",
-      "sourceDigest": "sha256:198c817ab80c7c5d6329cb6a00cc6446db4d1acf2ba8150adf350b66d2aa6583",
+      "sourceDigest": "sha256:110d16fb2f99f6b35a8169f30e75c92fec4098d083acc8679bf6f71f5960b612",
       "owner": "docs/authorization.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3348,7 +3348,7 @@
       "id": "contract:contracts/contracted-declaration.schema.v0.4.0.json",
       "kind": "contract",
       "source": "contracts/contracted-declaration.schema.v0.4.0.json",
-      "sourceDigest": "sha256:dab8d12917b179a7f0ece26367cb104b54a613520197fb7b9ee0f175ea686876",
+      "sourceDigest": "sha256:14330dc2065e47ae4533a16fafec64fa6c85e8bd595f86aafc30965f6b27aaa5",
       "owner": "docs/contracted-mode.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3573,7 +3573,7 @@
       "id": "contract:contracts/error-registry.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/error-registry.schema.v0.2.16.json",
-      "sourceDigest": "sha256:bde5f5a56ba7892195ef05a96bfe21bd80a2fbd5b0df378dbb4d676731103b8e",
+      "sourceDigest": "sha256:c2d0bb8dfc8bbdc7a079c034ebd4f7cc130faf208c41ab6010227d5ebe7e9976",
       "owner": "docs/error-contracts.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4122,7 +4122,7 @@
       "id": "contract:contracts/mcp-tool-trace-export-output.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/mcp-tool-trace-export-output.schema.v0.8.0.json",
-      "sourceDigest": "sha256:a7db2ad2ce05f49a83b7d956e1c7a7ad0f360cf2189ea47310ddf93a0f63ec04",
+      "sourceDigest": "sha256:03074e1720ce60ee9bea9714194ea3c35f5063f9cd9636b186215afdecc04e4c",
       "owner": "docs/mcp.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4284,7 +4284,7 @@
       "id": "contract:contracts/native-execution-plan.schema.v0.9.1.json",
       "kind": "contract",
       "source": "contracts/native-execution-plan.schema.v0.9.1.json",
-      "sourceDigest": "sha256:ba073f5a92a41e8e46476a5ae3e6087b911a0d9ce1e146a71e32e2f0a002c8fc",
+      "sourceDigest": "sha256:01724070c24d947366101b2bc087cb15f7d0957b5931e38738b58c1321f31fdd",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4293,7 +4293,7 @@
       "id": "contract:contracts/native-execution-plan.schema.v1.0.0.json",
       "kind": "contract",
       "source": "contracts/native-execution-plan.schema.v1.0.0.json",
-      "sourceDigest": "sha256:e183544b4d1009649bbb63ed0a3e258b7a0586136540e54bd9f5e194c53593ef",
+      "sourceDigest": "sha256:15dc0be57b65a6290c3066126165d333d112fc6296d7ef5107790f20441664f3",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4302,7 +4302,7 @@
       "id": "contract:contracts/native-execution-policy.schema.v0.9.1.json",
       "kind": "contract",
       "source": "contracts/native-execution-policy.schema.v0.9.1.json",
-      "sourceDigest": "sha256:f179e0ea576d1951aeacbdee05e1f991c1198eb597ae542a47300c1702cfaf6d",
+      "sourceDigest": "sha256:8a61cbef59da0aa34300f8e19ec10156840b622c3d3e1638457008ddd6f7197b",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4311,7 +4311,7 @@
       "id": "contract:contracts/native-execution-report.schema.v1.0.0.json",
       "kind": "contract",
       "source": "contracts/native-execution-report.schema.v1.0.0.json",
-      "sourceDigest": "sha256:5994fe0bc05655aed58816771ebac2b3f9d0f4d1cac03af125fae96387701dcc",
+      "sourceDigest": "sha256:65a08db1b2dfe98d11b7410aea13c2d2a110c5f1cd105f1e814f1455c042a7d9",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4320,7 +4320,7 @@
       "id": "contract:contracts/native-gate-plan.schema.v0.4.0.json",
       "kind": "contract",
       "source": "contracts/native-gate-plan.schema.v0.4.0.json",
-      "sourceDigest": "sha256:447a1b1c3c2aab3dc217eba7d3a3d55a942d74be2484564b7dc68febf2ce3e2a",
+      "sourceDigest": "sha256:00ba93757a4642119fce31bcc0ee94e1c31102bb33bea3662c88e69af4f460f8",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4329,7 +4329,7 @@
       "id": "contract:contracts/native-gate-policy.schema.v0.4.0.json",
       "kind": "contract",
       "source": "contracts/native-gate-policy.schema.v0.4.0.json",
-      "sourceDigest": "sha256:53a5b7edafee37d514e1f27e2971539ac101ad1bea13c1997fe6e0e0457c24e2",
+      "sourceDigest": "sha256:a9515d3bb2a5e4c73bc54dc6998de41a40ba969041cd03eb91baa0d6e3dc1231",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4338,7 +4338,7 @@
       "id": "contract:contracts/native-gate-run.schema.v0.4.0.json",
       "kind": "contract",
       "source": "contracts/native-gate-run.schema.v0.4.0.json",
-      "sourceDigest": "sha256:661b3c13a074f54e8bdc283b344e13b9a4d202b0be30add49435876d79cc7b49",
+      "sourceDigest": "sha256:69f3f4e0a6874db1af6afd9765851b7bbd93eb0c84f8b3b5897fb4860748336d",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4347,7 +4347,7 @@
       "id": "contract:contracts/native-gate-run.schema.v1.0.0.json",
       "kind": "contract",
       "source": "contracts/native-gate-run.schema.v1.0.0.json",
-      "sourceDigest": "sha256:97179bad949fc3f1c3191ab40bb38045c4312b6de00fcc4f9094dd5996fdbead",
+      "sourceDigest": "sha256:bd44276dfffb99641939d6749fcbd751227cb23751e2a02385d6b1382f5f5ec0",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4356,7 +4356,7 @@
       "id": "contract:contracts/native-gate-view.schema.v0.4.0.json",
       "kind": "contract",
       "source": "contracts/native-gate-view.schema.v0.4.0.json",
-      "sourceDigest": "sha256:82413cdaa4d67da03be1a0e23a56877830b1eb8a6b970687ef6ae9c88abed7bd",
+      "sourceDigest": "sha256:8a1d6b794faba120b62405b401161bb2261419bb1cbf14cf55c0e658e9258703",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4383,7 +4383,7 @@
       "id": "contract:contracts/native-verify-report.schema.v1.0.0.json",
       "kind": "contract",
       "source": "contracts/native-verify-report.schema.v1.0.0.json",
-      "sourceDigest": "sha256:e1fb818e72a6c4a66b39fef21e77002bbfffc867684dcaea873d321a92f2ad7a",
+      "sourceDigest": "sha256:fbe9f2dfa488a2323b087efe0b7449eefa8b251d2e54e54a97f504e2c5dddcc8",
       "owner": "docs/native-gates.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4419,7 +4419,7 @@
       "id": "contract:contracts/observed-index.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/observed-index.schema.v0.2.16.json",
-      "sourceDigest": "sha256:bf6db95ffe283751ee841c3de80e3e82493379caae78a8cad101e9d6647f0439",
+      "sourceDigest": "sha256:e8f768ea7d9beea09ad3fdc03dca26b65b736f24cf8e94ae475d4d4ff47adebb",
       "owner": "docs/observed-mode.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4428,7 +4428,7 @@
       "id": "contract:contracts/observed-index.schema.v1.1.0.json",
       "kind": "contract",
       "source": "contracts/observed-index.schema.v1.1.0.json",
-      "sourceDigest": "sha256:1dd63309477b85f38056b36f599c128d6c6e1f167f5e39460a273d812999cbb9",
+      "sourceDigest": "sha256:157ec391e95d96ba8111acd5df81b8e66322fae0f626205c25f5540170fed021",
       "owner": "docs/observed-mode.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4437,7 +4437,7 @@
       "id": "contract:contracts/observed-scan.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/observed-scan.schema.v0.2.16.json",
-      "sourceDigest": "sha256:b549d60ac25fb98c48b906a19ab70c8ca5101924af485504164a2ca9afbe5a09",
+      "sourceDigest": "sha256:5a9f9c7aad186722f87abc617b2b4009e546d4a45d5899d2e3be11e45b274124",
       "owner": "docs/observed-mode.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4446,7 +4446,7 @@
       "id": "contract:contracts/observed-scan.schema.v1.1.0.json",
       "kind": "contract",
       "source": "contracts/observed-scan.schema.v1.1.0.json",
-      "sourceDigest": "sha256:06daf73edd997fc42e4d9829800872c644ecdf03afeee10ba6203c284d72537a",
+      "sourceDigest": "sha256:17d2d91f31af9b2b5fc80527d6377cc41a4c7d2c25dabcc41a5dadb4bb197d45",
       "owner": "docs/observed-mode.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4455,7 +4455,7 @@
       "id": "contract:contracts/orchestration-report.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/orchestration-report.schema.v0.2.16.json",
-      "sourceDigest": "sha256:e2a206c3862359ed813ec961ddec7ffd0acbe08641a343d4753f37f0c05ea0aa",
+      "sourceDigest": "sha256:9ec7b180c21129d185a74e105fe706dbdbc7538ce5b9fc8376ebcafd75d1004f",
       "owner": "docs/orchestration.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4869,7 +4869,7 @@
       "id": "contract:contracts/search-index.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/search-index.schema.v0.8.0.json",
-      "sourceDigest": "sha256:4639873592665406074b979d0d92477c6610f1743fdd22c6b238b9b237b1c9e6",
+      "sourceDigest": "sha256:e14461c1b41d8fc060e0b0f3228fc2cd8c3fd0fbd91b5080ba11fd02746f653c",
       "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4878,7 +4878,7 @@
       "id": "contract:contracts/search-inputs.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/search-inputs.schema.v0.8.0.json",
-      "sourceDigest": "sha256:1e898f357872071a3460445ef89cfc5f044a5ceaf3c300b762603f2aaafe8192",
+      "sourceDigest": "sha256:066581581c998ac3b2059ba116cd8c76c70ad62db11424a7c96122495025f12a",
       "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4887,7 +4887,7 @@
       "id": "contract:contracts/search-ownership-profile.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/search-ownership-profile.schema.v0.8.0.json",
-      "sourceDigest": "sha256:9871d1c282d7c091b9ce5fcd7e81bbf26947b3fe184696c5d47da8d00d71b1d5",
+      "sourceDigest": "sha256:ff86b2cd460f44c35683f8369f7058f59600a4e14753f2bde9c6741b9f741edf",
       "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4896,7 +4896,7 @@
       "id": "contract:contracts/search-query.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/search-query.schema.v0.8.0.json",
-      "sourceDigest": "sha256:b5db85f7102d1f82173289db7394bc0b171eb95ea9e42053de0ca1c2bd19335a",
+      "sourceDigest": "sha256:7d89fc0ff585e612018a22d8168b1089308183ee882f19545d25063f23c1f59c",
       "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4905,7 +4905,7 @@
       "id": "contract:contracts/search-result.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/search-result.schema.v0.8.0.json",
-      "sourceDigest": "sha256:887488d7aaade61a8ecef0b0d1f7631c06e8cc71aed08b28616532a2846bdbf3",
+      "sourceDigest": "sha256:762c5bf19baeb6823bbdcb2fff6c6f3c8c4dfc9a4b2cf8c7d928a28e3cae9dc5",
       "owner": "docs/semantic-search.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -5058,7 +5058,7 @@
       "id": "contract:contracts/target-protocol.schema.v0.9.1.json",
       "kind": "contract",
       "source": "contracts/target-protocol.schema.v0.9.1.json",
-      "sourceDigest": "sha256:04689f0485be8a6fffa4860dc173fe29cb9ead7e49c2d34c18c3308653ff1b31",
+      "sourceDigest": "sha256:ce4ae6cbdb5be8bd575e2303154c85078b5bd5e590921070421030f732c6c069",
       "owner": "docs/target-protocol.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -5067,7 +5067,7 @@
       "id": "contract:contracts/target-protocol.schema.v1.1.0.json",
       "kind": "contract",
       "source": "contracts/target-protocol.schema.v1.1.0.json",
-      "sourceDigest": "sha256:ab79316ae7a836c0d10ec1da235dbe7fa89ee4a27dc0ccd14831d1b298a6e019",
+      "sourceDigest": "sha256:783c6a88f885b28121be39424ea459fb8964770300c3fcdec40a9ba93e21cd54",
       "owner": "docs/target-protocol.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -5139,7 +5139,7 @@
       "id": "contract:contracts/trace-manifest.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/trace-manifest.schema.v0.2.16.json",
-      "sourceDigest": "sha256:5f9c5baf4dcc5d48087be2e003320999aa6b071fd06764d5276e007361c094e2",
+      "sourceDigest": "sha256:a4565e439b24eecf5d7fd8cd32cf723def61ac2fb21eee12a83b753b8311c654",
       "owner": "docs/trace-manifest.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

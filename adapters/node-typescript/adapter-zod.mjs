@@ -520,7 +520,7 @@ function logicalSegments(value) {
   return parts;
 }
 function isScopeSegment(segment) {
-  return typeof segment === "string" && segment.length >= 1 && segment.length <= 64 && segment !== "." && segment !== ".." && !segment.endsWith(".") && !segment.endsWith(" ") && !/~\d/.test(segment) && !isDosDevice(segment) && /^[a-z0-9.][a-z0-9._-]*$/.test(segment) && !isDriveOrScheme(segment);
+  return typeof segment === "string" && segment.length >= 1 && segment.length <= 64 && segment !== "." && segment !== ".." && !segment.endsWith(".") && !segment.endsWith(" ") && !/~\d/.test(segment) && !isDosDevice(segment) && /^[a-z0-9._][a-z0-9._-]*$/.test(segment) && !isDriveOrScheme(segment);
 }
 function isDriveOrScheme(segment) {
   if (!/^[A-Za-z]/.test(segment)) {
@@ -1738,7 +1738,7 @@ function validateExtensionDescriptor(descriptor2) {
     }
   }
   if (hasOwn(descriptor2, "writeRoots") && descriptor2.writeRoots !== void 0) {
-    if (!Array.isArray(descriptor2.writeRoots) || descriptor2.writeRoots.length === 0 || descriptor2.writeRoots.length > 8 || !descriptor2.writeRoots.every((root) => typeof root === "string" && /^([a-z0-9][a-z0-9._-]*\/)+\*\*$/.test(root) && !root.includes(".."))) {
+    if (!Array.isArray(descriptor2.writeRoots) || descriptor2.writeRoots.length === 0 || descriptor2.writeRoots.length > 8 || !descriptor2.writeRoots.every((root) => typeof root === "string" && /^([a-z0-9_][a-z0-9._-]*\/)+\*\*$/.test(root) && !root.includes(".."))) {
       invalid("writeRoots");
     }
   }

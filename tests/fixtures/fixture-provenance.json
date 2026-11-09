@@ -350,6 +350,11 @@
       "note": "Issues #150/#153: authored standalone and workspace TypeScript sources, explicit public scan profiles and a domain command/effect/authorization example; no private consumer material."
     },
     {
+      "family": "python-scan",
+      "origin": "synthetic",
+      "note": "Issue #146: authored standalone Python sources exercising the native observed scanner — package layout, stubs, dynamic members and a public scan profile; no private consumer material."
+    },
+    {
       "family": "query-model",
       "origin": "synthetic"
     },

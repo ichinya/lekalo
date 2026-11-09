@@ -160,8 +160,9 @@ A declared path is well formed when:
 
 - it is non-empty and relative: no leading `/`, drive, UNC, `~` or URI scheme;
 - it contains no backslash, colon or percent-encoded octet;
-- every segment matches `[a-z0-9][a-z0-9._-]{0,63}`: lowercase, no empty,
-  `.`/`..`, trailing dot/space or control-character segment;
+- every segment matches `[a-z0-9_][a-z0-9._-]{0,63}`: lowercase, no empty,
+  `.`/`..`, trailing dot/space or control-character segment (a leading `_`
+  is portable — `__init__.py`, `__pycache__/`, `_private.py`);
 - no segment is a DOS device after Unicode NFKC compatibility normalization:
   `CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9`, `CONIN$`,
   `CONOUT$`, `CLOCK$`, with any extension. This includes fullwidth, circled,

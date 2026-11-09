@@ -1,0 +1,198 @@
+{
+  "status": "valid",
+  "report": {
+    "schema_version": "lekalo/adapter-conformance/v0.2.16",
+    "suite": {
+      "identity": "dev.lekalo.adapter-conformance@0.2.16",
+      "version": "1.1.0",
+      "profile": "default"
+    },
+    "adapter": {
+      "id": "lekalo-target-python",
+      "version": "0.1.0",
+      "digest": "sha256:d5d8b031109a448034357aee610ff7467b6ca5490403b7015073d67d426878e9"
+    },
+    "session": {
+      "protocol": "1.1.0",
+      "ir": "0.2.16",
+      "capability_digest": "sha256:f4900d0173c45722abf3a59dfa5db10e58edc20ff1d30d16339e988389574791",
+      "timeout_ms": 60000,
+      "repeats": 2
+    },
+    "verdict": "pass",
+    "badge": {
+      "issued": false
+    },
+    "checks": [
+      {
+        "id": "describe.handshake",
+        "class": "protocol",
+        "state": "pass"
+      },
+      {
+        "id": "describe.negotiation",
+        "class": "protocol",
+        "state": "pass"
+      },
+      {
+        "id": "capability.declaration",
+        "class": "protocol",
+        "state": "pass"
+      },
+      {
+        "id": "capability.ir-declaration",
+        "class": "protocol",
+        "state": "skipped",
+        "detail": "no-ir-operations"
+      },
+      {
+        "id": "capability.surface",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "default-profile"
+      },
+      {
+        "id": "confinement.canonical",
+        "class": "security",
+        "state": "pass"
+      },
+      {
+        "id": "confinement.plan-scopes",
+        "class": "security",
+        "state": "pass"
+      },
+      {
+        "id": "input.invalid-ir",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "operation-undeclared"
+      },
+      {
+        "id": "diagnostics.structured",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "operation-undeclared"
+      },
+      {
+        "id": "determinism.repeats",
+        "class": "determinism",
+        "state": "skipped",
+        "detail": "no-repeatable-probe"
+      },
+      {
+        "id": "generate.dry-run-plan",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "operation-undeclared"
+      },
+      {
+        "id": "generate.apply-plan",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "operation-undeclared"
+      },
+      {
+        "id": "apply.retry-discipline",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "operation-undeclared"
+      },
+      {
+        "id": "plan.clean-cycle",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "operation-undeclared"
+      },
+      {
+        "id": "scenario.normalization",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "operation-undeclared"
+      },
+      {
+        "id": "artifact.manifest-evidence",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "operation-undeclared"
+      },
+      {
+        "id": "redaction.evidence",
+        "class": "security",
+        "state": "pass"
+      },
+      {
+        "id": "process.cancellation",
+        "class": "process",
+        "state": "pass"
+      },
+      {
+        "id": "transport.wire-diff-block",
+        "class": "feature",
+        "state": "pass"
+      },
+      {
+        "id": "transport.error-identity",
+        "class": "feature",
+        "state": "pass"
+      },
+      {
+        "id": "transport.unsupported-capability",
+        "class": "feature",
+        "state": "pass"
+      },
+      {
+        "id": "transport.projection-parity",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "capability-undeclared"
+      },
+      {
+        "id": "transport.blackbox-scenarios",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "capability-undeclared"
+      },
+      {
+        "id": "storage.projection-parity",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "storage-capabilities-undeclared"
+      },
+      {
+        "id": "storage.profile-evidence",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "storage-capabilities-undeclared"
+      },
+      {
+        "id": "storage.introspection-checked",
+        "class": "security",
+        "state": "skipped",
+        "detail": "scan-schema-undeclared"
+      },
+      {
+        "id": "storage.migration-gate",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "storage-capabilities-undeclared"
+      },
+      {
+        "id": "storage.collation-uniqueness",
+        "class": "feature",
+        "state": "skipped",
+        "detail": "storage-capabilities-undeclared"
+      },
+      {
+        "id": "classification.preservation",
+        "class": "security",
+        "state": "pass",
+        "detail": "honest-unsupported"
+      }
+    ],
+    "counts": {
+      "pass": 11,
+      "fail": 0,
+      "skipped": 18
+    }
+  }
+}

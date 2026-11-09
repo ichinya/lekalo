@@ -1,7 +1,7 @@
 {
   "schemaVersion": "lekalo/task-links-integration/v0.8.0",
   "identity": "dev.lekalo.task-links-integration@0.8.0",
-  "attachmentRevision": "sha256:c594efe37da4d1aaf977af53bbe2a5786cd614ec19c2664ea105cb3afb49a040",
+  "attachmentRevision": "sha256:d8cda5ca1e7d193d56207ccb52968c050fd43946bc6c0f69bda5f6ee7d539771",
   "projectId": "tasklinks",
   "modelRef": {
     "schemaVersion": "0.8.0",
@@ -15,7 +15,7 @@
     {
       "family": "authorization",
       "identity": "dev.lekalo.authorization@0.2.16",
-      "digest": "sha256:198c817ab80c7c5d6329cb6a00cc6446db4d1acf2ba8150adf350b66d2aa6583"
+      "digest": "sha256:110d16fb2f99f6b35a8169f30e75c92fec4098d083acc8679bf6f71f5960b612"
     },
     {
       "family": "extended-effects",
