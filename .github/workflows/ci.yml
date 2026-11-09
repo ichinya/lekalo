@@ -217,13 +217,15 @@ jobs:
 
   build-test:
     name: Build and test (${{ matrix.os }})
-    # This job validates host AppArmor and native process confinement. Keep
-    # its original hosted OS matrix; Docker workers run the other Linux gates.
+    # This job validates host AppArmor and native process confinement;
+    # Docker workers run the other Linux gates.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Keep the image qualified for this legacy launcher policy.
+        # Ubuntu 26.04 AppArmor adaptation lands separately in #168.
+        os: [ubuntu-24.04, windows-latest, macos-latest]
     # Steps are written in bash; Windows runners default to pwsh otherwise.
     defaults:
       run:

@@ -1,0 +1,56 @@
+name: Audit
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Advisories land between commits: re-audit the committed
+    # lockfiles every week even when nothing changed.
+    - cron: "23 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  audit:
+    name: cargo audit
+    # cargo-audit is installed from crates.io, so the lane stays on a
+    # disposable hosted runner instead of the persistent worker.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-bin: true
+      - run: cargo install cargo-audit --locked
+      - name: Audit every tracked Cargo.lock
+        # Include SDK template locks, exclude untracked files, and preserve
+        # spaces and Unicode paths. Report every workspace before returning
+        # an aggregate failure; failed discovery must never become a pass.
+        run: |
+          set -euo pipefail
+          lockfiles="$(mktemp)"
+          trap 'rm -f -- "$lockfiles"' EXIT
+          git ls-files -z -- Cargo.lock '**/Cargo.lock' > "$lockfiles"
+          failed=0
+          count=0
+          while IFS= read -r -d '' lock; do
+            count=$((count + 1))
+            echo "::group::cargo audit ($lock)"
+            (cd "$(dirname "$lock")" && cargo audit) || failed=1
+            echo "::endgroup::"
+          done < "$lockfiles"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No tracked Cargo.lock files were found"
+            exit 1
+          fi
+          exit "$failed"
