@@ -38,8 +38,9 @@ fn is_package_id(value: &str) -> bool {
         && root.len() <= 64
         && root.split('/').all(|segment| {
             !segment.is_empty()
-                && segment
-                    .starts_with(|c: char| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.')
+                && segment.starts_with(|c: char| {
+                    c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '_'
+                })
                 && segment.bytes().all(|b| {
                     b.is_ascii_lowercase()
                         || b.is_ascii_digit()
@@ -421,6 +422,29 @@ mod tests {
         value["invented"] = serde_json::json!(1);
         let bytes = serde_json::to_vec(&value).unwrap();
         assert_eq!(decode_plan(&bytes).unwrap_err(), PlanRejection::Malformed);
+    }
+
+    #[test]
+    fn underscore_package_roots_validate_end_to_end() {
+        // The package id root is the package's cwd, so it must admit every
+        // segment the logical-path grammar admits — leading underscores
+        // included (Python layouts such as _vendor or __init__ packages).
+        assert!(is_package_id("packages/_tools=@fixture/tools"));
+        assert!(is_package_id("_vendor=@fixture/vendor"));
+        assert!(!is_package_id("Packages/_tools=@fixture/tools"));
+        assert!(!is_package_id("-tools=@fixture/tools"));
+
+        let mut plan = golden_plan();
+        plan.workspace
+            .packages
+            .push(crate::native_gate::NativePackage {
+                id: "packages/_tools=@fixture/tools".into(),
+                name: Some("@fixture/tools".into()),
+                root: "packages/_tools".into(),
+                manifest_digest: format!("sha256:{}", "4".repeat(64)),
+            });
+        plan.plan_digest = plan_digest(&plan);
+        assert!(validate_plan(&plan).is_ok());
     }
 
     #[test]

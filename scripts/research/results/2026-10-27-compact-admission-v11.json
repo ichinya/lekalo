@@ -1,0 +1,41 @@
+{
+  "format": "lekalo-167-post-run-admission/1",
+  "archiveManifestSha256": "c368daf597aee29d47353e19875059f8399f563a3ca11ae6831dd6fa6f59ecad",
+  "sourceCampaignSha256": "47a819db10b0eb7ecbf0dcfef854a0e3041a1caa92a013654975e6c7560632d5",
+  "translatorSha256": "sha256:54cfaf545a81a7c0c90c6b2dc10dcac58e703663c3e9ca4bff270c1706853a6a",
+  "binarySha256": "sha256:0382d9b7fb0a7ecc02687ce85f7f03618b2bfd73b1f8a75f0db0c7c5e89223b7",
+  "status": "recorded-unverified-local-private",
+  "recordedArms": 8,
+  "profiles": [
+    {
+      "profile": "devin-swe2-high",
+      "resultDigest": "sha256:13cc37a21d575c2e5647030fd3e65e7989c6f213639a564feb816057b878550d",
+      "scheduled": 4,
+      "successes": 4,
+      "input": 984721,
+      "output": 45582,
+      "total": 1030303,
+      "evidenceStatus": "recorded-unverified"
+    },
+    {
+      "profile": "codex-gpt6-luna-medium",
+      "resultDigest": "sha256:e6f4e5a00e485abd176244864cf48726bef2a6bef8d30d7c7ae21b47db697830",
+      "scheduled": 4,
+      "successes": 2,
+      "input": 800977,
+      "output": 7922,
+      "total": 808899,
+      "evidenceStatus": "recorded-unverified"
+    }
+  ],
+  "parity": {
+    "totalTokens": 1839202,
+    "strictSuccesses": 6
+  },
+  "limits": [
+    "Post-run translation, not preregistration of a new run.",
+    "Source snapshot and CLI/model aliases pinned; server model revision, provider sampling, telemetry and prices unknown.",
+    "Source filesRead remains unknown; verified src-only lower bounds have separate metrics.",
+    "No provider authentication or product privacy-export qualification. Historical 0.6.4 records unchanged."
+  ]
+}

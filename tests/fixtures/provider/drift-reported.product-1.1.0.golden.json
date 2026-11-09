@@ -1,0 +1,26 @@
+{
+  "status": "valid",
+  "operation": "generate",
+  "mode": "check",
+  "manifestDigest": "sha256:c0c77f2eda16d2438d542f470e14afa44212a19025f2322fcde8a65c58dd73f8",
+  "lockDigest": "sha256:ad318abf78d8e91cd9c3a97d447e7b25abb933e0d9e5bba08905c80eccc08048",
+  "verdict": "reported",
+  "counts": {
+    "artifacts": 1,
+    "clean": 0,
+    "stale": 0,
+    "manualDrift": 1,
+    "missing": 0,
+    "orphan": 0,
+    "reported": 1
+  },
+  "findings": [
+    {
+      "path": "apps/api/src/planner/focus-hook.ts",
+      "owner": "planner.focus_task",
+      "kind": "source",
+      "lifecycle": "custom",
+      "verdict": "manual-drift"
+    }
+  ]
+}

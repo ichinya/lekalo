@@ -541,7 +541,7 @@ verifyEnumSpelling();
  * must never fight rustfmt, so every generated top-level item carries the
  * stable outer `#[rustfmt::skip]` attribute (the inner-crate form is
  * unstable; verified: rustfmt honors the outer one and leaves the emitted
- * layout untouched, and 1.80 rustc accepts it).
+ * layout untouched, and 1.89 rustc accepts it).
  */
 const rustPinned = (item) => `#[rustfmt::skip]
 ${item}`;

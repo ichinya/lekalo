@@ -117,7 +117,8 @@ if (ambiguousSymbol.location || ambiguousSymbol.stableKey) {
 const versionSource = readText("crates/lekalo-core/src/observed/version.rs");
 for (const constant of [
   'SCHEMA_VERSION: &str = "lekalo/observed-index/v0.2.16"',
-  'SCAN_SCHEMA_VERSIONS: [&str; 1] =',
+  'SCAN_SCHEMA_VERSIONS: [&str; 2] =',
+  'NATIVE_SCAN_SCHEMA_VERSION: &str = "lekalo/observed-scan/v1.1.0";',
   '"lekalo/observed-scan/v0.2.16"',
   '"lekalo/observed-scan/v0.2.16"',
   'SCAN_SCHEMA_VERSION: &str = SCAN_SCHEMA_VERSIONS[0];',
@@ -135,10 +136,12 @@ for (const constant of [
 const bindingsSource = readText("crates/lekalo-core/src/observed/bindings.rs");
 const indexSource = readText("crates/lekalo-core/src/observed/index.rs");
 const scanService = readText("crates/lekalo-core/src/observed/scan_service.rs");
-// Proposals are only derived from inferred records: a user-owned fact
-// never generates a proposal (explicit bindings have priority).
-if (!bindingsSource.includes("BindingStatus::Inferred || record.promoted")) {
-  fail("proposal-source", "propose derives from inferred records only");
+// Predecessors propose inferred records only. Native successors also offer
+// explicit review of stale confirmed evidence; promoted/explicit facts stay owned.
+if (!["BindingStatus::Inferred && !reconfirming) || record.promoted",
+      "let reconfirming = native", "record.status == BindingStatus::Confirmed",
+      "record.state == BindingState::Stale"].every(s=>bindingsSource.includes(s))) {
+  fail("proposal-source", "propose requires inferred evidence or successor stale reconfirmation");
 }
 // An ambiguous proposal refuses confirmation until a candidate is named.
 if (!bindingsSource.includes('"ambiguous-candidates"')) {

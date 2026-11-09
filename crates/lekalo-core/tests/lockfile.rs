@@ -232,14 +232,32 @@ fn golden_contract_only_lock_parses_and_matches_its_independent_digest() {
         expected["lockDigest"].as_str().expect("digest")
     );
     assert_eq!(lock.resolver_version().as_str(), RESOLVER_VERSION);
-    assert_eq!(
-        lock.core_version().as_str(),
-        lekalo_core::lockfile::PRODUCT_VERSION
-    );
+    assert_eq!(lock.core_version().as_str(), "1.0.0");
     let protocol = lock.target_protocol().expect("published protocol");
     assert_eq!(protocol.version().as_str(), "0.3.2");
     // Round-trip: canonical bytes are byte-identical to the committed file.
     assert_eq!(lock.canonical_bytes().as_ref(), GOLDEN);
+}
+
+#[test]
+fn current_product_lock_has_its_own_independent_pin() {
+    let bytes = include_bytes!(
+        "../../../tests/fixtures/lockfile/valid/contract-only.product-1.1.0.lock.json"
+    );
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/lockfile/valid/contract-only.product-1.1.0.expect.json"
+    ))
+    .expect("current digest fixture");
+    let lock = Lockfile::parse_canonical(bytes).expect("current lock");
+    assert_eq!(
+        lock.digest().as_str(),
+        expected["lockDigest"].as_str().expect("digest")
+    );
+    assert_eq!(
+        lock.core_version().as_str(),
+        lekalo_core::lockfile::PRODUCT_VERSION
+    );
+    assert_eq!(lock.canonical_bytes().as_ref(), bytes);
 }
 
 #[test]

@@ -13,7 +13,7 @@ const binary = join(root, 'target/debug', process.platform === 'win32' ? 'lekalo
 // Product-qualified successor snapshots preserve the original exact goldens.
 // Lock productVersion changes artifact/trace/condition pins, not this wire family.
 const product = readFileSync(join(root,'Cargo.toml'),'utf8').match(/\[workspace.package\][\s\S]*?version = "([^"]+)"/)?.[1];
-assert.ok(['0.6.4','0.6.5','0.8.0','0.8.14','0.8.15','0.9.0','1.0.0'].includes(product),'explicit product golden admission');
+assert.ok(['0.6.4','0.6.5','0.8.0','0.8.14','0.8.15','0.9.0','1.0.0','1.1.0'].includes(product),'explicit product golden admission');
 const productPinnedGoldens = new Set(['report','report-waived','waivers','comparison','comparison-incomparable']);
 const require = createRequire((process.env.LEKALO_AJV_NODE_PATH || dirname(fileURLToPath(import.meta.url))) + '/');
 assert.equal(require('ajv/package.json').version, '8.20.0', 'exact Ajv gate dependency');
@@ -98,8 +98,8 @@ export function golden(name,value,update) {
   const legacyPath=family?join(root,'tests/fixtures',`ai-lint-${family}`,'golden',name+'.json'):join(fixture,'golden',name+'.json');
   // M8 upgrades the PHP producer and the Node declaration closure while
   // the evidence wire stays frozen. Preserve both predecessor receipts.
-  const m8Adapter=['0.8.0','0.8.14','0.8.15','0.9.0','1.0.0'].includes(product)&&['adapter-php-laravel','adapter-node-typescript'].includes(name);
-  const qualified=m8Adapter||(productPinnedGoldens.has(name)&&['0.6.5','0.8.0','0.8.14','0.8.15','0.9.0','1.0.0'].includes(product));
+  const m8Adapter=['0.8.0','0.8.14','0.8.15','0.9.0','1.0.0','1.1.0'].includes(product)&&['adapter-php-laravel','adapter-node-typescript'].includes(name);
+  const qualified=m8Adapter||(productPinnedGoldens.has(name)&&['0.6.5','0.8.0','0.8.14','0.8.15','0.9.0','1.0.0','1.1.0'].includes(product));
   const path=qualified?legacyPath.replace(/\.json$/,`.product-${product}.json`):legacyPath;
   if(qualified) schema(m8Adapter?'evidence':family,JSON.parse(readFileSync(legacyPath,'utf8')));
   if(update) {mkdirSync(dirname(path),{recursive:true});writeFileSync(path,canonical(value)+'\n');}

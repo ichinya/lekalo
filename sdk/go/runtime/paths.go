@@ -143,7 +143,7 @@ func segmentOk(segment string) bool {
 		return false
 	}
 	first := segment[0]
-	if !(isASCIILower(first) || (first >= '0' && first <= '9') || first == '.') {
+	if !(isASCIILower(first) || (first >= '0' && first <= '9') || first == '.' || first == '_') {
 		return false
 	}
 	for _, c := range segment {

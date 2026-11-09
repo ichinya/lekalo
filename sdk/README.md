@@ -5,7 +5,7 @@ Four optional, independently packaged SDKs over the canonical
 
 | Package | Language | Root |
 | --- | --- | --- |
-| `lekalo-adapter-sdk-rust` | Rust 1.80+ (MSRV) | [`sdk/rust`](rust/) |
+| `lekalo-adapter-sdk-rust` | Rust 1.89+ (MSRV) | [`sdk/rust`](rust/) |
 | `@lekalo/adapter-sdk` | TypeScript (Node ≥ 24) | [`sdk/typescript`](typescript/) |
 | `lekalo-adapter-sdk-go` | Go 1.23+ | [`sdk/go`](go/) |
 | `lekalo/adapter-sdk-php` | PHP 8.3+ | [`sdk/php`](php/) |

@@ -54,7 +54,7 @@ pub fn validate_report(r: &Report) -> Result<(), DomainResult> {
         if !super::RULES.contains(&f.rule_id.as_str())
             || registry
                 .entry(&f.rule_id)
-                .map_or(true, |e| e.code() != f.code)
+                .is_none_or(|e| e.code() != f.code)
             || f.id != input::hash(&(&f.rule_id, &f.subject, &f.target, &f.semantic_symbol))
             || !input::is_digest(&f.condition_digest)
             || f.scope != r.scope

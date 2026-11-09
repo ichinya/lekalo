@@ -352,7 +352,7 @@ fn sha256_of(parts: &[&[u8]]) -> String {
         hasher.update(part);
         hasher.update(b"\0");
     }
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::digest::hex(&hasher.finalize()))
 }
 
 fn digest_records(map: &BTreeMap<String, (String, u64)>) -> BTreeMap<String, FileRecord> {

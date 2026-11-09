@@ -732,9 +732,7 @@ fn model_file_count(
 fn largest_required_fact(selection: &facts::FactSelection) -> StateValue<metrics::LargestArtifact> {
     let mut best: Option<&facts::LedgerFact> = None;
     for fact in &selection.required {
-        if best.map_or(true, |current| {
-            (fact.tokens, &fact.id) > (current.tokens, &current.id)
-        }) {
+        if best.is_none_or(|current| (fact.tokens, &fact.id) > (current.tokens, &current.id)) {
             best = Some(fact);
         }
     }

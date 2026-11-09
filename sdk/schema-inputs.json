@@ -75,7 +75,7 @@
       "version": "0.1.0",
       "toolchain": {
         "name": "rust",
-        "version": "1.80.0"
+        "version": "1.89.0"
       }
     },
     "typescript": {

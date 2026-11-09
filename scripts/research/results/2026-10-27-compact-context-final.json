@@ -1,0 +1,40 @@
+{
+  "format": "lekalo-167-compact-context-preflight/1",
+  "inference": false,
+  "tokenSavings": "NOTRUN; bytes are not tokens or a causal effect estimate",
+  "variant": "experimental native-only instruction and grouped native pointer identities; full capsule body retained",
+  "sourceInstructionUnchanged": true,
+  "sourcePins": {
+    "binary": "0382d9b7fb0a7ecc02687ce85f7f03618b2bfd73b1f8a75f0db0c7c5e89223b7",
+    "adapter": "eb3eecde1a24fee94283148141ad6394373f2f2ffc8e257510f7fea26ae6fea8",
+    "renderer": "6bc8ca966487deaecfdd21e424f588e4973c85faed46262cd0227fc4089fa7d0",
+    "builder": "e82a9010c6545129a35faee5685a0cb5058e85cca0ef5533030a68dc366ee8ab",
+    "sourceReader": "e9eec5ca7e0ddf2bc7e6288a230bb0cd582ca049dfa71f8ce435142d3f9d24db",
+    "preflight": "4c84165b16ad57e614eb420d8cfd1f18f30129c119304ae6beaf3de4b3137da8"
+  },
+  "preflight": {
+    "baselineHoldout": "fails as expected",
+    "referenceHoldout": 20,
+    "sourcePreserved": true
+  },
+  "outputs": {
+    "full": {
+      "capsuleBytes": 3909,
+      "capsuleSha256": "c32baad9d320a1bbb5fcde4cd145dc62be610256570475acaf8b61e2bb06ca9a",
+      "repeatBytes": 157,
+      "repeatSuppressesUnchangedCapsule": true,
+      "instructionBytes": 7996,
+      "instructionSha256": "ad7885ae40c1a78bbee440451a57afc838a679ff4ddd090d3ac472e44871f8a7",
+      "instructionAndCapsuleBytes": 11905
+    },
+    "compact": {
+      "capsuleBytes": 3373,
+      "capsuleSha256": "d6362bf9a8ab12f3908c06f74f11c89797b798f08f803fa6cd3300dbb309ae9e",
+      "repeatBytes": 157,
+      "repeatSuppressesUnchangedCapsule": true,
+      "instructionBytes": 1225,
+      "instructionSha256": "04a1a60306e6a885fb1d085293ff4951115e58e7caeb12e28b513b8cc1121c9f",
+      "instructionAndCapsuleBytes": 4598
+    }
+  }
+}

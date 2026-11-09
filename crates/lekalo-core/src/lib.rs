@@ -45,6 +45,7 @@ pub mod mcp;
 pub mod metrics_export;
 pub mod module_api;
 pub mod native_gate;
+pub mod native_symbols;
 pub mod nfr;
 pub mod observed;
 pub mod openapi;

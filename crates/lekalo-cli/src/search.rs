@@ -1535,7 +1535,7 @@ fn decode_diagnostics_envelope(
     }
     if metadata["findingCount"]
         .as_u64()
-        .map_or(true, |count| count > MAX_DIAGNOSTIC_ROWS as u64)
+        .is_none_or(|count| count > MAX_DIAGNOSTIC_ROWS as u64)
     {
         return Err(producer_invalid("producer-shape", "diagnostics"));
     }
@@ -1698,10 +1698,10 @@ fn decode_ownership_profile_envelope(
     }
     if metadata["artifactCount"]
         .as_u64()
-        .map_or(true, |count| count > MAX_OWNERSHIP_ROWS as u64)
+        .is_none_or(|count| count > MAX_OWNERSHIP_ROWS as u64)
         || metadata["profileCount"]
             .as_u64()
-            .map_or(true, |count| count > MAX_OWNERSHIP_ROWS as u64)
+            .is_none_or(|count| count > MAX_OWNERSHIP_ROWS as u64)
     {
         return Err(producer_invalid("producer-shape", "ownership-profile"));
     }
@@ -1719,7 +1719,7 @@ fn decode_ownership_profile_envelope(
             && path.split('/').all(|segment| {
                 !segment.is_empty()
                     && segment.starts_with(|first: char| {
-                        first.is_ascii_lowercase() || first.is_ascii_digit()
+                        first.is_ascii_lowercase() || first.is_ascii_digit() || first == '_'
                     })
                     && segment.chars().all(|character| {
                         character.is_ascii_lowercase()

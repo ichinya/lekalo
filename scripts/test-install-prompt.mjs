@@ -2,6 +2,7 @@
 // Issue #157: actual CLI, managed-byte custody and explicit writes.
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {resolve,join,dirname,relative,basename} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -33,6 +34,16 @@ try {
   refused(root,['--check'],'prompt-stale');const upgrade=cli(root,['--dry-run']);assert.equal(upgrade.changes.length,2);cli(root);assert.equal(cli(root,['--check']).state,'current');cases.push('version-and-registry-staleness');
   fs.appendFileSync(join(root,'AGENTS.md'),'<!-- lekalo:begin -->\n');refused(root,['--force'],'prompt-markers-ambiguous');cases.push('ambiguous-markers-never-overwritten');
   const create=fixture('explicit-create');assert.equal(cli(create,['--create-agents-md','--dry-run']).changes.length,2);assert.deepEqual(inventory(create),[]);cli(create,['--create-agents-md']);assert.ok(fs.existsSync(join(create,'AGENTS.md')));cases.push('explicit-agents-create');
+  const legacy=fixture('previous-template'),legacyBody=fs.readFileSync(join(repo,'tests/fixtures/agent-instructions/prompt-v1.md'),'utf8').replaceAll('\r\n','\n');
+  const legacyDigest=createHash('sha256').update(legacyBody).digest('hex');
+  const legacyHeader='<!-- lekalo:prompt v1 product=1.0.0 registry=sha256:'+'0'.repeat(64)+' content=sha256:'+legacyDigest+' -->\n';
+  fs.mkdirSync(join(legacy,'.agents'));fs.writeFileSync(join(legacy,'.agents/lekalo.md'),legacyHeader+legacyBody);
+  const previousSection=fs.readFileSync(join(create,'AGENTS.md'),'utf8').replace(/<!-- lekalo:prompt [^\n]+-->/,legacyHeader.trimEnd());
+  fs.writeFileSync(join(legacy,'AGENTS.md'),'Keep prefix\n'+previousSection+'Keep suffix\n');
+  refused(legacy,['--check'],'prompt-stale');assert.equal(cli(legacy,['--dry-run']).changes.length,2);assert.equal(cli(legacy).state,'updated');assert.equal(cli(legacy,['--check']).state,'current');
+  const upgraded=fs.readFileSync(join(legacy,'AGENTS.md'),'utf8');assert.ok(upgraded.startsWith('Keep prefix\n'));assert.ok(upgraded.endsWith('Keep suffix\n'));
+  const manual=fixture('previous-manual-edit');fs.mkdirSync(join(manual,'.agents'));fs.writeFileSync(join(manual,'.agents/lekalo.md'),legacyHeader+legacyBody+'Manual change\n');refused(manual,[],'prompt-content-conflict');
+  const forgedBody=legacyBody+'Unrecognized body\n',forgedDigest=createHash('sha256').update(forgedBody).digest('hex');fs.writeFileSync(join(manual,'.agents/lekalo.md'),legacyHeader.replace(legacyDigest,forgedDigest)+forgedBody);refused(manual,[],'prompt-content-conflict');cases.push('previous-template-upgrade-and-manual-edit-custody');
   const link=fixture('linked-home'),outside=fixture('outside');fs.writeFileSync(join(outside,'sentinel'),'unchanged');fs.symlinkSync(outside,join(link,'.agents'),process.platform==='win32'?'junction':'dir');
   // Inventory does not follow the deliberately denied junction.
   refused(link,['--force'],'prompt-path-unconfined');assert.equal(fs.readFileSync(join(outside,'sentinel'),'utf8'),'unchanged');cases.push('linked-home-refused');

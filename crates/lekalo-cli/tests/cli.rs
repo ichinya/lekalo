@@ -299,7 +299,7 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
     for package in packages {
         assert_eq!(package["version"], VERSION);
         assert_eq!(package["edition"], "2021");
-        assert_eq!(package["rust_version"], "1.80.0");
+        assert_eq!(package["rust_version"], "1.89.0");
     }
 
     // Normal (non-dev, non-build) dependencies of lekalo-core; the

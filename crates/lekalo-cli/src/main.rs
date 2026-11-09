@@ -4217,7 +4217,7 @@ fn select_forward_update<'a>(
     versions.sort_by(|left, right| right.1.cmp(&left.1));
     Ok(versions
         .into_iter()
-        .find(|(_, ver)| selected_ver.as_ref().map_or(true, |current| ver > current))
+        .find(|(_, ver)| selected_ver.as_ref().is_none_or(|current| ver > current))
         .map(|(row, _)| row))
 }
 

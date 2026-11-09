@@ -3,9 +3,16 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+# A superseded run of this suite is dead weight: cancel it everywhere
+# except main, where each push keeps a complete record.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   release-version:
@@ -42,6 +49,10 @@ jobs:
           node-version: ${{ matrix.node-version }}
           package-manager-cache: false
       - uses: dtolnay/rust-toolchain@stable
+      # The self-hosted worker keeps a warm target dir; cache only
+      # pays off on the disposable hosted fallback.
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
       - name: Build the checkout CLI for live contract probes
         run: cargo build --workspace --locked
       - name: Provision exact Ajv 8.20.0 and the OpenAPI validator outside the checkout
@@ -188,20 +199,7 @@ jobs:
         run: cargo fmt --all -- --check
 
   clippy:
-    name: Clippy
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: Clippy (adapter SDK workspace)
-        working-directory: sdk/rust
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-
-  msrv:
-    name: Rust 1.80.0 MSRV (${{ matrix.os }})
+    name: Clippy (${{ matrix.os }})
     runs-on: ${{ startsWith(matrix.os, 'ubuntu-') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || matrix.os }}
     strategy:
       fail-fast: false
@@ -209,9 +207,30 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@1.80.0
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Clippy (adapter SDK workspace)
+        working-directory: sdk/rust
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  msrv:
+    name: Rust 1.89.0 MSRV (${{ matrix.os }})
+    runs-on: ${{ startsWith(matrix.os, 'ubuntu-') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.89.0
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
       - run: cargo check --workspace --all-targets --locked
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
@@ -223,9 +242,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Keep the image qualified for this legacy launcher policy.
-        # Ubuntu 26.04 AppArmor adaptation lands separately in #168.
-        os: [ubuntu-24.04, windows-latest, macos-latest]
+        # Qualify the current Ubuntu LTS explicitly. The CI loader temporarily
+        # replaces its packaged bwrap attachment and restores it after probes.
+        os: [ubuntu-26.04, windows-latest, macos-latest]
     # Steps are written in bash; Windows runners default to pwsh otherwise.
     defaults:
       run:
@@ -233,6 +252,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # The job builds the debug workspace AND the release CLI:
+          # caching target cuts the largest compile bill in CI.
+          shared-key: build-test
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -284,12 +308,7 @@ jobs:
         timeout-minutes: 1
         run: |
           set -euo pipefail
-          test "$GITHUB_ACTIONS" = true
-          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
-          if sudo grep -Eq '^lekalo-ci-bwrap(-child)? ' /sys/kernel/security/apparmor/profiles; then
-            exit 1
-          fi
-          sudo apparmor_parser --skip-cache --add .github/ci/bwrap.apparmor
+          bash .github/ci/bwrap-apparmor.sh load
       - name: Verify the Linux namespace backend before adapter probes
         if: runner.os == 'Linux'
         run: /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/true
@@ -461,6 +480,8 @@ jobs:
           for family in baseline task campaign arm result; do
             NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-framework-lift-contracts.mjs --family "$family"
           done
+          node scripts/gen-framework-lift-v11.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-framework-lift-v11.mjs
       - name: Run the local run-history end-to-end gate (issue #121)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
@@ -746,6 +767,13 @@ jobs:
           node adapters/node-typescript/build.mjs --check
       - name: Run the TypeScript scanner suite (issue #44)
         run: node scripts/test-node-typescript-scanner.mjs
+      - name: "Run Python adapter unit, protocol and observed-host regressions (issue #146)"
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path adapters/python/Cargo.toml --locked
+          cargo build --manifest-path adapters/python/Cargo.toml --locked
+          node --test adapters/python/tests/scan-protocol.test.mjs adapters/python/tests/observed-host.test.mjs
       - name: Qualify the public manifested TypeScript scan (issue #150)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
@@ -753,10 +781,18 @@ jobs:
         run: |
           node scripts/gen-public-scan-protocol.mjs --check
           node scripts/test-public-typescript-scan.mjs
+          node scripts/gen-native-symbols-protocol.mjs --check
+          node scripts/test-public-typescript-roundtrip.mjs
       - name: Qualify the domain/client workspace without a backend (issue #153)
         run: node scripts/test-domain-workspace.mjs
       - name: Qualify managed agent instruction installation (issue #157)
         run: node scripts/test-install-prompt.mjs
+      - name: Check source and context reuse in the research harness (issue #167)
+        run: |
+          node --test scripts/research/test-framework-lift-workspace.mjs
+          node --test scripts/research/test-framework-lift-public-result.mjs
+          node --test scripts/research/test-framework-lift-history-preview.mjs
+          node --test scripts/research/test-framework-lift-research-report.mjs
       - name: Run the Hono framework-binding suites (issue #115)
         timeout-minutes: 15
         run: node scripts/test-node-hono-bindings.mjs
@@ -899,11 +935,11 @@ jobs:
           node scripts/test-adapter-sdk-conformance.mjs --language all --profile strict --repeats 3 --timeout-ms 60000
           node scripts/test-adapter-sdk-packages.mjs --verify
       - name: Remove the CI-only AppArmor launcher prerequisite
-        if: always() && runner.os == 'Linux' && steps.apparmor.outcome == 'success'
+        if: always() && runner.os == 'Linux'
         timeout-minutes: 1
         run: |
           set -euo pipefail
-          sudo apparmor_parser --skip-cache --remove .github/ci/bwrap.apparmor
+          bash .github/ci/bwrap-apparmor.sh remove
           test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
           if sudo grep -Eq '^lekalo-ci-bwrap(-child)? ' /sys/kernel/security/apparmor/profiles; then
             exit 1
@@ -929,6 +965,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -947,6 +985,67 @@ jobs:
           NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
           LEKALO_DOCS_MYSQL_PORT: '3306'
         run: node scripts/test-docs-examples.mjs --lane mysql
+
+  postgres-migrations:
+    name: PostgreSQL migration execution lane (issue #57)
+    # The migration gate's stage 3 executes the emitted up()/down()
+    # SQL on a real server. The build-test lanes reach it only when a
+    # docker engine happens to exist; this job provisions a
+    # digest-pinned services: PostgreSQL and hands it to the harness
+    # through LEKALO_MIGRATIONS_PG*, so execution is guaranteed and
+    # the server version stops floating with the postgres:16-alpine
+    # tag. A configured-but-unreachable service fails the harness
+    # (db:service-execution) — never a silent skip.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+        env:
+          POSTGRES_DB: lekalo
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: synthetic-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d lekalo"
+          --health-interval=10s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: none
+          extensions: none
+      - name: Provision the PostgreSQL client tools
+        # The harness drives the service through the runner's psql;
+        # ubuntu-latest ships it, the self-hosted image may not.
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes postgresql-client
+          fi
+          psql --version
+          pg_isready --version
+      - name: Build the locked CLI and run the migration pipeline gate
+        env:
+          LEKALO_MIGRATIONS_PGHOST: localhost
+          LEKALO_MIGRATIONS_PGPORT: '5432'
+          LEKALO_MIGRATIONS_PGUSER: postgres
+          LEKALO_MIGRATIONS_PGPASSWORD: synthetic-ci-only
+          LEKALO_MIGRATIONS_PGDATABASE: lekalo
+        run: |
+          set -euo pipefail
+          cargo build -p lekalo-cli --locked
+          node scripts/test-php-laravel-migrations.mjs
 
   mago-real:
     name: Mago real-toolchain gate (issue #55)
@@ -1022,6 +1121,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x

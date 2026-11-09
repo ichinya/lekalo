@@ -8,12 +8,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 const REFERENCE_PROJECT: &str = "tests/fixtures/orchestration/project";
-const DRY_RUN_GOLDEN: &str =
-    include_str!("../../../tests/fixtures/orchestration/generate.dry-run.golden.json");
+const DRY_RUN_GOLDEN: &str = include_str!(
+    "../../../tests/fixtures/orchestration/generate.dry-run.product-1.1.0.golden.json"
+);
 const APPLY_GOLDEN: &str =
-    include_str!("../../../tests/fixtures/orchestration/generate.apply.golden.json");
+    include_str!("../../../tests/fixtures/orchestration/generate.apply.product-1.1.0.golden.json");
 const VERIFY_GOLDEN: &str =
-    include_str!("../../../tests/fixtures/orchestration/verify.full.golden.json");
+    include_str!("../../../tests/fixtures/orchestration/verify.full.product-1.1.0.golden.json");
 
 /// The committed reference adapter vector, spawned without a shell.
 const ADAPTER_ARGS: &[&str] = &["node", "adapters/node-typescript/node-adapter.mjs"];

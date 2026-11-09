@@ -2643,9 +2643,7 @@ fn r4_digest_valid_snapshots_still_pass_grammar_admission() {
             "edge-bound",
             Box::new(|value| {
                 value["consumers"][0]["uses"][0]["edges"] = serde_json::Value::Array(
-                    std::iter::repeat(serde_json::json!("a->b"))
-                        .take(300)
-                        .collect(),
+                    std::iter::repeat_n(serde_json::json!("a->b"), 300).collect(),
                 );
             }),
         ),

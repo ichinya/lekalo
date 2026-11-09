@@ -410,16 +410,16 @@ pub fn parse_evidence(
         let grammar = adapter
             .identity
             .as_deref()
-            .map_or(true, wire::is_adapter_identity)
-            && adapter.version.as_deref().map_or(true, wire::is_semver)
+            .is_none_or(wire::is_adapter_identity)
+            && adapter.version.as_deref().is_none_or(wire::is_semver)
             && adapter
                 .protocol
                 .as_deref()
-                .map_or(true, wire::is_adapter_identity)
+                .is_none_or(wire::is_adapter_identity)
             && adapter
                 .capability_digest
                 .as_deref()
-                .map_or(true, wire::is_digest);
+                .is_none_or(wire::is_digest);
         if !grammar {
             return Err(diagnostic::invalid("adapter-snapshot"));
         }

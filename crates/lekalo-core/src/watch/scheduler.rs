@@ -140,7 +140,7 @@ impl Scheduler {
     /// Only the host's positive proof of completion/teardown unlocks
     /// another start. Dirty inputs of a stale run survive cancellation.
     pub fn run_finished(&mut self, id: u64) {
-        if !self.active.as_ref().is_some_and(|a| a.id == id) {
+        if self.active.as_ref().is_none_or(|a| a.id != id) {
             return;
         }
         let active = self.active.take().expect("active matched");

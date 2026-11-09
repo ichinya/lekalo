@@ -10,7 +10,7 @@ design decision is [ADR-0035](adr/0035-bindings-registry.md).
 The shipped Node adapter's supported end-user path is
 [Public TypeScript observed scan](public-typescript-scan.md): explicit
 standalone/workspace profiles, the committed manifest, and negotiated
-protocol `0.9.0` custody evidence. It is checked through the actual CLI on
+protocol `1.1.0` native inventory and custody evidence. It is checked through the actual CLI on
 each supported host; contributor kernel-only results have a separate scope.
 
 The wire extensions are additive successors of the frozen issue #39
@@ -20,6 +20,30 @@ The 0.2.16 documents stay published and their fixture-era documents still
 decode. Both versions remain independent of the product release, of the
 Model/IR/protocol contract versions, of each other, and of the diagnostic
 registry version.
+
+## Native inventory and reconfirmation (1.1.0)
+
+The exact observed scan/index `1.1.0` contracts preserve complete bounded
+native declaration trees separately from semantic binding proposals.
+`observe inspect` shows the selected native subtree and explicit type
+uncertainty. An unknown type surface makes that evidence incomplete even
+when the binding is current.
+
+When a confirmed binding's signature changes, scan preserves its old
+confirmed evidence and records the fresh candidate evidence separately.
+The binding remains stale; `bindings propose` offers the fresh candidate
+for explicit reconfirmation. Confirmation replaces only the reviewed
+candidate's evidence. Explicit and promoted user-owned bindings are not
+automatically proposed or rewritten. Deleted declarations have no fresh
+candidate to confirm.
+
+Proposal and batch plan identities bind the fresh evidence. Confirmation
+checks its source fingerprint against current file bytes; edits since scan
+refuse with `bindings.plan-mismatch` before writing the index. Rescan and
+review a new proposal after a source edit. Repeated unchanged scans after
+confirmation preserve canonical index bytes. A native index refuses
+downgrade through an older scan contract; predecessor indices remain
+readable and can upgrade through an explicitly negotiated native scan.
 
 ## The binding data
 

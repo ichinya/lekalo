@@ -159,6 +159,7 @@ expectOutcome("action:from-with-env-still-usage", run(["--from", "."], { LEKALO_
 const pathMatrix = [
   ["lekalo", null], ["lekalo/modules/a", null], ["modules/123", null], ["a.b/c-d_e/1.2.3", null],
   ["node-typescript.yaml", null], ["ir/manifests/report-1", null], ["consoles", null], ["com9x", null],
+  ["__init__.py", null], ["src/shop/__main__.py", null], ["pkg/_private.py", null], ["pkg/__pycache__/cache.pyc", null],
   ["", "structure.path-empty"], ["/abs", "structure.path-absolute"], ["//host/share", "structure.path-absolute"],
   ["\\\\server\\share", "structure.path-absolute"], ["c:/x", "structure.path-absolute"], ["c:x", "structure.path-absolute"],
   ["~/x", "structure.path-absolute"], ["file:///etc/x", "structure.path-absolute"], ["a\\b", "structure.path-escape"],

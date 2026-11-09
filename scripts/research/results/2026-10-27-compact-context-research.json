@@ -1,0 +1,991 @@
+{
+  "format": "lekalo-public-fixture-research/2",
+  "recipe": {
+    "id": "public-fixture-research/2",
+    "sha256": "9711958ddd57139b514e0891b8eaccbe68bcd9e262da499a07fcf3626a0bef79"
+  },
+  "campaign": "priority-planner-compact-context-2026-10-27",
+  "preregistration": "https://github.com/ichinya/lekalo/issues/167#issuecomment-6439183338",
+  "pins": {
+    "task": "fa2510b1ddd2a6c883e84a1e3187fe05ad5f0edc7e44e46be7ad079bb1b7a88d",
+    "oracle": "b23724511a7316380f8a13c4e26495af1921f03e139db2d044c070a8954fbef0",
+    "native": "d1a073099688f913d2196c824b1bdea27c543cb14aa5e8e64d5cc8524d089b0b",
+    "model": "fac0b4f53f21971d3396bed4753e858e6866876773e35aa7136e5e47ae761c20",
+    "ir": "89c5100d832bf4aa7d14351818a1a15231480f24acd3c8d3e8a3350b5f0a94ed",
+    "builder": "e82a9010c6545129a35faee5685a0cb5058e85cca0ef5533030a68dc366ee8ab",
+    "runner": "f1d3a833df1205725c0de26045d59fdd82979e9400b94f231c6b463a85653813",
+    "sourceReader": "e9eec5ca7e0ddf2bc7e6288a230bb0cd582ca049dfa71f8ce435142d3f9d24db",
+    "agentInstruction": "ad7885ae40c1a78bbee440451a57afc838a679ff4ddd090d3ac472e44871f8a7",
+    "executables": {
+      "node": "d14ba95cdce1ef7dc9ad3ac74949ca5db38b27378ee30f30a23cf26f9e875a11",
+      "binary": "0382d9b7fb0a7ecc02687ce85f7f03618b2bfd73b1f8a75f0db0c7c5e89223b7",
+      "tsc": "8d5fa5bd883fec0979fc2004f1fe1d99aef40570155d550eadc0b03b55513bf0",
+      "devin": "b086a1c7cd166961560c86445bf510d7fdc5acc4b75c58f06fb6365b9bfaf1d8",
+      "codex": "61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70",
+      "adapter": "eb3eecde1a24fee94283148141ad6394373f2f2ffc8e257510f7fea26ae6fea8",
+      "manifest": "e5fad491f480cb906ffdf44942d1aa0d4a41bb7efd76a686ae24637056329652",
+      "codexNative": "6f267830b029ee25d9339864aa867cd45de9f8fd4c5ea007d2e63c13a0c66d36"
+    },
+    "runtime": {
+      "node": "v24.13.0",
+      "platform": "win32",
+      "architecture": "x64"
+    }
+  },
+  "evidence": "empirical-local-receipts-recorded-unverified",
+  "sources": {
+    "originalManifestSha256": "c368daf597aee29d47353e19875059f8399f563a3ca11ae6831dd6fa6f59ecad",
+    "admissionManifestSha256": "2e99ba296d694729aa5c5d20b58fecb55ffb859e1d4f6437316ba243fe3ae4dd",
+    "verifiedOriginalFiles": 622,
+    "verifiedAdmissionFiles": 19,
+    "campaignSha256": "47a819db10b0eb7ecbf0dcfef854a0e3041a1caa92a013654975e6c7560632d5",
+    "admissionResults": [
+      {
+        "profile": "devin-swe2-high",
+        "resultDigest": "sha256:13cc37a21d575c2e5647030fd3e65e7989c6f213639a564feb816057b878550d",
+        "evidenceStatus": "recorded-unverified"
+      },
+      {
+        "profile": "codex-gpt6-luna-medium",
+        "resultDigest": "sha256:e6f4e5a00e485abd176244864cf48726bef2a6bef8d30d7c7ae21b47db697830",
+        "evidenceStatus": "recorded-unverified"
+      }
+    ]
+  },
+  "profiles": [
+    {
+      "id": "devin-swe2-high",
+      "cli": "devin",
+      "model": "swe-2-high",
+      "cliVersion": "3000.11.205",
+      "reasoning": "provider-default"
+    },
+    {
+      "id": "codex-gpt6-luna-medium",
+      "cli": "codex",
+      "model": "gpt-6-luna",
+      "cliVersion": "0.164.0",
+      "reasoning": "medium"
+    }
+  ],
+  "rows": [
+    {
+      "id": "devin-swe2-high-a1",
+      "profile": "devin-swe2-high",
+      "arm": "A",
+      "repetition": 1,
+      "state": "attempted",
+      "complete": true,
+      "success": true,
+      "confirmationRejected": false,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 129933,
+      "output": 6717,
+      "total": 136650,
+      "cachedInput": 92160,
+      "uncachedInput": 37773,
+      "reasoningOutput": {
+        "state": "unknown"
+      },
+      "agentDurationMs": 98589,
+      "sourceFilesLowerBound": 9,
+      "sourceMarkerBytes": 4005,
+      "toolCalls": 6,
+      "completionEvidence": {
+        "collector": "1e30140817df29dbfb767ebaa4bd6adb9ae3544047eff1ff270f6f05237a7247",
+        "provider": "61527085789604739d1c246a8b1da5d0c318cf3525579017fee568062db937e5",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "09011f0580de0b30bd8975d49ae13b4fde2c2082f2f1d5b29f3c99faeee38da8",
+        "readAudit": "ce85395c94ebcd3344a78f3a001cea6fa27e43cb3d05ead108c51cefe001fbbf"
+      }
+    },
+    {
+      "id": "devin-swe2-high-b1",
+      "profile": "devin-swe2-high",
+      "arm": "B",
+      "repetition": 1,
+      "state": "attempted",
+      "complete": true,
+      "success": true,
+      "confirmationRejected": false,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 363790,
+      "output": 21793,
+      "total": 385583,
+      "cachedInput": 339840,
+      "uncachedInput": 23950,
+      "reasoningOutput": {
+        "state": "unknown"
+      },
+      "agentDurationMs": 519794,
+      "sourceFilesLowerBound": 9,
+      "sourceMarkerBytes": 4005,
+      "toolCalls": 16,
+      "completionEvidence": {
+        "collector": "c8ad05cc4e023456e9092663c3b0940db422bb743edab56ceac5cbb10cec31ed",
+        "provider": "232106ce09e4d1187a3bd3c1d4afde98e4298cf7d70393b07674a859837be54c",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "a3767306eb853985adbaecb811d8b1cfd3203e2af1abb93ec654351f3c87a969",
+        "readAudit": "79508cabb24ed8d7673be857be3a029141ba892619f6069a2fa85b265c0dcd1c"
+      }
+    },
+    {
+      "id": "devin-swe2-high-b2",
+      "profile": "devin-swe2-high",
+      "arm": "B",
+      "repetition": 2,
+      "state": "attempted",
+      "complete": true,
+      "success": true,
+      "confirmationRejected": false,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 254732,
+      "output": 8257,
+      "total": 262989,
+      "cachedInput": 220032,
+      "uncachedInput": 34700,
+      "reasoningOutput": {
+        "state": "unknown"
+      },
+      "agentDurationMs": 175903,
+      "sourceFilesLowerBound": 9,
+      "sourceMarkerBytes": 4005,
+      "toolCalls": 18,
+      "completionEvidence": {
+        "collector": "0c460197d91d9c450baa59ba9ebbdd7f50ce2282351cd046fcfcc4b769c06f83",
+        "provider": "c452043d04d399c1d4c5b7aa48c2a362324d6b5fb93e72200fa59bc279aaf0f0",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "f657a6a8b0d8112e4f8846f5abb20d11fe77d452572789857d6ed76bd1c448e7",
+        "readAudit": "79508cabb24ed8d7673be857be3a029141ba892619f6069a2fa85b265c0dcd1c"
+      }
+    },
+    {
+      "id": "devin-swe2-high-a2",
+      "profile": "devin-swe2-high",
+      "arm": "A",
+      "repetition": 2,
+      "state": "attempted",
+      "complete": true,
+      "success": true,
+      "confirmationRejected": false,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 236266,
+      "output": 8815,
+      "total": 245081,
+      "cachedInput": 217024,
+      "uncachedInput": 19242,
+      "reasoningOutput": {
+        "state": "unknown"
+      },
+      "agentDurationMs": 153901,
+      "sourceFilesLowerBound": 9,
+      "sourceMarkerBytes": 4005,
+      "toolCalls": 11,
+      "completionEvidence": {
+        "collector": "def644e48494a37542027f2f4c6f5e53cdb9d84b64329418fa4ab9983a85e7b8",
+        "provider": "8079aeacdb922bfe7ea78ef1d030ee8303b431f6c8f91a239002a99f809abc92",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "1a410e3a16c2df220ce110c5e90b3bbb4fa3274827a318f40aae3d4b09c10484",
+        "readAudit": "ce85395c94ebcd3344a78f3a001cea6fa27e43cb3d05ead108c51cefe001fbbf"
+      }
+    },
+    {
+      "id": "codex-gpt6-luna-medium-a1",
+      "profile": "codex-gpt6-luna-medium",
+      "arm": "A",
+      "repetition": 1,
+      "state": "attempted",
+      "complete": true,
+      "success": true,
+      "confirmationRejected": false,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 189470,
+      "output": 1912,
+      "total": 191382,
+      "cachedInput": 144640,
+      "uncachedInput": 44830,
+      "reasoningOutput": {
+        "state": "known",
+        "value": 189
+      },
+      "agentDurationMs": 73115,
+      "sourceFilesLowerBound": 9,
+      "sourceMarkerBytes": 4005,
+      "toolCalls": 8,
+      "completionEvidence": {
+        "collector": "9643e4a4db26d71b22fdfd5f289521be3d6227eff8a64d3ea653a3c00e2d7c6f",
+        "provider": "09b44b68db289d8cb81a5854504b9e60ed4066cdc447ca5757ce0a20a672d03d",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "afd6d3d6371a556505c10cf1e39eeb81dc0df1b4402253579a4bfe44545f2975",
+        "readAudit": "ce85395c94ebcd3344a78f3a001cea6fa27e43cb3d05ead108c51cefe001fbbf"
+      }
+    },
+    {
+      "id": "codex-gpt6-luna-medium-b1",
+      "profile": "codex-gpt6-luna-medium",
+      "arm": "B",
+      "repetition": 1,
+      "state": "attempted",
+      "complete": true,
+      "success": true,
+      "confirmationRejected": false,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 220698,
+      "output": 2164,
+      "total": 222862,
+      "cachedInput": 192640,
+      "uncachedInput": 28058,
+      "reasoningOutput": {
+        "state": "known",
+        "value": 276
+      },
+      "agentDurationMs": 64683,
+      "sourceFilesLowerBound": 9,
+      "sourceMarkerBytes": 4005,
+      "toolCalls": 8,
+      "completionEvidence": {
+        "collector": "1474fb20f73a33bc57f4bd649174087068d1170d759255733ad570c7f1da75fd",
+        "provider": "4633a85651c064b6728e238b97f972f29e9222b0b4639e42d16ae7bcc551c516",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "a2ca1297e446e218b06b335e5e522ec7833e00f378ed7bf0696dd9b8803edf4a",
+        "readAudit": "2195f45095f7d5481991bba551d095623bc21076f2e60cd528da0c7b91ab3029"
+      }
+    },
+    {
+      "id": "codex-gpt6-luna-medium-b2",
+      "profile": "codex-gpt6-luna-medium",
+      "arm": "B",
+      "repetition": 2,
+      "state": "attempted",
+      "complete": true,
+      "success": false,
+      "confirmationRejected": false,
+      "nativePass": false,
+      "holdoutPassed": 19,
+      "holdoutTotal": 20,
+      "input": 221603,
+      "output": 2281,
+      "total": 223884,
+      "cachedInput": 166272,
+      "uncachedInput": 55331,
+      "reasoningOutput": {
+        "state": "known",
+        "value": 23
+      },
+      "agentDurationMs": 101283,
+      "sourceFilesLowerBound": 8,
+      "sourceMarkerBytes": 3743,
+      "toolCalls": 8,
+      "completionEvidence": {
+        "collector": "2fb00a7b14ee65c17e734e25cc29bd79eeaed43b6de9c709bdf01a41c6688314",
+        "provider": "5270a8ccc6921e5d07bb0c30484331d579c1515954ce5aaa7bf3f3d131072db0",
+        "holdout": "45766ba2d9b65d4dcb0687e6f96ea73c07b9c83324e16088e7b03ad228d601c1",
+        "candidateTree": "c0666fdd2ede42011bbfeacb8471c4b172ece31457b3b28fbbbcb689f441fd8f",
+        "readAudit": "2195f45095f7d5481991bba551d095623bc21076f2e60cd528da0c7b91ab3029"
+      }
+    },
+    {
+      "id": "codex-gpt6-luna-medium-a2",
+      "profile": "codex-gpt6-luna-medium",
+      "arm": "A",
+      "repetition": 2,
+      "state": "attempted",
+      "complete": true,
+      "success": false,
+      "confirmationRejected": false,
+      "nativePass": false,
+      "holdoutPassed": 17,
+      "holdoutTotal": 20,
+      "input": 169206,
+      "output": 1565,
+      "total": 170771,
+      "cachedInput": 142080,
+      "uncachedInput": 27126,
+      "reasoningOutput": {
+        "state": "known",
+        "value": 0
+      },
+      "agentDurationMs": 62155,
+      "sourceFilesLowerBound": 9,
+      "sourceMarkerBytes": 4005,
+      "toolCalls": 6,
+      "completionEvidence": {
+        "collector": "02a749116f82571a4328d700198522c1ac45ea9ece70d9fe7489f2f55071953d",
+        "provider": "7391b11420d42ec6f19787bc8eb6293d3dd50a6c2daf4d208a4014df918e5646",
+        "holdout": "384f2ff4bc0cff0639eb2436d18afc094ba62b8cdb8c1acab78113f889adf524",
+        "candidateTree": "7f3db9f1adc4e8739ba8a7d1e348d0324f558b65babf61a6383e39e6f7ab73ac",
+        "readAudit": "ce85395c94ebcd3344a78f3a001cea6fa27e43cb3d05ead108c51cefe001fbbf"
+      }
+    }
+  ],
+  "totals": {
+    "scheduled": 8,
+    "attempted": 8,
+    "completed": 8,
+    "strictSuccesses": 6,
+    "nativePasses": 6,
+    "input": 1785698,
+    "output": 53504,
+    "total": 1839202,
+    "cachedInput": 1514688,
+    "uncachedInput": 271010,
+    "cost": {
+      "state": "unknown"
+    }
+  },
+  "comparisons": [
+    {
+      "profile": "devin-swe2-high",
+      "pairs": 2,
+      "successes": {
+        "A": 2,
+        "B": 2
+      },
+      "metrics": {
+        "input": {
+          "sums": {
+            "A": 366199,
+            "B": 618522
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "366199",
+              "denominator": "2"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "309261",
+              "denominator": "1"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "252323",
+            "denominator": "366199"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": 233857
+            },
+            {
+              "repetition": 2,
+              "BminusA": 18466
+            }
+          ]
+        },
+        "output": {
+          "sums": {
+            "A": 15532,
+            "B": 30050
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "7766",
+              "denominator": "1"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "15025",
+              "denominator": "1"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "7259",
+            "denominator": "7766"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": 15076
+            },
+            {
+              "repetition": 2,
+              "BminusA": -558
+            }
+          ]
+        },
+        "total": {
+          "sums": {
+            "A": 381731,
+            "B": 648572
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "381731",
+              "denominator": "2"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "324286",
+              "denominator": "1"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "266841",
+            "denominator": "381731"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": 248933
+            },
+            {
+              "repetition": 2,
+              "BminusA": 17908
+            }
+          ]
+        },
+        "cachedInput": {
+          "sums": {
+            "A": 309184,
+            "B": 559872
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "154592",
+              "denominator": "1"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "279936",
+              "denominator": "1"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "3917",
+            "denominator": "4831"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": 247680
+            },
+            {
+              "repetition": 2,
+              "BminusA": 3008
+            }
+          ]
+        },
+        "uncachedInput": {
+          "sums": {
+            "A": 57015,
+            "B": 58650
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "57015",
+              "denominator": "2"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "29325",
+              "denominator": "1"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "109",
+            "denominator": "3801"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": -13823
+            },
+            {
+              "repetition": 2,
+              "BminusA": 15458
+            }
+          ]
+        },
+        "agentDurationMs": {
+          "sums": {
+            "A": 252490,
+            "B": 695697
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "126245",
+              "denominator": "1"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "695697",
+              "denominator": "2"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "443207",
+            "denominator": "252490"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": 421205
+            },
+            {
+              "repetition": 2,
+              "BminusA": 22002
+            }
+          ]
+        },
+        "sourceFilesLowerBound": {
+          "sums": {
+            "A": 18,
+            "B": 18
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "9",
+              "denominator": "1"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "9",
+              "denominator": "1"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "0",
+            "denominator": "1"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": 0
+            },
+            {
+              "repetition": 2,
+              "BminusA": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "profile": "codex-gpt6-luna-medium",
+      "pairs": 2,
+      "successes": {
+        "A": 1,
+        "B": 1
+      },
+      "metrics": {
+        "input": {
+          "sums": {
+            "A": 358676,
+            "B": 442301
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "179338",
+              "denominator": "1"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "442301",
+              "denominator": "2"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "83625",
+            "denominator": "358676"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": 31228
+            },
+            {
+              "repetition": 2,
+              "BminusA": 52397
+            }
+          ]
+        },
+        "output": {
+          "sums": {
+            "A": 3477,
+            "B": 4445
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "3477",
+              "denominator": "2"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "4445",
+              "denominator": "2"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "968",
+            "denominator": "3477"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": 252
+            },
+            {
+              "repetition": 2,
+              "BminusA": 716
+            }
+          ]
+        },
+        "total": {
+          "sums": {
+            "A": 362153,
+            "B": 446746
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "362153",
+              "denominator": "2"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "223373",
+              "denominator": "1"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "84593",
+            "denominator": "362153"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": 31480
+            },
+            {
+              "repetition": 2,
+              "BminusA": 53113
+            }
+          ]
+        },
+        "cachedInput": {
+          "sums": {
+            "A": 286720,
+            "B": 358912
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "143360",
+              "denominator": "1"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "179456",
+              "denominator": "1"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "141",
+            "denominator": "560"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": 48000
+            },
+            {
+              "repetition": 2,
+              "BminusA": 24192
+            }
+          ]
+        },
+        "uncachedInput": {
+          "sums": {
+            "A": 71956,
+            "B": 83389
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "35978",
+              "denominator": "1"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "83389",
+              "denominator": "2"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "11433",
+            "denominator": "71956"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": -16772
+            },
+            {
+              "repetition": 2,
+              "BminusA": 28205
+            }
+          ]
+        },
+        "agentDurationMs": {
+          "sums": {
+            "A": 135270,
+            "B": 165966
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "67635",
+              "denominator": "1"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "82983",
+              "denominator": "1"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "5116",
+            "denominator": "22545"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": -8432
+            },
+            {
+              "repetition": 2,
+              "BminusA": 39128
+            }
+          ]
+        },
+        "sourceFilesLowerBound": {
+          "sums": {
+            "A": 18,
+            "B": 17
+          },
+          "means": {
+            "A": {
+              "state": "known",
+              "numerator": "9",
+              "denominator": "1"
+            },
+            "B": {
+              "state": "known",
+              "numerator": "17",
+              "denominator": "2"
+            }
+          },
+          "relativeChangeBvsA": {
+            "state": "known",
+            "numerator": "-1",
+            "denominator": "18"
+          },
+          "pairedDeltas": [
+            {
+              "repetition": 1,
+              "BminusA": 0
+            },
+            {
+              "repetition": 2,
+              "BminusA": -1
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "workflowObservations": [
+    {
+      "id": "devin-swe2-high-a1",
+      "providerReceiptSha256": "61527085789604739d1c246a8b1da5d0c318cf3525579017fee568062db937e5",
+      "failedHoldoutAssertions": [],
+      "unexplainedMarkedSourceRepeats": 0,
+      "reasonedMarkedSourceReplays": 0,
+      "usageUnitKind": "devin-agent-step",
+      "usageUnitCount": 7,
+      "largestUsageUnitOutputTokens": {
+        "state": "known",
+        "value": 4796
+      },
+      "fullInstructionReadDetected": false,
+      "confinedReaderRefusals": 0,
+      "semanticBytesLowerBound": 0,
+      "unverifiedSemanticMarkers": 0
+    },
+    {
+      "id": "devin-swe2-high-b1",
+      "providerReceiptSha256": "232106ce09e4d1187a3bd3c1d4afde98e4298cf7d70393b07674a859837be54c",
+      "failedHoldoutAssertions": [],
+      "unexplainedMarkedSourceRepeats": 0,
+      "reasonedMarkedSourceReplays": 0,
+      "usageUnitKind": "devin-agent-step",
+      "usageUnitCount": 13,
+      "largestUsageUnitOutputTokens": {
+        "state": "known",
+        "value": 14312
+      },
+      "fullInstructionReadDetected": true,
+      "confinedReaderRefusals": 1,
+      "semanticBytesLowerBound": 3201,
+      "unverifiedSemanticMarkers": 0
+    },
+    {
+      "id": "devin-swe2-high-b2",
+      "providerReceiptSha256": "c452043d04d399c1d4c5b7aa48c2a362324d6b5fb93e72200fa59bc279aaf0f0",
+      "failedHoldoutAssertions": [],
+      "unexplainedMarkedSourceRepeats": 0,
+      "reasonedMarkedSourceReplays": 0,
+      "usageUnitKind": "devin-agent-step",
+      "usageUnitCount": 11,
+      "largestUsageUnitOutputTokens": {
+        "state": "known",
+        "value": 2696
+      },
+      "fullInstructionReadDetected": true,
+      "confinedReaderRefusals": 1,
+      "semanticBytesLowerBound": 3201,
+      "unverifiedSemanticMarkers": 0
+    },
+    {
+      "id": "devin-swe2-high-a2",
+      "providerReceiptSha256": "8079aeacdb922bfe7ea78ef1d030ee8303b431f6c8f91a239002a99f809abc92",
+      "failedHoldoutAssertions": [],
+      "unexplainedMarkedSourceRepeats": 0,
+      "reasonedMarkedSourceReplays": 0,
+      "usageUnitKind": "devin-agent-step",
+      "usageUnitCount": 12,
+      "largestUsageUnitOutputTokens": {
+        "state": "known",
+        "value": 6761
+      },
+      "fullInstructionReadDetected": false,
+      "confinedReaderRefusals": 1,
+      "semanticBytesLowerBound": 0,
+      "unverifiedSemanticMarkers": 0
+    },
+    {
+      "id": "codex-gpt6-luna-medium-a1",
+      "providerReceiptSha256": "09b44b68db289d8cb81a5854504b9e60ed4066cdc447ca5757ce0a20a672d03d",
+      "failedHoldoutAssertions": [],
+      "unexplainedMarkedSourceRepeats": 0,
+      "reasonedMarkedSourceReplays": 0,
+      "usageUnitKind": "codex-turn-completed-aggregate",
+      "usageUnitCount": 1,
+      "largestUsageUnitOutputTokens": {
+        "state": "known",
+        "value": 1912
+      },
+      "fullInstructionReadDetected": false,
+      "confinedReaderRefusals": 0,
+      "semanticBytesLowerBound": 0,
+      "unverifiedSemanticMarkers": 0
+    },
+    {
+      "id": "codex-gpt6-luna-medium-b1",
+      "providerReceiptSha256": "4633a85651c064b6728e238b97f972f29e9222b0b4639e42d16ae7bcc551c516",
+      "failedHoldoutAssertions": [],
+      "unexplainedMarkedSourceRepeats": 0,
+      "reasonedMarkedSourceReplays": 0,
+      "usageUnitKind": "codex-turn-completed-aggregate",
+      "usageUnitCount": 1,
+      "largestUsageUnitOutputTokens": {
+        "state": "known",
+        "value": 2164
+      },
+      "fullInstructionReadDetected": false,
+      "confinedReaderRefusals": 0,
+      "semanticBytesLowerBound": 3201,
+      "unverifiedSemanticMarkers": 0
+    },
+    {
+      "id": "codex-gpt6-luna-medium-b2",
+      "providerReceiptSha256": "5270a8ccc6921e5d07bb0c30484331d579c1515954ce5aaa7bf3f3d131072db0",
+      "failedHoldoutAssertions": [
+        "update-undefined-preserves"
+      ],
+      "unexplainedMarkedSourceRepeats": 0,
+      "reasonedMarkedSourceReplays": 0,
+      "usageUnitKind": "codex-turn-completed-aggregate",
+      "usageUnitCount": 1,
+      "largestUsageUnitOutputTokens": {
+        "state": "known",
+        "value": 2281
+      },
+      "fullInstructionReadDetected": false,
+      "confinedReaderRefusals": 0,
+      "semanticBytesLowerBound": 3201,
+      "unverifiedSemanticMarkers": 0
+    },
+    {
+      "id": "codex-gpt6-luna-medium-a2",
+      "providerReceiptSha256": "7391b11420d42ec6f19787bc8eb6293d3dd50a6c2daf4d208a4014df918e5646",
+      "failedHoldoutAssertions": [
+        "create-invalid",
+        "update-undefined-preserves",
+        "json-invalid"
+      ],
+      "unexplainedMarkedSourceRepeats": 0,
+      "reasonedMarkedSourceReplays": 0,
+      "usageUnitKind": "codex-turn-completed-aggregate",
+      "usageUnitCount": 1,
+      "largestUsageUnitOutputTokens": {
+        "state": "known",
+        "value": 1565
+      },
+      "fullInstructionReadDetected": false,
+      "confinedReaderRefusals": 0,
+      "semanticBytesLowerBound": 0,
+      "unverifiedSemanticMarkers": 0
+    }
+  ],
+  "interpretation": {
+    "sample": "Two A/B pairs per CLI on one small public fixture; descriptive only.",
+    "claim": "Descriptive within-campaign comparisons only; no general efficiency claim.",
+    "causality": "Compact instruction and grouped pointers are a combined intervention. Historical comparisons also change adapter/harness pins; no pooling or isolated causal patch effect.",
+    "admission": "Post-run 1.1 admission preserves the original observations. It is not provider authentication.",
+    "export": "Research disclosure, not #102 public metrics export; internal history labels and existing disclosure thresholds remain unchanged."
+  },
+  "limitations": [
+    "Two pairs per CLI on one small public fixture in nonrandom A1/B1/B2/A2 order. All incomplete/failed attempts stay in the denominator.",
+    "Cached input is a subset of input and reasoning a subset of output; never add them again. Money, hidden provider revision, authoring and human review costs remain unknown.",
+    "Source files are verified src-only lower bounds; exhaustive all-file delivery is unknown. Native Read/Edit/diff deliveries need separate review.",
+    "Manifest hashes establish local receipt integrity, not provider authentication. Raw account exports remain private.",
+    "Partial authored Model retains strict authorization gaps and lacks canonical/native ID joins. Native tests do not qualify full semantic adoption.",
+    "Research disclosure is an explicit allowlist, not a #102 privacy-export receipt."
+  ]
+}

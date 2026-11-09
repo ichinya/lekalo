@@ -569,7 +569,7 @@ impl TargetClient {
         let inputs = snapshot_scopes(&fs, &effective.read)?;
         if request
             .ir_path
-            .is_some_and(|path| !inputs.get(path).is_some_and(|value| value != "directory"))
+            .is_some_and(|path| inputs.get(path).is_none_or(|value| value == "directory"))
         {
             return Err(TargetFailure::RequestInvalid { detail: "ir-input" });
         }

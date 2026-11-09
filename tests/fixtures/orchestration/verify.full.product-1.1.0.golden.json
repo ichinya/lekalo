@@ -1,0 +1,127 @@
+{
+  "schema_version": "lekalo/orchestration/v0.2.16",
+  "operation": "verify",
+  "mode": "full",
+  "identity": "dev.lekalo.orchestration-report@0.2.16",
+  "project": "planner",
+  "lockDigest": "sha256:69a88b5710605bfb98ae6fb709e412136ab4d7e6bf4ca7387f1a547c020737d4",
+  "locked": false,
+  "inputs": {
+    "modelVersion": "0.2.16",
+    "modelDigest": "sha256:7c9a53fe6459d90197f5d10d74d70c218702f91fbdb59a02eb931020f9a5c9e9",
+    "irVersion": "0.2.16",
+    "irDigest": "sha256:0084cf989f14037053e15632a094efadec90f82737efde2db8c2d98c9dc1aaa8",
+    "revision": "sha256:572080097c91865b578ef376a17a5f9394e798cc1d9382e69adc6778d7f49941"
+  },
+  "scope": {
+    "modules": [],
+    "allModules": true
+  },
+  "components": [
+    {
+      "id": "adapter.node-typescript",
+      "required": true,
+      "state": "pass",
+      "reasonCode": null,
+      "severityCounts": null,
+      "verdictCounts": null,
+      "findings": 0,
+      "scenarios": null,
+      "trace": null
+    },
+    {
+      "id": "artifact.drift",
+      "required": true,
+      "state": "pass",
+      "reasonCode": null,
+      "severityCounts": null,
+      "verdictCounts": {
+        "artifacts": 1,
+        "clean": 1,
+        "stale": 0,
+        "manualDrift": 0,
+        "missing": 0,
+        "orphan": 0,
+        "blocking": 0
+      },
+      "findings": null,
+      "scenarios": null,
+      "trace": null
+    },
+    {
+      "id": "bindings.registry",
+      "required": false,
+      "state": "absent",
+      "reasonCode": "observed.index-missing",
+      "severityCounts": null,
+      "verdictCounts": null,
+      "findings": null,
+      "scenarios": null,
+      "trace": null
+    },
+    {
+      "id": "model.validation",
+      "required": true,
+      "state": "pass",
+      "reasonCode": null,
+      "severityCounts": {
+        "errors": 0,
+        "warnings": 0,
+        "infos": 0
+      },
+      "verdictCounts": null,
+      "findings": null,
+      "scenarios": null,
+      "trace": null
+    },
+    {
+      "id": "native.gates",
+      "required": false,
+      "state": "unsupported",
+      "reasonCode": "core.capability-unavailable",
+      "severityCounts": null,
+      "verdictCounts": null,
+      "findings": null,
+      "scenarios": null,
+      "trace": null
+    },
+    {
+      "id": "scenarios.execution",
+      "required": false,
+      "state": "unsupported",
+      "reasonCode": "core.capability-unavailable",
+      "severityCounts": null,
+      "verdictCounts": null,
+      "findings": null,
+      "scenarios": null,
+      "trace": null
+    },
+    {
+      "id": "scenarios.portable",
+      "required": false,
+      "state": "pass",
+      "reasonCode": null,
+      "severityCounts": null,
+      "verdictCounts": null,
+      "findings": null,
+      "scenarios": {
+        "scenarios": 1,
+        "coveredOperations": 2,
+        "uncoveredScenarios": 0
+      },
+      "trace": null
+    },
+    {
+      "id": "trace.summary",
+      "required": false,
+      "state": "absent",
+      "reasonCode": null,
+      "severityCounts": null,
+      "verdictCounts": null,
+      "findings": null,
+      "scenarios": null,
+      "trace": null
+    }
+  ],
+  "verdict": "ready"
+}

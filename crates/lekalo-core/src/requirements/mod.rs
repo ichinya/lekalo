@@ -461,10 +461,7 @@ pub(crate) fn sha256_digest(bytes: &[u8]) -> String {
 
 /// The bare 64 lowercase hex SHA-256 of some bytes.
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    crate::digest::sha256_hex(bytes)
 }
 
 /// Whether `text` is a legal provider namespace id (`^[a-z][a-z0-9-]{0,31}$`).

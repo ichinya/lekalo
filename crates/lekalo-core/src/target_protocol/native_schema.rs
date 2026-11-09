@@ -23,17 +23,33 @@ fn compile(schema: &Value) -> Result<Validator, ()> {
 }
 
 pub(super) fn valid(bytes: &[u8]) -> bool {
-    static VALIDATOR: OnceLock<Result<Validator, ()>> = OnceLock::new();
-    let validator = VALIDATOR.get_or_init(|| {
-        let schema = serde_json::from_slice(include_bytes!(
-            "../../../../contracts/target-protocol.schema.v0.9.1.json"
-        ))
-        .map_err(|_| ())?;
-        compile(&schema)
-    });
     let value = std::str::from_utf8(bytes)
         .ok()
         .and_then(|text| crate::classification::parse_checked(text).ok());
+    static LEGACY: OnceLock<Result<Validator, ()>> = OnceLock::new();
+    static NATIVE: OnceLock<Result<Validator, ()>> = OnceLock::new();
+    let native = value
+        .as_ref()
+        .and_then(|v| v.get("protocol_version"))
+        .and_then(Value::as_str)
+        == Some(super::version::NATIVE_SCAN_VERSION);
+    let validator = if native {
+        NATIVE.get_or_init(|| {
+            let schema = serde_json::from_slice(include_bytes!(
+                "../../../../contracts/target-protocol.schema.v1.1.0.json"
+            ))
+            .map_err(|_| ())?;
+            compile(&schema)
+        })
+    } else {
+        LEGACY.get_or_init(|| {
+            let schema = serde_json::from_slice(include_bytes!(
+                "../../../../contracts/target-protocol.schema.v0.9.1.json"
+            ))
+            .map_err(|_| ())?;
+            compile(&schema)
+        })
+    };
     match (validator, value) {
         (Ok(validator), Some(value)) => validator.is_valid(&value),
         _ => false,

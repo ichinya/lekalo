@@ -33,20 +33,31 @@ pub const WATCH_MODEL_VERSIONS: [&str; 2] = ["0.2.16", "0.8.0"];
 pub const SCAN_VERSION: &str = "0.9.0";
 /// Lossless native planning for an independently approved execution plan.
 pub const EXEC_VERSION: &str = "0.9.1";
-pub const SUPPORTED_VERSIONS: [&str; 5] = [
+/// Source-bound native declaration forests, including nested/local symbols.
+pub const NATIVE_SCAN_VERSION: &str = "1.1.0";
+pub const SUPPORTED_VERSIONS: [&str; 6] = [
     "0.3.2",
     LINT_VERSION,
     WATCH_VERSION,
     SCAN_VERSION,
     EXEC_VERSION,
+    NATIVE_SCAN_VERSION,
 ];
 
 pub fn supports_watch(protocol: &str) -> bool {
-    matches!(protocol, WATCH_VERSION | SCAN_VERSION | EXEC_VERSION)
+    matches!(
+        protocol,
+        WATCH_VERSION | SCAN_VERSION | EXEC_VERSION | NATIVE_SCAN_VERSION
+    )
 }
 
 pub fn supports_scan_custody(protocol: &str) -> bool {
-    matches!(protocol, SCAN_VERSION | EXEC_VERSION)
+    matches!(protocol, SCAN_VERSION | EXEC_VERSION | NATIVE_SCAN_VERSION)
+}
+
+/// Complete native plans are retained by the native-scan successor.
+pub fn supports_complete_native_plan(protocol: &str) -> bool {
+    matches!(protocol, EXEC_VERSION | NATIVE_SCAN_VERSION)
 }
 
 pub fn scan_detail_limit(protocol: &str, operation: super::wire::Operation) -> usize {
@@ -154,7 +165,7 @@ mod tests {
         );
         assert_eq!(declared(&["0.3.2"]).as_deref(), Some("0.3.2"));
         assert_eq!(declared(&["0.3.1"]).as_deref(), None, "0.3.1 is refused");
-        for old in ["0.2.15", "1.0.0", "1.1.0", "1.2.0"] {
+        for old in ["0.2.15", "1.0.0", "1.2.0"] {
             assert_eq!(declared(&[old]), None);
             assert!(!is_supported_version(old));
             assert_eq!(declared(&[old, "0.3.2"]).as_deref(), Some("0.3.2"));
@@ -164,6 +175,10 @@ mod tests {
             "current-only: 0.3.1 refused"
         );
         assert!(is_supported_version("0.3.2"));
+        assert_eq!(
+            declared(&["0.9.1", NATIVE_SCAN_VERSION]).as_deref(),
+            Some(NATIVE_SCAN_VERSION)
+        );
         assert_eq!(
             declared(&["0.3.2", WATCH_VERSION]).as_deref(),
             Some(WATCH_VERSION)

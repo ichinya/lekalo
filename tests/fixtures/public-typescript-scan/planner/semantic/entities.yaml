@@ -1,0 +1,50 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner.text",
+      "kind": "scalar",
+      "version": 1,
+      "base": "string"
+    },
+    {
+      "id": "planner.task",
+      "kind": "entity",
+      "version": 1,
+      "description": "Existing Task in src/domain/task.ts. Creation/update: src/domain/task-service.ts. JSON: src/api/task-json.ts. Detached store copies: src/storage/memory.ts.",
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "ref": "planner.text"
+          },
+          "required": true
+        },
+        {
+          "name": "workspace_id",
+          "type": {
+            "ref": "planner.text"
+          },
+          "required": true
+        },
+        {
+          "name": "owner_id",
+          "type": {
+            "ref": "planner.text"
+          },
+          "required": true
+        },
+        {
+          "name": "title",
+          "type": {
+            "ref": "planner.text"
+          },
+          "required": true
+        }
+      ],
+      "identity": [
+        "id"
+      ]
+    }
+  ]
+}

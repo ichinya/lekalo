@@ -108,7 +108,7 @@ final class Paths {
             return false;
         }
         $first = $segment[0];
-        if (!(($first >= 'a' && $first <= 'z') || ($first >= '0' && $first <= '9') || $first === '.')) {
+        if (!(($first >= 'a' && $first <= 'z') || ($first >= '0' && $first <= '9') || $first === '.' || $first === '_')) {
             return false;
         }
         return preg_match('/^[a-z0-9._-]*\z/', $segment) === 1;

@@ -443,7 +443,7 @@ fn execute(command: Commands) -> Result<DomainResult, DomainResult> {
                 .filter(|f| {
                     f.selector == selector
                         && f.target == target
-                        && subject.as_ref().map_or(true, |s| s == &f.subject)
+                        && subject.as_ref().is_none_or(|s| s == &f.subject)
                         && match scope.kind {
                             ScopeKind::Symbol => f.symbol.known() == Some(&scope.id),
                             ScopeKind::Module => f.module.known() == Some(&scope.id),

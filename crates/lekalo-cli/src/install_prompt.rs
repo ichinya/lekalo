@@ -9,6 +9,10 @@ const AGENTS: &str = "AGENTS.md";
 const BEGIN: &str = "<!-- lekalo:begin -->";
 const END: &str = "<!-- lekalo:end -->";
 const BODY: &str = include_str!("agent_prompt.md");
+// Exact previously shipped body; arbitrary self-declared content hashes do not
+// establish ownership. This permits an ordinary upgrade without discarding edits.
+const PREVIOUS_BODY_DIGEST: &str =
+    "sha256:10ce92c1bab330cb7b1fb8822bd10f87e1d660429ca16ac930c613f401fc46f3";
 const POINTER: &str = "Read [.agents/lekalo.md](.agents/lekalo.md) before working with Lekalo.\nThis instruction describes the CLI and authority boundaries; it grants no additional permission.\n";
 
 #[derive(Debug, Subcommand)]
@@ -69,13 +73,24 @@ fn owned(text: &str, expected_body: &str) -> bool {
         return false;
     };
     let fields: Vec<_> = header.split(' ').collect();
-    fields.len() == 3
+    if fields.len() != 3 {
+        return false;
+    }
+    let Some(content) = fields[2].strip_prefix("content=") else {
+        return false;
+    };
+    let recognized =
+        content == digest(BODY.replace("\r\n", "\n").as_bytes()) || content == PREVIOUS_BODY_DIGEST;
+    recognized
         && canonical_release(fields[0])
         && fields[1]
             .strip_prefix("registry=")
             .is_some_and(lekalo_core::target_protocol::wire::is_sha256_digest)
-        && fields[2] == format!("content={}", digest(BODY.replace("\r\n", "\n").as_bytes()))
-        && body == expected_body.replace("\r\n", "\n")
+        && if expected_body == POINTER {
+            body == POINTER
+        } else {
+            digest(body.as_bytes()) == content
+        }
 }
 
 fn canonical_release(value: &str) -> bool {

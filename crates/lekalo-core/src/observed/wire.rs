@@ -112,7 +112,12 @@ pub(super) fn parse_scan(
     }
     // The additive issue #42 members exist only on a 0.2.16 document; the
     // frozen 0.2.16 key sets refuse them exactly as unknown members.
-    exact_keys(map, TOP_LEVEL_KEYS)?;
+    let native_inventory = schema_version == version::NATIVE_SCAN_SCHEMA_VERSION;
+    let mut keys = TOP_LEVEL_KEYS.to_vec();
+    if native_inventory {
+        keys.extend(["nativeSymbols", "bindingEvidence", "nativeUncertainty"]);
+    }
+    exact_keys(map, &keys)?;
     let adapter_map = as_object(
         map.get("adapter").ok_or_else(|| missing("adapter"))?,
         "adapter",
@@ -262,6 +267,58 @@ pub(super) fn parse_scan(
         test_bindings.push(binding);
     }
 
+    let native_symbols: Vec<crate::native_symbols::NativeSymbol> = if native_inventory {
+        serde_json::from_value(
+            map.get("nativeSymbols")
+                .cloned()
+                .ok_or_else(|| missing("nativeSymbols"))?,
+        )
+        .map_err(|_| diagnostic::scan_invalid_set("native-symbols", None))?
+    } else {
+        Vec::new()
+    };
+    let mut binding_evidence = Vec::new();
+    if native_inventory {
+        for item in map
+            .get("bindingEvidence")
+            .ok_or_else(|| missing("bindingEvidence"))?
+            .as_array()
+            .ok_or_else(|| diagnostic::scan_invalid_set("binding-evidence", None))?
+        {
+            let record = as_object(item, "binding-evidence")?;
+            exact_keys(record, &["symbol", "native", "evidence"])?;
+            let symbol = string_member(record, "symbol")?;
+            if !seen_symbols.contains(&symbol) {
+                return Err(diagnostic::scan_invalid_set("native-binding-symbol", None));
+            }
+            let native = string_member(record, "native")?;
+            let evidence = parse_evidence(
+                record.get("evidence").ok_or_else(|| missing("evidence"))?,
+                &symbol,
+            )?;
+            binding_evidence.push(super::types::BindingEvidence {
+                symbol,
+                native,
+                evidence,
+            });
+        }
+        if !super::types::native_evidence_valid(&native_symbols, &binding_evidence) {
+            return Err(diagnostic::scan_invalid_set("native-inventory", None));
+        }
+    }
+    let native_uncertainty: Vec<crate::native_symbols::NativeUncertainty> = if native_inventory {
+        serde_json::from_value(
+            map.get("nativeUncertainty")
+                .cloned()
+                .ok_or_else(|| missing("nativeUncertainty"))?,
+        )
+        .map_err(|_| diagnostic::scan_invalid_set("native-uncertainty", None))?
+    } else {
+        Vec::new()
+    };
+    if !crate::native_symbols::valid_uncertainty(&native_uncertainty) {
+        return Err(diagnostic::scan_invalid_set("native-uncertainty", None));
+    }
     Ok(ScanDocument {
         adapter: AdapterIdentity {
             id: adapter_id,
@@ -276,6 +333,10 @@ pub(super) fn parse_scan(
         target,
         profile,
         test_bindings,
+        native_inventory,
+        native_symbols,
+        binding_evidence,
+        native_uncertainty,
     })
 }
 

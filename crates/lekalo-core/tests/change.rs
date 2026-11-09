@@ -704,11 +704,10 @@ fn error_sandbox(tag: &str) -> Sandbox {
 }
 
 fn error_request(target: &str, errors: &[&str], registry: &[u8]) -> Vec<u8> {
-    use sha2::{Digest, Sha256};
     serde_json::to_vec(&serde_json::json!({
         "schemaVersion":"lekalo/change-request/v0.8.0",
         "operations":[{"operation":"operation-error:set","operationTarget":target,"definition":{
-            "errors":errors,"registryDigest":format!("sha256:{:x}",Sha256::digest(registry))
+            "errors":errors,"registryDigest":format!("sha256:{}",lekalo_core::digest::sha256_hex(registry))
         }}]
     }))
     .unwrap()
@@ -958,7 +957,6 @@ fn canonical_binding_add_creates_its_kind_home_and_replays_without_native_writes
 #[test]
 fn observed_binding_confirmation_seals_evidence_and_preserves_provenance() {
     use lekalo_core::observed;
-    use sha2::{Digest, Sha256};
     let sandbox = Sandbox::from_fixture("observed-binding", "tests/fixtures/bindings/app");
     let ctx = observed::context(&sandbox.selection()).unwrap();
     let mut scan: serde_json::Value = serde_json::from_slice(
@@ -972,16 +970,20 @@ fn observed_binding_confirmation_seals_evidence_and_preserves_provenance() {
     for symbol in scan["symbols"].as_array_mut().unwrap() {
         if let Some(path) = symbol["location"]["path"].as_str() {
             if let Ok(bytes) = std::fs::read(sandbox.root.join(path)) {
-                symbol["fingerprint"] =
-                    serde_json::json!(format!("sha256:{:x}", Sha256::digest(&bytes)));
+                symbol["fingerprint"] = serde_json::json!(format!(
+                    "sha256:{}",
+                    lekalo_core::digest::sha256_hex(&bytes)
+                ));
             }
         }
         if let Some(candidates) = symbol["candidates"].as_array_mut() {
             for candidate in candidates {
                 if let Some(path) = candidate["path"].as_str() {
                     if let Ok(bytes) = std::fs::read(sandbox.root.join(path)) {
-                        candidate["fingerprint"] =
-                            serde_json::json!(format!("sha256:{:x}", Sha256::digest(&bytes)));
+                        candidate["fingerprint"] = serde_json::json!(format!(
+                            "sha256:{}",
+                            lekalo_core::digest::sha256_hex(&bytes)
+                        ));
                     }
                 }
             }

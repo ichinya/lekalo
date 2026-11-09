@@ -1,0 +1,17 @@
+{
+  "recipe": "public-fixture-research/1",
+  "purpose": "Descriptive disclosure of explicitly reviewed public fixture campaigns; no private-data export authority.",
+  "campaigns": [
+    {
+      "id": "priority-planner-read-once-2026-10-26",
+      "originalManifestSha256": "cb8d24a004baa6bd5c8b184a866a9fb6d40b42c25f5befcbf9b605d88ed7b1bd",
+      "admissionManifestSha256": "adc60ad8dd2d59e20fd683306b8413a576d0b01ef5150704ea4ddc88596458dd",
+      "campaignSha256": "f632b522a1af090a8ec669a531ef7d63703a696bb7112950a3955be9b446b7c8",
+      "taskSha256": "fa2510b1ddd2a6c883e84a1e3187fe05ad5f0edc7e44e46be7ad079bb1b7a88d",
+      "oracleSha256": "b23724511a7316380f8a13c4e26495af1921f03e139db2d044c070a8954fbef0",
+      "nativeSha256": "188c30cc7c60c6e5e506d4399fdc962ff85a087fe4a91dfd94fd762286f0c8a3"
+    }
+  ],
+  "statistics": "All scheduled attempts, per-profile paired B-minus-A counts and exact rational relative changes; no significance or population inference.",
+  "privacy": "Explicit output allowlist only. Raw account exports stay private. This recipe does not change #102 thresholds, classify or declassify records, issue consent, or confirm an export."
+}

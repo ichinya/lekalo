@@ -1,0 +1,675 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dev.lekalo.framework-lift-campaign-schema@1.1.0",
+  "description": "Closed local-only recorded evaluation successor. Unknown policy and post-run import provenance do not authenticate execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "identity",
+    "campaignId",
+    "taskRef",
+    "baselineRef",
+    "profile",
+    "slots",
+    "randomizationSeed",
+    "analysis",
+    "approval",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/framework-lift-campaign/v1.1.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.framework-lift-campaign@1.1.0"
+    },
+    "campaignId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 96,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "taskRef": {
+      "$ref": "#/$defs/ref"
+    },
+    "baselineRef": {
+      "$ref": "#/$defs/ref"
+    },
+    "profile": {
+      "$ref": "#/$defs/profile"
+    },
+    "slots": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/slot"
+      },
+      "minItems": 4,
+      "maxItems": 256,
+      "uniqueItems": true
+    },
+    "randomizationSeed": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "unknown",
+                "withheld",
+                "unsupported"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "analysis": {
+      "const": "intent-to-run-wilson-95-paired-counts-1"
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contentDigest",
+        "role",
+        "revision"
+      ],
+      "properties": {
+        "contentDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "provenance": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "evidenceDigest"
+          ],
+          "properties": {
+            "kind": {
+              "const": "preregistered"
+            },
+            "evidenceDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "sourceCampaignDigest",
+            "archiveManifestDigest",
+            "translator"
+          ],
+          "properties": {
+            "kind": {
+              "const": "post-run-import"
+            },
+            "sourceCampaignDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "archiveManifestDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "translator": {
+              "$ref": "#/$defs/component"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "arm": {
+      "enum": [
+        "A",
+        "B"
+      ]
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxTokens",
+        "maxToolCalls",
+        "deadlineMs",
+        "maxFixCycles",
+        "maxProviderRetries"
+      ],
+      "properties": {
+        "maxTokens": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unbounded",
+                    "unknown"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "maxToolCalls": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unbounded",
+                    "unknown"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "deadlineMs": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unbounded",
+                    "unknown"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "maxFixCycles": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unbounded",
+                    "unknown"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "maxProviderRetries": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unbounded",
+                    "unknown"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "executor",
+        "provider",
+        "model",
+        "harness",
+        "runtime",
+        "sampling",
+        "network",
+        "telemetry",
+        "architectureProfile",
+        "pricing",
+        "limits",
+        "measurementRecipe",
+        "serverModelRevision"
+      ],
+      "properties": {
+        "executor": {
+          "$ref": "#/$defs/component"
+        },
+        "provider": {
+          "$ref": "#/$defs/component"
+        },
+        "model": {
+          "$ref": "#/$defs/component"
+        },
+        "harness": {
+          "$ref": "#/$defs/component"
+        },
+        "runtime": {
+          "$ref": "#/$defs/component"
+        },
+        "sampling": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "temperatureMicros",
+            "topPMicros",
+            "reasoning",
+            "seed",
+            "maxOutputTokens"
+          ],
+          "properties": {
+            "temperatureMicros": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "unknown",
+                        "withheld",
+                        "unsupported"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "topPMicros": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "unknown",
+                        "withheld",
+                        "unsupported"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "reasoning": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96,
+              "pattern": "^[a-z][a-z0-9-]*$"
+            },
+            "seed": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state",
+                    "value"
+                  ],
+                  "properties": {
+                    "state": {
+                      "const": "known"
+                    },
+                    "value": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "unknown",
+                        "withheld",
+                        "unsupported"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "maxOutputTokens": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "state"
+                  ],
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "unknown",
+                        "withheld",
+                        "unsupported"
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "network": {
+          "enum": [
+            "local-only",
+            "public-synthetic"
+          ]
+        },
+        "telemetry": {
+          "enum": [
+            "disabled",
+            "unknown"
+          ]
+        },
+        "architectureProfile": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "$ref": "#/$defs/ref"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "pricing": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "digest",
+                "currency",
+                "basis"
+              ],
+              "properties": {
+                "digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "currency": {
+                  "type": "string",
+                  "pattern": "^[A-Z]{3}$"
+                },
+                "basis": {
+                  "enum": [
+                    "reported",
+                    "estimated"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "limits": {
+          "$ref": "#/$defs/limits"
+        },
+        "measurementRecipe": {
+          "enum": [
+            "framework-lift-metrics-1",
+            "framework-lift-agent-window-1"
+          ]
+        },
+        "serverModelRevision": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state",
+                "value"
+              ],
+              "properties": {
+                "state": {
+                  "const": "known"
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 96,
+                  "pattern": "^[a-z][a-z0-9-]*$"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "state"
+              ],
+              "properties": {
+                "state": {
+                  "enum": [
+                    "unknown",
+                    "withheld",
+                    "unsupported"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pairId",
+        "arm",
+        "repetition"
+      ],
+      "properties": {
+        "pairId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "arm": {
+          "$ref": "#/$defs/arm"
+        },
+        "repetition": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    }
+  }
+}

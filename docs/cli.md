@@ -286,7 +286,7 @@ Create an empty module using the grammar and no-clobber rules in [bootstrap](boo
 <!-- issue-105-command-index -->
 ## Command index
 
-Status: **Implemented** command handlers for product 1.0.0. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution requires an approved plan and the supported [Windows profile](native-gates.md).
+Status: **Implemented** command handlers for product 1.1.0. Handler existence does not imply every target capability, migration or native execution is available. Each row comes from recursive CLI help and has one owner in [the checked ownership inventory](documentation-owners.json). `init --adopt` is described in [adopt](adopt.md); native execution requires an approved plan and the supported [Windows profile](native-gates.md).
 
 | Command | Synopsis from this binary | Reference owner |
 | --- | --- | --- |

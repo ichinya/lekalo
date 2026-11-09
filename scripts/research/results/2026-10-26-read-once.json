@@ -1,0 +1,406 @@
+{
+  "format": "lekalo-167-public-research-result/1",
+  "status": "empirical-local-receipts-not-formally-admitted",
+  "task": "public-synthetic-priority-planner",
+  "preregistration": "https://github.com/ichinya/lekalo/issues/167#issuecomment-6413809580",
+  "publishedDiscussion": "https://github.com/ichinya/lekalo/issues/167#issuecomment-6414284604",
+  "archive": {
+    "manifestSha256": "cb8d24a004baa6bd5c8b184a866a9fb6d40b42c25f5befcbf9b605d88ed7b1bd",
+    "verifiedFiles": 625,
+    "campaignSha256": "f632b522a1af090a8ec669a531ef7d63703a696bb7112950a3955be9b446b7c8",
+    "summarySha256": "1a42027d476ef475333c4d349f8284714de4e0946a548f321a34f091c1003a3b"
+  },
+  "pins": {
+    "task": "fa2510b1ddd2a6c883e84a1e3187fe05ad5f0edc7e44e46be7ad079bb1b7a88d",
+    "oracle": "b23724511a7316380f8a13c4e26495af1921f03e139db2d044c070a8954fbef0",
+    "native": "188c30cc7c60c6e5e506d4399fdc962ff85a087fe4a91dfd94fd762286f0c8a3",
+    "model": "fac0b4f53f21971d3396bed4753e858e6866876773e35aa7136e5e47ae761c20",
+    "ir": "89c5100d832bf4aa7d14351818a1a15231480f24acd3c8d3e8a3350b5f0a94ed",
+    "builder": "88d8144657678f78190e601049641f3d1d9b781710fb30751287289c1cb553c5",
+    "runner": "c72b25253d679b0317da2da12534882001fb3608593f6cbef55d779e41ea6944",
+    "sourceReader": "e9eec5ca7e0ddf2bc7e6288a230bb0cd582ca049dfa71f8ce435142d3f9d24db",
+    "agentInstruction": "ad7885ae40c1a78bbee440451a57afc838a679ff4ddd090d3ac472e44871f8a7",
+    "executables": {
+      "node": "d14ba95cdce1ef7dc9ad3ac74949ca5db38b27378ee30f30a23cf26f9e875a11",
+      "binary": "dd0267d139bac7bb243ce81e3c4b8df7b9c5fc3b9bc8a98e56e4d5195dc4a55d",
+      "tsc": "8d5fa5bd883fec0979fc2004f1fe1d99aef40570155d550eadc0b03b55513bf0",
+      "devin": "b086a1c7cd166961560c86445bf510d7fdc5acc4b75c58f06fb6365b9bfaf1d8",
+      "codex": "61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70",
+      "adapter": "e18b801e99618a3d4a67369917c70333f503fca2827fe6df24e8771dcd733118",
+      "manifest": "47da450bb0840c76fa0c4543c2e2488acfff95afba17db464dffa9da93013b3b",
+      "codexNative": "6f267830b029ee25d9339864aa867cd45de9f8fd4c5ea007d2e63c13a0c66d36"
+    },
+    "runtime": {
+      "node": "v24.13.0",
+      "platform": "win32",
+      "architecture": "x64"
+    }
+  },
+  "profiles": [
+    {
+      "id": "devin-swe2-high",
+      "cli": "devin",
+      "model": "swe-2-high",
+      "cliVersion": "3000.11.205",
+      "reasoning": "provider-default"
+    },
+    {
+      "id": "codex-gpt6-luna-medium",
+      "cli": "codex",
+      "model": "gpt-6-luna",
+      "cliVersion": "0.164.0",
+      "reasoning": "medium"
+    }
+  ],
+  "rows": [
+    {
+      "id": "devin-swe2-high-a1",
+      "profile": "devin-swe2-high",
+      "arm": "A",
+      "repetition": 1,
+      "state": "attempted",
+      "complete": true,
+      "success": true,
+      "confirmationRejected": false,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 181922,
+      "output": 4839,
+      "total": 186761,
+      "cachedInput": 154880,
+      "uncachedInput": 27042,
+      "reasoningOutput": {
+        "state": "unknown"
+      },
+      "agentDurationMs": 89996,
+      "sourceFilesLowerBound": 9,
+      "sourceMarkerBytes": 4005,
+      "toolCalls": 9,
+      "completionEvidence": {
+        "collector": "e1d9fb3b22131440035a700cf6bd5c44f6a5fa0ba9dc436f96a5a1d766ffc096",
+        "provider": "a913ac064fc586a835d11b68adcf225a05fd8eed78be5b48b6d491bb22ba4535",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "03072f0613cc53973f1a5d7e2b79609564efd533c7d3aa59c7c2c38d6b6fc669",
+        "readAudit": "d77304f10c89f0e5ff17a5b8a3eaba93d98b6f3362f534895d1247af41c10ece"
+      }
+    },
+    {
+      "id": "devin-swe2-high-b1",
+      "profile": "devin-swe2-high",
+      "arm": "B",
+      "repetition": 1,
+      "state": "attempted",
+      "complete": false,
+      "success": false,
+      "confirmationRejected": true,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 203083,
+      "output": 7929,
+      "total": 211012,
+      "cachedInput": 185280,
+      "uncachedInput": 17803,
+      "reasoningOutput": {
+        "state": "unknown"
+      },
+      "agentDurationMs": 127839,
+      "sourceFilesLowerBound": 9,
+      "sourceMarkerBytes": 4005,
+      "toolCalls": 10,
+      "completionEvidence": {
+        "collector": "03b614ec40d379c470b7690c6d778b97034dbef8daf68eb6d13abc1576bdb1be",
+        "provider": "aa1c3a3d8bc0af9058a3226cac11449ed5f6c9a5eddc4c60f913cf8e115d070e",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "c117ff1e1a29b748ded356652c9b9ba8ec305134b661f1048be4742309939197",
+        "readAudit": "a06fe35886d651c55ea6cee42f2b1cd0ddcc21483d9395dfa77401da95a362e8"
+      }
+    },
+    {
+      "id": "devin-swe2-high-b2",
+      "profile": "devin-swe2-high",
+      "arm": "B",
+      "repetition": 2,
+      "state": "attempted",
+      "complete": true,
+      "success": true,
+      "confirmationRejected": false,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 247713,
+      "output": 8388,
+      "total": 256101,
+      "cachedInput": 236608,
+      "uncachedInput": 11105,
+      "reasoningOutput": {
+        "state": "unknown"
+      },
+      "agentDurationMs": 108661,
+      "sourceFilesLowerBound": 9,
+      "sourceMarkerBytes": 4005,
+      "toolCalls": 12,
+      "completionEvidence": {
+        "collector": "182d4c9f558cabf1b7ccaf75f029d97f200733f56828d194669598f015957933",
+        "provider": "f09e274716e926e3357439df425b90ac01a1ad21ca17717a088b7411614f4763",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "7f2e6adc41f7cfeae365b7eee02cb2cf2528a015761e0e1789eed179ea31fa23",
+        "readAudit": "d1591ff0a9bbfe2bdc1019f37e1e41c76689726e058071e1e311948b20254a9b"
+      }
+    },
+    {
+      "id": "devin-swe2-high-a2",
+      "profile": "devin-swe2-high",
+      "arm": "A",
+      "repetition": 2,
+      "state": "attempted",
+      "complete": true,
+      "success": true,
+      "confirmationRejected": false,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 207077,
+      "output": 5224,
+      "total": 212301,
+      "cachedInput": 158208,
+      "uncachedInput": 48869,
+      "reasoningOutput": {
+        "state": "unknown"
+      },
+      "agentDurationMs": 107405,
+      "sourceFilesLowerBound": 9,
+      "sourceMarkerBytes": 4005,
+      "toolCalls": 13,
+      "completionEvidence": {
+        "collector": "a6d19ec222b2b524a7516acc4f852235bb94a2ca7ffd5458f4a80b6cde542d53",
+        "provider": "df316715cf760c1e49591535f26bcb03eb05df0b616e5abd1793cca3a7a7b7fe",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "0141beae164336578858a442a605edd9139036fcbfb472dc78f015e7a98c5c59",
+        "readAudit": "d77304f10c89f0e5ff17a5b8a3eaba93d98b6f3362f534895d1247af41c10ece"
+      }
+    },
+    {
+      "id": "codex-gpt6-luna-medium-a1",
+      "profile": "codex-gpt6-luna-medium",
+      "arm": "A",
+      "repetition": 1,
+      "state": "attempted",
+      "complete": true,
+      "success": true,
+      "confirmationRejected": false,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 171481,
+      "output": 2501,
+      "total": 173982,
+      "cachedInput": 131712,
+      "uncachedInput": 39769,
+      "reasoningOutput": {
+        "state": "known",
+        "value": 321
+      },
+      "agentDurationMs": 72307,
+      "sourceFilesLowerBound": 9,
+      "sourceMarkerBytes": 4005,
+      "toolCalls": 6,
+      "completionEvidence": {
+        "collector": "4da484fc5d8bed020d1e094f26c3f296b5b3c8e12e0c48f0733ee6913834b322",
+        "provider": "8c97f08400d736892dc9ea3dc55b8cd50047aa1aa192718e7ca5b74ccafc84f6",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "1d6552a2128e3980222b11716867b8f459b47c94215cfe0badc804659bb84b8d",
+        "readAudit": "d77304f10c89f0e5ff17a5b8a3eaba93d98b6f3362f534895d1247af41c10ece"
+      }
+    },
+    {
+      "id": "codex-gpt6-luna-medium-b1",
+      "profile": "codex-gpt6-luna-medium",
+      "arm": "B",
+      "repetition": 1,
+      "state": "attempted",
+      "complete": true,
+      "success": true,
+      "confirmationRejected": false,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 221275,
+      "output": 2742,
+      "total": 224017,
+      "cachedInput": 201088,
+      "uncachedInput": 20187,
+      "reasoningOutput": {
+        "state": "known",
+        "value": 422
+      },
+      "agentDurationMs": 71998,
+      "sourceFilesLowerBound": 8,
+      "sourceMarkerBytes": 3743,
+      "toolCalls": 7,
+      "completionEvidence": {
+        "collector": "b4b04ec4af5b17c79518850be073cf8d2dd55b01b747c6dc5ede48c5b402d53a",
+        "provider": "f06026168660cb49f3872fbdfcb921337244065a5d78f7459a3d20b85c9cab01",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "4599a89657e48e53de0d6f7057d4ed45eeea129c0fd3beb46fbe2a9816516e92",
+        "readAudit": "d1591ff0a9bbfe2bdc1019f37e1e41c76689726e058071e1e311948b20254a9b"
+      }
+    },
+    {
+      "id": "codex-gpt6-luna-medium-b2",
+      "profile": "codex-gpt6-luna-medium",
+      "arm": "B",
+      "repetition": 2,
+      "state": "attempted",
+      "complete": true,
+      "success": true,
+      "confirmationRejected": false,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 215497,
+      "output": 3192,
+      "total": 218689,
+      "cachedInput": 158464,
+      "uncachedInput": 57033,
+      "reasoningOutput": {
+        "state": "known",
+        "value": 428
+      },
+      "agentDurationMs": 72979,
+      "sourceFilesLowerBound": 8,
+      "sourceMarkerBytes": 3743,
+      "toolCalls": 11,
+      "completionEvidence": {
+        "collector": "00d721c75f95afcab79ecbe3c083338886b33e9439945fb69d59f73a2b5d5433",
+        "provider": "bc5a97146108f300955970437d38ea89804fa14e9482f1de0f0e38f590f7ab25",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "83e91e009c293cde349f28cfc6fb0d2329dde6cdce7ced2f2c73b4ecb6421b33",
+        "readAudit": "d1591ff0a9bbfe2bdc1019f37e1e41c76689726e058071e1e311948b20254a9b"
+      }
+    },
+    {
+      "id": "codex-gpt6-luna-medium-a2",
+      "profile": "codex-gpt6-luna-medium",
+      "arm": "A",
+      "repetition": 2,
+      "state": "attempted",
+      "complete": true,
+      "success": true,
+      "confirmationRejected": false,
+      "nativePass": true,
+      "holdoutPassed": 20,
+      "holdoutTotal": 20,
+      "input": 162936,
+      "output": 2303,
+      "total": 165239,
+      "cachedInput": 143488,
+      "uncachedInput": 19448,
+      "reasoningOutput": {
+        "state": "known",
+        "value": 166
+      },
+      "agentDurationMs": 68127,
+      "sourceFilesLowerBound": 9,
+      "sourceMarkerBytes": 4005,
+      "toolCalls": 7,
+      "completionEvidence": {
+        "collector": "75ef805f934bfec4caf6a70fc4150565e55062812efdf6f52cb3a26b2618b3ec",
+        "provider": "d2c0b2a7b8acc885420f48955d8198e33f67ec4545403ca0a244f58971085c14",
+        "holdout": "97acb11fcf4fb79aafd6db0045a216720dae1c10295a45838ef6d606556b879b",
+        "candidateTree": "4948b6245535f479d14992ef912a7c506fd0b325dda01fe86e9614bbc809ef6c",
+        "readAudit": "d77304f10c89f0e5ff17a5b8a3eaba93d98b6f3362f534895d1247af41c10ece"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "profile": "devin-swe2-high",
+      "arm": "A",
+      "scheduled": 2,
+      "attempted": 2,
+      "successes": 2,
+      "nativePasses": 2,
+      "means": {
+        "total": 199531,
+        "uncachedInput": 37955.5,
+        "agentDurationMs": 98700.5,
+        "sourceFilesLowerBound": 9
+      }
+    },
+    {
+      "profile": "devin-swe2-high",
+      "arm": "B",
+      "scheduled": 2,
+      "attempted": 2,
+      "successes": 1,
+      "nativePasses": 2,
+      "means": {
+        "total": 233556.5,
+        "uncachedInput": 14454,
+        "agentDurationMs": 118250,
+        "sourceFilesLowerBound": 9
+      }
+    },
+    {
+      "profile": "codex-gpt6-luna-medium",
+      "arm": "A",
+      "scheduled": 2,
+      "attempted": 2,
+      "successes": 2,
+      "nativePasses": 2,
+      "means": {
+        "total": 169610.5,
+        "uncachedInput": 29608.5,
+        "agentDurationMs": 70217,
+        "sourceFilesLowerBound": 9
+      }
+    },
+    {
+      "profile": "codex-gpt6-luna-medium",
+      "arm": "B",
+      "scheduled": 2,
+      "attempted": 2,
+      "successes": 2,
+      "nativePasses": 2,
+      "means": {
+        "total": 221353,
+        "uncachedInput": 38610,
+        "agentDurationMs": 72488.5,
+        "sourceFilesLowerBound": 8
+      }
+    }
+  ],
+  "totals": {
+    "scheduled": 8,
+    "attempted": 8,
+    "completed": 7,
+    "strictSuccesses": 7,
+    "nativePasses": 8,
+    "input": 1610984,
+    "output": 37118,
+    "total": 1648102,
+    "cachedInput": 1369728,
+    "uncachedInput": 241256,
+    "cost": {
+      "state": "unknown"
+    }
+  },
+  "admission": {
+    "recordArm": "NOTRUN",
+    "compare": "NOTRUN",
+    "reason": "v0.6.4 requires numeric sampling and bounded limits plus a pricing snapshot; actual CLI defaults/prices are unknown and budget is uncapped. Never fill these with invented values.",
+    "measurementWindow": "Agent start to close excludes independent grading; differs from framework-lift-metrics-1 through acceptance.",
+    "approval": "Any future protocol translation is a post-run import, not a new preregistration."
+  },
+  "limitations": [
+    "One small public synthetic task; two A/B pairs per CLI, nonrandom A1/B1/B2/A2 order. No general token-savings claim.",
+    "Devin B1 passes native tests but is incomplete after a confirmation refusal; retained in every denominator.",
+    "Cached input is a subset of input, reasoning a subset of output; subsets are never added again. Money, hidden provider revision, authoring and human review costs are unknown.",
+    "Source counts are audited src/**/*.ts lower bounds, not all-file delivery counts; edits and changed-code diff echoes are separate.",
+    "Manifest checks establish local receipt integrity, not provider signatures or authentication of execution. Raw account exports remain private.",
+    "Partial authored Model retains strict authorization refusal and lacks canonical/native ID join; full semantic adoption is unqualified.",
+    "Research disclosure is an explicit allowlist; it is not a product privacy-export receipt under issue #102."
+  ]
+}

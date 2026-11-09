@@ -608,6 +608,21 @@ fn build_document(
 
     // Pass two: one observed-scan symbol per semantic id. Fingerprints
     // come from the real tree, so the freshness evidence is byte-truth.
+    let native_inventory =
+        outcome.response.protocol_version == crate::target_protocol::version::NATIVE_SCAN_VERSION;
+    let native_uncertainty = outcome
+        .response
+        .evidence
+        .native_uncertainty
+        .as_deref()
+        .unwrap_or_default();
+    for uncertainty in native_uncertainty {
+        if file_fingerprint(&fs, &uncertainty.path).as_ref() != Some(&uncertainty.source_digest) {
+            return Err(invalid_set("native-uncertainty-custody"));
+        }
+    }
+    let mut native_symbols = Vec::new();
+    let mut binding_evidence = Vec::new();
     let mut symbols = Vec::with_capacity(order.len());
     for semantic in &order {
         let group = grouped
@@ -681,6 +696,46 @@ fn build_document(
                 symbol.insert("evidence".to_owned(), Json::Object(evidence_map));
             }
         }
+        if native_inventory {
+            for (_, candidate_entry, candidate_detail) in group {
+                let ev = candidate_entry
+                    .evidence
+                    .as_ref()
+                    .ok_or_else(|| invalid_set("native-inventory"))?;
+                let nodes = ev
+                    .native_symbols
+                    .as_ref()
+                    .ok_or_else(|| invalid_set("native-inventory"))?;
+                if !crate::native_symbols::valid_entry(
+                    nodes,
+                    &candidate_detail.native,
+                    &candidate_entry.path,
+                ) || nodes
+                    .iter()
+                    .find(|n| n.native == candidate_detail.native)
+                    .map(|n| &n.signature)
+                    != Some(&ev.signature)
+                {
+                    return Err(invalid_set("native-inventory"));
+                }
+                native_symbols.extend(nodes.iter().cloned());
+                let mut fresh = serde_json::Map::new();
+                if let Some(signature) = &ev.signature {
+                    fresh.insert("signature".to_owned(), serde_json::json!(signature));
+                }
+                if !ev.references.is_empty() {
+                    fresh.insert("references".to_owned(), Json::Array(ev.references.iter().map(|r| serde_json::json!({
+                        "target": resolve_reference_target(&r.target, entries), "role":r.role, "confidence":r.confidence
+                    })).collect()));
+                }
+                binding_evidence.push(serde_json::json!({"symbol":semantic,"native":candidate_detail.native,"evidence":fresh}));
+            }
+            // Separate candidate evidence prevents a first-match signature
+            // from being attributed to an ambiguous, unchosen binding.
+            if !unambiguous {
+                symbol.remove("evidence");
+            }
+        }
         symbol.insert("candidates".to_owned(), Json::Array(candidates));
         symbols.push(Json::Object(symbol));
     }
@@ -730,7 +785,14 @@ fn build_document(
     let mut document = serde_json::Map::new();
     document.insert(
         "schemaVersion".to_owned(),
-        Json::String(super::version::SCAN_SCHEMA_VERSION.to_owned()),
+        Json::String(
+            if native_inventory {
+                super::version::NATIVE_SCAN_SCHEMA_VERSION
+            } else {
+                super::version::SCAN_SCHEMA_VERSION
+            }
+            .to_owned(),
+        ),
     );
     document.insert(
         "adapter".to_owned(),
@@ -743,6 +805,26 @@ fn build_document(
     document.insert("project".to_owned(), Json::String(project.to_owned()));
     document.insert("revision".to_owned(), Json::String(revision));
     document.insert("symbols".to_owned(), Json::Array(symbols));
+    if native_inventory {
+        native_symbols.sort_by(|a, b| a.native.cmp(&b.native));
+        if !crate::native_symbols::valid(&native_symbols) {
+            return Err(invalid_set("native-inventory"));
+        }
+        document.insert(
+            "nativeSymbols".to_owned(),
+            serde_json::to_value(native_symbols).map_err(|_| invalid_set("native-inventory"))?,
+        );
+        binding_evidence.sort_by(|a, b| {
+            (a["symbol"].as_str(), a["native"].as_str())
+                .cmp(&(b["symbol"].as_str(), b["native"].as_str()))
+        });
+        document.insert("bindingEvidence".to_owned(), Json::Array(binding_evidence));
+        document.insert(
+            "nativeUncertainty".to_owned(),
+            serde_json::to_value(native_uncertainty)
+                .map_err(|_| invalid_set("native-uncertainty"))?,
+        );
+    }
     document.insert("target".to_owned(), Json::String(request.target.to_owned()));
     if let Some(profile) = request.profile {
         document.insert("profile".to_owned(), Json::String(profile.to_owned()));

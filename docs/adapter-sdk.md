@@ -10,7 +10,7 @@ the SDK references pass.
 
 | Package | Language | Layout | Compatibility |
 | --- | --- | --- | --- |
-| `lekalo-adapter-sdk-rust` | Rust (MSRV 1.80.0) | `sdk/rust` | `sdk/rust/compatibility.json` |
+| `lekalo-adapter-sdk-rust` | Rust (MSRV 1.89.0) | `sdk/rust` | `sdk/rust/compatibility.json` |
 | `@lekalo/adapter-sdk` | TypeScript / Node ≥ 24 | `sdk/typescript` | `sdk/typescript/compatibility.json` |
 | `lekalo-adapter-sdk-go` | Go ≥ 1.23 | `sdk/go` | `sdk/go/compatibility.json` |
 | `lekalo/adapter-sdk-php` | PHP ≥ 8.3 | `sdk/php` | `sdk/php/compatibility.json` |

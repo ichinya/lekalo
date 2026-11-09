@@ -9,8 +9,6 @@
 //! these functions never do, and the digest is `sha256:` over the bytes
 //! exactly as produced here.
 
-use sha2::{Digest, Sha256};
-
 use super::version;
 use super::Manifest;
 
@@ -29,7 +27,5 @@ pub(super) fn manifest_bytes(
 
 /// The `sha256:<64 lowercase hex>` digest of exactly these bytes.
 pub(super) fn sha256_hex(bytes: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::digest::sha256_hex(bytes))
 }

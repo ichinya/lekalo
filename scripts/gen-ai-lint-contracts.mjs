@@ -8,7 +8,7 @@ const object = properties => ({ type: 'object', additionalProperties: false, req
 const string = { type: 'string', minLength: 1, maxLength: 256, pattern: '^[A-Za-z0-9][A-Za-z0-9_.:/#@\\\\-]*$' };
 const prose = { type: 'string', minLength: 1, maxLength: 2000, pattern: '^[^\\u0000-\\u001f\\u007f]+$' };
 const digest = { type: 'string', pattern: '^sha256:[0-9a-f]{64}$', maxLength: 71 };
-const path = { type: 'string', maxLength: 512, pattern: '^(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\.(?:/|$))[a-z0-9.][a-z0-9._-]{0,63}(?:/[a-z0-9.][a-z0-9._-]{0,63})*$' };
+const path = { type: 'string', maxLength: 512, pattern: '^(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\.(?:/|$))[a-z0-9._][a-z0-9._-]{0,63}(?:/[a-z0-9._][a-z0-9._-]{0,63})*$' };
 const integer = { type: 'integer', minimum: 0, maximum: 10000000 };
 const defs = {};
 function type(t) {

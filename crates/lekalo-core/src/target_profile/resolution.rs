@@ -368,7 +368,7 @@ fn resolve_one(
         let mut weakened: Vec<String> = Vec::new();
         for (capability, base_support) in &parent_capabilities {
             let child_support = capabilities.get(capability).copied();
-            let weaker = child_support.map_or(true, |support| support < *base_support);
+            let weaker = child_support.is_none_or(|support| support < *base_support);
             if !weaker {
                 continue;
             }

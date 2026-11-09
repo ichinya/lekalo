@@ -79,6 +79,13 @@ raw record digest before rebuilding the secondary index.
   disposition, the exact frozen accepted #120 policy/authority references,
   and constant `ineligible` export eligibility.
 
+The frozen 0.4 token consistency rule treats reasoning as a disjoint addition
+when input, output, reasoning and total are all known. A producer reporting
+reasoning as a subset of output cannot copy that leaf into this representation.
+The bounded [#167 projection](../scripts/research/README.md) marks legacy
+reasoning unsupported and retains its full admitted parent; it keeps original
+input/output/total unchanged rather than adding or subtracting reasoning silently.
+
 **Missing metrics stay unknown.** Every provenance and metric leaf is a
 value state: a missing harness observation normalizes to the `unknown`
 spelling before persistence — never to zero, null, or an empty string. A

@@ -39,7 +39,7 @@ pub fn decode_request(bytes: &[u8]) -> Result<RequestEnvelope, super::TargetFail
         };
         super::TargetFailure::RequestInvalid { detail }
     })?;
-    if request.protocol_version == super::version::EXEC_VERSION
+    if super::version::supports_complete_native_plan(&request.protocol_version)
         && !super::native_schema::valid(bytes)
     {
         return Err(super::TargetFailure::RequestInvalid { detail: "shape" });
@@ -71,6 +71,7 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
                 | super::version::WATCH_VERSION
                 | super::version::SCAN_VERSION
                 | super::version::EXEC_VERSION
+                | super::version::NATIVE_SCAN_VERSION
         ) || request.target.is_none()
             || request.profile.is_some()
             || request.profile_digest.is_some()
@@ -91,7 +92,7 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
             return invalid("lint-request");
         }
         for pin in [&lint.pins.model, &lint.pins.ir] {
-            if pin.known().map_or(true, |p| !is_sha256_digest(p)) {
+            if pin.known().is_none_or(|p| !is_sha256_digest(p)) {
                 return invalid("lint-pin");
             }
         }
@@ -321,7 +322,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<ResponseEnvelope, ResponseInvalid
             ResponseInvalidity::Shape
         }
     })?;
-    if response.protocol_version == super::version::EXEC_VERSION
+    if super::version::supports_complete_native_plan(&response.protocol_version)
         && !super::native_schema::valid(bytes)
     {
         return Err(ResponseInvalidity::Shape);
@@ -370,7 +371,7 @@ pub fn is_plan_id(value: &str) -> bool {
 /// Whether every declared optional constraint value is inside the closed
 /// bound (issue #28).
 fn constraints_bounded(constraints: Option<&AdapterConstraints>) -> bool {
-    constraints.map_or(true, |constraints| {
+    constraints.is_none_or(|constraints| {
         [constraints.max_entries, constraints.max_writes]
             .into_iter()
             .all(|value| match value {
@@ -392,7 +393,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
             .evidence
             .scan_profile_digest
             .as_deref()
-            .map_or(true, |v| !is_sha256_digest(v))
+            .is_none_or(|v| !is_sha256_digest(v))
             || response
                 .result
                 .as_ref()
@@ -404,12 +405,24 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
     } else if response.evidence.scan_profile_digest.is_some() {
         return invalid;
     }
+    if public_scan && response.protocol_version == super::version::NATIVE_SCAN_VERSION {
+        if response
+            .evidence
+            .native_uncertainty
+            .as_ref()
+            .is_none_or(|rows| !crate::native_symbols::valid_uncertainty(rows))
+        {
+            return invalid;
+        }
+    } else if response.evidence.native_uncertainty.is_some() {
+        return invalid;
+    }
     if let Some(summary) = response
         .result
         .as_ref()
         .and_then(|result| result.native_plan.as_ref())
     {
-        if response.protocol_version == super::version::EXEC_VERSION {
+        if super::version::supports_complete_native_plan(&response.protocol_version) {
             let Some(plan) = &summary.plan else {
                 return invalid;
             };
@@ -454,6 +467,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                 | super::version::WATCH_VERSION
                 | super::version::SCAN_VERSION
                 | super::version::EXEC_VERSION
+                | super::version::NATIVE_SCAN_VERSION
         ) || response.operation != Operation::Lint)
     {
         return invalid;
@@ -501,6 +515,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                         | super::version::WATCH_VERSION
                         | super::version::SCAN_VERSION
                         | super::version::EXEC_VERSION
+                        | super::version::NATIVE_SCAN_VERSION
                 ) {
                     10
                 } else {
@@ -513,6 +528,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                     | super::version::WATCH_VERSION
                     | super::version::SCAN_VERSION
                     | super::version::EXEC_VERSION
+                    | super::version::NATIVE_SCAN_VERSION
             ) && c.operations.contains(&Operation::Lint))
             || !unique(&c.transports, 1, 2)
             || !unique(&c.targets, 0, 64)
@@ -569,7 +585,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
             entries.len() > 10000
                 || entries.iter().any(|e| {
                     !scopes::is_logical_path(&e.path)
-                        || (public_scan && e.evidence.as_ref().and_then(|v| v.source_digest.as_deref()).map_or(true, |v| !is_sha256_digest(v)))
+                        || (public_scan && e.evidence.as_ref().and_then(|v| v.source_digest.as_deref()).is_none_or(|v| !is_sha256_digest(v)))
                         || (!public_scan && e.evidence.as_ref().is_some_and(|v| v.source_digest.is_some()))
                         || !bounded(&e.kind, 128)
                         || e.detail.as_ref().is_some_and(|v| {
@@ -580,7 +596,15 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                         // (references maxItems 8, sha256 signature,
                         // semantic-id target ≤192).
                         || e.evidence.as_ref().is_some_and(|ev| {
-                            ev.references.len() > 8
+                            ev.references.len() > if response.protocol_version == super::version::NATIVE_SCAN_VERSION { 256 } else { 8 }
+                                || if response.protocol_version == super::version::NATIVE_SCAN_VERSION {
+                                    ev.native_symbols.as_ref().is_none_or(|symbols| {
+                                        let detail = e.detail.as_ref().and_then(|d|serde_json::from_str::<serde_json::Value>(d).ok());
+                                        let native = detail.as_ref().and_then(|d|d.get("n")).and_then(|n|n.as_str());
+                                        native.is_none_or(|n| !crate::native_symbols::valid_entry(symbols,n,&e.path)
+                                            || symbols.iter().find(|s|s.native==n).map(|s|&s.signature)!=Some(&ev.signature))
+                                    })
+                                } else { ev.native_symbols.is_some() }
                                 || ev
                                     .signature
                                     .as_ref()
@@ -996,6 +1020,13 @@ pub struct Evidence {
         skip_serializing_if = "Option::is_none"
     )]
     pub scan_profile_digest: Option<String>,
+    /// Explicit type uncertainty, source-bound and only on 1.1.0 scans.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub native_uncertainty: Option<Vec<crate::native_symbols::NativeUncertainty>>,
 }
 
 /// One optional structured progress step.
@@ -1091,6 +1122,13 @@ pub struct ScanEntryEvidence {
         skip_serializing_if = "Option::is_none"
     )]
     pub source_digest: Option<String>,
+    /// Complete native declaration subtree; admitted only by 1.1.0 scan.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub native_symbols: Option<Vec<crate::native_symbols::NativeSymbol>>,
 }
 
 /// One scan entry (scan results).

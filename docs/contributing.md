@@ -4,7 +4,7 @@ Run commands on this page from the repository root. Use the source revision and 
 
 ## Build from source
 
-Install Git, Rust/Cargo and the platform's native C/C++ linker toolchain. The workspace minimum Rust version is `1.80.0`; CI checks it separately from stable Rust. On Windows, use the MSVC Rust target, Visual Studio C++ Build Tools and the Windows SDK. Contributor JavaScript gates use Node **24**.
+Install Git, Rust/Cargo and the platform's native C/C++ linker toolchain. The workspace minimum Rust version is `1.89.0`; CI checks it separately from stable Rust. On Windows, use the MSVC Rust target, Visual Studio C++ Build Tools and the Windows SDK. Contributor JavaScript gates use Node **24**.
 
 ```sh
 cargo build -p lekalo-cli --locked

@@ -8,7 +8,6 @@
 //! distinct and repeated endpoint pairs are never collapsed.
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use super::node::NodeKind;
 use super::provenance::{Confidence, Provenance, Status};
@@ -137,7 +136,6 @@ impl Relation {
     /// tuple fully determines the digest, and the digest is recomputed by
     /// every consumer.
     pub fn canonical_id(kind: RelationKind, from: &str, to: &str, occurrence: &str) -> String {
-        let mut hasher = Sha256::new();
         // Compact fixed-order JSON array encoding; no ambiguity because
         // every component is grammar-validated before hashing.
         let payload = format!(
@@ -147,8 +145,7 @@ impl Relation {
             to,
             occurrence
         );
-        hasher.update(payload.as_bytes());
-        format!("sha256:{:x}", hasher.finalize())
+        format!("sha256:{}", crate::digest::sha256_hex(payload.as_bytes()))
     }
 
     /// Validate every field against its closed grammar and record the

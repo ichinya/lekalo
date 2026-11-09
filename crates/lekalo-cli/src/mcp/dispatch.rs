@@ -1220,7 +1220,7 @@ fn resources_read(
         .is_some_and(|params| {
             params.get("uri").is_some_and(Value::is_string)
                 && params.keys().all(|key| key == "uri" || key == "_meta")
-                && params.get("_meta").map_or(true, Value::is_object)
+                && params.get("_meta").is_none_or(Value::is_object)
         })
     {
         session

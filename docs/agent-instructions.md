@@ -4,6 +4,18 @@ Status: implemented by the explicit `install prompt` command. The English
 instruction is embedded in the CLI; installation does not invoke a model or
 derive project intent from source code.
 
+The instruction starts with a bounded capsule for the affected semantic IDs.
+Full IR, inspect, impact and status are requested when the task needs their
+additional evidence, rather than as a mandatory startup checklist. Failed
+or incomplete evidence remains visible.
+
+Source already present in the agent context is reused by path, version and
+range. When an editor requires its own Read, that should be the first read
+for an intended edit. Changed content, missing ranges, a truncated response
+or a genuinely replaced context can require a scoped reread with a reason.
+Missing contracts or an absent semantic/native join still require relevant
+implementation reads; an index alone does not establish behavior.
+
 ```sh
 lekalo install prompt --project . --dry-run
 lekalo install prompt --project .
@@ -22,6 +34,11 @@ An identical installation performs no writes. After upgrading Lekalo,
 `managed.input-invalid` and reason `prompt-stale`. Run the explicit install
 command to update it. Neither `status` nor ordinary project commands silently
 rewrite instructions.
+
+The exact previous embedded prompt body is recognized by its pinned digest
+and can upgrade through the normal explicit install command without
+`--force`. This exception does not accept manual edits or arbitrary bodies
+with self-declared hashes; those retain the conflict behavior below.
 
 Manual changes to the prompt or its managed root section cause a conflict.
 Review the dry-run diff and use `--force` only when replacing those changes is

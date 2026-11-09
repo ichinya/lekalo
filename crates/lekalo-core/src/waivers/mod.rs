@@ -71,7 +71,7 @@ pub fn evaluation_time(s: &str) -> Result<String, DomainResult> {
     Ok(v)
 }
 fn state_digest(s: &State<String>) -> bool {
-    s.known().map_or(true, |s| is_digest(s))
+    s.known().is_none_or(|s| is_digest(s))
 }
 fn profile_valid(p: &ProfileRef) -> bool {
     token(&p.id) && token(&p.version) && is_digest(&p.digest)
@@ -184,7 +184,7 @@ pub fn validate_store(s: &Store) -> Result<(), DomainResult> {
             .into_iter()
             .chain(e.review_after.known())
         {
-            if timestamp(date).map_or(true, |t| t < created) {
+            if timestamp(date).is_none_or(|t| t < created) {
                 return Err(failure("waivers-deadline-invalid"));
             }
         }
@@ -202,7 +202,7 @@ pub fn validate_store(s: &Store) -> Result<(), DomainResult> {
         if let Some(id) = e.supersedes.known() {
             if map
                 .get(id.as_str())
-                .map_or(true, |p| p.lifecycle != Lifecycle::Superseded)
+                .is_none_or(|p| p.lifecycle != Lifecycle::Superseded)
             {
                 return Err(failure("waivers-lineage-missing"));
             }
@@ -512,7 +512,7 @@ pub fn audit(
             f.source_outcome.as_str(),
             "invalid" | "security" | "data-loss"
         ) || f.source_severity.known().is_some_and(|s| s == "error")
-            || state.as_ref().map_or(true, |r| r.blocking)
+            || state.as_ref().is_none_or(|r| r.blocking)
         {
             "denied"
         } else {
