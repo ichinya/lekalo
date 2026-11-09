@@ -309,8 +309,8 @@ dependencies = [
  "lekalo-adapter-sdk-rust",
  "ruff_python_ast",
  "ruff_python_parser",
- "ruff_source_file",
- "ruff_text_size",
+ "ruff_source_file 0.0.21",
+ "ruff_text_size 0.0.18",
  "sha2",
 ]
 
@@ -512,8 +512,8 @@ dependencies = [
  "is-macro",
  "memchr",
  "ruff_python_trivia",
- "ruff_source_file",
- "ruff_text_size",
+ "ruff_source_file 0.0.18",
+ "ruff_text_size 0.0.18",
  "rustc-hash",
  "thin-vec",
  "thiserror",
@@ -533,7 +533,7 @@ dependencies = [
  "memchr",
  "ruff_python_ast",
  "ruff_python_trivia",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
  "ruff_unicode_names2",
  "rustc-hash",
  "stacker",
@@ -551,8 +551,8 @@ checksum = "2eaa30e95771578677685be47e20d7a1beaed762225a444d337f54b1d50e9150"
 dependencies = [
  "itertools",
  "memchr",
- "ruff_source_file",
- "ruff_text_size",
+ "ruff_source_file 0.0.18",
+ "ruff_text_size 0.0.18",
  "rustc-hash",
  "unicode-ident",
  "unicode-normalization",
@@ -565,7 +565,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed363bf1302918442b8111a8be328c82821fb69e57695eb523b93937b7c48d0d"
 dependencies = [
  "memchr",
- "ruff_text_size",
+ "ruff_text_size 0.0.18",
+]
+
+[[package]]
+name = "ruff_source_file"
+version = "0.0.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b2159c6129bf08ecde949e8aca0edc5411fbcbaaecdbd401fd75385f5a74e95"
+dependencies = [
+ "memchr",
+ "ruff_text_size 0.0.21",
 ]
 
 [[package]]
@@ -576,6 +586,12 @@ checksum = "d86062237e79a93d78f9a4ded790d9f056c4e0254f892a7a3ecd87a832509b8d"
 dependencies = [
  "get-size2",
 ]
+
+[[package]]
+name = "ruff_text_size"
+version = "0.0.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb9ffcbeaefe5f3a7bef2c80dbf591a0fa1f9ec22c5ce7bf4f4c2397104e6496"
 
 [[package]]
 name = "ruff_unicode_names2"
