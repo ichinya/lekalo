@@ -3,7 +3,7 @@
 // is used as readiness: edits are driven by stream barriers.
 import assert from 'node:assert/strict';
 import {spawn,spawnSync} from 'node:child_process';
-import {cpSync,mkdirSync,mkdtempSync,readFileSync,readdirSync,rmSync,writeFileSync} from 'node:fs';
+import {cpSync,mkdirSync,mkdtempSync,readFileSync,readdirSync,renameSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {StringDecoder} from 'node:string_decoder';
@@ -15,6 +15,7 @@ function inventory(dir,prefix=''){
 }
 export async function selectiveTargetProbe({root,binary,env,fixture='project'}){
  const project=mkdtempSync(join(tmpdir(),'lekalo-watch-selected-'));
+ const staged=project+'.entities-next';
  try{
   cpSync(join(root,'tests/fixtures/watch',fixture),project,{recursive:true});
   mkdirSync(join(project,'adapters'));mkdirSync(join(project,'src'));
@@ -46,7 +47,14 @@ export async function selectiveTargetProbe({root,binary,env,fixture='project'}){
      assert.equal(e.diagnosticsMode,'replace');
      assert.equal(e.result.pins.adapters.length,1,JSON.stringify({run:e.runId,status:e.status,diagnostics:e.result.diagnostics}));
      if(completed.length===1){
-      for(let version=2;version<=9;version++)writeFileSync(source,original.replace('version: 1',`version: ${version}`));
+      // Every saved version is valid. Truncate/write can expose an empty
+      // document to the poller and accidentally test loader recovery instead
+      // of selective adapter reuse. Stage outside the watched tree, then
+      // replace atomically on the same filesystem; keep all rapid saves.
+      for(let version=2;version<=9;version++){
+       writeFileSync(staged,original.replace('version: 1',`version: ${version}`),{flag:'wx'});
+       renameSync(staged,source);
+      }
       expected=inventory(project);
      }else if(completed.length===2){
       const work=e.result.pins.adapters[0].work;
@@ -97,5 +105,5 @@ export async function selectiveTargetProbe({root,binary,env,fixture='project'}){
   for(const start of events.filter(e=>e.event==='run-started'))assert.equal(events.filter(e=>['run-completed','run-cancelled'].includes(e.event)&&e.runId===start.runId).length,1);
   assert.deepEqual(inventory(project),expected);
   return {settled:completed.length,cancelled:events.filter(e=>e.event==='run-cancelled').length,cleanAdapterComparisons:1};
- }finally{rmSync(project,{recursive:true,force:true});}
+ }finally{rmSync(staged,{force:true});rmSync(project,{recursive:true,force:true});}
 }
