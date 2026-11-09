@@ -603,6 +603,14 @@ pub fn audit(ctx: &super::ObservedContext) -> Result<AuditReceipt, DiagnosticSet
         if record.promoted {
             continue;
         }
+        // HTTP registration can disappear in another file while the handler
+        // bytes remain unchanged. Preserve the recorded semantic staleness.
+        if index.schema_version == version::HTTP_INDEX_SCHEMA_VERSION
+            && record.state == BindingState::Stale
+        {
+            failures.push((record.id.clone(), "state-stale"));
+            continue;
+        }
         match (&record.fingerprint, &record.location) {
             (Some(digest), Some(location)) => match index::read_fingerprint(&fs, &location.path) {
                 Ok(Some(actual)) if &actual == digest => current += 1,

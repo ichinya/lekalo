@@ -101,6 +101,14 @@ try {
   const partial = cli(['observe','inspect','shop.handlers.list_items','--project','.']);
   assert.equal(partial.completeness,'incomplete');
   assert(partial.native_uncertainty.some(u => u.kind === 'framework-route' && u.path === 'src/shop/main.py'));
+  // A default expression runs at definition time and can erase known routes.
+  writeFileSync(mainPath,`${readFileSync(mainPath,'utf8')}\ndef clear_routes(value=app.routes.clear()): pass\n`);
+  scan();
+  const erasedAudit=cli(['bindings','audit','--project','.'],1);
+  assert(erasedAudit.diagnostics.some(d=>d.id === 'observed.stale-binding' && d.data?.symbol === 'shop.handlers.list_items' && d.data?.detail === 'state-stale'));
+  assert.deepEqual(inventory(join(root,'src')).find(([path])=>path === 'shop/handlers.py'),sourceBefore.find(([path])=>path === 'shop/handlers.py'));
+  assert.equal(JSON.parse(readFileSync(indexPath)).endpoints.length,0);
+  assert(!proposal(),'a definition-time mutation cannot reconfirm erased route evidence');
   // Removing registrations must not silently turn a confirmed Endpoint into an entity.
   writeFileSync(mainPath,'from fastapi import FastAPI\napp=FastAPI()\n');
   writeFileSync(join(root,'src/shop/routes.py'),'from .handlers import list_items\n');

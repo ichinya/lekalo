@@ -151,3 +151,47 @@ test('invalid registration argument shapes are unknown rather than guessed route
   const duplicate = run({ 'shop.py': `${simple}\ndef items(): pass\n` });
   assert.equal(routes(duplicate).length,0); assert(unknowns(duplicate).some(r => r.detail === 'ambiguous-handler-carrier'));
 });
+
+test('definition-time defaults, annotations and decorator arguments cannot hide app mutations', () => {
+  for (const definition of [
+    'def unrelated(value=app.routes.clear()): pass',
+    'def unrelated(*, value=app.routes.clear()): pass',
+    'def unrelated(value: app.routes.clear()): pass',
+    'def unrelated() -> app.routes.clear(): pass',
+    '@decorate(app.routes.clear())\ndef unrelated(): pass',
+    'def unrelated(value=lambda x=app.routes.clear(): x): pass',
+    'class Other:\n    changed=app.routes.clear()',
+    'class Other:\n    def method(self, value=app.routes.clear()): pass',
+  ]) {
+    const result=run({'shop.py': `${simple}\n${definition}\n`});
+    assert.equal(routes(result).length,0,definition);
+    assert(unknowns(result).some(row => row.detail === 'framework-object-escaped'),definition);
+  }
+  const passive=run({'shop.py': `${simple}\ndef unrelated(value=lambda: app.routes.clear()): pass\n`});
+  assert.deepEqual(routes(passive).map(r=>r.path),['/items'],'an uncalled lambda body is not a definition-time mutation');
+});
+
+test('mutated or escaped method lists are unknown across direct aliases', () => {
+  for (const mutation of [
+    "METHODS.append('POST')",
+    "METHODS.extend(['POST'])",
+    'mutate(METHODS)',
+    "alias=METHODS\nalias.append('POST')",
+    "def unrelated(value=METHODS.append('POST')): pass",
+  ]) {
+    const result=run({'shop.py': `from fastapi import FastAPI\napp=FastAPI()\nMETHODS=['GET']\n${mutation}\n@app.api_route('/items',methods=METHODS)\ndef items(): pass\n`});
+    assert.equal(routes(result).length,0,mutation);
+    assert(unknowns(result).some(row => row.detail === 'method-list-mutation-or-escape'),mutation);
+  }
+});
+
+test('method-list invalidation follows imported values without poisoning fresh lists', () => {
+  const result=run({
+    'constants.py': "METHODS=['GET']\n",
+    'shop.py': `from fastapi import FastAPI\nimport constants as config\nfrom constants import METHODS as alias\napp=FastAPI()\nconfig.METHODS.append('POST')\n@app.api_route('/unknown',methods=alias)\ndef unknown(): pass\nFRESH=['GET']\n@app.api_route('/known',methods=FRESH)\ndef known(): pass\n`,
+  });
+  assert.deepEqual(routes(result).map(r=>[r.method,r.path]),[['GET','/known']]);
+  assert(unknowns(result).some(row=>row.detail === 'method-list-mutation-or-escape'));
+  const unescaped=run({'shop.py': `from fastapi import FastAPI\napp=FastAPI()\nMETHODS=['GET','POST']\nalias=METHODS\n@app.api_route('/safe',methods=alias)\ndef safe(): pass\n`});
+  assert.deepEqual(routes(unescaped).map(r=>r.method),['GET','POST']);assert.equal(unknowns(unescaped).length,0);
+});

@@ -31,7 +31,7 @@ enum Atom {
     Object(usize),
     Function(String),
     Text(String),
-    List(Vec<String>),
+    List(usize, Vec<String>),
     Method(usize, String),
 }
 #[derive(Clone, Debug)]
@@ -92,6 +92,8 @@ struct Analysis<'a> {
     bounded: bool,
     tainted_all: bool,
     lines: Vec<LineIndex>,
+    next_list: usize,
+    invalid_lists: BTreeSet<usize>,
 }
 
 pub struct Outcome {
@@ -116,6 +118,8 @@ pub fn apply(sources: &[Source], entries: &mut [Value], policy: &str) -> Outcome
             .iter()
             .map(|s| LineIndex::from_source_text(&s.text))
             .collect(),
+        next_list: 0,
+        invalid_lists: BTreeSet::new(),
     };
     for (i, s) in sources.iter().enumerate() {
         if s.path.ends_with(".py") {
@@ -512,7 +516,7 @@ impl Analysis<'_> {
         if !self.tick(i, depth) {
             return Bound::unknown(i);
         }
-        match e {
+        let mut value = match e {
             Expr::Name(n) => env
                 .get(n.id.as_str())
                 .cloned()
@@ -539,7 +543,11 @@ impl Analysis<'_> {
             // Calls in expression positions can leak framework objects. Known
             // constructor calls are handled only at a named assignment below.
             _ => Bound::unknown(i),
+        };
+        if matches!(&value.atom, Atom::List(id, _) if self.invalid_lists.contains(id)) {
+            value.atom = Atom::Unknown;
         }
+        value
     }
     fn list(&mut self, i: usize, values: &[Expr], env: &Env, depth: usize) -> Bound {
         if values.len() > 8 {
@@ -556,8 +564,10 @@ impl Analysis<'_> {
                 return Bound::unknown(i);
             }
         }
+        let identity = self.next_list;
+        self.next_list += 1;
         Bound {
-            atom: Atom::List(out),
+            atom: Atom::List(identity, out),
             deps,
         }
     }
@@ -660,6 +670,9 @@ impl Analysis<'_> {
             }
             Stmt::FunctionDef(row) => {
                 let line = self.line(i, s);
+                let mut immediate = ImmediateCalls::default();
+                immediate.function_header(row, false);
+                self.immediate_calls(i, immediate, env, depth + 1);
                 let native = self.symbol(i, row.name.as_str(), line);
                 let handler = native
                     .clone()
@@ -669,6 +682,12 @@ impl Analysis<'_> {
                 let mut safe = true;
                 for decorator in &row.decorator_list {
                     if let Expr::Call(call) = &decorator.expression {
+                        // A route decorator's arguments execute before it is
+                        // applied to the handler; nested calls may mutate state.
+                        let mut immediate = ImmediateCalls::default();
+                        immediate.visit_expr(&call.func);
+                        immediate.visit_arguments(&call.arguments);
+                        self.immediate_calls(i, immediate, env, depth + 1);
                         let target = self.eval(i, &call.func, env, depth + 1);
                         if let Atom::Method(object, method) = &target.atom {
                             if route_method(method)
@@ -705,8 +724,9 @@ impl Analysis<'_> {
                             depth + 1,
                         );
                     }
-                } else if !registrations.is_empty() {
+                } else {
                     self.note(i, line, "decorated-handler-unresolved");
+                    self.taint_all();
                 }
                 // Registration inside a function/factory is conditional runtime
                 // behavior, including mutation of an outer app/router.
@@ -724,6 +744,9 @@ impl Analysis<'_> {
                 );
             }
             Stmt::ClassDef(row) => {
+                let mut immediate = ImmediateCalls::default();
+                immediate.visit_stmt(s);
+                self.immediate_calls(i, immediate, env, depth + 1);
                 env.insert(row.name.to_string(), Bound::unknown(i));
                 let mut probe = Probe::default();
                 for stmt in &row.body {
@@ -998,7 +1021,7 @@ impl Analysis<'_> {
         let methods = if matches!(method, "api_route" | "add_api_route") {
             match values.get("methods").map(|b| &b.atom) {
                 None => Some(vec!["GET".to_owned()]),
-                Some(Atom::List(ms))
+                Some(Atom::List(_, ms))
                     if !ms.is_empty()
                         && ms
                             .iter()
@@ -1060,8 +1083,23 @@ impl Analysis<'_> {
                 Atom::Module(id) if modules.insert(id) => {
                     pending.extend(self.exports[id].values().map(|b| b.atom.clone()));
                 }
+                Atom::List(id, _) => {
+                    self.invalid_lists.insert(id);
+                    self.note(i, line, "method-list-mutation-or-escape");
+                }
                 _ => {}
             }
+        }
+    }
+    fn immediate_calls(&mut self, i: usize, calls: ImmediateCalls<'_>, env: &Env, depth: usize) {
+        self.work = self.work.saturating_add(calls.visited);
+        if calls.truncated || !self.tick(i, depth) {
+            self.bounded = true;
+            self.taint_all();
+            return;
+        }
+        for call in calls.calls {
+            self.call(i, call, env, depth + 1);
         }
     }
     fn taint_all(&mut self) {
@@ -1140,6 +1178,52 @@ impl Analysis<'_> {
         }
         stack.pop();
         Ok(())
+    }
+}
+
+/// Definition-time calls only: function/lambda bodies remain unevaluated.
+#[derive(Default)]
+struct ImmediateCalls<'a> {
+    calls: Vec<&'a ruff_python_ast::ExprCall>,
+    visited: usize,
+    truncated: bool,
+}
+impl<'a> ImmediateCalls<'a> {
+    fn function_header(&mut self, row: &'a ruff_python_ast::StmtFunctionDef, decorators: bool) {
+        if decorators {
+            for decorator in &row.decorator_list {
+                self.visit_expr(&decorator.expression);
+            }
+        }
+        self.visit_parameters(&row.parameters);
+        if let Some(annotation) = &row.returns {
+            self.visit_annotation(annotation);
+        }
+    }
+}
+impl<'a> SourceOrderVisitor<'a> for ImmediateCalls<'a> {
+    fn visit_expr(&mut self, expr: &'a Expr) {
+        if self.visited >= MAX_WORK {
+            self.truncated = true;
+            return;
+        }
+        self.visited += 1;
+        if let Expr::Lambda(lambda) = expr {
+            if let Some(parameters) = &lambda.parameters {
+                self.visit_parameters(parameters);
+            }
+            return;
+        }
+        walk_expr(self, expr);
+        if let Expr::Call(call) = expr {
+            self.calls.push(call);
+        }
+    }
+    fn visit_stmt(&mut self, stmt: &'a Stmt) {
+        match stmt {
+            Stmt::FunctionDef(row) => self.function_header(row, true),
+            _ => walk_stmt(self, stmt),
+        }
     }
 }
 

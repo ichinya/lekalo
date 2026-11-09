@@ -68,6 +68,12 @@ truncated scan. The provider bounds analysis to 100,000 work steps, 1,024
 objects, 2,000 routes, 32 levels, 64 routes per handler and 64 source attachments
 per route, inside the generic scanner's existing source/output bounds.
 
+Function defaults, annotation expressions and decorator arguments are checked
+conservatively for definition-time mutations. Uncalled lambda bodies are not
+treated as immediate execution. Method-list aliases share an identity; a
+mutation or escape to an unknown call invalidates that cached value before
+later registration, including aliases imported from another module.
+
 ## Confirm author intent and review changes
 
 Canonical Endpoint definitions remain authored user intent. The synthetic
