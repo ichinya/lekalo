@@ -236,8 +236,8 @@ jobs:
 
   build-test:
     name: Build and test (${{ matrix.os }})
-    # This job validates host AppArmor and native process confinement. Keep
-    # its original hosted OS matrix; Docker workers run the other Linux gates.
+    # This job validates host AppArmor and native process confinement;
+    # Docker workers run the other Linux gates.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

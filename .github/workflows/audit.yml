@@ -32,11 +32,25 @@ jobs:
         with:
           cache-bin: true
       - run: cargo install cargo-audit --locked
-      - name: Audit the main workspace lockfile
-        run: cargo audit
-      - name: Audit the adapter SDK workspace lockfile
-        working-directory: sdk/rust
-        run: cargo audit
-      - name: Audit the Python adapter lockfile
-        working-directory: adapters/python
-        run: cargo audit
+      - name: Audit every tracked Cargo.lock
+        # Include SDK template locks, exclude untracked files, and preserve
+        # spaces and Unicode paths. Report every workspace before returning
+        # an aggregate failure; failed discovery must never become a pass.
+        run: |
+          set -euo pipefail
+          lockfiles="$(mktemp)"
+          trap 'rm -f -- "$lockfiles"' EXIT
+          git ls-files -z -- Cargo.lock '**/Cargo.lock' > "$lockfiles"
+          failed=0
+          count=0
+          while IFS= read -r -d '' lock; do
+            count=$((count + 1))
+            echo "::group::cargo audit ($lock)"
+            (cd "$(dirname "$lock")" && cargo audit) || failed=1
+            echo "::endgroup::"
+          done < "$lockfiles"
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No tracked Cargo.lock files were found"
+            exit 1
+          fi
+          exit "$failed"
