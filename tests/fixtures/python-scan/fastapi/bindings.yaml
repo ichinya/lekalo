@@ -1,0 +1,8 @@
+schema_version: "0.2.16"
+definitions:
+  - id: shop.handlers.list_items
+    kind: endpoint
+    version: 1
+    invokes: shop.list_items
+    method: GET
+    path: /api/v1/items

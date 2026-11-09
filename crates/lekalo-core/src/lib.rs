@@ -32,6 +32,7 @@ pub mod fix;
 pub mod format;
 pub mod framework_lift;
 pub mod graph;
+pub mod http_routes;
 pub mod impact;
 pub mod implementation;
 pub mod init;

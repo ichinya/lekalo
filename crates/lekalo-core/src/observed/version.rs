@@ -18,15 +18,33 @@ pub const SCHEMA_VERSION: &str = "lekalo/observed-index/v0.2.16";
 /// extension. A scan in either spelling decodes; the additive members
 /// (target, profile, candidates, native test bindings) exist only on a
 /// 0.2.16 document.
-pub const SCAN_SCHEMA_VERSIONS: [&str; 2] = [
+pub const SCAN_SCHEMA_VERSIONS: [&str; 3] = [
     "lekalo/observed-scan/v0.2.16",
     "lekalo/observed-scan/v1.1.0",
+    "lekalo/observed-scan/v1.2.0",
 ];
 
 /// Exact successor identities for the source-bound native inventory.
 pub const NATIVE_INDEX_SCHEMA_VERSION: &str = "lekalo/observed-index/v1.1.0";
 pub const NATIVE_INDEX_IDENTITY: &str = "dev.lekalo.observed-index@1.1.0";
 pub const NATIVE_SCAN_SCHEMA_VERSION: &str = "lekalo/observed-scan/v1.1.0";
+pub const HTTP_INDEX_SCHEMA_VERSION: &str = "lekalo/observed-index/v1.2.0";
+pub const HTTP_INDEX_IDENTITY: &str = "dev.lekalo.observed-index@1.2.0";
+pub const HTTP_SCAN_SCHEMA_VERSION: &str = "lekalo/observed-scan/v1.2.0";
+
+pub fn native_index(schema: &str) -> bool {
+    matches!(
+        schema,
+        NATIVE_INDEX_SCHEMA_VERSION | HTTP_INDEX_SCHEMA_VERSION
+    )
+}
+
+pub fn native_scan(schema: &str) -> bool {
+    matches!(
+        schema,
+        NATIVE_SCAN_SCHEMA_VERSION | HTTP_SCAN_SCHEMA_VERSION
+    )
+}
 
 /// The current scan spelling new documents advertise.
 pub const SCAN_SCHEMA_VERSION: &str = SCAN_SCHEMA_VERSIONS[0];

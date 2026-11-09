@@ -230,7 +230,7 @@ fn proposal_id(index: &ObservedIndex, symbol: &str, candidates: &[CandidateRecor
         "profile": index.profile,
         "candidates": wire_candidates,
     });
-    if index.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION {
+    if version::native_index(&index.schema_version) {
         payload["binding_evidence"] = serde_json::to_value(
             index
                 .binding_evidence
@@ -287,7 +287,7 @@ fn proposal_of(index: &ObservedIndex, record: &SymbolRecord) -> Option<Proposal>
 pub(crate) fn proposals_of(index: &ObservedIndex) -> Vec<Proposal> {
     let mut proposals: Vec<Proposal> = Vec::new();
     for record in &index.symbols {
-        let native = index.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION;
+        let native = version::native_index(&index.schema_version);
         let reconfirming = native
             && record.status == BindingStatus::Confirmed
             && record.state == BindingState::Stale;
@@ -363,9 +363,13 @@ fn resolve_candidate<'a>(
 /// user-confirmed at the chosen native identity, provenance preserved.
 fn check_candidate_source(
     ctx: &super::ObservedContext,
+    index: &ObservedIndex,
     candidate: &CandidateRecord,
 ) -> Result<(), DiagnosticSet> {
     let fs = crate::project_fs::Fs::open(&ctx.root).map_err(|_| diagnostic::missing_index_set())?;
+    if !index::route_sources_current(&fs, index, &candidate.native) {
+        return Err(diagnostic::plan_mismatch_set("candidate-source-drift"));
+    }
     if candidate.fingerprint.is_some()
         && index::read_fingerprint(&fs, &candidate.path)? != candidate.fingerprint
     {
@@ -384,7 +388,7 @@ pub(crate) fn apply_confirmation(
         .iter()
         .find(|e| e.symbol == proposal.symbol && e.native == chosen.native)
         .map(|e| e.evidence.clone());
-    if index.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION && fresh.is_none() {
+    if version::native_index(&index.schema_version) && fresh.is_none() {
         return None;
     }
     let fresh_provenance = super::types::Provenance {
@@ -444,7 +448,7 @@ pub fn confirm(
             .expect("proposal source exists"),
     );
     let chosen = resolve_candidate(&proposal, &candidates, candidate)?.clone();
-    check_candidate_source(ctx, &chosen)?;
+    check_candidate_source(ctx, &index, &chosen)?;
     let mut owned = index;
     let confirmed = apply_confirmation(&mut owned, &proposal, &chosen)
         .ok_or_else(|| diagnostic::proposal_unknown_set(proposal_id))?;
@@ -543,7 +547,7 @@ pub fn confirm_batch(
                 .expect("proposal source exists"),
         );
         let chosen = resolve_candidate(proposal, &candidates, None)?.clone();
-        check_candidate_source(ctx, &chosen)?;
+        check_candidate_source(ctx, &index, &chosen)?;
         if let Some(symbol) = apply_confirmation(&mut index, proposal, &chosen) {
             confirmed.push(symbol);
         }
@@ -618,6 +622,18 @@ pub fn audit(ctx: &super::ObservedContext) -> Result<AuditReceipt, DiagnosticSet
             None => tests_unknown += 1,
         }
     }
+    let mut checked_routes = std::collections::BTreeMap::new();
+    for endpoint in &index.endpoints {
+        if endpoint.http_evidence.as_ref().is_some_and(|route| {
+            !*checked_routes
+                .entry(&route.handler_native)
+                .or_insert_with(|| index::route_sources_current(&fs, &index, &route.handler_native))
+        }) {
+            failures.push((endpoint.symbol.clone(), "fingerprint-mismatch"));
+        }
+    }
+    failures.sort();
+    failures.dedup();
     if !failures.is_empty() {
         let mut items = Vec::new();
         for (symbol, detail) in failures

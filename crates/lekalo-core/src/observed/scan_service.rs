@@ -374,6 +374,7 @@ pub(crate) fn validate_ephemeral(
     outcome: &CallOutcome,
     target: &str,
     profile: Option<&str>,
+    command: &AdapterCommand,
 ) -> Result<(), DomainResult> {
     let project = ctx
         .model
@@ -389,10 +390,7 @@ pub(crate) fn validate_ephemeral(
     let request = ScanRequest {
         target,
         profile,
-        command: AdapterCommand {
-            program: std::path::PathBuf::new(),
-            args: Vec::new(),
-        },
+        command: command.clone(),
         limits: crate::target_protocol::transport::TransportLimits::default(),
     };
     let document = build_document(ctx, outcome, entries, &project.id, &request)?;
@@ -609,7 +607,9 @@ fn build_document(
     // Pass two: one observed-scan symbol per semantic id. Fingerprints
     // come from the real tree, so the freshness evidence is byte-truth.
     let native_inventory =
-        outcome.response.protocol_version == crate::target_protocol::version::NATIVE_SCAN_VERSION;
+        crate::target_protocol::version::supports_native_scan(&outcome.response.protocol_version);
+    let http_inventory =
+        outcome.response.protocol_version == crate::target_protocol::version::HTTP_SCAN_VERSION;
     let native_uncertainty = outcome
         .response
         .evidence
@@ -786,7 +786,9 @@ fn build_document(
     document.insert(
         "schemaVersion".to_owned(),
         Json::String(
-            if native_inventory {
+            if http_inventory {
+                super::version::HTTP_SCAN_SCHEMA_VERSION
+            } else if native_inventory {
                 super::version::NATIVE_SCAN_SCHEMA_VERSION
             } else {
                 super::version::SCAN_SCHEMA_VERSION
@@ -824,6 +826,53 @@ fn build_document(
             serde_json::to_value(native_uncertainty)
                 .map_err(|_| invalid_set("native-uncertainty"))?,
         );
+    }
+    if http_inventory {
+        let mut endpoints = Vec::new();
+        for entry in entries {
+            let Some(routes) = entry.evidence.as_ref().and_then(|e| e.http_routes.as_ref()) else {
+                continue;
+            };
+            let detail = parse_detail(entry)?;
+            for route in routes {
+                if !crate::http_routes::authorized_policy(
+                    &request.command.args,
+                    &route.provider,
+                    &route.policy_digest,
+                ) || route.handler_native != detail.native
+                    || route.sources.iter().any(|source| {
+                        !entries.iter().any(|e| {
+                            e.path == source.path
+                                && e.evidence.as_ref().and_then(|v| v.source_digest.as_ref())
+                                    == Some(&source.source_digest)
+                        })
+                    })
+                {
+                    return Err(invalid_set("http-source-custody"));
+                }
+                for native in [&route.handler_native, &route.application_native] {
+                    let Some(node) = entries
+                        .iter()
+                        .filter_map(|e| e.evidence.as_ref())
+                        .filter_map(|e| e.native_symbols.as_ref())
+                        .flatten()
+                        .find(|n| &n.native == native)
+                    else {
+                        return Err(invalid_set("http-native-identity"));
+                    };
+                    if !route.sources.iter().any(|s| s.path == node.path) {
+                        return Err(invalid_set("http-source-custody"));
+                    }
+                }
+                let module = detail.semantic.split('.').next().unwrap_or_default();
+                endpoints.push(serde_json::json!({"id":route.stable_id(module),"method":route.method,"path":route.path,"symbol":detail.semantic,"httpEvidence":route}));
+                if endpoints.len() > super::version::MAX_ENDPOINTS {
+                    return Err(invalid_set("http-route-bound"));
+                }
+            }
+        }
+        endpoints.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+        document.insert("endpoints".to_owned(), Json::Array(endpoints));
     }
     document.insert("target".to_owned(), Json::String(request.target.to_owned()));
     if let Some(profile) = request.profile {
