@@ -4,6 +4,7 @@
 *.sha256 text eol=lf
 *.md text eol=lf
 *.mjs text eol=lf
+.github/ci/*.sh text eol=lf
 *.yaml text eol=lf
 *.yml text eol=lf
 *.txt text eol=lf
