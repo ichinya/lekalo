@@ -34,10 +34,10 @@ Apache-2.0; the notices below apply to the embedded third-party parts.
    limitations under the License.
 ```
 
-## esbuild 0.25.12 (build-time only, never shipped as code)
+## esbuild 0.28.2 (build-time only, never shipped as code)
 
-- Source: <https://github.com/evanw/esbuild/tree/v0.25.12>
-- npm package: `esbuild@0.25.12`
+- Source: <https://github.com/evanw/esbuild/tree/v0.28.2>
+- npm package: `esbuild@0.28.2`
 - License: MIT, Copyright (c) 2020 Evan Wallace
 - Role: the bundler that produced the committed artifact. esbuild code
   is not executed at adapter runtime and none of its code is embedded in

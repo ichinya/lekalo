@@ -8,7 +8,7 @@
  *
  * This artifact embeds the TypeScript 5.9.3 compiler API and its
  * standard-library declarations (Apache-2.0, (c) Microsoft Corporation)
- * bundled by esbuild 0.25.12 (MIT, (c) Evan Wallace); see
+ * bundled by esbuild 0.28.2 (MIT, (c) Evan Wallace); see
  * THIRD_PARTY_NOTICES.md. It also embeds the drizzle-orm 0.45.4
  * declaration closure (Apache-2.0, (c) Drizzle Team) for type-context-only
  * resolution of Drizzle schema/query surfaces (issue #116). It resolves no
@@ -31,7 +31,11 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
 var __commonJS = (cb, mod) => function __require2() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  try {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  } catch (e) {
+    throw mod = 0, e;
+  }
 };
 var __export = (target, all) => {
   for (var name in all)
@@ -237761,7 +237765,7 @@ var descriptor2 = {
 __setCompilerMetadata({
   vendored: true,
   typescript: "5.9.3",
-  esbuild: "0.25.12"
+  esbuild: "0.28.2"
 });
 __attachVendoredCompiler(ts, LIB_FILES);
 __attachDrizzleDeclarations(DRIZZLE_FILES, DRIZZLE_PIN, DRIZZLE_DIGEST);
