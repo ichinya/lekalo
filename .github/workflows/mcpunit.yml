@@ -41,7 +41,7 @@ jobs:
           JSON
       # Measured locally: 100/100, zero findings — min-score 80 gates
       # regressions while leaving headroom for scoring drift.
-      - uses: lee-to/mcpunit@7e85998373fa969cd024acd477099822ed5771d6 # v1.0.0
+      - uses: lee-to/mcpunit@7d41dad218652eacedc0a80c7d35bcf3578402bd # v1.5.0
         with:
           cmd: ./target/debug/lekalo mcp serve --stdio --project planner
           min-score: "80"

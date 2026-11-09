@@ -103,9 +103,9 @@ const typescriptPackageJson = require("typescript/package.json");
 const stripShebang = (text) => text.startsWith(String.fromCharCode(35) + String.fromCharCode(33)) ? text.slice(text.indexOf(String.fromCharCode(10)) + 1) : text;
 const ESBUILD_VERSION = esbuildPackageJson.version;
 const TYPESCRIPT_VERSION = typescriptPackageJson.version;
-if (ESBUILD_VERSION !== "0.25.12") {
+if (ESBUILD_VERSION !== "0.28.2") {
   process.stderr.write(
-    `esbuild pin violation: expected 0.25.12, found ${ESBUILD_VERSION}\n`,
+    `esbuild pin violation: expected 0.28.2, found ${ESBUILD_VERSION}\n`,
   );
   process.exit(1);
 }
