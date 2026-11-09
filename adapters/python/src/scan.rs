@@ -8,6 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use lekalo_adapter_sdk::json::{canonical, Value};
+use lekalo_adapter_sdk::paths::is_semantic_id;
 
 use crate::ids;
 use crate::profile::{Profile, RootKind};
@@ -509,6 +510,20 @@ fn entry(
     tier: Tier,
     bounded: &mut bool,
 ) -> Option<(Value, usize)> {
+    // Native display names allow more Unicode and length than semantic ids.
+    // Keep admissible proposals unchanged; otherwise use the full, stable
+    // native key inside the original module without renaming native evidence
+    // or inventing a module the canonical model does not declare.
+    let semantic = if is_semantic_id(&sym.qualified_name) {
+        sym.qualified_name.clone()
+    } else {
+        let module = sym.qualified_name.split('.').next().unwrap_or_default();
+        format!("{module}.python:{}", sym.native)
+    };
+    if !is_semantic_id(&semantic) {
+        *bounded = true;
+        return None;
+    }
     // Predecessor detail is the closed 128-char token: the mandatory
     // `s`/`n` pair still fits once the optional members are dropped and
     // `n` carries a stable 64-bit prefix instead of the full digest. A
@@ -521,7 +536,7 @@ fn entry(
                     "n".to_owned(),
                     Value::Str(sym.native.get(..20).unwrap_or(&sym.native).to_owned()),
                 ),
-                ("s".to_owned(), Value::Str(sym.qualified_name.clone())),
+                ("s".to_owned(), Value::Str(semantic)),
             ];
             if stub {
                 members.push(("q".to_owned(), Value::Str("low".to_owned())));
@@ -530,7 +545,7 @@ fn entry(
         }
         _ => vec![
             ("n".to_owned(), Value::Str(sym.native.clone())),
-            ("s".to_owned(), Value::Str(sym.qualified_name.clone())),
+            ("s".to_owned(), Value::Str(semantic)),
             ("l".to_owned(), Value::Int(sym.line as i64)),
             (
                 "q".to_owned(),

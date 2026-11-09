@@ -174,3 +174,37 @@ test("oversized qualified names preserve healthy inventory and report uncertaint
   assert(result.evidence.native_uncertainty.some((row) => row.detail === "native-inventory-bound"));
   assertForests(result);
 });
+
+test("semantic proposals admit Unicode and long names without losing native evidence", () => {
+  const identifiers = ["привет", "世界", "a".repeat(186), "b".repeat(249), "short"];
+  const source = identifiers.map((id) => `def ${id}():\n    pass\n`).join("");
+  const cwd = fixture({ "src/sample.py": source });
+  for (const version of ["0.3.2", "0.6.4", "0.9.0", "0.9.1", "1.1.0"]) {
+    const first = run(cwd, profile(), { protocol_version: version });
+    assert.equal(first.status, "ok");
+    assert.equal(first.result.truncated, false);
+    assert.equal(first.result.entries.length, identifiers.length);
+    const proposals = first.result.entries.map((entry) => JSON.parse(entry.detail).s);
+    assert.equal(new Set(proposals).size, identifiers.length);
+    assert(proposals.includes("sample.short"));
+    for (const entry of first.result.entries) {
+      const { s } = JSON.parse(entry.detail);
+      assert.match(s, /^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,191}$/);
+      assert.equal(s.split(".")[0], "sample", "a proposal must retain the declared module");
+      if (["0.3.2", "0.6.4"].includes(version)) assert(entry.detail.length <= 128);
+    }
+    if (version === "1.1.0") {
+      assert.deepEqual(names(first), identifiers.map((id) => `sample.${id}`).sort());
+      assertForests(first);
+    }
+    // Native identity and the proposed semantic id survive a location-only edit.
+    writeFileSync(join(cwd, "src/sample.py"), `\n${source}`);
+    const moved = run(cwd, profile(), { protocol_version: version });
+    const identities = (result) => result.result.entries.map((entry) => {
+      const { n, s } = JSON.parse(entry.detail);
+      return [n, s];
+    }).sort(([a], [b]) => a.localeCompare(b));
+    assert.deepEqual(identities(moved), identities(first));
+    writeFileSync(join(cwd, "src/sample.py"), source);
+  }
+});
