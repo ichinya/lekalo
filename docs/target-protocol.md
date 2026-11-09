@@ -321,6 +321,29 @@ streaming/upload/download capabilities it does not implement, never a
 silent downgrade. Profiles that do not read the evidence home never
 see the generator; the bare kernel keeps its `describe`-only surface.
 
+## Opt-in HTTP registration evidence (1.2.0)
+
+The explicitly negotiated [HTTP successor](../contracts/target-protocol.schema.v1.2.0.json)
+retains the 1.1.0 source/profile/native custody rules. Successful scan entries
+may attach bounded `http_routes` only to an Endpoint carrier whose subtree
+root is the actual handler. Every route records provider/rules/policy identity,
+method/path, application and handler native IDs, optional explicit operation
+ID, registration location, exact sorted source attachments and confidence.
+Core requires both native identities in the admitted inventory, validates all
+source digests against already accepted scan entries and binds the policy
+claim to the user-owned framework-policy launch argument. It performs no new
+producer-directed filesystem reads. Bounds are 64 routes per handler and 64
+sources per route, inside the existing response limits.
+
+The observed scan/index successors are exactly versioned 1.2.0. Route facts
+become observed endpoint attachments; canonical Model semantics are unchanged.
+Framework uncertainty uses the source-bound `framework-route` kind. Endpoint
+inspect reports incomplete evidence when that uncertainty exists, including
+unknown registrations in other files. Predecessor schemas and admission remain
+frozen and reject HTTP fields. An accepted HTTP index cannot be downgraded by
+a predecessor scan. The [FastAPI guide](public-fastapi-scan.md) owns opt-in
+configuration, static rules, freshness and the public acceptance gate.
+
 ## Failure classification and integration
 
 | Failure | Public status / exit / stream |

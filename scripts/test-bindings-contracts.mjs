@@ -117,10 +117,14 @@ if (ambiguousSymbol.location || ambiguousSymbol.stableKey) {
 const versionSource = readText("crates/lekalo-core/src/observed/version.rs");
 for (const constant of [
   'SCHEMA_VERSION: &str = "lekalo/observed-index/v0.2.16"',
-  'SCAN_SCHEMA_VERSIONS: [&str; 2] =',
+  'SCAN_SCHEMA_VERSIONS: [&str; 3] =',
   'NATIVE_SCAN_SCHEMA_VERSION: &str = "lekalo/observed-scan/v1.1.0";',
+  'HTTP_SCAN_SCHEMA_VERSION: &str = "lekalo/observed-scan/v1.2.0";',
+  'HTTP_INDEX_SCHEMA_VERSION: &str = "lekalo/observed-index/v1.2.0";',
+  'HTTP_INDEX_IDENTITY: &str = "dev.lekalo.observed-index@1.2.0";',
   '"lekalo/observed-scan/v0.2.16"',
-  '"lekalo/observed-scan/v0.2.16"',
+  '"lekalo/observed-scan/v1.1.0"',
+  '"lekalo/observed-scan/v1.2.0"',
   'SCAN_SCHEMA_VERSION: &str = SCAN_SCHEMA_VERSIONS[0];',
   'INDEX_IDENTITY: &str = "dev.lekalo.observed-index@0.2.16"',
   'PROPOSAL_ID_PREFIX: &str = "prop-"',

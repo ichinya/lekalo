@@ -27,11 +27,15 @@ pub struct NativeUncertainty {
 
 /// Closed, source-bound uncertainty records; other uncertainty still refuses.
 pub fn valid_uncertainty(rows: &[NativeUncertainty]) -> bool {
+    valid_uncertainty_for(rows, false)
+}
+
+pub fn valid_uncertainty_for(rows: &[NativeUncertainty], framework: bool) -> bool {
     rows.len() <= 4096
         && rows.windows(2).all(|p| p[0] < p[1])
         && rows.iter().all(|r| {
             crate::project_fs::path_violation(&r.path).is_none()
-                && r.kind == "any-surface"
+                && (r.kind == "any-surface" || (framework && r.kind == "framework-route"))
                 && text(&r.detail, 64)
                 && r.line.is_none_or(|l| l > 0 && l <= 1_000_000)
                 && crate::trace::id::is_digest(&r.source_digest)

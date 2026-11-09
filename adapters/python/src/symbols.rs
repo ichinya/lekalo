@@ -231,7 +231,7 @@ fn end_line(index: &LineIndex, range: TextRange) -> u64 {
     index.line_index(range.end()).get() as u64
 }
 
-fn slice<'a>(source: &'a str, range: TextRange) -> &'a str {
+fn slice(source: &str, range: TextRange) -> &str {
     &source[range.start().to_usize()..range.end().to_usize()]
 }
 

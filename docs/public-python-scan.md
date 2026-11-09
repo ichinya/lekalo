@@ -111,6 +111,10 @@ identity and proposal; it never silently redirects the old confirmed binding.
 
 ## Conformance and evidence limits
 
+For explicitly enabled HTTP registration evidence, see the separate
+[FastAPI provider guide](public-fastapi-scan.md). Generic scanning keeps its
+existing protocol and declaration-only behavior.
+
 From the disposable project, using the same adapter/profile arguments as above:
 
 ```text

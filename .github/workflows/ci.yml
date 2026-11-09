@@ -768,6 +768,8 @@ jobs:
       - name: Run the TypeScript scanner suite (issue #44)
         run: node scripts/test-node-typescript-scanner.mjs
       - name: "Run Python adapter unit, protocol and observed-host regressions (issue #146)"
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
         timeout-minutes: 15
         run: |
           set -euo pipefail
@@ -775,6 +777,9 @@ jobs:
           cargo build --manifest-path adapters/python/Cargo.toml --locked
           node --test adapters/python/tests/scan-protocol.test.mjs adapters/python/tests/observed-host.test.mjs
           node scripts/test-public-python-scan.mjs
+          node --test adapters/python/tests/fastapi.test.mjs
+          node scripts/gen-http-scan-protocol.mjs --check
+          node scripts/test-public-fastapi-scan.mjs --validate-contracts
       - name: Qualify the public manifested TypeScript scan (issue #150)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules

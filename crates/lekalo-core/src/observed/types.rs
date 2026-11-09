@@ -498,6 +498,8 @@ pub struct EndpointRecord {
     pub method: String,
     pub path: String,
     pub symbol: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_evidence: Option<crate::http_routes::HttpRouteEvidence>,
 }
 
 /// The closed schema-record kinds.
@@ -643,6 +645,7 @@ pub struct ScanEndpoint {
     pub method: String,
     pub path: String,
     pub symbol: String,
+    pub http_evidence: Option<crate::http_routes::HttpRouteEvidence>,
 }
 
 /// One scanned schema record bound to a scanned symbol.
@@ -676,6 +679,7 @@ pub struct ScanDocument {
     pub profile: Option<String>,
     pub test_bindings: Vec<ScanTestBinding>,
     pub native_inventory: bool,
+    pub http_inventory: bool,
     pub native_symbols: Vec<crate::native_symbols::NativeSymbol>,
     pub binding_evidence: Vec<BindingEvidence>,
     pub native_uncertainty: Vec<crate::native_symbols::NativeUncertainty>,

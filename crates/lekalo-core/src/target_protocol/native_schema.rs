@@ -28,12 +28,26 @@ pub(super) fn valid(bytes: &[u8]) -> bool {
         .and_then(|text| crate::classification::parse_checked(text).ok());
     static LEGACY: OnceLock<Result<Validator, ()>> = OnceLock::new();
     static NATIVE: OnceLock<Result<Validator, ()>> = OnceLock::new();
+    static HTTP: OnceLock<Result<Validator, ()>> = OnceLock::new();
     let native = value
         .as_ref()
         .and_then(|v| v.get("protocol_version"))
         .and_then(Value::as_str)
         == Some(super::version::NATIVE_SCAN_VERSION);
-    let validator = if native {
+    let http = value
+        .as_ref()
+        .and_then(|v| v.get("protocol_version"))
+        .and_then(Value::as_str)
+        == Some(super::version::HTTP_SCAN_VERSION);
+    let validator = if http {
+        HTTP.get_or_init(|| {
+            let schema = serde_json::from_slice(include_bytes!(
+                "../../../../contracts/target-protocol.schema.v1.2.0.json"
+            ))
+            .map_err(|_| ())?;
+            compile(&schema)
+        })
+    } else if native {
         NATIVE.get_or_init(|| {
             let schema = serde_json::from_slice(include_bytes!(
                 "../../../../contracts/target-protocol.schema.v1.1.0.json"

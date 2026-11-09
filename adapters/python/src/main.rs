@@ -8,6 +8,7 @@
 //! adapter never executes Python, never imports the studied package,
 //! never writes, and never opens the network.
 
+mod fastapi;
 mod ids;
 mod profile;
 mod scan;
@@ -27,6 +28,7 @@ const IR_VERSION: &str = "0.2.16";
 /// The declared ladder: the host probes at 0.3.2 and upgrades to the
 /// newest common version — 1.1.0 for native-symbol custody.
 const DECLARED: &[&str] = &["0.3.2", "0.6.4", "0.9.0", "0.9.1", "1.1.0"];
+const FASTAPI_DECLARED: &[&str] = &["0.3.2", "0.6.4", "0.9.0", "0.9.1", "1.1.0", "1.2.0"];
 const REQUEST_FILE_FLAG: &str = "--lekalo-request-file";
 const DEFAULT_MAX_OUTPUT: usize = 8 * 1024 * 1024;
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
@@ -55,7 +57,12 @@ fn serve() -> i32 {
         Ok(request) => request,
         Err(_) => return fatal(None, &identity, "request-not-json"),
     };
-    if let Err(reason) = admit(&request) {
+    let declared = if profile.as_ref().is_some_and(|p| p.fastapi_policy.is_some()) {
+        FASTAPI_DECLARED
+    } else {
+        DECLARED
+    };
+    if let Err(reason) = admit(&request, declared) {
         return fatal(Some(&request), &identity, reason);
     }
     let operation = request
@@ -134,7 +141,7 @@ fn read_request(args: &[String]) -> Option<String> {
 
 /// Structural admission, mirroring the SDK's closed request shape for
 /// the operation subset this adapter implements.
-fn admit(request: &Value) -> Result<(), &'static str> {
+fn admit(request: &Value, declared: &[&str]) -> Result<(), &'static str> {
     const ALLOWED: &[&str] = &[
         "dry_run",
         "ir_path",
@@ -178,7 +185,7 @@ fn admit(request: &Value) -> Result<(), &'static str> {
         .get("protocol_version")
         .and_then(Value::as_str)
         .unwrap_or("");
-    if !DECLARED.contains(&version) {
+    if !declared.contains(&version) {
         return Err("version");
     }
     if !request
@@ -238,12 +245,7 @@ fn dispatch(
 }
 
 fn describe(request: &Value, identity: &Value, profile: Option<&profile::Profile>) -> Value {
-    let (operations, states, scopes, profiles): (
-        Vec<&str>,
-        Vec<(&str, &str)>,
-        Vec<&str>,
-        Vec<String>,
-    ) = match profile {
+    let (operations, states, scopes, profiles) = match profile {
         Some(profile) => (
             vec!["describe", "scan"],
             vec![("scan.symbols", "full")],
@@ -251,7 +253,7 @@ fn describe(request: &Value, identity: &Value, profile: Option<&profile::Profile
                 .roots
                 .iter()
                 .map(|root| root.scope.as_str())
-                .collect(),
+                .collect::<Vec<_>>(),
             vec![profile.id.clone()],
         ),
         None => (
@@ -263,7 +265,11 @@ fn describe(request: &Value, identity: &Value, profile: Option<&profile::Profile
     };
     let capabilities = sdk::build_capabilities(
         identity,
-        DECLARED,
+        if profile.is_some_and(|p| p.fastapi_policy.is_some()) {
+            FASTAPI_DECLARED
+        } else {
+            DECLARED
+        },
         &operations,
         &["stdin", "file"],
         &[TARGET],
@@ -337,29 +343,40 @@ fn scan_request(request: &Value, identity: &Value, profile: Option<&profile::Pro
         .get("protocol_version")
         .and_then(Value::as_str)
         .unwrap_or("0.3.2");
+    if (profile.fastapi_policy.is_some() && version != "1.2.0")
+        || (profile.fastapi_policy.is_none() && version == "1.2.0")
+    {
+        return error_envelope(
+            request,
+            identity,
+            "unsupported",
+            "framework-protocol-required",
+            "FastAPI evidence requires explicit policy and protocol 1.2.0",
+        );
+    }
     match scan::run(profile, version) {
         Ok(outcome) => {
             let mut members = base(request, identity, "ok");
             // Scan custody binds the evidence to the injected profile
             // from 0.9.0 onward; native uncertainty rows are 1.1.0-only.
             if scan::tier(version) != scan::Tier::Predecessor {
-                if let Some((_, evidence)) = members.iter_mut().find(|(k, _)| k == "evidence") {
-                    if let Value::Object(rows) = evidence {
-                        rows.push((
-                            "scan_profile_digest".to_owned(),
-                            Value::Str(profile.digest.clone()),
-                        ));
-                    }
+                if let Some((_, Value::Object(rows))) =
+                    members.iter_mut().find(|(k, _)| k == "evidence")
+                {
+                    rows.push((
+                        "scan_profile_digest".to_owned(),
+                        Value::Str(profile.digest.clone()),
+                    ));
                 }
             }
             if scan::tier(version) == scan::Tier::Native {
-                if let Some((_, evidence)) = members.iter_mut().find(|(k, _)| k == "evidence") {
-                    if let Value::Object(rows) = evidence {
-                        rows.push((
-                            "native_uncertainty".to_owned(),
-                            Value::Array(outcome.uncertainty),
-                        ));
-                    }
+                if let Some((_, Value::Object(rows))) =
+                    members.iter_mut().find(|(k, _)| k == "evidence")
+                {
+                    rows.push((
+                        "native_uncertainty".to_owned(),
+                        Value::Array(outcome.uncertainty),
+                    ));
                 }
             }
             members.push((

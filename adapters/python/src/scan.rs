@@ -49,7 +49,7 @@ pub enum Tier {
 
 pub fn tier(version: &str) -> Tier {
     match version {
-        "1.1.0" => Tier::Native,
+        "1.1.0" | "1.2.0" => Tier::Native,
         "0.9.0" | "0.9.1" => Tier::Custody,
         _ => Tier::Predecessor,
     }
@@ -89,10 +89,7 @@ pub fn run(profile: &Profile, version: &str) -> Result<Scan, &'static str> {
                 }
             }
             RootKind::Tree => {
-                let base = PathBuf::from(
-                    root.path
-                        .replace('/', &std::path::MAIN_SEPARATOR.to_string()),
-                );
+                let base = PathBuf::from(root.path.replace('/', std::path::MAIN_SEPARATOR_STR));
                 walk_tree(
                     &base,
                     &root.path,
@@ -134,6 +131,7 @@ pub fn run(profile: &Profile, version: &str) -> Result<Scan, &'static str> {
     let mut entries: Vec<Value> = Vec::new();
     let mut total_symbols = 0usize;
     let mut uncertainty: Vec<symbols::UncRow> = Vec::new();
+    let mut framework_sources = Vec::new();
     for file in files {
         let digest = ids::source_digest(&file.bytes);
         let stub = file.path.ends_with(".pyi");
@@ -158,6 +156,15 @@ pub fn run(profile: &Profile, version: &str) -> Result<Scan, &'static str> {
         if text.is_empty() {
             scan.symbols.truncate(1); // module root only
         }
+        if profile.fastapi_policy.is_some() {
+            framework_sources.push(crate::fastapi::Source {
+                path: file.path.clone(),
+                module,
+                text,
+                digest: digest.clone(),
+                symbols: scan.symbols.clone(),
+            });
+        }
         let overflow = scan
             .references
             .len()
@@ -178,7 +185,7 @@ pub fn run(profile: &Profile, version: &str) -> Result<Scan, &'static str> {
                 source_digest: digest.clone(),
             });
         }
-        uncertainty.extend(scan.uncertainty.drain(..));
+        uncertainty.append(&mut scan.uncertainty);
     }
 
     uncertainty.sort();
@@ -187,25 +194,57 @@ pub fn run(profile: &Profile, version: &str) -> Result<Scan, &'static str> {
         uncertainty.truncate(MAX_UNCERTAINTY);
         truncated = true;
     }
+    let mut rows: Vec<Value> = uncertainty
+        .into_iter()
+        .map(|row| {
+            let mut members = vec![
+                ("detail".to_owned(), Value::Str(row.detail)),
+                ("kind".to_owned(), Value::Str("any-surface".to_owned())),
+            ];
+            if let Some(line) = row.line {
+                members.push(("line".to_owned(), Value::Int(line as i64)));
+            }
+            members.extend([
+                ("path".to_owned(), Value::Str(row.path)),
+                ("source_digest".to_owned(), Value::Str(row.source_digest)),
+            ]);
+            Value::Object(members)
+        })
+        .collect();
+    if let Some(policy) = &profile.fastapi_policy {
+        let framework = crate::fastapi::apply(&framework_sources, &mut entries, policy);
+        truncated |= framework.truncated;
+        rows.extend(framework.uncertainty);
+        rows.sort_by_key(|v| {
+            (
+                v.get("path")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                v.get("kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                v.get("detail")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+                v.get("line").and_then(Value::as_u64),
+                v.get("source_digest")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+            )
+        });
+        rows.dedup_by(|a, b| canonical(a) == canonical(b));
+        if rows.len() > MAX_UNCERTAINTY {
+            rows.truncate(MAX_UNCERTAINTY);
+            truncated = true;
+        }
+    }
     Ok(Scan {
         entries,
-        uncertainty: uncertainty
-            .into_iter()
-            .map(|row| {
-                let mut members = vec![
-                    ("detail".to_owned(), Value::Str(row.detail)),
-                    ("kind".to_owned(), Value::Str("any-surface".to_owned())),
-                ];
-                if let Some(line) = row.line {
-                    members.push(("line".to_owned(), Value::Int(line as i64)));
-                }
-                members.extend([
-                    ("path".to_owned(), Value::Str(row.path)),
-                    ("source_digest".to_owned(), Value::Str(row.source_digest)),
-                ]);
-                Value::Object(members)
-            })
-            .collect(),
+        uncertainty: rows,
         truncated,
     })
 }
@@ -261,7 +300,7 @@ fn push_file(
         *truncated = true;
         return false;
     }
-    let disk = PathBuf::from(logical.replace('/', &std::path::MAIN_SEPARATOR.to_string()));
+    let disk = PathBuf::from(logical.replace('/', std::path::MAIN_SEPARATOR_STR));
     let Ok(bytes) = fs::read(&disk) else {
         return true; // vanished between walk and read: skip, never fail open
     };
@@ -278,6 +317,7 @@ fn push_file(
     true
 }
 
+#[allow(clippy::too_many_arguments)]
 fn walk_tree(
     disk: &Path,
     logical: &str,
@@ -500,6 +540,7 @@ fn unrepresentable_native_ids(scan: &symbols::FileScan) -> BTreeSet<&str> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn entry(
     path: &str,
     sym: &Sym,

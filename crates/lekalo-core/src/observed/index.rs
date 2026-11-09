@@ -130,8 +130,11 @@ pub fn parse_index(bytes: &[u8]) -> Result<ObservedIndex, DiagnosticSet> {
     }
     let index: ObservedIndex =
         serde_json::from_slice(bytes).map_err(|_| diagnostic::index_io_set("index-malformed"))?;
-    let native_inventory = index.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION
-        && index.identity == version::NATIVE_INDEX_IDENTITY;
+    let http_inventory = index.schema_version == version::HTTP_INDEX_SCHEMA_VERSION
+        && index.identity == version::HTTP_INDEX_IDENTITY;
+    let native_inventory = http_inventory
+        || (index.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION
+            && index.identity == version::NATIVE_INDEX_IDENTITY);
     let predecessor = index.schema_version == version::SCHEMA_VERSION
         && index.identity == version::INDEX_IDENTITY;
     if (!native_inventory && !predecessor)
@@ -148,7 +151,36 @@ pub fn parse_index(bytes: &[u8]) -> Result<ObservedIndex, DiagnosticSet> {
                 .binding_evidence
                 .iter()
                 .any(|e| index.symbol(&e.symbol).is_none())
-                || !crate::native_symbols::valid_uncertainty(&index.native_uncertainty)))
+                || !crate::native_symbols::valid_uncertainty_for(
+                    &index.native_uncertainty,
+                    http_inventory,
+                )))
+        || index.endpoints.iter().any(|endpoint| {
+            endpoint.http_evidence.as_ref().is_some_and(|e| {
+                !http_inventory
+                    || !e.valid()
+                    || e.method != endpoint.method
+                    || e.path != endpoint.path
+                    || !index
+                        .native_symbols
+                        .iter()
+                        .any(|n| n.native == e.handler_native)
+                    || !index
+                        .native_symbols
+                        .iter()
+                        .any(|n| n.native == e.application_native)
+                    || !index
+                        .binding_evidence
+                        .iter()
+                        .any(|b| b.symbol == endpoint.symbol && b.native == e.handler_native)
+                    || [&e.handler_native, &e.application_native].iter().any(|id| {
+                        !index
+                            .native_symbols
+                            .iter()
+                            .any(|n| &n.native == *id && e.sources.iter().any(|s| s.path == n.path))
+                    })
+            })
+        })
     {
         return Err(diagnostic::index_io_set("index-identity"));
     }
@@ -264,7 +296,7 @@ pub fn update_index(
     if !scan.native_inventory
         && previous
             .as_ref()
-            .is_some_and(|p| p.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION)
+            .is_some_and(|p| version::native_index(&p.schema_version))
     {
         return Err(diagnostic::scan_invalid_set(
             "native-inventory-downgrade",
@@ -272,11 +304,31 @@ pub fn update_index(
         ));
     }
     if scan.native_inventory {
-        index.schema_version = version::NATIVE_INDEX_SCHEMA_VERSION.to_owned();
-        index.identity = version::NATIVE_INDEX_IDENTITY.to_owned();
+        index.schema_version = if scan.http_inventory {
+            version::HTTP_INDEX_SCHEMA_VERSION
+        } else {
+            version::NATIVE_INDEX_SCHEMA_VERSION
+        }
+        .to_owned();
+        index.identity = if scan.http_inventory {
+            version::HTTP_INDEX_IDENTITY
+        } else {
+            version::NATIVE_INDEX_IDENTITY
+        }
+        .to_owned();
         index.native_symbols = scan.native_symbols.clone();
         index.binding_evidence = scan.binding_evidence.clone();
         index.native_uncertainty = scan.native_uncertainty.clone();
+    }
+    if !scan.http_inventory
+        && previous
+            .as_ref()
+            .is_some_and(|p| p.schema_version == version::HTTP_INDEX_SCHEMA_VERSION)
+    {
+        return Err(diagnostic::scan_invalid_set(
+            "http-inventory-downgrade",
+            None,
+        ));
     }
 
     let mut moved: Vec<String> = Vec::new();
@@ -305,6 +357,18 @@ pub fn update_index(
     }
     for symbol in &scan.symbols {
         let previous_record = previous.as_ref().and_then(|index| index.symbol(&symbol.id));
+        if scan.http_inventory {
+            if let Some(old) = previous_record
+                .filter(|old| old.status != BindingStatus::Inferred && old.kind != symbol.kind)
+            {
+                let mut stale = old.clone();
+                stale.state = BindingState::Stale;
+                stale.candidates.clear();
+                staled.push(stale.id.clone());
+                index.symbols.push(stale);
+                continue;
+            }
+        }
         let record = merge_symbol(
             symbol,
             previous_record,
@@ -327,6 +391,7 @@ pub fn update_index(
             method: endpoint.method.clone(),
             path: endpoint.path.clone(),
             symbol: endpoint.symbol.clone(),
+            http_evidence: endpoint.http_evidence.clone(),
         })
         .collect();
     index
@@ -540,6 +605,22 @@ pub fn bind_explicit(
         ));
     }
     let fs = Fs::open(&ctx.root).map_err(|_| diagnostic::index_io_set("root-unreadable"))?;
+    for route in index
+        .endpoints
+        .iter()
+        .filter(|e| e.symbol == symbol_id)
+        .filter_map(|e| e.http_evidence.as_ref())
+    {
+        if stable_key.unwrap_or(&route.handler_native) != route.handler_native
+            || !route_sources_current(&fs, &index, &route.handler_native)
+            || !index
+                .native_symbols
+                .iter()
+                .any(|n| n.native == route.handler_native && n.path == path)
+        {
+            return Err(diagnostic::plan_mismatch_set("http-handler-source-drift"));
+        }
+    }
     let fingerprint = read_fingerprint(&fs, path)?;
     let state = if fingerprint.is_some() {
         BindingState::Current
@@ -606,6 +687,16 @@ pub fn confirm_binding(
         .iter()
         .position(|record| record.id == symbol_id)
         .ok_or_else(|| diagnostic::unknown_symbol_set(symbol_id))?;
+    let fs = Fs::open(&ctx.root).map_err(|_| diagnostic::index_io_set("root-unreadable"))?;
+    if index
+        .endpoints
+        .iter()
+        .filter(|e| e.symbol == symbol_id)
+        .filter_map(|e| e.http_evidence.as_ref())
+        .any(|route| !route_sources_current(&fs, &index, &route.handler_native))
+    {
+        return Err(diagnostic::plan_mismatch_set("http-handler-source-drift"));
+    }
     let revision = index.revision.clone();
     let record = &mut index.symbols[position];
     if record.status != BindingStatus::Inferred {
@@ -711,6 +802,16 @@ pub fn staleness(ctx: &super::ObservedContext) -> Result<StalenessReceipt, Diagn
             // binding drift is history, not a gate failure.
             continue;
         }
+        if index
+            .endpoints
+            .iter()
+            .filter(|e| e.symbol == record.id)
+            .filter_map(|e| e.http_evidence.as_ref())
+            .any(|route| !route_sources_current(&fs, &index, &route.handler_native))
+        {
+            failures.push((record.id.clone(), "fingerprint-mismatch"));
+            continue;
+        }
         match (&record.fingerprint, &record.location) {
             (Some(digest), Some(location)) => match read_fingerprint(&fs, &location.path) {
                 Ok(Some(actual)) if &actual == digest => current += 1,
@@ -754,6 +855,27 @@ fn require_index(ctx: &super::ObservedContext) -> Result<ObservedIndex, Diagnost
 
 /// The sha256 of one project source file, through the confined fs; a
 /// missing file is `None`, an over-large file is unknown (`None`).
+pub(crate) fn route_sources_current(fs: &Fs, index: &ObservedIndex, native: &str) -> bool {
+    let mut sources = std::collections::BTreeMap::new();
+    for source in index
+        .endpoints
+        .iter()
+        .filter_map(|e| e.http_evidence.as_ref())
+        .filter(|e| e.handler_native == native)
+        .flat_map(|e| &e.sources)
+    {
+        if sources
+            .insert(&source.path, &source.source_digest)
+            .is_some_and(|old| old != &source.source_digest)
+        {
+            return false;
+        }
+    }
+    sources.into_iter().all(|(path, expected)| {
+        read_fingerprint(fs, path).ok().flatten().as_ref() == Some(expected)
+    })
+}
+
 pub(crate) fn read_fingerprint(fs: &Fs, path: &str) -> Result<Option<String>, DiagnosticSet> {
     let (dir, name) = split_logical(path);
     match fs.read_file_opt(dir, name, MAX_SOURCE_BYTES) {

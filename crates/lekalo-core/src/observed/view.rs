@@ -92,7 +92,11 @@ pub fn inspect_card(index: &ObservedIndex, symbol_id: &str) -> Result<ObservedCa
     let native_uncertainty: Vec<_> = index
         .native_uncertainty
         .iter()
-        .filter(|u| native_symbols.iter().any(|s| s.path == u.path))
+        .filter(|u| {
+            native_symbols.iter().any(|s| s.path == u.path)
+                || (record.kind == super::types::SymbolKind::Endpoint
+                    && u.kind == "framework-route")
+        })
         .cloned()
         .collect();
     let completeness = match record_completeness(record) {
@@ -129,7 +133,7 @@ pub fn inspect_card(index: &ObservedIndex, symbol_id: &str) -> Result<ObservedCa
             .collect(),
         completeness,
         native_symbols,
-        native_revision: (index.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION)
+        native_revision: version::native_index(&index.schema_version)
             .then(|| index.revision.clone()),
         native_uncertainty,
     })
@@ -213,8 +217,14 @@ impl ObservedCard {
         }
         for uncertainty in &self.native_uncertainty {
             lines.push(format!(
-                "  type evidence unknown: {} ({})",
-                uncertainty.detail, uncertainty.kind
+                "  {} evidence unknown: {} ({})",
+                if uncertainty.kind == "framework-route" {
+                    "framework"
+                } else {
+                    "type"
+                },
+                uncertainty.detail,
+                uncertainty.kind
             ));
         }
         if self.promoted {
