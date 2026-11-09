@@ -23,6 +23,11 @@ updates:
     directory: /adapters/python
     schedule:
       interval: weekly
+    # These crates exchange AST and source-coordinate types across their APIs.
+    groups:
+      ruff:
+        patterns:
+          - "ruff_*"
 
   - package-ecosystem: npm
     directory: /

@@ -10,10 +10,11 @@ publish = false
 
 [dependencies]
 lekalo-adapter-sdk-rust = { path = "../../sdk/rust" }
-ruff_python_ast = "=0.0.18"
-ruff_python_parser = "=0.0.18"
-ruff_source_file = "=0.0.18"
-ruff_text_size = "=0.0.18"
+# Ruff's AST, parser and source-coordinate types form one release set.
+ruff_python_ast = "=0.0.21"
+ruff_python_parser = "=0.0.21"
+ruff_source_file = "=0.0.21"
+ruff_text_size = "=0.0.21"
 sha2 = "0.11"
 
 [[bin]]
