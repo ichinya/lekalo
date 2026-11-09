@@ -774,6 +774,7 @@ jobs:
           cargo test --manifest-path adapters/python/Cargo.toml --locked
           cargo build --manifest-path adapters/python/Cargo.toml --locked
           node --test adapters/python/tests/scan-protocol.test.mjs adapters/python/tests/observed-host.test.mjs
+          node scripts/test-public-python-scan.mjs
       - name: Qualify the public manifested TypeScript scan (issue #150)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules

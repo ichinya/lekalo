@@ -21,6 +21,7 @@ For the complete domain/client path, use the [MVP user workflow](mvp-workflow.md
 | --- | --- |
 | [Greenfield Laravel/Vue planner](tutorial-greenfield-planner.md) | Separate contracted and projection fixtures, generated client and maintained screen. |
 | [Brownfield TypeScript/MySQL](tutorial-brownfield-typescript.md) | Synthetic Hono/Drizzle project; setup, HTTP checks, bounded adoption and database evidence. |
+| [Public Python observed scan](public-python-scan.md) | Offline static scan, explicit bindings and source-preserving change review. |
 | [Incremental adoption](tutorial-incremental-adoption.md) | Analyze one use case, confirm it, verify/apply a refactor, recover and inspect hybrid coverage. |
 
 Each walkthrough states its starting directory and prerequisites. Use disposable fixture copies; do not combine roots from different steps. Expected refusals are part of the instructions, not successful checks.

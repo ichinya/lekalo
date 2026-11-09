@@ -13,6 +13,10 @@ standalone/workspace profiles, the committed manifest, and negotiated
 protocol `1.1.0` native inventory and custody evidence. It is checked through the actual CLI on
 each supported host; contributor kernel-only results have a separate scope.
 
+The compiled [Python observed adapter](public-python-scan.md) uses the same
+public scan/propose/confirm path, with explicit source roots and no application
+execution. Its guide includes locked offline builds and a disposable recipe.
+
 The wire extensions are additive successors of the frozen issue #39
 contracts: [`contracts/observed-scan.schema.v0.2.16.json`](../contracts/observed-scan.schema.v0.2.16.json)
 and [`contracts/observed-index.schema.v0.2.16.json`](../contracts/observed-index.schema.v0.2.16.json).

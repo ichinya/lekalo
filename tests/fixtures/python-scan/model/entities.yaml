@@ -1,0 +1,15 @@
+schema_version: "0.2.16"
+definitions:
+  - id: shop.amount
+    kind: scalar
+    version: 1
+    base: number
+  - id: shop.orders.total
+    kind: entity
+    version: 1
+    fields:
+      - name: value
+        type: shop.amount
+        required: true
+    identity:
+      - value
