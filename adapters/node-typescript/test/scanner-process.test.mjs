@@ -121,7 +121,7 @@ test("describe advertises scan only with the launch profile, and the compiler pi
   const metadata = JSON.parse(probe.stdout);
   assert.equal(metadata.compiler.vendored, true);
   assert.equal(metadata.compiler.typescript, "5.9.3");
-  assert.equal(metadata.compiler.esbuild, "0.25.12");
+  assert.equal(metadata.compiler.esbuild, "0.28.2");
   void runAdapter;
 });
 
