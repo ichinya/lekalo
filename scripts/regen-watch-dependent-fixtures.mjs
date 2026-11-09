@@ -17,7 +17,19 @@ const hash=bytes=>'sha256:'+createHash('sha256').update(bytes).digest('hex');
 const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(k=>[k,stable(value[k])])):value;
 const work=mkdtempSync(join(tmpdir(),'lekalo-watch-registry-'));
 const output=[];
-const save=(path,bytes)=>{writeFileSync(join(root,path),bytes);output.push(path);};
+// Product pins change lock, plan and report digests without changing their
+// wire families. Author successors alongside the historical receipts.
+const qualifiedPath=path=>{
+ if (/^tests\/fixtures\/lockfile\/valid\/contract-only\.(lock|expect)\.json$/.test(path))
+  return path.replace('contract-only.',`contract-only.product-${product}.`);
+ if (/^tests\/fixtures\/orchestration\/(generate\.(dry-run|apply)|verify\.full)\.golden\.json$/.test(path)
+     || path==='tests/fixtures/provider/drift-reported.golden.json')
+  return path.replace('.golden.json',`.product-${product}.golden.json`);
+ if (/^tests\/fixtures\/ci-report\/valid\.(verify\.golden\.(json|md)|generate-check\.golden\.json)$/.test(path))
+  return path.replace('ci-report/',`ci-report/product-${product}/`);
+ return path;
+};
+const save=(path,bytes)=>{const destination=qualifiedPath(path);mkdirSync(dirname(join(root,destination)),{recursive:true});writeFileSync(join(root,destination),bytes);output.push(destination);};
 const fixture=(name,path)=>{const dir=join(work,name);cpSync(join(root,path),dir,{recursive:true});return dir;};
 const product=readFileSync(join(root,'Cargo.toml'),'utf8').match(/\[workspace.package\][\s\S]*?version = "([^"]+)"/)?.[1];
 assert.ok(product,'workspace product version');

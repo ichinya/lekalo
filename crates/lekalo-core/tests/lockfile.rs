@@ -242,10 +242,10 @@ fn golden_contract_only_lock_parses_and_matches_its_independent_digest() {
 #[test]
 fn current_product_lock_has_its_own_independent_pin() {
     let bytes = include_bytes!(
-        "../../../tests/fixtures/lockfile/valid/contract-only.product-1.1.0.lock.json"
+        "../../../tests/fixtures/lockfile/valid/contract-only.product-1.2.0.lock.json"
     );
     let expected: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../tests/fixtures/lockfile/valid/contract-only.product-1.1.0.expect.json"
+        "../../../tests/fixtures/lockfile/valid/contract-only.product-1.2.0.expect.json"
     ))
     .expect("current digest fixture");
     let lock = Lockfile::parse_canonical(bytes).expect("current lock");

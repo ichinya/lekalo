@@ -210,7 +210,7 @@ fn assert_report_matches_golden(dir: &Path, name: &str) {
         name,
         "valid.verify.golden.json" | "valid.generate-check.golden.json"
     ) {
-        golden_root.join("product-1.1.0")
+        golden_root.join("product-1.2.0")
     } else {
         golden_root
     };
