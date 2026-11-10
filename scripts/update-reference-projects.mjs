@@ -14,7 +14,7 @@ function files(home) {
 }
 const paths = ['planner-shared', 'planner-node', 'planner-laravel', 'brownfield-hono-drizzle-mysql'].flatMap((name) => files(`examples/${name}`));
 paths.push(...files('tests/fixtures/pilot/brownfield-mysql'), 'examples/compose.yaml', 'examples/extraction.compose.yaml',
-  'scripts/test-reference-projects.mjs', 'scripts/materialize-reference-project.mjs', 'scripts/test-reference-contract.mjs');
+  'scripts/test-reference-projects.mjs', 'scripts/materialize-reference-project.mjs', 'scripts/test-reference-contract.mjs', 'scripts/lib/reference-clock-probe.mjs');
 const lock = {
   formatVersion: 1,
   revision: JSON.parse(readFileSync(join(root, 'examples/planner-shared/scenarios.json'), 'utf8')).revision,

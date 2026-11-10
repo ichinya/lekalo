@@ -122,8 +122,9 @@ final class ReferencePlanner
                 // Standard UUIDv5, identical to the Node reference.
                 $hash = hash('sha1', hex2bin('6ba7b8109dad11d180b400c04fd430c8')."$tenant|$actor|{$body['task_id']}|{$body['planned_for']}");
                 $id = substr($hash, 0, 8).'-'.substr($hash, 8, 4).'-5'.substr($hash, 13, 3).'-'.dechex((hexdec($hash[16]) & 3) | 8).substr($hash, 17, 3).'-'.substr($hash, 20, 12);
-                $this->db->insert('INSERT INTO reference_planning (tenant,user_id,planning_id,task_id,planned_for,position)
-                    SELECT ?,?,?,?,?::date,COALESCE(MAX(position),0)+1 FROM reference_planning WHERE tenant=? AND user_id=? AND planned_for=?::date',
+                // The actor lock also serializes this insert with day reorders.
+                $this->db->insert('INSERT INTO reference_planning (tenant,user_id,planning_id,task_id,planned_for,position,version)
+                    SELECT ?,?,?,?,?::date,COALESCE(MAX(position),0)+1,COALESCE(MAX(version),1) FROM reference_planning WHERE tenant=? AND user_id=? AND planned_for=?::date',
                     [...$scope, $id, $body['task_id'], $body['planned_for'], ...$scope, $body['planned_for']]);
             } elseif ($path === '/planning/reorder' && $method === 'POST') {
                 if (array_keys($body) !== ['expected_version', 'order', 'planned_for'] || !$this->validDate($body['planned_for'])

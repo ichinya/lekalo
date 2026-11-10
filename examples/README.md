@@ -40,9 +40,11 @@ REFERENCE_TEST_FAULTS=1 docker compose -p lekalo-reference-109 -f examples/compo
 node scripts/test-reference-projects.mjs
 ```
 
-PowerShell uses `$env:REFERENCE_TEST_FAULTS='1'` followed by the same Compose and Node commands. The gate **resets planning rows and receipts in this dedicated synthetic database** between scenarios; do not point it at a shared database. It executes all 15 cases on each backend with real HTTP, independent connections and PostgreSQL. Concurrency is proven by holding an actor lock until two request transactions are simultaneously waiting. Laravel competitors use its two independent instances, avoiding the built-in server's connection scheduling. The partial unique index also refuses an invariant-violating direct write. A real mutated Node application runs separately and must fail the focus scenario, proving semantic drift detection. Missing services, missing prerequisites, `unsupported` and infra errors are failures. No application packages are installed during the gate.
+PowerShell uses `$env:REFERENCE_TEST_FAULTS='1'` followed by the same Compose and Node commands. The gate **resets planning rows and receipts in this dedicated synthetic database** between scenarios; do not point it at a shared database. It executes all 16 cases on each backend with real HTTP, independent connections and PostgreSQL. Concurrency is proven by holding an actor lock until two request transactions are simultaneously waiting. Laravel competitors use its two independent instances, avoiding the built-in server's connection scheduling. The partial unique index also refuses an invariant-violating direct write. A real mutated Node application runs separately and must fail the focus scenario, proving semantic drift detection. Missing services, missing prerequisites, `unsupported` and infra errors are failures. No application packages are installed during the gate.
 
 The historical six-case Scenario IR parity remains independently exercised by existing gates; this new portable HTTP corpus is an additional acceptance layer, not a claim that the historical unsupported concurrency row now passed. New HTTP evidence is not serialized as invented Scenario IR receipts.
+
+The shared corpus includes plan → reorder → plan → reorder, requiring new rows to preserve the current day's reorder version. A separate real HTTP subprocess test runs without `REFERENCE_NOW` and advances its test clock across midnight, checking Today, carry-over, focus and pause without restarting the app. Fixed-clock conformance remains covered by the shared corpus.
 
 ## Extract a query module
 
@@ -51,7 +53,7 @@ REFERENCE_TEST_FAULTS=1 docker compose -p lekalo-reference-109 -f examples/compo
 node scripts/test-reference-projects.mjs --extraction
 ```
 
-Node forwards read queries over HTTP to a separate reader service; mutations remain local. The same 15 cases must still pass. Additional controls prove that the extracted module refuses HTTP writes and its PostgreSQL role cannot write. Reader port: 56333. This demonstrates the boundary and behavior-preserving extraction without inventing a Go/Rust adapter or treating a shared database as independent service storage.
+Node forwards read queries over HTTP to a separate reader service; mutations remain local. The same 16 cases must still pass. Additional controls prove that the extracted module refuses HTTP writes and its PostgreSQL role cannot write. Reader port: 56333. This demonstrates the boundary and behavior-preserving extraction without inventing a Go/Rust adapter or treating a shared database as independent service storage.
 
 ## Ownership and workflow
 

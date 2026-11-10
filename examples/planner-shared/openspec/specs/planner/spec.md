@@ -26,7 +26,7 @@ The application SHALL support plan, unplan, exact-permutation reorder, pause, To
 
 ### Requirement: PLANNER-REQ-003 Atomic replay and conflict
 
-The application SHALL atomically persist each mutation with an actor/workspace-scoped idempotency receipt. Identical replay SHALL return the original response; changed input under the same key SHALL return a conflict. A rolled-back request SHALL leave neither effects nor a receipt. Reorder SHALL reject stale versions and incomplete or duplicate permutations without partial writes.
+The application SHALL atomically persist each mutation with an actor/workspace-scoped idempotency receipt. Identical replay SHALL return the original response; changed input under the same key SHALL return a conflict. A rolled-back request SHALL leave neither effects nor a receipt. Reorder SHALL reject stale versions and incomplete or duplicate permutations without partial writes. A new planning row SHALL join its day's current reorder version; a different, previously empty day SHALL start at version 1.
 
 #### Scenario: Rollback and retry
 - **GIVEN** test-only rollback injection is enabled

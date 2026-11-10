@@ -9,7 +9,6 @@ import { createHash } from 'node:crypto';
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, application_name: 'reference-node', max: 8 });
 const db = drizzle(pool);
 const app = new Hono();
-const now = process.env.REFERENCE_NOW ?? new Date().toISOString();
 const canonical = (value) => JSON.stringify(value && !Array.isArray(value) && typeof value === 'object'
   ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, value[key]])) : value);
 class Refusal extends Error { constructor(status, code) { super(code); this.status = status; } }
@@ -26,6 +25,7 @@ app.all('*', async (c) => {
   if (!actor || !tenant) refuse(401, 'actor_required');
   const identity = await db.execute(sql`SELECT 1 FROM reference_actors WHERE tenant=${tenant} AND user_id=${actor}`);
   if (!identity.rows.length) refuse(403, 'actor_denied');
+  const now = process.env.REFERENCE_NOW ?? new Date().toISOString();
   const zone = c.req.header('X-Timezone') ?? 'UTC';
   let today;
   try { today = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now)); }
@@ -73,8 +73,9 @@ app.all('*', async (c) => {
       const planningId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-${((parseInt(hash[16], 16) & 3) | 8).toString(16)}${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
       const duplicate = await tx.execute(sql`SELECT 1 FROM reference_planning WHERE tenant=${tenant} AND user_id=${actor} AND task_id=${body.task_id} AND planned_for=${body.planned_for}::date`);
       if (duplicate.rows.length) refuse(409, 'planning_conflict');
-      await tx.execute(sql`INSERT INTO reference_planning (tenant,user_id,planning_id,task_id,planned_for,position)
-        SELECT ${tenant},${actor},${planningId},${body.task_id},${body.planned_for}::date,COALESCE(MAX(position),0)+1
+      // Inserts and reorders share the actor lock and the current day's revision.
+      await tx.execute(sql`INSERT INTO reference_planning (tenant,user_id,planning_id,task_id,planned_for,position,version)
+        SELECT ${tenant},${actor},${planningId},${body.task_id},${body.planned_for}::date,COALESCE(MAX(position),0)+1,COALESCE(MAX(version),1)
         FROM reference_planning WHERE tenant=${tenant} AND user_id=${actor} AND planned_for=${body.planned_for}::date`);
     } else if (path === '/planning/reorder' && method === 'POST') {
       if (Object.keys(body).sort().join(',') !== 'expected_version,order,planned_for' || !date(body.planned_for)

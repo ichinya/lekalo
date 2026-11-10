@@ -6,6 +6,7 @@ import { resolve, join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { runReferenceClockProbe } from './lib/reference-clock-probe.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
@@ -95,6 +96,23 @@ const cases = {
   'duplicate-planning': async () => { await plan(1); assert.equal((await plan(1, day, { status: 409 })).error, 'planning_conflict'); },
   'reorder-and-stale-version': async () => { await plan(1); await plan(2); const ids = (await list()).items.map((x) => x.planning_id).reverse(); const body = { planned_for: day, expected_version: 1, order: ids.join(',') }; await request('/planning/reorder', { method: 'POST', key: 'numeric-order', body: JSON.stringify(body).replace('"expected_version":1', '"expected_version":1.0') }); await request('/planning/reorder', { method: 'POST', key: 'numeric-order', body }); assert.deepEqual((await list()).items.map((x) => x.planning_id), ids); assert.equal((await request('/planning/reorder', { method: 'POST', body, status: 409 })).error, 'reorder_stale'); assert.ok((await list()).items.every((x) => x.version === 2)); },
   'reorder-must-be-a-permutation': async () => { await plan(1); await plan(2); const id = (await list()).items[0].planning_id; for (const order of [id, `${id},${id}`]) await request('/planning/reorder', { method: 'POST', body: { planned_for: day, expected_version: 1, order }, status: 422 }); assert.ok((await list()).items.every((x) => x.version === 1)); },
+  'plan-after-reorder': async () => {
+    await plan(1); await plan(2);
+    const first = (await list()).items.map((row) => row.planning_id).reverse();
+    await request('/planning/reorder', { method: 'POST', body: { planned_for: day, expected_version: 1, order: first.join(',') } });
+    await plan(3);
+    const expanded = (await list()).items;
+    assert.equal(expanded.length, 3);
+    assert.ok(expanded.every((row) => row.version === 2), 'new planning must inherit the current day revision');
+    const order = expanded.map((row) => row.planning_id).reverse();
+    await request('/planning/reorder', { method: 'POST', body: { planned_for: day, expected_version: 2, order: order.join(',') } });
+    const reordered = (await list()).items;
+    assert.deepEqual(reordered.map((row) => row.planning_id), order);
+    assert.ok(reordered.every((row) => row.version === 3));
+    await plan(3, '2026-01-03');
+    const otherDay = await pool.query("SELECT version FROM reference_planning WHERE planned_for='2026-01-03'");
+    assert.deepEqual(otherDay.rows.map((row) => row.version), [1], 'day revisions must not leak into another day');
+  },
   'invalid-input': async () => { for (const body of [null, [], '{', '{"planned_for":1e400,"task_id":"00000000-0000-4000-8000-000000000001"}', { task_id: task(1), planned_for: '2026-02-30' }, { task_id: task(1), planned_for: day, extra: true }]) await request('/planning', { method: 'POST', body, status: 422 }); await request('/planning/today', { headers: { 'X-Timezone': 'not/a/zone' }, status: 422 }); await plan(1, day, { headers: { 'Idempotency-Key': '' }, status: 422 }); },
   'rollback-and-retry': async () => { assert.equal((await plan(1, day, { key: 'rollback', headers: { 'X-Reference-Fault': 'rollback' }, status: 503 })).error, 'store_unavailable'); assert.equal((await list()).items.length, 0); await plan(1, day, { key: 'rollback' }); assert.equal((await list()).items.length, 1); },
   'concurrent-focus': async () => { await plan(1); await plan(2); const calls = [1, 2].map((n) => async (url) => { const r = await fetch(`${url}/tasks/${task(n)}/focus`, { method: 'POST', headers: { 'X-Actor': 'user-a', 'X-Tenant': 'workspace-a', 'Idempotency-Key': `race-${n}` }, signal: AbortSignal.timeout(15000) }); const body = await r.json(); return { status: r.status, body }; }); const rows = await concurrent(calls); assert.deepEqual(rows.map((r) => r.status).sort(), [200, 409]); assert.equal(rows.find((r) => r.status === 409).body.error, 'focus_conflict'); assert.equal((await list()).items.filter((r) => r.focused).length, 1); await assert.rejects(pool.query('UPDATE reference_planning SET focused=true'), (error) => error.code === '23505'); },
@@ -118,6 +136,8 @@ try {
     try { await assert.rejects(readOnly.query('DELETE FROM reference_planning'), (error) => error.code === '42501'); } finally { await readOnly.end(); }
     console.log('ok - extracted module refuses writes at HTTP and database boundaries');
   }
+  await reset();
+  await runReferenceClockProbe(root, databaseUrl);
   // A genuine changed application runs over HTTP against the same database.
   // Its successful focus response without a focused row must fail the corpus.
   const home = mkdtempSync(join(root, 'examples/planner-node/node_modules/.reference-mutant-'));
@@ -132,5 +152,5 @@ try {
     await assert.rejects(cases['focus-and-pause'], /Expected values to be strictly equal/);
     console.log('ok - deliberate application behavior drift detected');
   } finally { if (child && child.exitCode === null) { const exited = new Promise((accept) => child.once('exit', accept)); child.kill(); await exited; } rmSync(home, { recursive: true, force: true }); }
-  console.log(JSON.stringify({ ok: true, gate: 'reference-projects-http-postgres', revision: corpus.revision, inputDigest: sha(read('examples/reference-projects.lock.json')), scenarios: corpus.cases.length, targets: targets.length, assertions: results.length, testIds: results.map((r) => r.testId), concurrentTransactionsProven: true, negativeControl: 'real-mutant-rejected', extracted }));
+  console.log(JSON.stringify({ ok: true, gate: 'reference-projects-http-postgres', revision: corpus.revision, inputDigest: sha(read('examples/reference-projects.lock.json')), scenarios: corpus.cases.length, targets: targets.length, assertions: results.length, testIds: results.map((r) => r.testId), concurrentTransactionsProven: true, defaultClockRollover: true, negativeControl: 'real-mutant-rejected', extracted }));
 } finally { await pool.end(); }
