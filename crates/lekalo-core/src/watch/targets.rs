@@ -747,6 +747,7 @@ fn execute_partition<'a>(
         &scanned,
         target,
         profile,
+        &supply.command,
     )?;
     if let Some(selection) = selection {
         let entries = scanned

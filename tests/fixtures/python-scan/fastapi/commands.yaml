@@ -1,0 +1,9 @@
+schema_version: "0.2.16"
+definitions:
+  - id: shop.list_items
+    kind: command
+    version: 1
+    input:
+      - name: request_id
+        type: shop.request_id
+        required: true

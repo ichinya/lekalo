@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "productVersion": "1.1.0",
+  "productVersion": "1.2.0",
   "cliSourceDigest": "sha256:d6fb8721f042ae95aff6d101a4a167a8e4cdc5f2eb2f41d9f97064b304414b10",
   "p0Pages": [
     {
@@ -4434,6 +4434,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/observed-index.schema.v1.2.0.json",
+      "kind": "contract",
+      "source": "contracts/observed-index.schema.v1.2.0.json",
+      "sourceDigest": "sha256:878a0126a0b188071b4002205b78e22cb2358e0165fde9018ca7effd314b895a",
+      "owner": "docs/observed-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/observed-scan.schema.v0.2.16.json",
       "kind": "contract",
       "source": "contracts/observed-scan.schema.v0.2.16.json",
@@ -4447,6 +4456,15 @@
       "kind": "contract",
       "source": "contracts/observed-scan.schema.v1.1.0.json",
       "sourceDigest": "sha256:17d2d91f31af9b2b5fc80527d6377cc41a4c7d2c25dabcc41a5dadb4bb197d45",
+      "owner": "docs/observed-mode.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/observed-scan.schema.v1.2.0.json",
+      "kind": "contract",
+      "source": "contracts/observed-scan.schema.v1.2.0.json",
+      "sourceDigest": "sha256:1bb37514870fe347e00b635a548abc761501a6f9100a053466e0e5624263379d",
       "owner": "docs/observed-mode.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -5068,6 +5086,15 @@
       "kind": "contract",
       "source": "contracts/target-protocol.schema.v1.1.0.json",
       "sourceDigest": "sha256:783c6a88f885b28121be39424ea459fb8964770300c3fcdec40a9ba93e21cd54",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/target-protocol.schema.v1.2.0.json",
+      "kind": "contract",
+      "source": "contracts/target-protocol.schema.v1.2.0.json",
+      "sourceDigest": "sha256:306cd603687c3f4e651c5356e9660772d59e6b8a7624b8aabed82f197d8554e8",
       "owner": "docs/target-protocol.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

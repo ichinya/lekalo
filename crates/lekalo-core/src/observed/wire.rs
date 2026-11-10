@@ -112,7 +112,8 @@ pub(super) fn parse_scan(
     }
     // The additive issue #42 members exist only on a 0.2.16 document; the
     // frozen 0.2.16 key sets refuse them exactly as unknown members.
-    let native_inventory = schema_version == version::NATIVE_SCAN_SCHEMA_VERSION;
+    let native_inventory = version::native_scan(&schema_version);
+    let http_inventory = schema_version == version::HTTP_SCAN_SCHEMA_VERSION;
     let mut keys = TOP_LEVEL_KEYS.to_vec();
     if native_inventory {
         keys.extend(["nativeSymbols", "bindingEvidence", "nativeUncertainty"]);
@@ -180,14 +181,22 @@ pub(super) fn parse_scan(
     let mut endpoints = Vec::with_capacity(endpoints_member.len());
     let mut seen_endpoints = HashSet::new();
     for entry in endpoints_member {
-        let endpoint = parse_endpoint(entry)?;
+        let endpoint = parse_endpoint(entry, http_inventory)?;
         if !seen_symbols.contains(&endpoint.symbol) {
             return Err(diagnostic::scan_invalid_set(
                 "unresolved-endpoint-symbol",
                 Some(&endpoint.symbol),
             ));
         }
-        let route = (endpoint.method.clone(), endpoint.path.clone());
+        let route = (
+            endpoint
+                .http_evidence
+                .as_ref()
+                .map(|e| e.application_native.clone())
+                .unwrap_or_default(),
+            endpoint.method.clone(),
+            endpoint.path.clone(),
+        );
         if !seen_endpoints.insert(route) {
             return Err(diagnostic::scan_invalid_set(
                 "duplicate-endpoint",
@@ -316,8 +325,25 @@ pub(super) fn parse_scan(
     } else {
         Vec::new()
     };
-    if !crate::native_symbols::valid_uncertainty(&native_uncertainty) {
+    if !crate::native_symbols::valid_uncertainty_for(&native_uncertainty, http_inventory) {
         return Err(diagnostic::scan_invalid_set("native-uncertainty", None));
+    }
+    for endpoint in &endpoints {
+        if let Some(route) = &endpoint.http_evidence {
+            if !binding_evidence.iter().any(|binding| {
+                binding.symbol == endpoint.symbol && binding.native == route.handler_native
+            }) || [&route.handler_native, &route.application_native]
+                .iter()
+                .any(|id| {
+                    !native_symbols.iter().any(|node| {
+                        &node.native == *id
+                            && route.sources.iter().any(|source| source.path == node.path)
+                    })
+                })
+            {
+                return Err(diagnostic::scan_invalid_set("http-native-identity", None));
+            }
+        }
     }
     Ok(ScanDocument {
         adapter: AdapterIdentity {
@@ -334,6 +360,7 @@ pub(super) fn parse_scan(
         profile,
         test_bindings,
         native_inventory,
+        http_inventory,
         native_symbols,
         binding_evidence,
         native_uncertainty,
@@ -640,30 +667,59 @@ fn parse_fields(
     Ok(fields)
 }
 
-fn parse_endpoint(value: &Json) -> Result<ScanEndpoint, crate::diagnostics::DiagnosticSet> {
+fn parse_endpoint(
+    value: &Json,
+    http: bool,
+) -> Result<ScanEndpoint, crate::diagnostics::DiagnosticSet> {
     let map = as_object(value, "endpoint")?;
-    exact_keys(map, ENDPOINT_KEYS)?;
+    let mut keys = ENDPOINT_KEYS.to_vec();
+    if http {
+        keys.push("httpEvidence");
+    }
+    exact_keys(map, &keys)?;
     let id = string_member(map, "id")?;
     if !crate::trace::id::is_semantic_id(&id) {
         return Err(diagnostic::scan_invalid_set("endpoint-id", Some(&id)));
     }
     let method = string_member(map, "method")?;
-    if !METHODS.contains(&method.as_str()) {
+    if !(if http {
+        crate::http_routes::METHODS.as_slice()
+    } else {
+        METHODS
+    })
+    .contains(&method.as_str())
+    {
         return Err(diagnostic::scan_invalid_set("endpoint-method", Some(&id)));
     }
     let path = string_member(map, "path")?;
-    if !is_endpoint_path(&path) {
+    if !(if http {
+        path.starts_with('/') && crate::http_routes::printable(&path, 2048)
+    } else {
+        is_endpoint_path(&path)
+    }) {
         return Err(diagnostic::scan_invalid_set("endpoint-path", Some(&id)));
     }
     let symbol = string_member(map, "symbol")?;
     if !crate::trace::id::is_semantic_id(&symbol) {
         return Err(diagnostic::scan_invalid_set("endpoint-symbol", Some(&id)));
     }
+    let http_evidence: Option<crate::http_routes::HttpRouteEvidence> = map
+        .get("httpEvidence")
+        .map(|value| serde_json::from_value(value.clone()))
+        .transpose()
+        .map_err(|_| diagnostic::scan_invalid_set("http-evidence", Some(&id)))?;
+    if http_evidence
+        .as_ref()
+        .is_some_and(|e| !e.valid() || e.method != method || e.path != path)
+    {
+        return Err(diagnostic::scan_invalid_set("http-evidence", Some(&id)));
+    }
     Ok(ScanEndpoint {
         id,
         method,
         path,
         symbol,
+        http_evidence,
     })
 }
 

@@ -72,6 +72,7 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
                 | super::version::SCAN_VERSION
                 | super::version::EXEC_VERSION
                 | super::version::NATIVE_SCAN_VERSION
+                | super::version::HTTP_SCAN_VERSION
         ) || request.target.is_none()
             || request.profile.is_some()
             || request.profile_digest.is_some()
@@ -405,12 +406,17 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
     } else if response.evidence.scan_profile_digest.is_some() {
         return invalid;
     }
-    if public_scan && response.protocol_version == super::version::NATIVE_SCAN_VERSION {
+    if public_scan && super::version::supports_native_scan(&response.protocol_version) {
         if response
             .evidence
             .native_uncertainty
             .as_ref()
-            .is_none_or(|rows| !crate::native_symbols::valid_uncertainty(rows))
+            .is_none_or(|rows| {
+                !crate::native_symbols::valid_uncertainty_for(
+                    rows,
+                    response.protocol_version == super::version::HTTP_SCAN_VERSION,
+                )
+            })
         {
             return invalid;
         }
@@ -468,6 +474,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                 | super::version::SCAN_VERSION
                 | super::version::EXEC_VERSION
                 | super::version::NATIVE_SCAN_VERSION
+                | super::version::HTTP_SCAN_VERSION
         ) || response.operation != Operation::Lint)
     {
         return invalid;
@@ -516,6 +523,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                         | super::version::SCAN_VERSION
                         | super::version::EXEC_VERSION
                         | super::version::NATIVE_SCAN_VERSION
+                        | super::version::HTTP_SCAN_VERSION
                 ) {
                     10
                 } else {
@@ -529,6 +537,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                     | super::version::SCAN_VERSION
                     | super::version::EXEC_VERSION
                     | super::version::NATIVE_SCAN_VERSION
+                    | super::version::HTTP_SCAN_VERSION
             ) && c.operations.contains(&Operation::Lint))
             || !unique(&c.transports, 1, 2)
             || !unique(&c.targets, 0, 64)
@@ -596,8 +605,8 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                         // (references maxItems 8, sha256 signature,
                         // semantic-id target ≤192).
                         || e.evidence.as_ref().is_some_and(|ev| {
-                            ev.references.len() > if response.protocol_version == super::version::NATIVE_SCAN_VERSION { 256 } else { 8 }
-                                || if response.protocol_version == super::version::NATIVE_SCAN_VERSION {
+                            ev.references.len() > if super::version::supports_native_scan(&response.protocol_version) { 256 } else { 8 }
+                                || if super::version::supports_native_scan(&response.protocol_version) {
                                     ev.native_symbols.as_ref().is_none_or(|symbols| {
                                         let detail = e.detail.as_ref().and_then(|d|serde_json::from_str::<serde_json::Value>(d).ok());
                                         let native = detail.as_ref().and_then(|d|d.get("n")).and_then(|n|n.as_str());
@@ -605,6 +614,14 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                                             || symbols.iter().find(|s|s.native==n).map(|s|&s.signature)!=Some(&ev.signature))
                                     })
                                 } else { ev.native_symbols.is_some() }
+                                || ev.http_routes.as_ref().is_some_and(|routes| {
+                                    response.protocol_version != super::version::HTTP_SCAN_VERSION
+                                        || !public_scan || e.kind != "endpoint" || routes.is_empty() || routes.len() > 64
+                                        || !routes.windows(2).all(|pair| pair[0] < pair[1])
+                                        || routes.iter().any(|route| !route.valid() || ev.native_symbols.as_ref().is_none_or(|nodes| {
+                                            !nodes.iter().any(|n| n.native == route.handler_native && n.member_of.is_none())
+                                        }))
+                                })
                                 || ev
                                     .signature
                                     .as_ref()
@@ -1129,6 +1146,13 @@ pub struct ScanEntryEvidence {
         skip_serializing_if = "Option::is_none"
     )]
     pub native_symbols: Option<Vec<crate::native_symbols::NativeSymbol>>,
+    /// Opt-in source-bound HTTP registration facts, only on 1.2.0 scan.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub http_routes: Option<Vec<crate::http_routes::HttpRouteEvidence>>,
 }
 
 /// One scan entry (scan results).

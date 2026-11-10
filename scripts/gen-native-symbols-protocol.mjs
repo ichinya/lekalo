@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
 const version='1.1.0';
-assert.equal(readFileSync('Cargo.toml','utf8').match(/\[workspace.package\][\s\S]*?version = "([^"]+)"/)[1],version);
+// This pin identifies the frozen native-inventory wire, independently of
+// subsequent product releases. --check still verifies its exact schema bytes.
 const ref=name=>({'$ref':'#/$defs/'+name});
 const string=(max)=>({type:'string',minLength:1,maxLength:max,pattern:'^[^\\u0000-\\u001f\\u007f-\\u009f]+$'});
 function native(pathSchema,shaSchema){

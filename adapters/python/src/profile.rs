@@ -33,6 +33,7 @@ pub struct Profile {
     pub exclusions: Vec<String>,
     pub digest: String,
     pub target_resolution: Option<TargetResolution>,
+    pub fastapi_policy: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -79,12 +80,16 @@ impl Profile {
 /// Parse and validate the injected launch profile. Refusals return the
 /// closed reason token; the process exits before serving any request.
 pub fn load(args: &[String]) -> Result<Option<Profile>, &'static str> {
+    let fastapi_policy = framework_policy(args)?;
     let markers: Vec<usize> = args
         .iter()
         .enumerate()
         .filter_map(|(index, arg)| (arg == PROFILE_FLAG).then_some(index))
         .collect();
     if markers.is_empty() {
+        if fastapi_policy.is_some() {
+            return Err("profile-required");
+        }
         return Ok(None);
     }
     if markers.len() != 1 {
@@ -97,7 +102,86 @@ pub fn load(args: &[String]) -> Result<Option<Profile>, &'static str> {
         return Err("profile-oversize");
     }
     let document = strict_parse(raw).map_err(|_| "profile-invalid")?;
-    validate(&document)
+    let mut profile = validate(&document)?;
+    if let Some(profile) = profile.as_mut() {
+        profile.fastapi_policy = fastapi_policy;
+    }
+    Ok(profile)
+}
+
+fn framework_policy(args: &[String]) -> Result<Option<String>, &'static str> {
+    let markers: Vec<_> = args
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| (s == "--lekalo-framework-policy-json").then_some(i))
+        .collect();
+    if markers.is_empty() {
+        return Ok(None);
+    }
+    if markers.len() != 1 {
+        return Err("framework-policy-duplicate");
+    }
+    let raw = args
+        .get(markers[0] + 1)
+        .filter(|s| !s.is_empty() && s.len() <= 8192)
+        .ok_or("framework-policy-invalid")?;
+    let value = strict_parse(raw).map_err(|_| "framework-policy-invalid")?;
+    let mut keys = value.member_names();
+    keys.sort_unstable();
+    if !value.is_object()
+        || keys != ["providers", "schema", "version"]
+        || value.get("schema").and_then(Value::as_str) != Some("lekalo/framework-policy")
+        || !matches!(value.get("version"), Some(Value::Int(1)))
+    {
+        return Err("framework-policy-invalid");
+    }
+    let providers = value
+        .get("providers")
+        .and_then(Value::as_array)
+        .filter(|p| p.len() <= 16)
+        .ok_or("framework-policy-invalid")?;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut fastapi = false;
+    for row in providers {
+        let mut keys = row.member_names();
+        keys.sort_unstable();
+        if !row.is_object() || keys != ["id", "state"] {
+            return Err("framework-policy-invalid");
+        }
+        let id = row
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or("framework-policy-invalid")?;
+        let state = row
+            .get("state")
+            .and_then(Value::as_str)
+            .ok_or("framework-policy-invalid")?;
+        if id.len() > 64
+            || !id.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            || !seen.insert(id)
+            || !matches!(state, "enabled" | "disabled")
+        {
+            return Err("framework-policy-invalid");
+        }
+        if state == "enabled" {
+            if id != "fastapi" {
+                return Err("framework-provider-unsupported");
+            }
+            fastapi = true;
+        }
+    }
+    Ok(fastapi.then(|| {
+        format!(
+            "sha256:{}",
+            sha256_hex(&canonical(&Value::Object(vec![(
+                "providers".to_owned(),
+                Value::Array(providers.to_vec())
+            )])))
+        )
+    }))
 }
 
 fn validate(candidate: &Value) -> Result<Option<Profile>, &'static str> {
@@ -329,6 +413,7 @@ fn validate(candidate: &Value) -> Result<Option<Profile>, &'static str> {
         exclusions,
         digest,
         target_resolution,
+        fastapi_policy: None,
     }))
 }
 
