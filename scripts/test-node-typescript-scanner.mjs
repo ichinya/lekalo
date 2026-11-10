@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const testDir = join(root, "adapters", "node-typescript", "test");
 const files = [
+  "compiler-native.test.mjs",
   "scanner-unit.test.mjs",
   "scanner-fixtures.test.mjs",
   "scanner-process.test.mjs",

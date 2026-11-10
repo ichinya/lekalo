@@ -430,6 +430,12 @@ jobs:
             ${{ runner.temp }}/lekalo-ci-reports/readiness-envelope.txt
           if-no-files-found: error
           retention-days: 7
+      - name: Provision the vendored compiler bundle custody (issue #44)
+        run: |
+          set -euo pipefail
+          npm ci --prefix adapters/node-typescript --ignore-scripts --no-audit --no-fund
+          node adapters/node-typescript/provision-compiler.mjs
+          node adapters/node-typescript/build.mjs --check
       - name: Run AI lint contract families (issue #76)
         id: ai-lint
         env:
@@ -760,13 +766,15 @@ jobs:
         # mutation.
         timeout-minutes: 10
         run: node scripts/test-php-laravel-parity.mjs
-      - name: Provision the vendored compiler bundle custody (issue #44)
-        run: |
-          set -euo pipefail
-          npm ci --prefix adapters/node-typescript --ignore-scripts --no-audit --no-fund
-          node adapters/node-typescript/build.mjs --check
       - name: Run the TypeScript scanner suite (issue #44)
         run: node scripts/test-node-typescript-scanner.mjs
+      - name: Qualify the TypeScript 7 native runtime contract
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        timeout-minutes: 10
+        run: |
+          cargo build -p lekalo-core --example typescript-native-contract --locked
+          node scripts/test-typescript-native-runtime.mjs
       - name: "Run Python adapter unit, protocol and observed-host regressions (issue #146)"
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules

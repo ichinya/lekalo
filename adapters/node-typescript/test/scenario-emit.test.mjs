@@ -1,3 +1,4 @@
+import {nativeTestCompiler} from "./native-typecheck.mjs";
 /**
  * #47 scenario emitter suite: byte-stable TypeScript emission over the
  * mapped test AST. The determinism contract is asserted literally
@@ -517,8 +518,8 @@ test("generated files typecheck under the pinned typescript", () => {
   // The exact compiler pin the adapter bundles, resolved from the
   // adapter's build-time node_modules — never ambient resolution.
   const require = createRequire(join(repoRoot, "adapters", "node-typescript", "package.json"));
-  const ts = require("typescript/lib/typescript.js");
-  assert.equal(ts.version, "5.9.3", "compiler pin drift");
+  const ts = nativeTestCompiler;
+  assert.equal(ts.version, "7.0.2", "compiler pin drift");
   const dir = mkdtempSync(join(tmpdir(), "lekalo-scenario-ts-"));
   try {
     materializeFixtureProject(dir);

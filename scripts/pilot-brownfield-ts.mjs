@@ -28,6 +28,7 @@
  * deleted with it unless `--keep` is passed.
  */
 import { spawnSync } from "node:child_process";
+import {configureAuthoringCompiler} from '../adapters/node-typescript/authoring-compiler.mjs';
 import { createHash } from "node:crypto";
 import {
   cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync,
@@ -267,7 +268,9 @@ const FRAMEWORK_POLICY = {
   providers: [{ id: "hono", state: "enabled" }],
 };
 
-const adapter = await import(`file:///${adapterPath.split("\\").join("/")}`);
+// The raw-index authoring lane runs outside confinement. Public CLI scans
+// separately qualify the supervised runtime; this is never that evidence.
+const adapter = configureAuthoringCompiler(await import(`file:///${adapterPath.split("\\").join("/")}`));
 const kernel = adapter.__lekaloKernel;
 
 function workspacePackageDirs(copyRoot) {

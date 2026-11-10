@@ -200,6 +200,7 @@ impl Enforcement {
 /// offers a namespace-level destination filter (issue #89).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct ConfinementReport {
+    components: u64,
     native_execution: bool,
     pub network: Enforcement,
     pub children: Enforcement,
@@ -247,6 +248,7 @@ impl ConfinementReport {
             Enforcement::Unenforced
         };
         Self {
+            components: 1,
             native_execution: policy.native_execution,
             network: if policy.network_allowlist {
                 Enforcement::Degraded
@@ -268,6 +270,7 @@ impl ConfinementReport {
         }
         lane_process_bound(host_read_only_lane(), self.children_denied)
             .filter(|_| self.children != Enforcement::Unenforced)
+            .map(|bound| bound * self.components)
     }
 
     /// The effective memory bound for the evidence: the Windows job
@@ -276,9 +279,11 @@ impl ConfinementReport {
         if self.native_execution && cfg!(windows) {
             return Some(512 * 1024 * 1024);
         }
-        lane_memory_bound(host_read_only_lane()).filter(|_| {
-            self.resources == Enforcement::Enforced || self.resources == Enforcement::Degraded
-        })
+        lane_memory_bound(host_read_only_lane())
+            .filter(|_| {
+                self.resources == Enforcement::Enforced || self.resources == Enforcement::Degraded
+            })
+            .map(|bound| bound * self.components)
     }
 }
 
@@ -407,7 +412,7 @@ pub(super) fn env_grant_dropped(name: &str) -> bool {
 pub(super) struct Sandbox {
     owned: tempfile::TempDir,
     pub project: PathBuf,
-    runtime: PathBuf,
+    pub(super) runtime: PathBuf,
     write_roots: Vec<PathBuf>,
     /// The effective write scopes this sandbox was built for; the
     /// publication guard validates every published entry against them
@@ -421,6 +426,7 @@ pub(super) struct Sandbox {
     pub(super) policy: SandboxPolicy,
     /// The honest per-dimension enforcement record.
     pub(super) report: ConfinementReport,
+    runtime_provenance: std::sync::Mutex<Option<wire::CompilerRuntime>>,
 }
 
 fn refusal(detail: &'static str) -> TargetFailure {
@@ -751,6 +757,7 @@ impl Sandbox {
             write_roots,
             write_scopes: writes.to_vec(),
             report: ConfinementReport::compute(policy),
+            runtime_provenance: std::sync::Mutex::new(None),
             policy,
         })
     }
@@ -758,6 +765,22 @@ impl Sandbox {
     /// The honest per-dimension enforcement record of this sandbox.
     pub(super) fn report(&self) -> ConfinementReport {
         self.report
+    }
+
+    pub(super) fn compiler_runtime(&self) -> Option<wire::CompilerRuntime> {
+        self.runtime_provenance.lock().unwrap().clone()
+    }
+
+    pub(super) fn record_runtime(&self, runtime: wire::CompilerRuntime) {
+        *self.runtime_provenance.lock().unwrap() = Some(runtime);
+    }
+
+    pub(super) fn combined_report(&self) -> ConfinementReport {
+        let mut report = self.report;
+        if self.compiler_runtime().is_some() {
+            report.components = 2;
+        }
+        report
     }
 
     pub(super) fn project_root(&self) -> &Path {
@@ -774,7 +797,14 @@ impl Sandbox {
             .file_name()
             .ok_or_else(|| refusal("sandbox-program"))?;
         let destination = self.runtime.join(filename);
-        std::fs::copy(&program, &destination).map_err(|_| refusal("sandbox-runtime"))?;
+        let same_program = program == destination
+            || std::fs::canonicalize(&program)
+                .ok()
+                .zip(std::fs::canonicalize(&destination).ok())
+                .is_some_and(|(source, target)| source == target);
+        if !same_program {
+            std::fs::copy(&program, &destination).map_err(|_| refusal("sandbox-runtime"))?;
+        }
         // The runtime-asset closure (issue #106 review r6 #5): an
         // interpreter is not always one self-contained executable. A
         // dynamically linked runtime (PHP's `php.exe` + `php8.dll`) cannot
@@ -801,11 +831,15 @@ impl Sandbox {
             }
         }
         let mut args = command.args.clone();
+        let compiler_peer = matches!(
+            super::compiler_peer::context(),
+            Some((_, super::compiler_peer::Role::Compiler))
+        );
         // A script explicitly supplied as the interpreter's first argument
         // is executable code, copied read-only. Other argv values confer no
         // filesystem grants. Packages with additional runtime assets need a
         // future explicit runtime bundle contract, not an ambient fallback.
-        if let Some(first) = args.first_mut() {
+        if let Some(first) = args.first_mut().filter(|_| !compiler_peer) {
             let script = Path::new(first);
             let canonical = std::fs::canonicalize(script).ok();
             let in_project = canonical
@@ -825,7 +859,9 @@ impl Sandbox {
                 if target == destination {
                     return Err(refusal("sandbox-runtime"));
                 }
-                std::fs::copy(script, &target).map_err(|_| refusal("sandbox-runtime"))?;
+                if script != target {
+                    std::fs::copy(script, &target).map_err(|_| refusal("sandbox-runtime"))?;
+                }
                 *first = target.to_string_lossy().into_owned();
             }
         }
@@ -848,6 +884,28 @@ impl Sandbox {
     }
 
     pub fn run(
+        &self,
+        command: &transport::AdapterCommand,
+        request: &[u8],
+        limits: &transport::TransportLimits,
+        file_transport: bool,
+        cancel: Option<&AtomicBool>,
+        env: &[(String, String)],
+    ) -> Result<transport::TransportSuccess, TargetFailure> {
+        *self.runtime_provenance.lock().unwrap() = None;
+        if request.len() > limits.max_request_bytes {
+            return Err(refusal("request-size"));
+        }
+        if cancel.is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Relaxed)) {
+            return Err(TargetFailure::Cancelled);
+        }
+        if super::runtime_bundle::declared(command) {
+            return super::runtime_bundle::run(self, command, request, limits, cancel, env);
+        }
+        self.run_inner(command, request, limits, file_transport, cancel, env)
+    }
+
+    pub(super) fn run_inner(
         &self,
         command: &transport::AdapterCommand,
         request: &[u8],
@@ -1145,6 +1203,26 @@ fn runtime_assets(program: &Path) -> &'static [&'static str] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_already_staged_program_is_not_copied_over_itself() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("compiler.exe");
+        std::fs::write(&source, b"pinned native compiler bytes").unwrap();
+        let sandbox = Sandbox::new(root.path(), &[], &[], false, SandboxPolicy::strict()).unwrap();
+        let staged = sandbox
+            .command(&transport::AdapterCommand {
+                program: source,
+                args: vec![],
+            })
+            .unwrap();
+        let restaged = sandbox.command(&staged).unwrap();
+        assert_eq!(staged.program, restaged.program);
+        assert_eq!(
+            std::fs::read(restaged.program).unwrap(),
+            b"pinned native compiler bytes"
+        );
+    }
 
     #[test]
     fn macos_children_grant_is_explicit_and_default_denial_is_preserved() {

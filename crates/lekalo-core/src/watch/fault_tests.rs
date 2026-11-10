@@ -20,7 +20,7 @@ fn successor_model_uses_exact_pins_and_matches_clean_after_selective_edits() {
     assert_eq!(
         serde_json::to_value(&baseline).unwrap(),
         serde_json::from_str::<serde_json::Value>(include_str!(
-            "../../../../tests/fixtures/watch/golden/successor-result.json"
+            "../../../../tests/fixtures/watch/golden/successor-result.product-1.3.0.json"
         ))
         .unwrap(),
         "complete successor result golden"

@@ -39,6 +39,7 @@ __export(kernel_exports, {
   __attachDrizzleDeclarations: () => __attachDrizzleDeclarations,
   __attachVendoredCompiler: () => __attachVendoredCompiler,
   __setCompilerMetadata: () => __setCompilerMetadata,
+  __setCompilerRuntime: () => __setCompilerRuntime,
   __setLaunchExtensions: () => __setLaunchExtensions,
   buildResponse: () => buildResponse,
   canonicalJson: () => canonicalJson,
@@ -106,7 +107,7 @@ function validateLintRequest(request) {
   const l = request.lint_request;
   if (request.operation === "lint" !== (l !== void 0)) throw new Error("lint-request-pairing");
   if (!l) return;
-  if (!["0.6.4", "0.9.0", "0.9.1", "1.1.0"].includes(request.protocol_version) || !request.target || ["dry_run", "plan_id", "native_request", "ir_path", "profile", "profile_digest", "profile_capabilities"].some((k) => request[k] !== void 0)) throw new Error("lint-request-version-members");
+  if (!["0.6.4", "0.9.0", "0.9.1", "1.1.0", "1.3.0"].includes(request.protocol_version) || !request.target || ["dry_run", "plan_id", "native_request", "ir_path", "profile", "profile_digest", "profile_capabilities"].some((k) => request[k] !== void 0)) throw new Error("lint-request-version-members");
   if (!l || Object.keys(l).sort().join() !== "bindings,files,pins,scope" || !Array.isArray(l.scope) || !l.scope.length || l.scope.length > 1e4 || !Array.isArray(l.files) || l.files.length > 4096 || !Array.isArray(l.bindings) || l.bindings.length > 1e4) throw new Error("lint-request-shape");
   const token = (s) => typeof s === "string" && /^[A-Za-z0-9][A-Za-z0-9_.:/#@\\-]{0,255}$/.test(s);
   const sha = (s) => typeof s === "string" && /^sha256:[a-f0-9]{64}$/.test(s);
@@ -124,6 +125,13 @@ function validateLintRequest(request) {
   for (const b of l.bindings) if (!b || Object.keys(b).sort().join() !== "fingerprint,kind,nativeId,path,symbol" || !l.files.includes(b.path) || !token(b.nativeId) || !token(b.symbol) || !sha(b.fingerprint) || !["command", "entity"].includes(b.kind)) throw new Error("lint-request-binding");
 }
 function collectAiLint(request, ts, readView, artifactDigest, adapterVersion) {
+  try {
+    return collectAiLintImpl(request, ts, readView, artifactDigest, adapterVersion);
+  } finally {
+    ts.close?.();
+  }
+}
+function collectAiLintImpl(request, ts, readView, artifactDigest, adapterVersion) {
   const l = request.lint_request, texts = /* @__PURE__ */ new Map(), sources = [], locations = [], records = [];
   let total = 0, work = 0;
   for (const path of l.files) {
@@ -271,7 +279,7 @@ function collectAiLint(request, ts, readView, artifactDigest, adapterVersion) {
   const boundedLocations = locationLimited ? locations.filter((location) => retained.has(location.id)) : locations;
   const limit = locationLimited ? ["document-location-limit"] : [];
   const supported = /* @__PURE__ */ new Set(["hidden.observer-write", "hidden.reflective-call", "hidden.string-reference", "ambiguity.scattered-state-writes"]);
-  return { schemaVersion: "lekalo/ai-lint-evidence/v0.6.4", identity: "dev.lekalo.ai-lint-evidence@0.6.4", target: request.target, scope: l.scope, producer: { id: "lekalo-target-node-typescript", version: adapterVersion, artifactDigest, tool: "node-static", compiler: known("typescript/5.9.3"), framework: known("node-events/v1"), recipe: "ai-readability/1" }, pins: l.pins, inputManifestDigest: hash(sources), sources, locations: boundedLocations, records: boundedRecords, limitations: ["static-files-only", "no-application-execution", "external-module-resolution-unsupported", ...limit], coverage: rules.flatMap((rule) => l.scope.map((scope) => ({ rule, target: request.target, scope, state: supported.has(rule) && files.size ? "partial" : "unsupported", eligible: unknown(), examined: known(calls.length), limitations: supported.has(rule) ? ["bounded-static-files", ...limit] : ["detector-unsupported"] }))) };
+  return { schemaVersion: "lekalo/ai-lint-evidence/v0.6.4", identity: "dev.lekalo.ai-lint-evidence@0.6.4", target: request.target, scope: l.scope, producer: { id: "lekalo-target-node-typescript", version: adapterVersion, artifactDigest, tool: "node-static", compiler: known("typescript/" + ts.version), framework: known("node-events/v1"), recipe: "ai-readability/1" }, pins: l.pins, inputManifestDigest: hash(sources), sources, locations: boundedLocations, records: boundedRecords, limitations: ["static-files-only", "no-application-execution", "external-module-resolution-unsupported", ...limit], coverage: rules.flatMap((rule) => l.scope.map((scope) => ({ rule, target: request.target, scope, state: supported.has(rule) && files.size ? "partial" : "unsupported", eligible: unknown(), examined: known(calls.length), limitations: supported.has(rule) ? ["bounded-static-files", ...limit] : ["detector-unsupported"] }))) };
 }
 
 // src/native-symbols.mjs
@@ -329,9 +337,9 @@ import { dirname, isAbsolute, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 var PROTOCOL_TOKEN = "lekalo.target/v1";
 var VERSION = "0.3.2";
-var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0", "0.9.1", "1.1.0"]);
+var SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0", "0.9.1", "1.1.0", "1.3.0"]);
 var ADAPTER_ID = "lekalo-target-node-typescript";
-var ADAPTER_VERSION = "1.1.0";
+var ADAPTER_VERSION = "1.3.0";
 var MAX_REQUEST_BYTES = 1024 * 1024;
 var MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 var MAX_JSON_DEPTH = 64;
@@ -435,6 +443,10 @@ function __setCompilerMetadata(metadata) {
   });
 }
 var vendoredCompiler = null;
+var compilerRuntime = null;
+function __setCompilerRuntime(runtime) {
+  compilerRuntime = deepFreeze({ ...runtime });
+}
 var embeddedLibs = null;
 var drizzleDeclarations = null;
 var launchExtensions = [];
@@ -1294,7 +1306,7 @@ function describeCapabilities(profile = null, extensions = []) {
       version: ADAPTER_VERSION,
       digest: entryDigest()
     },
-    protocol_versions: [...SUPPORTED_VERSIONS],
+    protocol_versions: SUPPORTED_VERSIONS.filter((version) => version !== "1.3.0" || compilerRuntime !== null),
     operations: ["describe"],
     transports: ["stdin", "file"],
     targets: ["node-typescript"],
@@ -1381,6 +1393,9 @@ function buildEvidence(request, internal) {
     digest: entryDigest()
   };
   const evidence = { adapter: identity };
+  if (request.protocol_version === "1.3.0" && compilerRuntime) {
+    evidence.compiler_runtime = compilerRuntime;
+  }
   if (hasOwn(request, "plan_id") && request.plan_id !== void 0) {
     evidence.plan_id = request.plan_id;
   }
@@ -2013,10 +2028,10 @@ function createKernel(options = {}) {
       }
       recordSink(sink, validatedRequest, outcome, profile);
       const response = projectOutcome(validatedRequest, outcome);
-      if (["0.9.0", "0.9.1", "1.1.0"].includes(validatedRequest.protocol_version) && operation === "scan" && response.status === "ok") {
+      if (["0.9.0", "0.9.1", "1.1.0", "1.3.0"].includes(validatedRequest.protocol_version) && operation === "scan" && response.status === "ok") {
         response.evidence.scan_profile_digest = `sha256:${createHash2("sha256").update(canonicalJson(profile), "utf8").digest("hex")}`;
       }
-      if (validatedRequest.protocol_version === "1.1.0" && operation === "scan" && response.status === "ok") {
+      if (["1.1.0", "1.3.0"].includes(validatedRequest.protocol_version) && operation === "scan" && response.status === "ok") {
         response.evidence.native_uncertainty = outcome.evidence?.nativeUncertainty ?? [];
       }
       return { response, internal: outcome };
@@ -2177,7 +2192,7 @@ function projectResult(data, request) {
     return { native_plan: {
       digest: np.plan_digest,
       kind: np.kind,
-      ...["0.9.1", "1.1.0"].includes(request.protocol_version) ? { plan: np } : {}
+      ...["0.9.1", "1.1.0", "1.3.0"].includes(request.protocol_version) ? { plan: np } : {}
     } };
   }
   if (!Array.isArray(data.entries)) {
@@ -2188,7 +2203,7 @@ function projectResult(data, request) {
   }
   const entries = [];
   for (const entry of data.entries) {
-    if (typeof entry !== "object" || entry === null || !isLogicalPath(entry.path) || typeof entry.kind !== "string" || [...entry.kind].length > 128 || entry.detail !== void 0 && (typeof entry.detail !== "string" || [...entry.detail].length > (["0.9.0", "0.9.1", "1.1.0"].includes(request.protocol_version) && request.operation === "scan" ? 2048 : 128))) {
+    if (typeof entry !== "object" || entry === null || !isLogicalPath(entry.path) || typeof entry.kind !== "string" || [...entry.kind].length > 128 || entry.detail !== void 0 && (typeof entry.detail !== "string" || [...entry.detail].length > (["0.9.0", "0.9.1", "1.1.0", "1.3.0"].includes(request.protocol_version) && request.operation === "scan" ? 2048 : 128))) {
       return void 0;
     }
     const projected = entry.detail === void 0 ? { path: entry.path, kind: entry.kind } : { path: entry.path, kind: entry.kind, detail: entry.detail };
@@ -2199,7 +2214,7 @@ function projectResult(data, request) {
       }
       projected.evidence = evidence;
     }
-    if (["0.9.0", "0.9.1", "1.1.0"].includes(request.protocol_version) && request.operation === "scan") {
+    if (["0.9.0", "0.9.1", "1.1.0", "1.3.0"].includes(request.protocol_version) && request.operation === "scan") {
       if (!isSha256Digest(projected.evidence?.source_digest)) return void 0;
     } else if (projected.evidence?.source_digest !== void 0) return void 0;
     entries.push(projected);
@@ -2211,7 +2226,7 @@ function projectResult(data, request) {
   return result;
 }
 function projectScanEntryEvidence(evidence, protocolVersion) {
-  const nativeScan = protocolVersion === "1.1.0";
+  const nativeScan = protocolVersion === "1.1.0" || protocolVersion === "1.3.0";
   if (typeof evidence !== "object" || evidence === null || Array.isArray(evidence)) {
     return void 0;
   }
@@ -2606,7 +2621,7 @@ async function main() {
       ...frameworkPolicy !== null ? { frameworkPolicy } : {},
       ...nativePolicy !== null ? { nativePolicy } : {}
     });
-    process.stdout.write(canonicalJson(dispatched.response));
+    (argvWithoutEntry.includes("--lekalo-compiler-session-json") ? process.stderr : process.stdout).write(canonicalJson(dispatched.response));
   } catch (error) {
     process.stderr.write(stderrDiagnostic(error?.code ?? "invalid") + "\n");
     process.exitCode = 1;

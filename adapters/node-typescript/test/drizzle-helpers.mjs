@@ -7,12 +7,13 @@ import { cpSync, mkdtempSync, readdirSync, realpathSync, rmSync, statSync } from
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {configureTestCompiler} from './compiler-test-runtime.mjs';
 
 export const repoRoot = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../.."));
 
 /** The production bundle (vendored compiler + scanner + kernel). */
 export async function loadAdapter() {
-  return import("file:///" + join(repoRoot, "adapters/node-typescript/adapter.mjs").split("\\").join("/"));
+  return configureTestCompiler(await import("file:///" + join(repoRoot, "adapters/node-typescript/adapter.mjs").split("\\").join("/")));
 }
 
 export const fixtureRoot = join(repoRoot, "tests/fixtures/node-typescript-drizzle");

@@ -13,6 +13,7 @@ import { cpSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, s
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {configureTestCompiler} from '../adapters/node-typescript/test/compiler-test-runtime.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const adapterPath = join(root, "adapters", "node-typescript", "adapter.mjs");
@@ -81,7 +82,7 @@ function scan(adapter, project, frameworks) {
 
 let failed = false;
 try {
-  const adapter = await import("file:///" + adapterPath.split("\\").join("/"));
+  const adapter = configureTestCompiler(await import("file:///" + adapterPath.split("\\").join("/")));
   const projects = ["static", "middleware", "uncertainty", "composition"];
   for (const project of projects) {
     const tempRoot = realpathSync(mkdtempSync(join(tmpdir(), `lekalo-hono-readonly-`)));

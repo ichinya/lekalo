@@ -110,6 +110,12 @@ fn verify_tree(root: &Path, manifest: &ManifestDocument) -> Result<(), PackageFa
             identity,
         });
     }
+    crate::target_protocol::runtime_bundle::package_files(root, manifest).map_err(|_| {
+        PackageFailure::ChecksumMismatch {
+            domain: "runtime-bundle".to_owned(),
+            identity: manifest.adapter_id().to_owned(),
+        }
+    })?;
     Ok(())
 }
 
@@ -350,12 +356,10 @@ mod committed_exemplar_tests {
     use super::super::discovery::Custody;
     use super::*;
 
-    /// The cross-check both reviews demanded: the Rust verifier accepts
-    /// exactly what the JS generator (scripts/regen-adapter-manifest.mjs)
-    /// emits for the shipped exemplar. If the two digest domains ever
-    /// diverge again, this fails (issue #32 fix round 1, finding F-2).
+    /// Cross-check the JS-authored package digest, then require the
+    /// separately provisioned runtime rather than admitting a JS-only copy.
     #[test]
-    fn the_committed_exemplar_clears_the_integrity_gate() {
+    fn the_committed_exemplar_requires_its_provisioned_runtime() {
         let root = std::env::temp_dir().join(format!(
             "lekalo-ap-exemplar-{}-{}",
             std::process::id(),
@@ -372,6 +376,16 @@ mod committed_exemplar_tests {
         // Copy the committed payload into the temp package root.
         let payload = include_bytes!("../../../../adapters/node-typescript/adapter.mjs");
         std::fs::write(root.join("adapter.mjs"), payload).expect("payload");
+        std::fs::write(
+            root.join("runtime-bundle.json"),
+            include_bytes!("../../../../adapters/node-typescript/runtime-bundle.json"),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("typescript-native-notices.txt"),
+            include_bytes!("../../../../adapters/node-typescript/typescript-native-notices.txt"),
+        )
+        .unwrap();
         std::fs::write(root.join(MANIFEST_FILE), manifest_source).expect("manifest");
         let candidate = crate::adapter_package::discovery::DiscoveryCandidate {
             manifest: document,
@@ -379,7 +393,13 @@ mod committed_exemplar_tests {
             synthesized: false,
             custody: Custody::ProjectPath,
         };
-        verify_package(&candidate).expect("the shipped exemplar passes verify_package");
+        // The committed payload and framed package digest must pass first.
+        // A source-only package then refuses its missing native resources;
+        // the provisioned cross-platform runtime gate proves full admission.
+        assert!(matches!(
+            verify_package(&candidate),
+            Err(PackageFailure::ChecksumMismatch { domain, .. }) if domain == "runtime-bundle"
+        ));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

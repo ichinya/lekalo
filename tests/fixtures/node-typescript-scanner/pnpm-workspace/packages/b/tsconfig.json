@@ -4,10 +4,15 @@
     "target": "es2022",
     "module": "esnext",
     "moduleResolution": "bundler",
-    "baseUrl": ".",
-    "paths": { "@fixture/lib-a": ["../a/src/index.ts"] },
+    "paths": {
+      "@fixture/lib-a": [
+        "../a/src/index.ts"
+      ]
+    },
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

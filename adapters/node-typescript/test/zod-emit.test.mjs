@@ -1,3 +1,4 @@
+import {nativeTestCompiler} from "./native-typecheck.mjs";
 /**
  * #45 zod emitter suite: deterministic text emission, golden byte
  * comparisons against the committed matrix fixture, and the runtime
@@ -418,8 +419,8 @@ test("generated modules typecheck cleanly under the pinned typescript", async ()
   // adapter's build-time node_modules — never ambient resolution.
   const { createRequire } = await import("node:module");
   const require = createRequire(join(ADAPTER_ROOT, "package.json"));
-  const ts = require("typescript/lib/typescript.js");
-  assert.equal(ts.version, "5.9.3", "compiler pin drift");
+  const ts = nativeTestCompiler;
+  assert.equal(ts.version, "7.0.2", "compiler pin drift");
   const dir = materialize(/* keepTypeScript */ true);
   try {
     const zodDir = join(dir, "src", "generated", "node-typescript", "zod");
@@ -445,7 +446,6 @@ test("generated modules typecheck cleanly under the pinned typescript", async ()
         moduleResolution: ts.ModuleResolutionKind.Bundler,
         skipLibCheck: true,
         types: [],
-        baseUrl: dir,
         paths: {
           zod: [join(ADAPTER_ROOT, "node_modules", "zod", "index.d.ts")],
         },

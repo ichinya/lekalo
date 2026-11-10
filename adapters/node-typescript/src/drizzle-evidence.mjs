@@ -1,3 +1,4 @@
+import {ast as compilerAst} from "./compiler-client.mjs";
 /**
  * Drizzle ORM evidence extraction for the Node/TypeScript target
  * (issue #116).
@@ -341,7 +342,7 @@ function lineOf(sourceFile, node) {
 /** Statically known string value of one node, or null. */
 function staticString(node) {
   if (node === undefined || node === null) return null;
-  if (node.kind === 11 /* StringLiteral */ || node.kind === 15 /* NoSubstitutionTemplateLiteral */) {
+  if (node.kind === compilerAst.SyntaxKind.StringLiteral || node.kind === compilerAst.SyntaxKind.NoSubstitutionTemplateLiteral) {
     return typeof node.text === "string" ? node.text : null;
   }
   return null;
@@ -350,16 +351,16 @@ function staticString(node) {
 /** Statically known primitive (string/number/boolean) of one node. */
 function staticPrimitive(node) {
   if (node === undefined || node === null) return null;
-  if (node.kind === 11 || node.kind === 15) {
+  if (node.kind === compilerAst.SyntaxKind.StringLiteral || node.kind === compilerAst.SyntaxKind.NoSubstitutionTemplateLiteral) {
     return { kind: "string", token: node.text };
   }
-  if (node.kind === 9 /* NumericLiteral */) {
+  if (node.kind === compilerAst.SyntaxKind.NumericLiteral) {
     return { kind: "number", token: node.getText().slice(0, 64) };
   }
-  if (node.kind === 112 /* TrueKeyword */ || node.kind === 97 /* FalseKeyword */) {
-    return { kind: "boolean", token: node.kind === 112 ? "true" : "false" };
+  if (node.kind === compilerAst.SyntaxKind.TrueKeyword || node.kind === compilerAst.SyntaxKind.FalseKeyword) {
+    return { kind: "boolean", token: node.kind === compilerAst.SyntaxKind.TrueKeyword ? "true" : "false" };
   }
-  if (node.kind === 225 /* PrefixUnaryExpression */ && node.operator === 41 /* MinusToken */) {
+  if (node.kind === compilerAst.SyntaxKind.PrefixUnaryExpression && node.operator === compilerAst.SyntaxKind.MinusToken) {
     const operand = staticPrimitive(node.operand);
     if (operand?.kind === "number") {
       return { kind: "number", token: `-${operand.token}` };
@@ -409,13 +410,13 @@ function flattenChain(ts, node) {
 /** The VariableDeclaration/PropertyAssignment/BindingElement that declares this symbol. */
 function variableDeclarationOf(symbol) {
   for (const declaration of symbol?.declarations ?? []) {
-    if (declaration.kind === 261 /* VariableDeclaration */) return declaration;
-    if (declaration.kind === 304 /* PropertyAssignment */) return declaration;
-    if (declaration.kind === 173 /* PropertyDeclaration */) return declaration;
+    if (declaration.kind === compilerAst.SyntaxKind.VariableDeclaration) return declaration;
+    if (declaration.kind === compilerAst.SyntaxKind.PropertyAssignment) return declaration;
+    if (declaration.kind === compilerAst.SyntaxKind.PropertyDeclaration) return declaration;
     // A destructured binding declares its local through a binding
     // element: ignoring it made renamed destructures invisible to both
     // extraction and the unproven-callee net (issue #116 fix round 4).
-    if (declaration.kind === 209 /* BindingElement */) return declaration;
+    if (declaration.kind === compilerAst.SyntaxKind.BindingElement) return declaration;
   }
   return null;
 }
@@ -756,7 +757,8 @@ function declaredTypeQuerySpelling(context, calleeNode) {
  */
 function closureModuleExportOf(context, declaration, name) {
   if (declaration === null || declaration === undefined || name === null) return null;
-  const moduleSymbol = declaration.getSourceFile?.()?.symbol ?? null;
+  const source = declaration.getSourceFile?.();
+  const moduleSymbol = source ? context.checker.getSymbolAtLocation(source) : null;
   if (moduleSymbol === null || moduleSymbol === undefined) return null;
   const direct = moduleSymbol.exports?.get(name);
   if (direct !== undefined && direct !== null) return direct;

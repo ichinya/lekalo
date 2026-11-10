@@ -38,7 +38,7 @@ fn target_protocol_conformance_error_codes_count_unicode_characters() {
             stderr_truncated: false,
         };
         let failure = TargetClient::default()
-            .interpret(Ok(exchange), &request)
+            .interpret(Ok(exchange), &request, None)
             .unwrap_err();
         assert_eq!(
             matches!(failure, TargetFailure::OperationFailed { .. }),
@@ -211,7 +211,7 @@ fn validate_raw_response(
         stdout_truncated: false,
         stderr_truncated: false,
     };
-    let response = client.interpret(Ok(exchange), request)?;
+    let response = client.interpret(Ok(exchange), request, None)?;
     if request.operation == Operation::Describe {
         if response.result.is_some() || response.writes.is_some() {
             return Err(TargetFailure::ResponseInvalid {

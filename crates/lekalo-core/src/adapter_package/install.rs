@@ -145,13 +145,32 @@ pub fn plan(
     trust: TrustLevel,
     quarantined: bool,
     current: Option<&ManifestDocument>,
-) -> InstallPlan {
+) -> Result<InstallPlan, super::types::PackageFailure> {
     let manifest = &candidate.manifest;
     let mut actions = Vec::new();
     for file in manifest.files() {
         actions.push(InstallAction::Stage {
             path: file.path().to_owned(),
             digest: file.digest().as_str().to_owned(),
+        });
+    }
+    if let Some(root) = &candidate.package_root {
+        let resources = crate::target_protocol::runtime_bundle::package_files(root, manifest)
+            .map_err(|_| super::types::PackageFailure::ChecksumMismatch {
+                domain: "runtime-bundle".into(),
+                identity: manifest.adapter_id().to_owned(),
+            })?;
+        for resource in resources {
+            actions.push(InstallAction::Stage {
+                path: resource.path,
+                digest: resource.digest,
+            });
+        }
+        actions.sort_by(|left, right| match (left, right) {
+            (InstallAction::Stage { path: a, .. }, InstallAction::Stage { path: b, .. }) => {
+                a.cmp(b)
+            }
+            _ => std::cmp::Ordering::Equal,
         });
     }
     // One custody spelling, shared with purge and release (fix round 4,
@@ -199,7 +218,7 @@ pub fn plan(
     };
     let mut plan = plan;
     plan.plan_id = plan.compute_plan_id();
-    plan
+    Ok(plan)
 }
 
 /// Apply one confirmed plan under the project root. `allow_escalation`
@@ -288,8 +307,17 @@ fn apply_staged(
 ) -> Result<(), ApplyRejection> {
     for action in &plan.actions {
         if let InstallAction::Stage { path, digest } = action {
-            let from = source_dir.join(path.replace('/', std::path::MAIN_SEPARATOR_STR));
-            let bytes = std::fs::read(&from).map_err(|_| conflict(path))?;
+            let fs = crate::project_fs::Fs::open(source_dir).map_err(|_| conflict(path))?;
+            let (directory, name) = path.rsplit_once('/').unwrap_or(("", path));
+            let bound = if path.starts_with("runtime/") {
+                64 * 1024 * 1024
+            } else {
+                16 * 1024 * 1024
+            };
+            let bytes = fs
+                .read_file_opt(directory, name, bound)
+                .map_err(|_| conflict(path))?
+                .ok_or_else(|| conflict(path))?;
             // Verify before the bytes enter the stage.
             let actual = crate::digest::sha256_hex(&bytes);
             if format!("sha256:{actual}") != *digest {
@@ -300,6 +328,12 @@ fn apply_staged(
                 std::fs::create_dir_all(parent).map_err(|_| recovery("stage"))?;
             }
             std::fs::write(&to, &bytes).map_err(|_| recovery("stage"))?;
+            #[cfg(unix)]
+            if path.starts_with("runtime/") && name == "tsc" {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o500))
+                    .map_err(|_| recovery("stage"))?;
+            }
         }
     }
     // The manifest is the custody anchor: every later gate (update
@@ -496,13 +530,15 @@ mod tests {
             TrustLevel::Community,
             true,
             None,
-        );
+        )
+        .unwrap();
         let second = plan(
             &candidate("a", b"one", "path:x"),
             TrustLevel::Community,
             true,
             None,
-        );
+        )
+        .unwrap();
         assert_eq!(first.plan_id, second.plan_id);
         assert!(first.plan_id.starts_with("sha256:"));
         let different = plan(
@@ -510,7 +546,8 @@ mod tests {
             TrustLevel::Community,
             true,
             None,
-        );
+        )
+        .unwrap();
         assert_ne!(first.plan_id, different.plan_id);
     }
 
@@ -529,7 +566,7 @@ mod tests {
             candidate.manifest.stored_bytes(),
         )
         .expect("manifest in source");
-        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None);
+        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None).unwrap();
         apply_with_source(&root, &install_plan, &install_plan.plan_id, false, &source)
             .expect("applies");
         // The package store now contains the manifest.
@@ -548,7 +585,8 @@ mod tests {
             TrustLevel::LocalDevelopment,
             false,
             Some(&current),
-        );
+        )
+        .unwrap();
         assert!(second.diff.is_some(), "the diff is now real, not null");
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&source);
@@ -560,7 +598,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("mkdir");
         let candidate = candidate("a", b"bytes", "path:x");
-        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None);
+        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None).unwrap();
         let rejection = apply(
             &root,
             &install_plan,
@@ -581,7 +619,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("mkdir");
         let candidate = candidate("a", b"bytes", "path:x");
-        let mut install_plan = plan(&candidate, TrustLevel::Community, true, None);
+        let mut install_plan = plan(&candidate, TrustLevel::Community, true, None).unwrap();
         install_plan.diff = Some(super::super::diff::ManifestDiff {
             read_scopes: Vec::new(),
             write_scopes: Vec::new(),
@@ -638,7 +676,7 @@ mod tests {
         std::fs::create_dir_all(&source).expect("src dir");
         std::fs::write(source.join("a.mjs"), b"tampered bytes").expect("entry");
         let candidate = candidate("a", b"bytes", "path:x");
-        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None);
+        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None).unwrap();
         let rejection =
             apply_with_source(&root, &install_plan, &install_plan.plan_id, false, &source)
                 .expect_err("tampered stage refuses");
@@ -669,7 +707,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("mkdir");
         let candidate = candidate("a", b"bytes", "path:x");
-        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None);
+        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None).unwrap();
         let source = std::env::temp_dir().join(format!("lekalo-ap-src2-{}", std::process::id()));
         std::fs::create_dir_all(&source).expect("src dir");
         std::fs::write(source.join("a.mjs"), b"bytes").expect("entry");
@@ -696,7 +734,7 @@ mod tests {
         // nested receipt files under the evidence tree (and silently
         // wrote nothing for path: sources).
         let candidate = candidate("receipt-adapter", b"bytes", "path:adapters/node-typescript");
-        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None);
+        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None).unwrap();
         let source = std::env::temp_dir().join(format!("lekalo-ap-ev-src-{}", std::process::id()));
         std::fs::create_dir_all(&source).expect("src dir");
         std::fs::write(source.join("a.mjs"), b"bytes").expect("entry");
@@ -749,7 +787,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("mkdir");
         let candidate = candidate("receipt-adapter", b"bytes", "path:x");
-        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None);
+        let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None).unwrap();
         let source = std::env::temp_dir().join(format!("lekalo-ap-evf-src-{}", std::process::id()));
         std::fs::create_dir_all(&source).expect("src dir");
         std::fs::write(source.join("a.mjs"), b"bytes").expect("entry");

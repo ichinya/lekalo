@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "productVersion": "1.2.0",
-  "cliSourceDigest": "sha256:d6fb8721f042ae95aff6d101a4a167a8e4cdc5f2eb2f41d9f97064b304414b10",
+  "productVersion": "1.3.0",
+  "cliSourceDigest": "sha256:12b5c57e8d7db9bd369561e2535846605542b4ebdc0c2c70a24c00e2730de756",
   "p0Pages": [
     {
       "page": "README.md",
@@ -3273,6 +3273,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/compiler-runtime.schema.v1.3.0.json",
+      "kind": "contract",
+      "source": "contracts/compiler-runtime.schema.v1.3.0.json",
+      "sourceDigest": "sha256:4f596ec0b014db0b178382d175629adfcbe4913a8765fcee1733a0757daf6869",
+      "owner": "docs/typescript-native-runtime.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/context-budget-comparison.schema.v0.6.3.json",
       "kind": "contract",
       "source": "contracts/context-budget-comparison.schema.v0.6.3.json",
@@ -5100,6 +5109,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/target-protocol.schema.v1.3.0.json",
+      "kind": "contract",
+      "source": "contracts/target-protocol.schema.v1.3.0.json",
+      "sourceDigest": "sha256:d6938f1b46c399b5cc97b6cd1743ee8c5e77de3b32788e21a647f846abeb0b71",
+      "owner": "docs/target-protocol.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/task-links-evidence.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/task-links-evidence.schema.v0.8.0.json",
@@ -5402,6 +5420,13 @@
     },
     {
       "id": "protocol:node-typescript:lekalo/client-sdk/v0.8.0",
+      "kind": "protocol",
+      "source": "adapters/node-typescript/src",
+      "owner": "adapters/node-typescript/README.md",
+      "status": "implemented"
+    },
+    {
+      "id": "protocol:node-typescript:lekalo/compiler-runtime/v1.3.0",
       "kind": "protocol",
       "source": "adapters/node-typescript/src",
       "owner": "adapters/node-typescript/README.md",

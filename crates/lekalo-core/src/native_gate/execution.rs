@@ -626,7 +626,11 @@ fn prepare(
         .package_root
         .as_ref()
         .ok_or_else(|| invalid("execution-adapter-package"))?;
-    if adapter.files().len() != 1 || adapter.files()[0].path() != adapter.entry() {
+    let resources = crate::target_protocol::runtime_bundle::package_files(package_root, adapter)
+        .map_err(|_| Failure::PlanStale)?;
+    if resources.is_empty()
+        && (adapter.files().len() != 1 || adapter.files()[0].path() != adapter.entry())
+    {
         return Err(invalid("execution-adapter-single-file"));
     }
     let entry_bytes = read_source_with_limit(package_root, adapter.entry(), 32 * 1024 * 1024)?;
@@ -639,7 +643,9 @@ fn prepare(
         adapter_entry_digest: hash(&entry_bytes),
         source_manifest_digest: hash(&canonical(&inputs)?),
     };
-    if custody.adapter_entry_digest != adapter.files()[0].digest().as_str() {
+    if !adapter.files().iter().any(|file| {
+        file.path() == adapter.entry() && file.digest().as_str() == custody.adapter_entry_digest
+    }) {
         return Err(Failure::PlanStale);
     }
     if let Some(expected) = expected {
@@ -713,6 +719,31 @@ fn prepare(
     }
     let entry = stage.path().join("adapter.mjs");
     std::fs::write(&entry, entry_bytes).map_err(|_| Failure::RunInfrastructure)?;
+    // Only the explicit verified runtime closure can extend the single-file
+    // planner contract. Recheck every byte while staging to bind the plan
+    // through describe, rather than following mutable package paths.
+    if !resources.is_empty() {
+        let pins = adapter
+            .files()
+            .iter()
+            .filter(|file| file.path() != adapter.entry())
+            .map(|file| (file.path(), file.digest().as_str()))
+            .chain(
+                resources
+                    .iter()
+                    .map(|file| (file.path.as_str(), file.digest.as_str())),
+            );
+        for (path, digest) in pins {
+            let bytes = read_source_with_limit(package_root, path, 64 * 1024 * 1024)?;
+            if hash(&bytes) != digest {
+                return Err(Failure::PlanStale);
+            }
+            let destination = stage.path().join(path);
+            std::fs::create_dir_all(destination.parent().ok_or(Failure::RunInfrastructure)?)
+                .map_err(|_| Failure::RunInfrastructure)?;
+            std::fs::write(destination, bytes).map_err(|_| Failure::RunInfrastructure)?;
+        }
+    }
     let command = AdapterCommand {
         program: catalog.tools[0].program.clone(),
         args: vec![
@@ -737,9 +768,11 @@ fn prepare(
     let discovered = Discovery::run_with_cancel(&mut client, &command, &source_root, cancel)
         .map_err(|failure| adapter_failure(failure, "execution-adapter-describe"))?;
     consistency::check(adapter, &discovered).map_err(|_| invalid("execution-adapter-manifest"))?;
-    // Both revisions carry the full v0.4 native plan. Newer scan evidence
+    // Negotiated successors carry the full v0.4 native plan. Newer scan evidence
     // must not disable the independently versioned native planning surface.
-    if !matches!(discovered.negotiated_version, "0.9.1" | "1.1.0") {
+    if !crate::target_protocol::version::supports_complete_native_plan(
+        discovered.negotiated_version,
+    ) {
         return Err(Failure::CapabilityMissing {
             detail: "native-full-plan-protocol",
         });
@@ -1370,7 +1403,10 @@ mod tests {
         let catalog_bytes = canonical(&json!({"schema_version":CATALOG_VERSION,"tools":[{"id":"fixture-node","program":program,"artifact_digest":program_digest,"program_digest":program_digest,"version":"24.0.0"}]})).unwrap();
         let input = ExecutionInputs {
             root,
-            adapter: Path::new(env!("CARGO_MANIFEST_DIR")).join("../../adapters/node-typescript"),
+            // Metadata-only refusal tests must launch no interpreter and
+            // need no provisioned native compiler. Use the committed
+            // self-contained package; the live gate covers TS7 planning.
+            adapter: Path::new(env!("CARGO_MANIFEST_DIR")).join("../../adapters/php-laravel"),
             policy: temp.path().join("policy.json"),
             profile: temp.path().join("profile.json"),
             catalog: temp.path().join("catalog.json"),

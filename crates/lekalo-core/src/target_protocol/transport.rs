@@ -306,6 +306,18 @@ pub(super) fn pump(
     limits: &TransportLimits,
     cancel: Option<&AtomicBool>,
 ) -> Result<TransportSuccess, TransportFailure> {
+    if let Some((session, role)) = super::compiler_peer::context() {
+        return super::compiler_peer::pump(child, limits, cancel, session, role);
+    }
+    pump_ordinary(child, request, limits, cancel)
+}
+
+pub(super) fn pump_ordinary(
+    child: &mut impl Process,
+    request: &[u8],
+    limits: &TransportLimits,
+    cancel: Option<&AtomicBool>,
+) -> Result<TransportSuccess, TransportFailure> {
     #[cfg(all(test, any(windows, target_os = "linux", target_os = "macos")))]
     if let Some(callback) = PUMP_START.with(|slot| slot.borrow_mut().take()) {
         callback();
@@ -400,7 +412,11 @@ pub(super) fn pump(
             match child.poll() {
                 Ok(observed) => status = observed,
                 Err(error) => {
-                    refusal = if error.kind() == std::io::ErrorKind::OutOfMemory {
+                    refusal = if error.kind() == std::io::ErrorKind::Interrupted {
+                        TransportFailure::Cancelled
+                    } else if error.kind() == std::io::ErrorKind::TimedOut {
+                        TransportFailure::Timeout
+                    } else if error.kind() == std::io::ErrorKind::OutOfMemory {
                         TransportFailure::ResourceLimit
                     } else if resident_monitor_unavailable(&error) {
                         TransportFailure::ResourceMonitorUnavailable

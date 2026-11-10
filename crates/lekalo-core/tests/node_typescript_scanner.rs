@@ -1,5 +1,5 @@
 //! Issue #44 integration tests: the production `TargetClient` drives the
-//! actual single-file scanner artifact through the public process
+//! actual supervised scanner runtime bundle through the public process
 //! protocol, proving the current protocol negotiation, the launch-profile seam, the
 //! pre-dispatch profile binding (review finding F1), the typed
 //! scan-entry evidence member on the wire, and the end-to-end consumer
@@ -137,7 +137,7 @@ fn the_scanner_negotiates_the_current_protocol_and_declares_the_capability() {
     let described = client
         .describe(&command, &sandbox.dir)
         .expect("the scanner handshake must succeed");
-    assert_eq!(described.negotiated_version, "1.1.0");
+    assert_eq!(described.negotiated_version, "1.3.0");
     assert_eq!(
         described.capabilities.adapter.id,
         "lekalo-target-node-typescript"
@@ -147,7 +147,7 @@ fn the_scanner_negotiates_the_current_protocol_and_declares_the_capability() {
     // (issues #45 and #70 — the closed wire has exactly one generate
     // operation, so zod schemas and the transport route layer compose
     // under one descriptor).
-    assert_eq!(described.capabilities.adapter.version, "1.1.0");
+    assert_eq!(described.capabilities.adapter.version, "1.3.0");
     assert_eq!(described.capabilities.operations.len(), 6);
     assert!(described.capabilities.operations.contains(&Operation::Scan));
     assert!(described
@@ -350,7 +350,23 @@ fn public_native_scan_preserves_nested_members_instead_of_dropping_them() {
             None,
         )
         .expect("negotiated native scan preserves the complete subtree");
-    assert_eq!(outcome.response.protocol_version, "1.1.0");
+    assert_eq!(outcome.response.protocol_version, "1.3.0");
+    let runtime = outcome.response.evidence.compiler_runtime.as_ref().unwrap();
+    assert_eq!(runtime.kind, "typescript-native");
+    assert_eq!(runtime.version, "7.0.2");
+    assert_eq!(
+        runtime.libraries_digest,
+        "sha256:04eee9a4783996a80801fc88e554b61118516b2411e8e8cf853eff68cf2b8c15"
+    );
+    #[cfg(windows)]
+    {
+        assert_eq!(outcome.confinement.budget.children.process_limit, Some(2));
+        assert_eq!(
+            outcome.confinement.budget.resources.memory_limit,
+            Some(4 * 1024 * 1024 * 1024)
+        );
+        assert_eq!(outcome.confinement.budget.resources.enforcement, "enforced");
+    }
     let entries = outcome.response.result.unwrap().entries.unwrap();
     let point = entries.iter().find(|e| e.path == "src/nested.ts").unwrap();
     let nodes = point

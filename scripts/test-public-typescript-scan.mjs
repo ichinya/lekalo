@@ -42,6 +42,7 @@ function faultPackage(root, profile, mode, path) {
   // Fault lanes exercise the frozen custody seam independently of the
   // new native-inventory producer. Positive lanes use the full manifest.
   manifest.compatibility.protocolVersions = ['0.3.2','0.9.0'];
+  manifest.executable.assets = [];
   const capabilities = {};
   for (const version of manifest.compatibility.protocolVersions) {
     const request = {protocol: 'lekalo.target/v1', protocol_version: version, operation: 'describe', project_root: '.', request_id: 'req-' + '0'.repeat(64)};
@@ -133,7 +134,9 @@ try {
     const refused = action => {action(); assert.deepEqual(readFileSync(indexPath), stableIndex, 'refusal leaves accepted index intact');};
     function legacyPartial() {
       const request={protocol:'lekalo.target/v1',protocol_version:'0.9.0',operation:'scan',request_id:'req-'+'0'.repeat(64),project_root:'.',target:'node-typescript',profile:'standalone'};
-      const r=spawnSync(process.execPath,[adapter,'--lekalo-project-profile-json',JSON.stringify(profile)],{cwd:root,input:JSON.stringify(request),encoding:'utf8',timeout:120000,maxBuffer:16e6});
+      // A source-only host explicitly injects the pinned native API for this
+      // predecessor projection check. Positive public scans use core above.
+      const r=spawnSync(process.execPath,[join(repo,'adapters/node-typescript/test/native-test-entry.mjs'),'--lekalo-project-profile-json',JSON.stringify(profile)],{cwd:root,input:JSON.stringify(request),encoding:'utf8',timeout:120000,maxBuffer:16e6});
       assert.equal(r.status,0);const result=JSON.parse(r.stdout);assert.equal(result.status,'error');assert.equal(result.error.partial,true);
     }
     refused(() => scan({...profile, id: 'wrong-profile'}, {expected: 3, reason: 'adapter.manifest-mismatch'}));

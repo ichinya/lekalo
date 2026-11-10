@@ -131,12 +131,19 @@ function actual(receipt) {
   assert.equal(receipt.commands.length,1);
 }
 function refusal(document,rule) {assert.ok(document.reasonCodes?.includes(rule),JSON.stringify(document));}
+function copyAdapter(destination) {
+  fs.mkdirSync(destination,{recursive:true});
+  const manifest=JSON.parse(fs.readFileSync(join(adapter,'adapter.manifest.json'),'utf8'));
+  for(const file of ['adapter.manifest.json',...manifest.integrity.files.map(row=>row.path)])fs.copyFileSync(join(adapter,file),join(destination,file));
+  fs.cpSync(join(adapter,'runtime'),join(destination,'runtime'),{recursive:true});
+}
 function unconfirmedAdapter(f) {
-  f.adapter=join(f.home,'unconfirmed-adapter');fs.mkdirSync(f.adapter);
+  f.adapter=join(f.home,'unconfirmed-adapter');copyAdapter(f.adapter);
   // Negative lane only: an otherwise real bundle emits a self-consistent
   // plan for a different existing script than the selected policy approved.
-  const interceptor=`const __nativeWrite=process.stdout.write.bind(process.stdout);
-process.stdout.write=(chunk,...rest)=>{const out=JSON.parse(String(chunk));const ref=out.result?.native_plan;
+  const interceptor=`const __nativeOutput=process.argv.includes('--lekalo-compiler-session-json')?process.stderr:process.stdout;
+const __nativeWrite=__nativeOutput.write.bind(__nativeOutput);
+__nativeOutput.write=(chunk,...rest)=>{const out=JSON.parse(String(chunk));const ref=out.result?.native_plan;
 if(ref?.plan){const plan=ref.plan,command=plan.commands[0];command.script_name='test:fail';command.argv=['node','src/gate.mjs','fail'];
 command.script_digest=__nativeHash(command.argv.join(' '));const {plan_digest,...body}=plan;
 plan.plan_digest=__nativeHash('lekalo.native-plan.v0.4.0'+JSON.stringify(__nativeCanonical(body)));ref.digest=plan.plan_digest;}
@@ -145,13 +152,19 @@ function __nativeCanonical(v){return Array.isArray(v)?v.map(__nativeCanonical):v
 import {createHash as __nativeCreateHash} from 'node:crypto';
 function __nativeHash(v){return 'sha256:'+__nativeCreateHash('sha256').update(v).digest('hex');}
 `;
-  const bytes=Buffer.from(interceptor+fs.readFileSync(join(adapter,'adapter.mjs'),'utf8').replace(/^#![^\n]*\n/,''));
+  const source=fs.readFileSync(join(adapter,'adapter.mjs'),'utf8');
+  const header='#!/usr/bin/env node\n// lekalo-runtime-bundle: runtime-bundle.json\n';
+  assert.ok(source.startsWith(header));
+  const bytes=Buffer.from(header+interceptor+source.slice(header.length));
   fs.writeFileSync(join(f.adapter,'adapter.mjs'),bytes);
+  const bundle=JSON.parse(fs.readFileSync(join(f.adapter,'runtime-bundle.json'),'utf8'));
+  bundle.entry={...bundle.entry,digest:hash(bytes),bytes:bytes.length};save(join(f.adapter,'runtime-bundle.json'),bundle);
   const manifest=JSON.parse(fs.readFileSync(join(adapter,'adapter.manifest.json'),'utf8'));
-  manifest.integrity.files=[{path:'adapter.mjs',digest:hash(bytes),bytes:bytes.length}];
+  manifest.integrity.files=manifest.integrity.files.map(row=>{const data=fs.readFileSync(join(f.adapter,row.path));return {...row,digest:hash(data),bytes:data.length};});
+  manifest.executable.assets=manifest.executable.assets.map(row=>({...row,digest:manifest.integrity.files.find(file=>file.path===row.path).digest}));
   manifest.integrity.packageDigest='sha256:'+'0'.repeat(64);
   const framed=(name,content)=>{const n=Buffer.alloc(8);n.writeBigUInt64BE(BigInt(content.length));return Buffer.concat([Buffer.from(name),Buffer.from([0]),n,Buffer.from([0]),content]);};
-  const parts=[framed('adapter.mjs',bytes),framed('adapter.manifest.json',Buffer.from(JSON.stringify(canonical(manifest))))].map(part=>{const n=Buffer.alloc(8);n.writeBigUInt64BE(BigInt(part.length));return Buffer.concat([n,part]);});
+  const parts=[...manifest.integrity.files.map(row=>framed(row.path,fs.readFileSync(join(f.adapter,row.path)))),framed('adapter.manifest.json',Buffer.from(JSON.stringify(canonical(manifest))))].map(part=>{const n=Buffer.alloc(8);n.writeBigUInt64BE(BigInt(part.length));return Buffer.concat([n,part]);});
   manifest.integrity.packageDigest=hash(Buffer.concat(parts));save(join(f.adapter,'adapter.manifest.json'),manifest);
 }
 try {
@@ -218,7 +231,7 @@ try {
     }
     {
       const f=fixture('stale-adapter');f.adapter=join(f.home,'adapter');fs.mkdirSync(f.adapter);
-      for(const file of ['adapter.mjs','adapter.manifest.json'])fs.copyFileSync(join(adapter,file),join(f.adapter,file));
+      copyAdapter(f.adapter);
       const p=await plan(f);fs.appendFileSync(join(f.adapter,'adapter.mjs'),'\n// stale adapter\n');
       refusal((await run(f,p,1)).document,'native-gate.plan-stale');results.push({lane:'adapter-bytes',refusal:'native-gate.plan-stale'});
     }

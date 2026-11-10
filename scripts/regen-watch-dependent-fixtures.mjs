@@ -20,6 +20,8 @@ const output=[];
 // Product pins change lock, plan and report digests without changing their
 // wire families. Author successors alongside the historical receipts.
 const qualifiedPath=path=>{
+ if (path==='tests/fixtures/watch/golden/successor-result.json')
+  return path.replace('.json',`.product-${product}.json`);
  if (/^tests\/fixtures\/lockfile\/valid\/contract-only\.(lock|expect)\.json$/.test(path))
   return path.replace('contract-only.',`contract-only.product-${product}.`);
  if (/^tests\/fixtures\/orchestration\/(generate\.(dry-run|apply)|verify\.full)\.golden\.json$/.test(path)

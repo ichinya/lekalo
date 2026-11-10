@@ -82,6 +82,6 @@ lockfile, recreates `node_modules` and does not update package manifests or
 the lock. This setup suppresses install scripts; later explicit test/build
 commands are separate operations.
 
-Adapter and native fixture locks have separate dependency sets; follow their owner and CI setup. Root dependencies do not satisfy every fixture. If dependencies are provisioned externally, set `NODE_PATH` to the absolute installed `node_modules` directory: `export NODE_PATH=/absolute/path/node_modules` in Bash, or `$env:NODE_PATH = 'C:\absolute\path\node_modules'` in PowerShell. Do not copy Bash assignment syntax into PowerShell.
+Adapter and native fixture locks have separate dependency sets; follow their owner and CI setup. Before scanner/lint or workspace integration tests, provision the [TypeScript 7 runtime bundle](typescript-native-runtime.md#provisioning-and-distribution). Root dependencies do not satisfy every fixture. If dependencies are provisioned externally, set `NODE_PATH` to the absolute installed `node_modules` directory: `export NODE_PATH=/absolute/path/node_modules` in Bash, or `$env:NODE_PATH = 'C:\absolute\path\node_modules'` in PowerShell. Do not copy Bash assignment syntax into PowerShell.
 
 Keep build output, installed dependencies and temporary execution material under ignored homes such as `target/` and `node_modules/`. Published contracts, reviewed goldens and provenance manifests remain tracked inputs. Run generators as explicit authoring operations and review their bytes, hashes and controls.

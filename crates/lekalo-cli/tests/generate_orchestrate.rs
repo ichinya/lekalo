@@ -9,12 +9,12 @@ use std::process::{Command, Output};
 
 const REFERENCE_PROJECT: &str = "tests/fixtures/orchestration/project";
 const DRY_RUN_GOLDEN: &str = include_str!(
-    "../../../tests/fixtures/orchestration/generate.dry-run.product-1.2.0.golden.json"
+    "../../../tests/fixtures/orchestration/generate.dry-run.product-1.3.0.golden.json"
 );
 const APPLY_GOLDEN: &str =
-    include_str!("../../../tests/fixtures/orchestration/generate.apply.product-1.2.0.golden.json");
+    include_str!("../../../tests/fixtures/orchestration/generate.apply.product-1.3.0.golden.json");
 const VERIFY_GOLDEN: &str =
-    include_str!("../../../tests/fixtures/orchestration/verify.full.product-1.2.0.golden.json");
+    include_str!("../../../tests/fixtures/orchestration/verify.full.product-1.3.0.golden.json");
 
 /// The committed reference adapter vector, spawned without a shell.
 const ADAPTER_ARGS: &[&str] = &["node", "adapters/node-typescript/node-adapter.mjs"];

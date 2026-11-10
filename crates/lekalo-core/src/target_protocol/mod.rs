@@ -21,6 +21,7 @@
 //! `unsupported` (exit 4/stdout) before any generation can start.
 
 pub mod capability;
+mod compiler_peer;
 mod confinement;
 #[cfg(test)]
 mod conformance;
@@ -32,6 +33,7 @@ mod memory;
 mod native_host;
 mod native_schema;
 pub mod plan;
+pub(crate) mod runtime_bundle;
 pub mod scopes;
 pub mod selection;
 pub mod transport;
@@ -378,7 +380,7 @@ impl TargetClient {
         // handshake runs with empty scopes and an empty environment
         // regardless of the session budget (issue #89).
         let exchange = sandbox.run(command, &serialized, &self.limits, false, cancel, &[]);
-        let response = self.interpret(exchange, &envelope)?;
+        let response = self.interpret(exchange, &envelope, sandbox.compiler_runtime().as_ref())?;
         let invalid = |detail| Err(TargetFailure::ResponseInvalid { detail });
         if response.writes.is_some() {
             return invalid(ResponseInvalidity::UnexpectedMember);
@@ -686,7 +688,7 @@ impl TargetClient {
             cancel,
             &granted_env,
         );
-        let response = self.interpret(exchange, &envelope)?;
+        let response = self.interpret(exchange, &envelope, sandbox.compiler_runtime().as_ref())?;
         self.validate_response_payload(&request, &response, &capabilities)?;
         if response.evidence.watch_digest != selection.map(watch::WatchSelection::digest) {
             return Err(TargetFailure::ResponseInvalid {
@@ -798,7 +800,7 @@ impl TargetClient {
                 &effective.read,
                 &effective.write,
                 write_audit,
-                sandbox.report(),
+                sandbox.combined_report(),
             ),
         })
     }
@@ -808,6 +810,7 @@ impl TargetClient {
         &self,
         exchange: Result<transport::TransportSuccess, TargetFailure>,
         request: &RequestEnvelope,
+        runtime: Option<&wire::CompilerRuntime>,
     ) -> Result<ResponseEnvelope, TargetFailure> {
         let success = exchange?;
         // The envelope is the protocol: unparseable output is an
@@ -819,6 +822,16 @@ impl TargetClient {
                 return Err(TargetFailure::crash_or_invalid(success.exit_code, detail));
             }
         };
+        let expected_runtime = if response.protocol_version == version::COMPILER_RUNTIME_VERSION {
+            runtime
+        } else {
+            None
+        };
+        if response.evidence.compiler_runtime.as_ref() != expected_runtime {
+            return Err(TargetFailure::ResponseInvalid {
+                detail: ResponseInvalidity::Evidence,
+            });
+        }
         if response.status == ResponseStatus::Ok && success.exit_code != 0 {
             return Err(TargetFailure::Crash {
                 detail: format!("exit-{}", success.exit_code),

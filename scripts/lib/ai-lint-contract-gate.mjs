@@ -13,7 +13,7 @@ const binary = join(root, 'target/debug', process.platform === 'win32' ? 'lekalo
 // Product-qualified successor snapshots preserve the original exact goldens.
 // Lock productVersion changes artifact/trace/condition pins, not this wire family.
 const product = readFileSync(join(root,'Cargo.toml'),'utf8').match(/\[workspace.package\][\s\S]*?version = "([^"]+)"/)?.[1];
-assert.ok(['0.6.4','0.6.5','0.8.0','0.8.14','0.8.15','0.9.0','1.0.0','1.1.0','1.2.0'].includes(product),'explicit product golden admission');
+assert.ok(['0.6.4','0.6.5','0.8.0','0.8.14','0.8.15','0.9.0','1.0.0','1.1.0','1.2.0','1.3.0'].includes(product),'explicit product golden admission');
 const productPinnedGoldens = new Set(['report','report-waived','waivers','comparison','comparison-incomparable']);
 const require = createRequire((process.env.LEKALO_AJV_NODE_PATH || dirname(fileURLToPath(import.meta.url))) + '/');
 assert.equal(require('ajv/package.json').version, '8.20.0', 'exact Ajv gate dependency');
@@ -98,8 +98,8 @@ export function golden(name,value,update) {
   const legacyPath=family?join(root,'tests/fixtures',`ai-lint-${family}`,'golden',name+'.json'):join(fixture,'golden',name+'.json');
   // M8 upgrades the PHP producer and the Node declaration closure while
   // the evidence wire stays frozen. Preserve both predecessor receipts.
-  const m8Adapter=['0.8.0','0.8.14','0.8.15','0.9.0','1.0.0','1.1.0','1.2.0'].includes(product)&&['adapter-php-laravel','adapter-node-typescript'].includes(name);
-  const qualified=m8Adapter||(productPinnedGoldens.has(name)&&['0.6.5','0.8.0','0.8.14','0.8.15','0.9.0','1.0.0','1.1.0','1.2.0'].includes(product));
+  const m8Adapter=['0.8.0','0.8.14','0.8.15','0.9.0','1.0.0','1.1.0','1.2.0','1.3.0'].includes(product)&&['adapter-php-laravel','adapter-node-typescript'].includes(name);
+  const qualified=m8Adapter||(productPinnedGoldens.has(name)&&['0.6.5','0.8.0','0.8.14','0.8.15','0.9.0','1.0.0','1.1.0','1.2.0','1.3.0'].includes(product));
   const path=qualified?legacyPath.replace(/\.json$/,`.product-${product}.json`):legacyPath;
   if(qualified) schema(m8Adapter?'evidence':family,JSON.parse(readFileSync(legacyPath,'utf8')));
   if(update) {mkdirSync(dirname(path),{recursive:true});writeFileSync(path,canonical(value)+'\n');}
@@ -223,7 +223,7 @@ export function adapterCases(env,update) {
   for(const [target,runtime,path,bindings] of [
     ['node-typescript',process.execPath,'src/events.ts',[['src/events.ts#Task','planner.task','entity'],['src/events.ts#focus','planner.focus_task','command'],['src/events.ts#edit','planner.edit_task_cmd','command']]],
     ['php-laravel','php','app/events.php',[['app/events.php#Task','planner.task','entity'],['app/events.php#Commands.focus','planner.focus_task','command'],['app/events.php#Commands.edit','planner.edit_task_cmd','command']]]]) {
-    const adapter=join(root,'adapters',target,target==='node-typescript'?'adapter.mjs':'adapter.php'),bytes=readFileSync(join(env.project,path));
+    const adapter=join(root,'adapters',target,target==='node-typescript'?'test/native-test-entry.mjs':'adapter.php'),bytes=readFileSync(join(env.project,path));
     const request={protocol:'lekalo.target/v1',protocol_version:'0.6.4',request_id:'req-'+'7'.repeat(64),operation:'lint',project_root:'.',target,limits:{max_output_bytes:8388608,timeout_ms:600000},lint_request:{scope:['planner'],pins:env.pins,bindings:bindings.map(([nativeId,symbol,kind])=>({path,nativeId,symbol,kind,fingerprint:digest(bytes)})),files:[path]}};
     assert.ok(protocol(request),JSON.stringify(protocol.errors));assert.equal(frozen(request),false);
     const call=r=>spawnSync(runtime,[adapter],{cwd:env.project,input:canonical(r),encoding:'utf8',timeout:60000,maxBuffer:16*1024*1024});
@@ -235,7 +235,7 @@ export function adapterCases(env,update) {
     assert.ok(live.findings.some(f=>f.ruleId==='hidden.reflective-call'));assert.equal(live.summary.verifiedEffects,0);
     // Compiler/runtime pins are part of custody, so golden producer receipts are
     // schema vectors; live receipts are always regenerated and admitted above.
-    const snapshot=clone(e);snapshot.producer.compiler=known(target==='php-laravel'?'php/8.3':'typescript/5.9.3');golden(`adapter-${target}`,snapshot,update);
+    const snapshot=clone(e);snapshot.producer.compiler=known(target==='php-laravel'?'php/8.3':'typescript/7.0.2');golden(`adapter-${target}`,snapshot,update);
     const duplicateBinding=clone(request);duplicateBinding.lint_request.bindings.push({...duplicateBinding.lint_request.bindings[0],symbol:'planner.edit_task_cmd'});assert.notEqual(call(duplicateBinding).status,0,'ambiguous native join is refused');
     const old=clone(request);old.protocol_version='0.3.2';assert.notEqual(call(old).status,0);
     const extra=clone(request);extra.lint_request.extra=true;assert.notEqual(call(extra).status,0);

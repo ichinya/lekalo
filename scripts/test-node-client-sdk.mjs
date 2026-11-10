@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {nativeTestCompiler} from "../adapters/node-typescript/test/native-typecheck.mjs";
 // Issue #72 client-SDK generator gate: the generation composite claims
 // the `generate.client-sdk` capability, the render over the committed
 // SDK evidence is byte-stable across repeats, the write plan carries
@@ -259,8 +260,8 @@ test("successor: exact pins, optional empty values and explicit native parameter
     // Typecheck the generated module with the same pinned compiler bundled
     // into the production adapter, then execute its actual call method.
     const require=createRequire(import.meta.url);
-    const ts=require("../adapters/node-typescript/node_modules/typescript");
-    assert.equal(ts.version,"5.9.3");
+    const ts = nativeTestCompiler;
+    assert.equal(ts.version,"7.0.2");
     const filename=join(home,"planner.client.ts");
     const program=ts.createProgram([filename],{strict:true,target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,noEmit:true,types:[]});
     assert.deepEqual(ts.getPreEmitDiagnostics(program).map(row=>ts.flattenDiagnosticMessageText(row.messageText,"\n")),[]);
