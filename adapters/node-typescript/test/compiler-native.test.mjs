@@ -26,6 +26,25 @@ function hostFor(files) {
     readDirectory: () => [...files.keys()], useCaseSensitiveFileNames: () => false};
 }
 
+test('admitted project declarations named lib.*.d.ts remain project sources', () => {
+  for (const name of ['lib.domain.d.ts', 'lib.es5.d.ts']) {
+    const ts = createTestCompiler();
+    try {
+      const path = `/lekalo/project/${name}`;
+      const files = new Map([
+        ['/lekalo/project/main.ts', `import type {Rule} from "./${name.slice(0, -5)}"; export const value: Rule = {name: "local"};`],
+        [path, 'export interface Rule { name: string }'],
+      ]);
+      const program = ts.createProgram({rootNames: [...files.keys()], options: {noEmit: true, noLib: true,
+        module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler}, host: hostFor(files)});
+      assert.deepEqual(program.getSourceFiles().map(file => file.fileName).sort(), [...files.keys()].sort());
+      assert.equal(program.getSourceFile(path).text, files.get(path));
+      assert.equal(program.isSourceFileDefaultLibrary(program.getSourceFile(path)), false);
+      assert.deepEqual(program.getSemanticDiagnostics(), []);
+    } finally { ts.close(); }
+  }
+});
+
 test('native compiler cannot resolve a real host file omitted by the admitted VFS', () => {
   const home = mkdtempSync(join(tmpdir(), 'lekalo-ts7-vfs-canary-'));
   const sentinel = join(home, 'secret.ts').replaceAll('\\', '/');

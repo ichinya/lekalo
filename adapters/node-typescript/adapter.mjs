@@ -24461,7 +24461,7 @@ function createCompiler(apiFactory = (options) => {
       const path = logical(name), own = overlay.get(key(path));
       if (own !== void 0) return own;
       const lib = path.split("/").at(-1);
-      if (/^lib(\..+)?\.d\.ts$/.test(lib)) return host?.readFile(`/lekalo/libs/${lib}`) ?? null;
+      if (!path.startsWith("/lekalo/project/") && /^lib(\..+)?\.d\.ts$/.test(lib)) return host?.readFile(`/lekalo/libs/${lib}`) ?? null;
       const hostPath = host?.getCurrentDirectory?.() === "" ? path.replace(/^\/lekalo\/project\//, "") : path;
       return host?.readFile(hostPath) ?? null;
     },
