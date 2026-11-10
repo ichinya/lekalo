@@ -776,7 +776,7 @@ impl Sandbox {
     }
 
     pub(super) fn combined_report(&self) -> ConfinementReport {
-        let mut report = self.report;
+        let mut report = self.report();
         if self.compiler_runtime().is_some() {
             report.components = 2;
         }
