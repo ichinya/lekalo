@@ -1,0 +1,9 @@
+{
+  "name": "lekalo-reference-planner-node",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": { "start": "node src/server.mjs" },
+  "dependencies": { "@hono/node-server": "2.1.6", "drizzle-orm": "0.45.4", "hono": "4.13.12", "pg": "8.23.1" }
+}

@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+    environment:
+      POSTGRES_DB: lekalo_reference
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports: ["127.0.0.1:${REFERENCE_PG_PORT:-56329}:5432"]
+    volumes:
+      - ./planner-shared/schema.sql:/docker-entrypoint-initdb.d/00-schema.sql:ro
+      - ./planner-shared/seed.sql:/docker-entrypoint-initdb.d/01-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lekalo_reference"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  node:
+    image: node:24-bookworm@sha256:8fa96264f302f58bbb13aa7339c541547b56975766ce956c875da149452a3e40
+    working_dir: /workspace/examples/planner-node
+    command: ["node", "src/server.mjs"]
+    environment:
+      DATABASE_URL: postgres://postgres@postgres:5432/lekalo_reference
+      HOST: 0.0.0.0
+      REFERENCE_NOW: "2026-01-02T00:30:00Z"
+      REFERENCE_TEST_FAULTS: "${REFERENCE_TEST_FAULTS:-0}"
+    volumes: ["./planner-node:/workspace/examples/planner-node:ro"]
+    ports: ["127.0.0.1:${REFERENCE_NODE_PORT:-56330}:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+  laravel: &laravel
+    build: ./planner-laravel
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      REFERENCE_NOW: "2026-01-02T00:30:00Z"
+      REFERENCE_TEST_FAULTS: "${REFERENCE_TEST_FAULTS:-0}"
+    volumes: ["./planner-laravel:/workspace/examples/planner-laravel:ro"]
+    ports: ["127.0.0.1:${REFERENCE_LARAVEL_PORT:-56331}:8080"]
+    depends_on:
+      postgres: { condition: service_healthy }
+  laravel-peer:
+    <<: *laravel
+    ports: ["127.0.0.1:${REFERENCE_LARAVEL_PEER_PORT:-56334}:8080"]

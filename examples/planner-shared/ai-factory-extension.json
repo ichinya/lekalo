@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/lee-to/ai-factory/2.x/schemas/extension.schema.json",
+  "name": "lekalo-mcp",
+  "version": "0.8.0",
+  "description": "Read-only Lekalo semantic-layer access over the pinned MCP stdio profile.",
+  "mcpServers": [
+    {
+      "key": "lekalo-mcp",
+      "template": {
+        "command": "lekalo",
+        "args": [
+          "mcp",
+          "serve",
+          "--stdio",
+          "--project",
+          ".",
+          "--timeout-ms",
+          "30000",
+          "--max-response-bytes",
+          "1048576"
+        ],
+        "env": {
+          "LEKALO_PROJECT": ""
+        }
+      },
+      "instruction": "Put the reviewed lekalo executable on PATH and launch this server with the project root as its working directory. The project selector stays relative ('.'); the server exposes read tools and scoped resources without sampling or write operations."
+    }
+  ]
+}

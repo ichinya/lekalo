@@ -1,0 +1,22 @@
+{
+  "revision": "planner-reference-1",
+  "authority": "Shared Lekalo Model plus explicit HTTP reference profile; not a universal application architecture",
+  "implementedHttpOperations": ["plan_task", "unplan_task", "reorder_planned", "focus_task", "pause_planning", "today_planning", "carry_over", "backlog_tasks"],
+  "deferredOperationsOutsideReferenceRevision": ["move_task", "complete_planning", "completed_planning", "count_focused"],
+  "nativeCoverage": {
+    "planner.focus_task": "focus-and-pause",
+    "planner.plan_task": "plan-and-unplan",
+    "planner.unplan_task": "plan-and-unplan",
+    "planner.reorder_planned": "reorder-and-stale-version",
+    "planner.pause_planning": "focus-and-pause",
+    "planner.today_planning": "today-and-carry-over",
+    "planner.carry_over": "today-and-carry-over",
+    "planner.backlog_tasks": "plan-and-unplan"
+  },
+  "targets": {
+    "node": { "implementation": "Hono + Drizzle + PostgreSQL", "ownership": "maintained", "database": "PostgreSQL 16", "runtime": "Node 24" },
+    "laravel": { "implementation": "Laravel Router + Database Query Builder + PostgreSQL", "ownership": "maintained", "database": "PostgreSQL 16", "runtime": "PHP 8.5 container, PHP >=8.3 locally with pdo_pgsql" },
+    "go": { "status": "deferred", "dependency": "https://github.com/ichinya/lekalo/issues/67" },
+    "rust": { "status": "deferred", "dependency": "https://github.com/ichinya/lekalo/issues/68" }
+  }
+}
