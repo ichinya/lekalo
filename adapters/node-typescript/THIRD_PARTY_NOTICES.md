@@ -1,20 +1,22 @@
 # THIRD_PARTY_NOTICES
 
 This adapter artifact (`adapter.mjs`) embeds third-party software. The
-embedded code and data are unmodified releases of the pinned versions
+embedded code and data derive from the pinned versions
 listed below, combined by the repository's deterministic build script
 (`adapters/node-typescript/build.mjs`). The project's own code is MIT OR
 Apache-2.0; the notices below apply to the embedded third-party parts.
 
-## TypeScript 5.9.3
+## TypeScript 7.0.2
 
-- Source: <https://github.com/microsoft/TypeScript/tree/v5.9.3>
-- npm package: `typescript@5.9.3`
+- Source: <https://github.com/microsoft/TypeScript/tree/v7.0.2>
+- npm package: `typescript@7.0.2`
 - License: Apache-2.0, Copyright (c) Microsoft Corporation. All rights
   reserved.
-- Embedded content: the compiled compiler API (`lib/typescript.js`) and
-  the standard-library declaration files (`lib/lib.*.d.ts`) of exactly
-  this version, embedded as data by `build.mjs`.
+- Embedded content: the sync API/AST client and standard-library declarations.
+  The reviewed client transport is adapted to core-owned stdin/stdout IPC,
+  removes process spawning and ambient compiler lookup, and bounds RPC frames.
+- Native distribution: exact platform compiler plus matching declarations;
+  upstream dependency notices are reproduced in `typescript-native-notices.txt`.
 
 ```
                                  Apache License

@@ -72,6 +72,7 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
                 | super::version::SCAN_VERSION
                 | super::version::EXEC_VERSION
                 | super::version::NATIVE_SCAN_VERSION
+                | super::version::COMPILER_RUNTIME_VERSION
                 | super::version::HTTP_SCAN_VERSION
         ) || request.target.is_none()
             || request.profile.is_some()
@@ -386,6 +387,11 @@ fn constraints_bounded(constraints: Option<&AdapterConstraints>) -> bool {
 /// shared decoder in the client; no test-only parser owns these decisions.
 fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity> {
     let invalid = Err(ResponseInvalidity::Shape);
+    if response.evidence.compiler_runtime.is_some()
+        && response.protocol_version != super::version::COMPILER_RUNTIME_VERSION
+    {
+        return invalid;
+    }
     let public_scan = super::version::supports_scan_custody(&response.protocol_version)
         && response.operation == Operation::Scan
         && response.status == ResponseStatus::Ok;
@@ -474,6 +480,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                 | super::version::SCAN_VERSION
                 | super::version::EXEC_VERSION
                 | super::version::NATIVE_SCAN_VERSION
+                | super::version::COMPILER_RUNTIME_VERSION
                 | super::version::HTTP_SCAN_VERSION
         ) || response.operation != Operation::Lint)
     {
@@ -523,6 +530,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                         | super::version::SCAN_VERSION
                         | super::version::EXEC_VERSION
                         | super::version::NATIVE_SCAN_VERSION
+                        | super::version::COMPILER_RUNTIME_VERSION
                         | super::version::HTTP_SCAN_VERSION
                 ) {
                     10
@@ -537,6 +545,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                     | super::version::SCAN_VERSION
                     | super::version::EXEC_VERSION
                     | super::version::NATIVE_SCAN_VERSION
+                    | super::version::COMPILER_RUNTIME_VERSION
                     | super::version::HTTP_SCAN_VERSION
             ) && c.operations.contains(&Operation::Lint))
             || !unique(&c.transports, 1, 2)
@@ -1012,12 +1021,32 @@ pub enum WriteAction {
     Delete,
 }
 
+/// Exact selected native compiler provenance, admitted only by protocol 1.3.0.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompilerRuntime {
+    pub schema_version: String,
+    pub kind: String,
+    pub version: String,
+    pub platform: String,
+    pub digest: String,
+    pub libraries_digest: String,
+}
+
 /// The evidence binding of a response: which adapter produced it and — for
 /// planned or applied writes — which plan identity it honors.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Evidence {
     pub adapter: AdapterIdentity,
+    /// The selected host-admitted native resource. Entry digest semantics stay
+    /// unchanged; only the 1.3.0 successor admits this separate provenance.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub compiler_runtime: Option<CompilerRuntime>,
     #[serde(
         default,
         deserialize_with = "present",

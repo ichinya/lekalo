@@ -86,7 +86,11 @@ const verifyAdapter = (directory, adapterId, entryName, irVersion) => {
     return Buffer.concat([head, bytes]);
   };
   const partsInput = Buffer.concat([
-    framed(entryName, bytes),
+    ...manifest.integrity.files.map(file => {
+      const data = readFileSync(new URL(directory + '/' + file.path, root));
+      if (data.length !== file.bytes || 'sha256:' + createHash('sha256').update(data).digest('hex') !== file.digest) fail('asset-integrity', file.path);
+      return framed(file.path, data);
+    }),
     framed("adapter.manifest.json", manifestCanonical),
   ].map((p) => {
     const b = Buffer.alloc(8);

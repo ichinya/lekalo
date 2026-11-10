@@ -62,14 +62,18 @@ const canonicalManifest = (raw) => {
 // with packageDigest zeroed, so digesting the pre-update document would
 // bind the package digest to stale file digests and byte counts.
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-manifest.integrity.files = manifest.integrity.files.map((file) =>
-  file.path === "adapter.mjs"
-    ? { path: file.path, digest: "sha256:" + entryDigest, bytes: bytes.length }
-    : file
-);
+const assetPaths = manifest.executable.assets.map(asset => typeof asset === 'string' ? asset : asset.path);
+manifest.executable.assets = assetPaths.map(path => {
+  const data = readFileSync(new URL('adapters/node-typescript/' + path, root));
+  return {path, digest: 'sha256:' + createHash('sha256').update(data).digest('hex')};
+});
+manifest.integrity.files = [manifest.executable.entry, ...assetPaths].sort().map(path => {
+  const data = readFileSync(new URL('adapters/node-typescript/' + path, root));
+  return {path, digest: 'sha256:' + createHash('sha256').update(data).digest('hex'), bytes: data.length};
+});
 
 const parts = [
-  framed("adapter.mjs", bytes),
+  ...manifest.integrity.files.map(file => framed(file.path, readFileSync(new URL('adapters/node-typescript/' + file.path, root)))),
   framed("adapter.manifest.json", canonicalManifest(manifest)),
 ];
 const digestInput = Buffer.concat(parts.map((p) => {

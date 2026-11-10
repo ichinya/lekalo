@@ -4,7 +4,7 @@
   "adapter": {
     "id": "lekalo-target-node-typescript",
     "name": "Node/TypeScript target adapter",
-    "version": "1.1.0"
+    "version": "1.3.0"
   },
   "publisher": {
     "id": "lekalo",
@@ -27,7 +27,8 @@
       "0.6.4",
       "0.9.0",
       "0.9.1",
-      "1.1.0"
+      "1.1.0",
+      "1.3.0"
     ],
     "irVersions": [
       "0.2.16"
@@ -93,18 +94,41 @@
       "node",
       "adapter.mjs"
     ],
-    "assets": []
+    "assets": [
+      {
+        "path": "typescript-native-notices.txt",
+        "digest": "sha256:f5c708b59114507b8b27b48181b6883d106bbca0c1634bbee45b5e344237b66b"
+      },
+      {
+        "path": "runtime-bundle.json",
+        "digest": "sha256:05687b9c1c14add1e615d4e9e67a5659014a1e74ed6aa2102e26066e80a1d55b"
+      }
+    ]
   },
   "platforms": [
-    "any"
+    "darwin-arm64",
+    "darwin-x64",
+    "linux-arm64",
+    "linux-x64",
+    "windows-x64"
   ],
   "integrity": {
-    "packageDigest": "sha256:847f9c1ca3559953a00dbdf75c568b6f3e582c458be610462baf1dccbfc005c1",
+    "packageDigest": "sha256:8eb97f31caf28777d911af8b9f1d754cefa3d15dfc2e90b3097e02fc87f9e81b",
     "files": [
       {
         "path": "adapter.mjs",
-        "digest": "sha256:e97c90aa41fc0fcdac79f515382c510782398dea1e56aa03b17aed274010ffc2",
-        "bytes": 14787164
+        "digest": "sha256:5f8e5fd8f2b8df00e5736d48bc4ba1cdb8f455337f5f23753ab40836c71b0fb2",
+        "bytes": 6131050
+      },
+      {
+        "path": "runtime-bundle.json",
+        "digest": "sha256:05687b9c1c14add1e615d4e9e67a5659014a1e74ed6aa2102e26066e80a1d55b",
+        "bytes": 21359
+      },
+      {
+        "path": "typescript-native-notices.txt",
+        "digest": "sha256:f5c708b59114507b8b27b48181b6883d106bbca0c1634bbee45b5e344237b66b",
+        "bytes": 48860
       }
     ],
     "signaturePolicy": "unsigned",

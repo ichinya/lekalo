@@ -18,7 +18,7 @@ import {
   materializeHonoFixture,
 } from "./hono-helpers.mjs";
 
-const adapterPath = join(import.meta.dirname, "..", "adapter.mjs");
+const adapterPath = join(import.meta.dirname, "native-test-entry.mjs");
 
 const PROFILE = JSON.stringify({
   id: "standalone",

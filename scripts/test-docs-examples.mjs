@@ -169,6 +169,20 @@ function repositoryCopy() {
   if(repository) return repository;
   repository=join(root,"repository"); mkdirSync(repository);
   for(const path of INPUTS) copy(safePath(path),join(repository,path));
+  // Authoring examples explicitly use the original native API outside the
+  // product sandbox. Prepare its pinned dependencies before replay; project
+  // commands never install packages and deployed adapters need no node_modules.
+  const adapterRoot=safePath("adapters/node-typescript");
+  const compilerPins=JSON.parse(readFileSync(join(adapterRoot,"compiler-resources.json"),"utf8"));
+  const native=compilerPins.resources.find(row=>row.platform===`${process.platform}-${process.arch}`);
+  assert.ok(native,"qualified authoring compiler platform required");
+  for(const name of ["typescript",native.package]) {
+    const source=join(adapterRoot,"node_modules",name);
+    assert.equal(JSON.parse(readFileSync(join(source,"package.json"),"utf8")).version,compilerPins.typescript,"authoring compiler pin mismatch");
+    const destination=join(repository,"adapters/node-typescript/node_modules",name); owned(destination);
+    mkdirSync(dirname(destination),{recursive:true});
+    cpSync(source,destination,{recursive:true,dereference:true});
+  }
   const copiedBin=join(repository,"target/debug",basename(bin)); mkdirSync(dirname(copiedBin),{recursive:true}); cpSync(bin,copiedBin);
   // The M8 provenance gate verifies binary fixtures through Git's actual
   // clean filter. Give the disposable replay its own index and the exact

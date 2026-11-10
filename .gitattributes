@@ -17,6 +17,8 @@
 # The generated adapter artifact embeds vendored license text byte-for-byte
 # (trailing spaces inside the Apache header are upstream content, not errors).
 adapters/node-typescript/adapter.mjs -whitespace
+# Upstream legal text contains mixed line endings; its reviewed SHA is exact.
+adapters/node-typescript/typescript-native-notices.txt -text !eol -whitespace
 adapters/php-laravel/adapter.php -whitespace
 
 # Generated Go clients are byte-compared by the client-SDK drift gate:

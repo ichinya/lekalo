@@ -15,7 +15,7 @@ use lekalo_core::target_protocol::transport::{AdapterCommand, TransportLimits};
 use lekalo_core::target_protocol::wire::Operation;
 use lekalo_core::target_protocol::{CallRequest, TargetClient, TargetFailure};
 
-/// The committed single-file kernel artifact.
+/// The committed kernel entry and its supervised compiler bundle.
 fn kernel_command() -> AdapterCommand {
     AdapterCommand {
         program: PathBuf::from("node"),
@@ -69,12 +69,12 @@ fn the_kernel_describes_itself_through_the_production_client() {
     let described = client
         .describe(&command, &sandbox.dir)
         .expect("the kernel handshake must succeed");
-    assert_eq!(described.negotiated_version, "1.1.0");
+    assert_eq!(described.negotiated_version, "1.3.0");
     assert_eq!(
         described.capabilities.adapter.id,
         "lekalo-target-node-typescript"
     );
-    assert_eq!(described.capabilities.adapter.version, "1.1.0");
+    assert_eq!(described.capabilities.adapter.version, "1.3.0");
     assert!(described.capabilities.adapter.digest.starts_with("sha256:"));
     // The bundled compiler enables read-only lint independently of generation.
     assert_eq!(

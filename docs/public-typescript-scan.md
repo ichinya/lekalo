@@ -19,7 +19,7 @@ Experimental scope; this subset does not qualify that pilot.
 
 Use a built Lekalo CLI and Node 18 or newer; CI exercises Node 24 on all
 three operating systems. Keep the adapter artifact and its manifest in the
-same directory. No project dependencies, package manager, backend, database
+same directory, with the provisioned [TypeScript 7 runtime bundle](typescript-native-runtime.md). No project dependencies, package manager, backend, database
 or network access are needed to scan this example. Scanning executes no
 project scripts or native gates.
 
@@ -42,7 +42,7 @@ workspace underneath that project root. Portable source paths and the
 scanner's existing bounded TypeScript subset still apply. Symbol proposals
 use the existing semantic-id grammar (lowercase dotted segments); names
 that cannot be represented refuse rather than being truncated or guessed.
-Negotiated protocol `1.1.0` carries top-level binding proposals and the
+Negotiated protocol `1.3.0` binds the selected compiler and carries top-level binding proposals and the
 complete bounded native declaration forest, including class/interface
 members, method-local declarations and lexical owners. These native rows
 are evidence, not inferred business entities. Each root subtree is limited
@@ -139,8 +139,8 @@ and never count as the public positive lane.
 
 ## Native inventory and change review (1.1.0)
 
-Adapter package `1.1.0` negotiates the new
-[`1.1.0` wire schema](../contracts/target-protocol.schema.v1.1.0.json).
+Adapter package `1.3.0` negotiates the
+[`1.3.0` wire schema](../contracts/target-protocol.schema.v1.3.0.json), preserving the native inventory surface introduced in `1.1.0`.
 Observed scan/index successors carry native declarations, per-candidate
 binding evidence and explicit type uncertainty. Published predecessor
 contracts retain their original bytes. An accepted native index cannot be

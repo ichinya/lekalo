@@ -288,12 +288,12 @@ test("cjs fixture: the parsed tsconfig options reach the Program (F-2)", async (
   try {
     assert.equal(index.state, "complete");
     // The recorded analysis configuration proves the fixture tsconfig's
-    // parsed compilerOptions (module commonjs, moduleResolution node,
+    // parsed compilerOptions (module Node16, moduleResolution Node16,
     // skipLibCheck true) were applied over the seeded defaults — the
-    // Program analyzed CommonJS/Node10, not the ESNext/Bundler seed.
+    // Program analyzed Node16/CommonJS semantics, not the ESNext/Bundler seed.
     const options = JSON.parse(index.programOptions);
-    assert.equal(options.module, 1, "module=CommonJS from the cjs tsconfig");
-    assert.equal(options.moduleResolution, 2, "moduleResolution=Node10 from the cjs tsconfig");
+    assert.equal(options.module, 100, "module=Node16 from the cjs tsconfig");
+    assert.equal(options.moduleResolution, 3, "moduleResolution=Node16 from the cjs tsconfig");
     assert.equal(options.skipLibCheck, true, "skipLibCheck=true from the cjs tsconfig");
     // The forced keys stay forced regardless of config.
     assert.equal(options.noEmit, true, "noEmit is always forced");

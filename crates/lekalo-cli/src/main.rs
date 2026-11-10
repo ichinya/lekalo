@@ -4121,12 +4121,19 @@ fn run_adapter_install(
         .selected(resolved.adapter_id())
         .and_then(|row| current_manifest(&root, row));
     let quarantined = resolved.trust.quarantined_at_install();
-    let plan = lekalo_core::adapter_package::install::plan(
+    let plan = match lekalo_core::adapter_package::install::plan(
         &resolved.candidate,
         resolved.trust,
         quarantined,
         current.as_ref(),
-    );
+    ) {
+        Ok(plan) => plan,
+        Err(failure) => {
+            return AdapterRun::Envelope(lekalo_core::adapter_package::diagnostic::domain_result(
+                &failure,
+            ))
+        }
+    };
     if dry_run || confirm.is_none() {
         return AdapterRun::Document {
             document: render_plan(&plan),

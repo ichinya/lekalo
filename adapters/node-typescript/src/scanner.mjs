@@ -1,3 +1,4 @@
+import {ast as compilerAst} from "./compiler-client.mjs";
 /**
  * The restricted TypeScript scanner (issue #44, plan §4-§6).
  *
@@ -135,7 +136,6 @@ function assertCompilerAvailable() {
   for (const name of [
     "createProgram",
     "createSourceFile",
-    "resolveModuleName",
     "getCombinedModifierFlags",
     "readConfigFile",
     "parseJsonConfigFileContent",
@@ -1201,10 +1201,10 @@ const TEST_RULE = {
 };
 
 function staticStringValue(node) {
-  if (node?.kind === 11 /* StringLiteral */ && typeof node.text === 'string') {
+  if (node?.kind === compilerAst.SyntaxKind.StringLiteral && typeof node.text === 'string') {
     return node.text;
   }
-  if (node?.kind === 10 /* NoSubstitutionTemplateLiteral */ && typeof node.text === 'string') {
+  if (node?.kind === compilerAst.SyntaxKind.NoSubstitutionTemplateLiteral && typeof node.text === 'string') {
     return node.text;
   }
   return null;
@@ -1473,7 +1473,12 @@ function typeContainsAny(ts, checker, type, seen, depth) {
  * context provides the permitted project root; every read goes through
  * the kernel read view (scope/exclusion/link/byte-budget checks).
  */
-function runScan({ profile, readView, permittedProjectRoot, limits, frameworks = [] }) {
+function runScan(options) {
+  try { return runScanImpl(options); }
+  finally { vendoredTs()?.close?.(); }
+}
+
+function runScanImpl({ profile, readView, permittedProjectRoot, limits, frameworks = [] }) {
   let programOptions = null;
   const ts = assertCompilerAvailable();
   const compilerMeta = {
@@ -1865,7 +1870,7 @@ export function scanOperation(context) {
     // projection complete after dropping known unrepresentable facts.
     return { state: "partial", diagnostics: [{ reason: "public-scan-surface-unrepresentable" }] };
   }
-  const nativeScan = context.request?.protocol_version === "1.1.0";
+  const nativeScan = ["1.1.0", "1.3.0"].includes(context.request?.protocol_version);
   const nativeSymbols = nativeScan ? nativeInventory(index) : [];
   if (nativeScan && (index.routes.length > 0 || !validNativeSymbols(nativeSymbols, p => typeof p === "string" && p.length <= 512 && !p.startsWith("/") && !p.includes("\\") && !p.split("/").some(s => !s || s === "." || s === "..")))) {
     return {state:"partial", diagnostics:[{reason:"native-inventory-unrepresentable"}]};

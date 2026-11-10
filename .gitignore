@@ -6,6 +6,7 @@
 
 # Installed JavaScript dependencies and packaged release artifacts.
 node_modules/
+/adapters/node-typescript/runtime/
 /dist/
 
 # Local agent state, scratch dependencies and generated project state.

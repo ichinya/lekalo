@@ -25,7 +25,7 @@ try{
  const run=spawnSync(binary,['watch','--backend','poll','--validate','--impact','--json-lines','--stop-after-runs','1'],{cwd:project,env,encoding:'utf8',timeout:30000,maxBuffer:16*1024*1024});
  assert.ifError(run.error);assert.equal(run.status,0,run.stdout+run.stderr);
  const result=run.stdout.trim().split(/\r?\n/).map(JSON.parse).find(e=>e.event==='run-completed').result;
- const golden=JSON.parse(readFileSync(join(root,'tests/fixtures/watch/golden/successor-result.json'),'utf8'));
+ const golden=JSON.parse(readFileSync(join(root,'tests/fixtures/watch/golden/successor-result.product-1.3.0.json'),'utf8'));
  assert.deepEqual(result,golden,'complete successor payload, digests and version pins are deterministic');
  assert.deepEqual(inventory(project),before,'watch cannot write the successor source or derived state');
  const boundary=JSON.parse(readFileSync(join(root,'tests/fixtures/watch/golden/platform-qualification.json'),'utf8'));

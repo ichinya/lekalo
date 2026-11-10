@@ -76,11 +76,11 @@ export const PROTOCOL_TOKEN = "lekalo.target/v1";
 /** The sole protocol version this kernel speaks (the current contract). */
 export const VERSION = "0.3.2";
 /** The closed supported-version set: exact membership, never ranges. */
-export const SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0", "0.9.1", "1.1.0"]);
+export const SUPPORTED_VERSIONS = Object.freeze([VERSION, "0.6.4", "0.9.0", "0.9.1", "1.1.0", "1.3.0"]);
 /** The adapter identity token. */
 export const ADAPTER_ID = "lekalo-target-node-typescript";
 /** The adapter release version (the reserved product version). */
-export const ADAPTER_VERSION = "1.1.0";
+export const ADAPTER_VERSION = "1.3.0";
 /** The maximum request size this kernel reads (mirrors the core bound). */
 export const MAX_REQUEST_BYTES = 1024 * 1024;
 /** The maximum response size this kernel writes (mirrors the core cap). */
@@ -223,6 +223,8 @@ export function __setCompilerMetadata(metadata) {
 }
 
 let vendoredCompiler = null;
+let compilerRuntime = null;
+export function __setCompilerRuntime(runtime) { compilerRuntime = deepFreeze({...runtime}); }
 let embeddedLibs = null;
 // Issue #116: the embedded upstream drizzle-orm declaration closure
 // (type-context-only). Attached by the generated bundle entry; a
@@ -1240,7 +1242,7 @@ export function describeCapabilities(profile = null, extensions = []) {
       version: ADAPTER_VERSION,
       digest: entryDigest(),
     },
-    protocol_versions: [...SUPPORTED_VERSIONS],
+    protocol_versions: SUPPORTED_VERSIONS.filter(version => version !== "1.3.0" || compilerRuntime !== null),
     operations: ["describe"],
     transports: ["stdin", "file"],
     targets: ["node-typescript"],
@@ -1344,6 +1346,9 @@ function buildEvidence(request, internal) {
     digest: entryDigest(),
   };
   const evidence = { adapter: identity };
+  if (request.protocol_version === '1.3.0' && compilerRuntime) {
+    evidence.compiler_runtime = compilerRuntime;
+  }
   if (hasOwn(request, "plan_id") && request.plan_id !== undefined) {
     evidence.plan_id = request.plan_id;
   }
@@ -2143,10 +2148,10 @@ export function createKernel(options = {}) {
       }
       recordSink(sink, validatedRequest, outcome, profile);
       const response = projectOutcome(validatedRequest, outcome);
-      if (["0.9.0", "0.9.1", "1.1.0"].includes(validatedRequest.protocol_version) && operation === "scan" && response.status === "ok") {
+      if (["0.9.0", "0.9.1", "1.1.0", "1.3.0"].includes(validatedRequest.protocol_version) && operation === "scan" && response.status === "ok") {
         response.evidence.scan_profile_digest = `sha256:${createHash("sha256").update(canonicalJson(profile), "utf8").digest("hex")}`;
       }
-      if (validatedRequest.protocol_version === "1.1.0" && operation === "scan" && response.status === "ok") {
+      if (["1.1.0", "1.3.0"].includes(validatedRequest.protocol_version) && operation === "scan" && response.status === "ok") {
         response.evidence.native_uncertainty = outcome.evidence?.nativeUncertainty ?? [];
       }
       return { response, internal: outcome };
@@ -2366,7 +2371,7 @@ function projectResult(data, request) {
       return undefined;
     }
     return { native_plan: { digest: np.plan_digest, kind: np.kind,
-      ...(["0.9.1", "1.1.0"].includes(request.protocol_version) ? { plan: np } : {}) } };
+      ...(["0.9.1", "1.1.0", "1.3.0"].includes(request.protocol_version) ? { plan: np } : {}) } };
   }
   if (!Array.isArray(data.entries)) {
     return undefined;
@@ -2384,7 +2389,7 @@ function projectResult(data, request) {
       || typeof entry.kind !== "string"
       || [...entry.kind].length > 128
       || (entry.detail !== undefined && (typeof entry.detail !== "string" || [...entry.detail].length >
-        (["0.9.0", "0.9.1", "1.1.0"].includes(request.protocol_version) && request.operation === "scan" ? 2048 : 128)))) {
+        (["0.9.0", "0.9.1", "1.1.0", "1.3.0"].includes(request.protocol_version) && request.operation === "scan" ? 2048 : 128)))) {
       return undefined;
     }
     const projected = entry.detail === undefined
@@ -2397,7 +2402,7 @@ function projectResult(data, request) {
       }
       projected.evidence = evidence;
     }
-    if (["0.9.0", "0.9.1", "1.1.0"].includes(request.protocol_version) && request.operation === "scan") {
+    if (["0.9.0", "0.9.1", "1.1.0", "1.3.0"].includes(request.protocol_version) && request.operation === "scan") {
       if (!isSha256Digest(projected.evidence?.source_digest)) return undefined;
     } else if (projected.evidence?.source_digest !== undefined) return undefined;
     entries.push(projected);
@@ -2418,7 +2423,7 @@ function projectResult(data, request) {
  * Every other shape is refused.
  */
 function projectScanEntryEvidence(evidence, protocolVersion) {
-  const nativeScan = protocolVersion === "1.1.0";
+  const nativeScan = protocolVersion === "1.1.0" || protocolVersion === "1.3.0";
   if (typeof evidence !== "object" || evidence === null || Array.isArray(evidence)) {
     return undefined;
   }
@@ -2900,7 +2905,7 @@ export async function main() {
       ...(frameworkPolicy !== null ? { frameworkPolicy } : {}),
       ...(nativePolicy !== null ? { nativePolicy } : {}),
     });
-    process.stdout.write(canonicalJson(dispatched.response));
+    (argvWithoutEntry.includes('--lekalo-compiler-session-json') ? process.stderr : process.stdout).write(canonicalJson(dispatched.response));
   } catch (error) {
     // No valid echo identity may be fabricated for a malformed request:
     // bounded stderr plus nonzero exit, never a synthetic envelope.

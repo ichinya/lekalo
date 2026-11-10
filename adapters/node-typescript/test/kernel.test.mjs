@@ -58,12 +58,12 @@ function baseRequest(overrides = {}) {
 
 test("bootstrap identity stays frozen while successors are explicit", () => {
   assert.equal(PROTOCOL_TOKEN, "lekalo.target/v1");
-  assert.deepEqual(SUPPORTED_VERSIONS, ["0.3.2", "0.6.4", "0.9.0", "0.9.1", "1.1.0"]);
+  assert.deepEqual(SUPPORTED_VERSIONS, ["0.3.2", "0.6.4", "0.9.0", "0.9.1", "1.1.0", "1.3.0"]);
   assert.equal(VERSION, "0.3.2");
   assert.equal(ADAPTER_ID, "lekalo-target-node-typescript");
-  // The release constant is the adapter package version (1.1.0),
+  // The release constant is the adapter package version (1.3.0),
   // not a protocol version.
-  assert.equal(ADAPTER_VERSION, "1.1.0");
+  assert.equal(ADAPTER_VERSION, "1.3.0");
   assert.match(entryDigest(), /^sha256:[0-9a-f]{64}$/);
 });
 

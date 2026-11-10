@@ -11,7 +11,7 @@ export function validateLintRequest(request) {
   const l = request.lint_request;
   if ((request.operation === 'lint') !== (l !== undefined)) throw new Error('lint-request-pairing');
   if (!l) return;
-  if (!['0.6.4','0.9.0','0.9.1','1.1.0'].includes(request.protocol_version) || !request.target || ['dry_run','plan_id','native_request','ir_path','profile','profile_digest','profile_capabilities'].some(k => request[k] !== undefined)) throw new Error('lint-request-version-members');
+  if (!['0.6.4','0.9.0','0.9.1','1.1.0','1.3.0'].includes(request.protocol_version) || !request.target || ['dry_run','plan_id','native_request','ir_path','profile','profile_digest','profile_capabilities'].some(k => request[k] !== undefined)) throw new Error('lint-request-version-members');
   if (!l || Object.keys(l).sort().join() !== 'bindings,files,pins,scope' || !Array.isArray(l.scope) || !l.scope.length || l.scope.length > 10000 || !Array.isArray(l.files) || l.files.length > 4096 || !Array.isArray(l.bindings) || l.bindings.length > 10000) throw new Error('lint-request-shape');
   const token = s => typeof s === 'string' && /^[A-Za-z0-9][A-Za-z0-9_.:/#@\\-]{0,255}$/.test(s);
   const sha = s => typeof s === 'string' && /^sha256:[a-f0-9]{64}$/.test(s);
@@ -24,6 +24,10 @@ export function validateLintRequest(request) {
   for (const b of l.bindings) if (!b || Object.keys(b).sort().join() !== 'fingerprint,kind,nativeId,path,symbol' || !l.files.includes(b.path) || !token(b.nativeId) || !token(b.symbol) || !sha(b.fingerprint) || !['command','entity'].includes(b.kind)) throw new Error('lint-request-binding');
 }
 export function collectAiLint(request, ts, readView, artifactDigest, adapterVersion) {
+  try { return collectAiLintImpl(request, ts, readView, artifactDigest, adapterVersion); }
+  finally { ts.close?.(); }
+}
+function collectAiLintImpl(request, ts, readView, artifactDigest, adapterVersion) {
   const l = request.lint_request, texts = new Map(), sources = [], locations = [], records = [];
   let total = 0, work = 0;
   for (const path of l.files) {
@@ -121,5 +125,5 @@ export function collectAiLint(request, ts, readView, artifactDigest, adapterVers
   const boundedLocations = locationLimited ? locations.filter(location => retained.has(location.id)) : locations;
   const limit = locationLimited ? ['document-location-limit'] : [];
   const supported = new Set(['hidden.observer-write','hidden.reflective-call','hidden.string-reference','ambiguity.scattered-state-writes']);
-  return { schemaVersion: 'lekalo/ai-lint-evidence/v0.6.4', identity: 'dev.lekalo.ai-lint-evidence@0.6.4', target: request.target, scope: l.scope, producer: { id: 'lekalo-target-node-typescript', version: adapterVersion, artifactDigest, tool: 'node-static', compiler: known('typescript/5.9.3'), framework: known('node-events/v1'), recipe: 'ai-readability/1' }, pins: l.pins, inputManifestDigest: hash(sources), sources, locations: boundedLocations, records: boundedRecords, limitations: ['static-files-only','no-application-execution','external-module-resolution-unsupported',...limit], coverage: rules.flatMap(rule => l.scope.map(scope => ({ rule,target:request.target,scope,state:supported.has(rule) && files.size ? 'partial' : 'unsupported',eligible:unknown(),examined:known(calls.length),limitations:supported.has(rule)?['bounded-static-files',...limit]:['detector-unsupported'] }))) };
+  return { schemaVersion: 'lekalo/ai-lint-evidence/v0.6.4', identity: 'dev.lekalo.ai-lint-evidence@0.6.4', target: request.target, scope: l.scope, producer: { id: 'lekalo-target-node-typescript', version: adapterVersion, artifactDigest, tool: 'node-static', compiler: known('typescript/' + ts.version), framework: known('node-events/v1'), recipe: 'ai-readability/1' }, pins: l.pins, inputManifestDigest: hash(sources), sources, locations: boundedLocations, records: boundedRecords, limitations: ['static-files-only','no-application-execution','external-module-resolution-unsupported',...limit], coverage: rules.flatMap(rule => l.scope.map(scope => ({ rule,target:request.target,scope,state:supported.has(rule) && files.size ? 'partial' : 'unsupported',eligible:unknown(),examined:known(calls.length),limitations:supported.has(rule)?['bounded-static-files',...limit]:['detector-unsupported'] }))) };
 }

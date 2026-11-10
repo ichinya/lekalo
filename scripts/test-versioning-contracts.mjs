@@ -2,20 +2,22 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const read = p => JSON.parse(readFileSync(new URL('../'+p, import.meta.url), 'utf8'));
-const registry = read('crates/lekalo-core/src/versioning/contracts/version-registry.v1.1.0.json');
+for (const version of ['1.1.0', '1.3.0']) {
+const registry = read(`crates/lekalo-core/src/versioning/contracts/version-registry.v${version}.json`);
 assert.equal(registry.registry,'dev.lekalo.version-registry');
-assert.equal(registry.registryVersion,'1.1.0');
+assert.equal(registry.registryVersion,version);
 assert.deepEqual(Object.keys(registry.families), ['model','ir','protocol']);
 for(const family of Object.values(registry.families)) {
  assert.deepEqual(Object.keys(family).sort(), ['aliases','current','migrations','versions']);
  assert.equal(family.current, family === registry.families.protocol ? '0.3.2' : '0.8.0');
  assert.deepEqual(family.aliases,[]);
  assert.deepEqual(family.migrations,[]);
- assert.deepEqual(family.versions.map(v=>v.version), family === registry.families.protocol ? ['0.3.2','0.6.4','0.8.0','0.9.0','0.9.1','1.1.0'] : ['0.2.16','0.8.0']);
+ assert.deepEqual(family.versions.map(v=>v.version), family === registry.families.protocol ? ['0.3.2','0.6.4','0.8.0','0.9.0','0.9.1','1.1.0', ...(version === '1.3.0' ? ['1.3.0'] : [])] : ['0.2.16','0.8.0']);
  assert.equal(family.current, family === registry.families.protocol ? family.versions[0].version : family.versions.at(-1).version);
  assert.equal(family.versions[0].state,'supported');
  assert.ok(family.versions[0].reason.length>0);
 }
 const projected = {status:'valid',registryVersion:registry.registryVersion,families:Object.entries(registry.families).map(([family,f])=>({family,current:f.current,min:f.versions[0].version,max:f.versions.at(-1).version,aliases:[],versions:f.versions.map(({version,state,classification})=>({version,state,classification}))}))};
-assert.deepEqual(read('tests/fixtures/versioning/compatibility.golden.json'),projected);
+assert.deepEqual(read(`tests/fixtures/versioning/compatibility${version === '1.3.0' ? '.product-1.3.0' : ''}.golden.json`),projected);
 console.log(JSON.stringify({ok:true,version:registry.registryVersion,families:Object.keys(registry.families)}));
+}

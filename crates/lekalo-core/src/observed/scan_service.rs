@@ -773,13 +773,18 @@ fn build_document(
     // Preserve predecessor revision bytes. The explicitly negotiated
     // successor also binds the exact normalized launch policy, including
     // exclusions and provenance, rather than merely the profile id.
-    let revision_bytes =
-        if let Some(profile_digest) = &outcome.response.evidence.scan_profile_digest {
-            serde_json::to_vec(&(revision_payload, profile_digest))
-        } else {
-            serde_json::to_vec(&revision_payload)
-        }
-        .map_err(|_| invalid_set("document-shape"))?;
+    let revision_bytes = if let Some(runtime) = &outcome.response.evidence.compiler_runtime {
+        serde_json::to_vec(&(
+            revision_payload,
+            &outcome.response.evidence.scan_profile_digest,
+            runtime,
+        ))
+    } else if let Some(profile_digest) = &outcome.response.evidence.scan_profile_digest {
+        serde_json::to_vec(&(revision_payload, profile_digest))
+    } else {
+        serde_json::to_vec(&revision_payload)
+    }
+    .map_err(|_| invalid_set("document-shape"))?;
     let revision = format!("sha256:{}", crate::digest::sha256_hex(&revision_bytes));
 
     let mut document = serde_json::Map::new();
