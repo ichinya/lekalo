@@ -16,8 +16,11 @@ import { fileURLToPath } from "node:url";
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const version = "0.8.0";
+// The data revision follows the release that expands coverage; the unchanged
+// wire grammar and versioned explanation links retain their own 0.8.0 identity.
+export const catalogVersion = "1.3.0";
 const registryPath = "contracts/diagnostic-registry.v0.8.0.json";
-const catalogPath = "contracts/explain-catalog.v0.8.0.json";
+const catalogPath = `contracts/explain-catalog.v${catalogVersion}.json`;
 
 // Deep key-sorted canonical JSON: identical input data always produces
 // identical bytes, so drift is detectable byte-exactly.
@@ -968,6 +971,26 @@ const families = {
     docs: "docs/observed-mode.md",
     waiver: "Not applicable: freshness is recorded as data.",
   },
+  "ownership": {
+    title: "Implementation ownership handoff refused",
+    kind: "admits scoped implementation handoffs, pins their consumed inputs, requires executed behavioral evidence, and preserves artifact custody during publication and restoration",
+    matters: "changing implementation ownership can replace native artifacts or relinquish cleanup authority; stale plans, incomplete verification or untrusted recovery data must never authorize those writes",
+    causes: [
+      "source, Model, lock, adapter, runtime or scenario inputs differ from the prepared transition",
+      "bindings are unconfirmed, behavior is unknown, generator coverage is incomplete, or the selected scope shares an unselected source file",
+      "the confined baseline and candidate runs are unavailable, incomplete or disagree with the declared oracle",
+      "another writer, an interrupted handoff or a later user edit prevents safe publication or restoration",
+    ],
+    fixes: [
+      { class: "manual-only", recipeId: null, description: "Inspect the diagnostic reason and the reviewed request. Confirm current bindings, declare missing behavior, and prepare a new plan from the current inputs; do not edit plan or verification hashes." },
+      { class: "manual-only", recipeId: null, description: "Preview pending recovery or receipt rollback through the ownership service. Preserve conflicting user changes and retained snapshots; never bypass the canonical pending grant, writer lock or verification requirement." },
+    ],
+    before: `lekalo ownership verify --plan transition-plan.json --project . --json`,
+    after: `# Correct the reported input or capability gap before preparing again.\nlekalo ownership plan --request transition-request.json --project . --json\n# For an interrupted handoff, inspect recovery before confirming any write.\nlekalo ownership recovery --dry-run --project . --json`,
+    targets: "Ownership admission is shared; generation remains limited to the selected adapter's coverage, and native verification requires a qualified runtime and confinement backend on the current host.",
+    docs: "docs/ownership-transitions.md",
+    waiver: "Not waivable: ownership, verification and recovery checks guard native artifact write and cleanup authority.",
+  },
   "openapi": {
     title: "OpenAPI projection failure",
     kind: "projects the Model into the published OpenAPI surface and validates it against the OpenAPI schema",
@@ -1429,7 +1452,7 @@ export function buildCatalog() {
   return {
     schemaVersion: `lekalo/explain-catalog/v${version}`,
     identity: `dev.lekalo.explain-catalog@${version}`,
-    catalogVersion: version,
+    catalogVersion,
     registryIdentity: registry.identity,
     registryDigest: sha256(readFileSync(resolve(root, registryPath))),
     closed: true,

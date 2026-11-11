@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 /// The exact embedded catalog bytes.
 pub const CATALOG_BYTES: &[u8] =
-    include_bytes!("../../../../contracts/explain-catalog.v0.8.0.json");
+    include_bytes!("../../../../contracts/explain-catalog.v1.3.0.json");
 
 /// Why the embedded explanation catalog could not be trusted or queried.
 #[derive(Clone, Debug, Eq, PartialEq)]

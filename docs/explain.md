@@ -7,9 +7,13 @@ code: what the rule checks, why it matters, common root causes, fix options
 with closed risk classes, before/after examples, related rules, profile and
 severity behavior, target notes, versioned doc links and the waiver policy.
 The explanation lives in the embedded
-[explain-catalog](../contracts/explain-catalog.v0.8.0.json), versioned
+[explain-catalog](../contracts/explain-catalog.v1.3.0.json), versioned
 together with the [diagnostic registry](diagnostics.md) union it explains —
 one stable entry per registered code, resolved completely offline.
+
+Catalog data revision 1.3.0 adds ownership-transition explanations while
+retaining the 0.8.0 catalog and result wire schemas. The historical 0.8.0
+catalog remains available as a frozen artifact.
 
 ## Command surface
 

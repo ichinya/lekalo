@@ -3712,6 +3712,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/explain-catalog.v1.3.0.json",
+      "kind": "contract",
+      "source": "contracts/explain-catalog.v1.3.0.json",
+      "sourceDigest": "sha256:17ad9bef23115694874cdc12a9dfc30ab180b216b286a0709ecc05a83488502c",
+      "owner": "docs/explain.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/explain-provider-catalog.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/explain-provider-catalog.schema.v0.8.0.json",
