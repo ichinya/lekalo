@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/ownership-transition-request.schema.v1.0.0.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "module",
+    "symbol",
+    "to",
+    "inputs",
+    "coverage",
+    "declaration",
+    "unknownBehavior",
+    "runner"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/ownership-transition-request/v1.0.0"
+    },
+    "module": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9_.:/@-]+$"
+    },
+    "symbol": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9_.:/@-]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "to": {
+      "enum": [
+        "observed",
+        "contracted",
+        "managed"
+      ]
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "^(?!.*(?:^|/)(?:\\.\\.?|\\.git|\\.bb)(?:/|$))(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+$"
+      },
+      "maxItems": 512
+    },
+    "coverage": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?!.*(?:^|/)(?:\\.\\.?|\\.git|\\.bb)(?:/|$))(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "declaration": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^(?!.*(?:^|/)(?:\\.\\.?|\\.git|\\.bb)(?:/|$))(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "unknownBehavior": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "^[A-Za-z0-9_.:/@-]+$"
+      },
+      "maxItems": 512
+    },
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "program",
+        "digest",
+        "args",
+        "expected"
+      ],
+      "properties": {
+        "program": {
+          "enum": [
+            "node",
+            "python",
+            "python3",
+            "deno",
+            "bun"
+          ]
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "maxItems": 64
+        },
+        "expected": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "scenario",
+              "output",
+              "error",
+              "state",
+              "effects",
+              "authorization",
+              "transaction"
+            ],
+            "properties": {
+              "scenario": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9_.:/@-]+$"
+              },
+              "output": {},
+              "error": {},
+              "state": {},
+              "effects": {
+                "type": "array",
+                "items": {},
+                "maxItems": 512
+              },
+              "authorization": {},
+              "transaction": {}
+            }
+          },
+          "maxItems": 128,
+          "minItems": 1
+        }
+      }
+    }
+  }
+}

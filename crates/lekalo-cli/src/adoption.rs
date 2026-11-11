@@ -20,9 +20,17 @@ use crate::selection_for;
 /// qualified allow-list's runtime half. Every policy decision (which
 /// program is qualified, which digest is pinned, which bounds hold)
 /// stays in the core; this layer only reports measurements.
-struct ProcessHost;
+pub(crate) struct ProcessHost;
 
 impl VerificationHost for ProcessHost {
+    fn run_immutable(
+        &self,
+        program: &std::path::Path,
+        args: &[String],
+        cwd: &std::path::Path,
+    ) -> Result<(Option<i32>, String), String> {
+        execute_command_with_policy(program, args, cwd, true)
+    }
     fn resolve_program(&self, program: &str) -> Option<std::path::PathBuf> {
         let path = std::env::var_os("PATH")?;
         let executable = if cfg!(windows) {
@@ -66,6 +74,15 @@ fn execute_command(
     args: &[String],
     cwd: &std::path::Path,
 ) -> Result<(Option<i32>, String), String> {
+    execute_command_with_policy(program, args, cwd, false)
+}
+
+fn execute_command_with_policy(
+    program: &std::path::Path,
+    args: &[String],
+    cwd: &std::path::Path,
+    immutable: bool,
+) -> Result<(Option<i32>, String), String> {
     use lekalo_core::target_protocol::{
         run_confined_verification,
         transport::{AdapterCommand, TransportLimits},
@@ -90,7 +107,12 @@ fn execute_command(
         max_stderr_bytes: CHECK_OUTPUT_BYTES,
         max_request_bytes: 1,
     };
-    let result = run_confined_verification(&command, cwd, &limits, &env).map_err(|error| {
+    let execute = if immutable {
+        lekalo_core::target_protocol::run_confined_ownership_verification
+    } else {
+        run_confined_verification
+    };
+    let result = execute(&command, cwd, &limits, &env).map_err(|error| {
         match error {
             TargetFailure::Timeout => "timeout",
             TargetFailure::OutputLimit { .. } => "output-limit",

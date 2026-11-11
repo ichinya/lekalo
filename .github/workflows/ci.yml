@@ -530,6 +530,8 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-errors.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-symbols.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-ownership.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ownership-contracts.mjs
+          node scripts/test-ownership-transitions.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-defaults.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-enum-wire.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-query-inputs.mjs

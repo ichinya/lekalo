@@ -468,6 +468,14 @@ Status: **Implemented** command handlers for product 1.3.0. Handler existence do
 | `lekalo openapi diff` | `lekalo openapi diff [OPTIONS] <BASE> <CANDIDATE>` | [reference](openapi.md) |
 | `lekalo openapi inspect` | `lekalo openapi inspect [OPTIONS] --endpoint <SYMBOL> <PATH>` | [reference](openapi.md) |
 | `lekalo openapi render` | `lekalo openapi render [OPTIONS] <PATH>` | [reference](openapi.md) |
+| `lekalo ownership` | `lekalo ownership [OPTIONS] <COMMAND>` | [reference](ownership-transitions.md) |
+| `lekalo ownership apply` | `lekalo ownership apply [OPTIONS] --plan <FILE> --confirm <SHA256>` | [reference](ownership-transitions.md) |
+| `lekalo ownership plan` | `lekalo ownership plan [OPTIONS] --request <FILE>` | [reference](ownership-transitions.md) |
+| `lekalo ownership recovery` | `lekalo ownership recovery [OPTIONS]` | [reference](ownership-transitions.md) |
+| `lekalo ownership rollback` | `lekalo ownership rollback [OPTIONS] --receipt <SHA256>` | [reference](ownership-transitions.md) |
+| `lekalo ownership status` | `lekalo ownership status [OPTIONS]` | [reference](ownership-transitions.md) |
+| `lekalo ownership trace` | `lekalo ownership trace [OPTIONS] --receipt <SHA256>` | [reference](ownership-transitions.md) |
+| `lekalo ownership verify` | `lekalo ownership verify [OPTIONS] --plan <FILE>` | [reference](ownership-transitions.md) |
 | `lekalo pilot` | `lekalo pilot [OPTIONS] <COMMAND>` | [reference](worklog-changelog.md) |
 | `lekalo pilot admit` | `lekalo pilot admit [OPTIONS] <PATH> <COMPOSITION>` | [reference](worklog-changelog.md) |
 | `lekalo pilot validate` | `lekalo pilot validate [OPTIONS] <PATH>` | [reference](worklog-changelog.md) |

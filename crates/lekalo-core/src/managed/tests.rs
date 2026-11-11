@@ -3408,6 +3408,176 @@ fn apply_changed_generation(root: &std::path::Path, title: &str) -> String {
     history::current(root).expect("custody").expect("gen")
 }
 
+#[test]
+fn legacy_rollback_validates_the_whole_manifest_against_scoped_custody() {
+    use crate::artifacts::types::{
+        ArtifactEntry, ArtifactKey, ArtifactKind, ArtifactManifest, ArtifactPath, Lifecycle,
+        SemanticOwnerId,
+    };
+    use crate::lockfile::Sha256Digest;
+    use crate::ownership::{Assignment, Binding, Claim, OwnershipState};
+
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    write_test_lock(root);
+    apply_first_generation(root);
+    let first = history::current(root).unwrap().unwrap();
+    let second = apply_changed_generation(root, "Focus v2");
+    // This genuine reviewed plan predates the unrelated symbol handoff.
+    let old_plan = rollback::build(root, &first).unwrap();
+    let encoded = serde_json::to_vec(&old_plan).unwrap();
+
+    let path = "apps/neighbor/gen/src/focus-task.ts";
+    let symbol = "neighbor.focus_task";
+    let native = b"export function focusTask(input) { return input; }\n";
+    let content_digest = digest(native);
+    let current = fs::read_file(root, custody::MANIFEST_LOGICAL)
+        .unwrap()
+        .unwrap();
+    let current = ArtifactManifest::parse_canonical(&current).unwrap();
+    let version = crate::loader::ModelVersion::parse_exact("0.2.16").unwrap();
+    let owner = SemanticOwnerId::parse(symbol, version).unwrap();
+    let mut entries = current.artifacts().to_vec();
+    entries.push(ArtifactEntry::new(
+        ArtifactKey::new(
+            owner.clone(),
+            ArtifactPath::parse(path).unwrap(),
+            ArtifactKind::Source,
+        ),
+        Lifecycle::Generated,
+        current.artifacts()[0].adapter().cloned(),
+        current.artifacts()[0].generator().cloned(),
+        Sha256Digest::parse(&content_digest).unwrap(),
+        vec![owner],
+    ));
+    entries.sort_by(|a, b| {
+        (
+            a.key().semantic_owner().as_str(),
+            a.key().path().as_str(),
+            a.key().kind().as_str(),
+        )
+            .cmp(&(
+                b.key().semantic_owner().as_str(),
+                b.key().path().as_str(),
+                b.key().kind().as_str(),
+            ))
+    });
+    let draft = ArtifactManifest::new(
+        current.project().clone(),
+        current.lock_ref().clone(),
+        current.model().clone(),
+        current.ir().clone(),
+        entries,
+        current.source_maps().to_vec(),
+        Sha256Digest::parse(PIN_A).unwrap(),
+    );
+    let manifest_digest = digest(&crate::artifacts::canonical::digest_input_bytes(&draft));
+    let manifest = ArtifactManifest::new(
+        draft.project().clone(),
+        draft.lock_ref().clone(),
+        draft.model().clone(),
+        draft.ir().clone(),
+        draft.artifacts().to_vec(),
+        draft.source_maps().to_vec(),
+        Sha256Digest::parse(&manifest_digest).unwrap(),
+    )
+    .canonical_bytes();
+    ArtifactManifest::parse_canonical(&manifest).unwrap();
+    let state = OwnershipState {
+        assignments: vec![Assignment {
+            module: "neighbor".to_owned(),
+            symbol: Some(symbol.to_owned()),
+            mode: Mode::Managed,
+            transition: digest(b"reviewed scoped handoff"),
+            artifacts: vec![Claim {
+                binding: Binding {
+                    symbol: symbol.to_owned(),
+                    path: path.to_owned(),
+                    native_symbol: "focusTask".to_owned(),
+                },
+                digest: content_digest,
+                lifecycle: "generated".to_owned(),
+            }],
+        }],
+        ..OwnershipState::default()
+    };
+    let state_bytes = canonical_bytes(&state).into_bytes();
+    fs::write_file(root, path, native).unwrap();
+    fs::write_file(root, crate::ownership::STATE, &state_bytes).unwrap();
+    fs::write_file(root, custody::MANIFEST_LOGICAL, &manifest).unwrap();
+    // The shared manifest and canonical scoped assignment are coherent.
+    let before_record = history::current_record(root).unwrap();
+    let before_native: Vec<_> = before_record
+        .outputs
+        .iter()
+        .map(|output| {
+            (
+                output.path.clone(),
+                fs::read_file(root, &output.path).unwrap().unwrap(),
+            )
+        })
+        .collect();
+    assert!(!old_plan.restore.iter().any(|row| row.path == path));
+    assert!(!old_plan.delete.iter().any(|row| row.path == path));
+    assert!(rollback::build(root, &first).is_err());
+    for dry_run in [true, false] {
+        let refused = rollback::apply(
+            root,
+            &encoded,
+            Some(&old_plan.plan_digest),
+            dry_run,
+            Some(&test_authority()),
+        );
+        assert_eq!(refused.status(), Status::Invalid, "{refused:?}");
+        assert!(refused
+            .to_json_string()
+            .contains("scoped-ownership-manifest"));
+        assert_eq!(
+            fs::read_file(root, custody::MANIFEST_LOGICAL)
+                .unwrap()
+                .unwrap(),
+            manifest
+        );
+        assert_eq!(
+            fs::read_file(root, crate::ownership::STATE)
+                .unwrap()
+                .unwrap(),
+            state_bytes
+        );
+        assert_eq!(fs::read_file(root, path).unwrap().unwrap(), native);
+        assert_eq!(history::current(root).unwrap().unwrap(), second);
+        for (path, bytes) in &before_native {
+            assert_eq!(fs::read_file(root, path).unwrap().unwrap(), *bytes);
+        }
+        history::current_record(root).unwrap();
+        assert!(
+            history::unresolved(root).unwrap().is_empty(),
+            "refusal precedes journal publication"
+        );
+    }
+    // A destination that already retains the scoped claim remains restorable.
+    let third = apply_changed_generation(root, "Focus v3");
+    apply_changed_generation(root, "Focus v4");
+    let accepted = rollback::build(root, &third).unwrap();
+    let result = rollback::apply(
+        root,
+        &serde_json::to_vec(&accepted).unwrap(),
+        Some(&accepted.plan_digest),
+        false,
+        Some(&test_authority()),
+    );
+    assert_eq!(result.status(), Status::Valid, "{result:?}");
+    assert_eq!(history::current(root).unwrap().unwrap(), third);
+    history::current_record(root).unwrap();
+    assert_eq!(
+        fs::read_file(root, crate::ownership::STATE)
+            .unwrap()
+            .unwrap(),
+        state_bytes
+    );
+    assert_eq!(fs::read_file(root, path).unwrap().unwrap(), native);
+}
+
 /// An interrupted rollback to a mid-chain destination anchors and converges
 /// (r6, devin F1 [P1 blocking] / codex F10): a genuine three-generation
 /// chain A→B→C whose rollback to B was interrupted — both before any byte

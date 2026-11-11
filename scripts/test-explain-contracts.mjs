@@ -58,9 +58,11 @@ for (const patch of [{ explanationRef: null }, { namespace: "core" }, { original
 // 1. The embedded catalog: schema-valid, closed, registry-pinned, complete.
 // ---------------------------------------------------------------------------
 const registry = read("contracts/diagnostic-registry.v0.8.0.json");
-const catalog = read("contracts/explain-catalog.v0.8.0.json");
+const catalogPath = "contracts/explain-catalog.v1.3.0.json";
+const catalog = read(catalogPath);
 valid(catalogSchema, catalog, "explain-catalog");
 assert.equal(catalog.closed, true, "catalog is closed");
+assert.equal(catalog.catalogVersion, "1.3.0", "current catalog data revision");
 assert.equal(catalog.registryIdentity, "dev.lekalo.diagnostic-registry@0.8.0", "catalog pins the registry union");
 const { createHash } = await import("node:crypto");
 assert.equal(
@@ -132,22 +134,22 @@ for (const entry of own) assert.ok(catalogCodes.has(entry.code), `own family cod
 // 3. The generator is authoritative: committed bytes match regeneration.
 // ---------------------------------------------------------------------------
 const { execFileSync } = await import("node:child_process");
-const before = readFileSync(resolve(root, "contracts/explain-catalog.v0.8.0.json"));
+const before = readFileSync(resolve(root, catalogPath));
 execFileSync(process.execPath, [resolve(root, "scripts/gen-explain-catalog.mjs"), "--check"], { cwd: root, stdio: "pipe" });
-assert.equal(readFileSync(resolve(root, "contracts/explain-catalog.v0.8.0.json")).equals(before), true, "generator --check mutated nothing");
+assert.equal(readFileSync(resolve(root, catalogPath)).equals(before), true, "generator --check mutated nothing");
 const drifted = structuredClone(catalog);
 drifted.entries[0].title = "drifted";
 const driftedBytes = Buffer.from(JSON.stringify(drifted, null, 2) + "\n");
 const scratch = resolve(root, "target/explain-catalog-drift-probe.json");
 const { writeFileSync, rmSync } = await import("node:fs");
-writeFileSync(resolve(root, "contracts/explain-catalog.v0.8.0.json"), driftedBytes);
+writeFileSync(resolve(root, catalogPath), driftedBytes);
 let checkFailed = false;
 try {
   execFileSync(process.execPath, [resolve(root, "scripts/gen-explain-catalog.mjs"), "--check"], { cwd: root, stdio: "pipe" });
 } catch {
   checkFailed = true;
 } finally {
-  writeFileSync(resolve(root, "contracts/explain-catalog.v0.8.0.json"), before);
+  writeFileSync(resolve(root, catalogPath), before);
 }
 assert.equal(checkFailed, true, "generator --check must fail on catalog drift");
 rmSync(scratch, { force: true });

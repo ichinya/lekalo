@@ -15,6 +15,26 @@ pub fn run_confined_verification(
     limits: &TransportLimits,
     env: &[(String, String)],
 ) -> Result<TransportSuccess, TargetFailure> {
+    run_verification(command, root, limits, env, false)
+}
+
+/// Immutable ownership candidate: only explicit private scratch is writable.
+pub fn run_confined_ownership_verification(
+    command: &AdapterCommand,
+    root: &Path,
+    limits: &TransportLimits,
+    env: &[(String, String)],
+) -> Result<TransportSuccess, TargetFailure> {
+    run_verification(command, root, limits, env, true)
+}
+
+fn run_verification(
+    command: &AdapterCommand,
+    root: &Path,
+    limits: &TransportLimits,
+    env: &[(String, String)],
+    immutable: bool,
+) -> Result<TransportSuccess, TargetFailure> {
     let refused = || TargetFailure::ScopeViolation {
         path: None,
         detail: "verification-input",
@@ -47,7 +67,12 @@ pub fn run_confined_verification(
     // Native test runners invoke their test/oracle children. They inherit
     // the same namespace/seatbelt/LPAC boundary and owned process tree.
     policy.children_denied = false;
-    let sandbox = Sandbox::new(&root, &scopes, &scopes, true, policy)?;
+    let write_scopes = if immutable {
+        vec!["scratch/**".to_owned()]
+    } else {
+        scopes.clone()
+    };
+    let sandbox = Sandbox::new(&root, &scopes, &write_scopes, true, policy)?;
     let mut command = command.clone();
     if let Some(first) = command.args.first_mut() {
         let script = root.join(&*first);

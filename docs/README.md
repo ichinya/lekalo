@@ -11,6 +11,7 @@ For the complete domain/client path, use the [MVP user workflow](mvp-workflow.md
 | Download and verify the CLI | [Installation](releases.md) |
 | Create a project and first module | [Project layout](project-layout.md#minimal-project) |
 | Choose observed, contracted or managed ownership | [Adoption](adoption.md) |
+| Transfer ownership with verification and rollback | [Ownership transitions](ownership-transitions.md) |
 | Check available features and limits | [Feature status](roadmap.md) |
 | Build and run contributor checks | [Contributing](contributing.md) |
 | Publish binary archives | [Release maintainer guide](releasing.md) |

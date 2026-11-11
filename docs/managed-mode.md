@@ -10,6 +10,11 @@ items, not implemented behavior here.
 
 Owner: managed-lane maintainers.
 
+[Verified ownership transitions](ownership-transitions.md) connect reviewed
+maintained contracts to admitted managed generation and materialize generated
+implementations back into maintained scaffold. Scoped handoffs supersede legacy
+module mutation and cleanup permission for their transferred artifacts.
+
 ## The three mode statements
 
 The issue's mode statements are the semantic contract of this lane:

@@ -1,7 +1,7 @@
 {
   "status": "unsupported",
   "payload": {
-    "catalogVersion": "0.8.0",
+    "catalogVersion": "1.3.0",
     "explanations": [],
     "identity": "dev.lekalo.explain-result@0.8.0",
     "registryIdentity": "dev.lekalo.diagnostic-registry@0.8.0",

@@ -95,15 +95,21 @@ pub fn current_record(
     };
     let manifest = crate::artifacts::ArtifactManifest::parse_canonical(&bytes)
         .map_err(|_| refused("manifest-read"))?;
-    let recorded: std::collections::BTreeMap<&str, &str> = record
+    let mut recorded: std::collections::BTreeMap<String, String> = record
         .outputs
         .iter()
-        .map(|output| (output.path.as_str(), output.digest.as_str()))
+        .map(|output| (output.path.clone(), output.digest.clone()))
         .collect();
-    let published: std::collections::BTreeMap<&str, &str> = manifest
+    crate::ownership::overlay_manifest(root, &mut recorded, manifest.artifacts())?;
+    let published: std::collections::BTreeMap<String, String> = manifest
         .artifacts()
         .iter()
-        .map(|entry| (entry.key().path().as_str(), entry.content().as_str()))
+        .map(|entry| {
+            (
+                entry.key().path().as_str().to_owned(),
+                entry.content().as_str().to_owned(),
+            )
+        })
         .collect();
     if recorded != published {
         return Err(refused("record-manifest"));
@@ -565,6 +571,11 @@ pub fn assert_reconciled(root: &std::path::Path) -> Result<(), DomainResult> {
 /// acquiring that same advisory lock positively proves no process still
 /// holds it (finding 3).
 pub fn lock(root: &std::path::Path) -> Result<Guard, DomainResult> {
+    let writer = crate::project_writer::WriterLock::mutation(
+        root,
+        crate::project_writer::MutationFamily::Managed,
+    )
+    .map_err(|_| recovery("mutation-lock"))?;
     fs::ensure_dir(root, CUSTODY).map_err(|_| recovery("lock-write"))?;
     let path = root.join(custody_logical(MUTATION_LOCK));
     #[cfg(unix)]
@@ -583,6 +594,7 @@ pub fn lock(root: &std::path::Path) -> Result<Guard, DomainResult> {
         Ok(Guard {
             path,
             _file: Some(file),
+            _writer: writer,
         })
     }
     #[cfg(windows)]
@@ -599,6 +611,7 @@ pub fn lock(root: &std::path::Path) -> Result<Guard, DomainResult> {
         Ok(Guard {
             path,
             _file: Some(file),
+            _writer: writer,
         })
     }
 }
@@ -651,6 +664,7 @@ pub fn prove_lock_stale(root: &std::path::Path) -> Result<(), DomainResult> {
 
 /// The lock guard; dropping releases the advisory lock and the path.
 pub struct Guard {
+    _writer: crate::project_writer::WriterLock,
     path: std::path::PathBuf,
     /// Held for its `Drop`: releasing the OS-level exclusivity (the
     /// advisory lock on Unix, the exclusive-share handle on Windows).

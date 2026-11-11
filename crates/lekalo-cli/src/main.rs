@@ -41,6 +41,7 @@ mod mcp;
 mod metrics_export;
 mod native_execution;
 mod native_verify;
+mod ownership;
 use native_execution::NativeCommands;
 mod module_api;
 mod pilot_battery;
@@ -436,6 +437,11 @@ enum Commands {
     Managed {
         #[command(subcommand)]
         command: managed::ManagedCommands,
+    },
+    /// Verified scoped implementation ownership transitions (issue #111).
+    Ownership {
+        #[command(subcommand)]
+        command: ownership::OwnershipCommands,
     },
     /// Preview a deterministic lock update, or apply one exact plan.
     Update {
@@ -2613,6 +2619,7 @@ fn runtime() -> u8 {
                 program_args,
             } => run_lock(project, check, program_args),
             Commands::Managed { command } => managed::run(command),
+            Commands::Ownership { command } => ownership::run(command),
             Commands::Update {
                 project,
                 dry_run,

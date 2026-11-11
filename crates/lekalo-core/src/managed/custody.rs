@@ -290,7 +290,7 @@ pub fn publish(
     // be exactly the custody statement of the generation this transaction
     // commits — the caller passes the assembled record. Verified before
     // any byte is written.
-    verify_bijection(record, &entries)?;
+    verify_bijection(root, record, &entries)?;
     entries.sort_by(|left, right| {
         (
             left.key().semantic_owner().as_str().to_owned(),
@@ -443,17 +443,24 @@ fn read_manifest(root: &Path) -> Result<Option<ArtifactManifest>, DomainResult> 
 /// of the record this transaction is committing (plan outputs that
 /// survive deletion plus every preserved output).
 fn verify_bijection(
+    root: &Path,
     record: &super::wire::GenerationRecord,
     entries: &[ArtifactEntry],
 ) -> Result<(), DomainResult> {
-    let recorded: std::collections::BTreeMap<&str, &str> = record
+    let mut recorded: std::collections::BTreeMap<String, String> = record
         .outputs
         .iter()
-        .map(|output| (output.path.as_str(), output.digest.as_str()))
+        .map(|output| (output.path.clone(), output.digest.clone()))
         .collect();
-    let published: std::collections::BTreeMap<&str, &str> = entries
+    crate::ownership::overlay_manifest(root, &mut recorded, entries)?;
+    let published: std::collections::BTreeMap<String, String> = entries
         .iter()
-        .map(|entry| (entry.key().path().as_str(), entry.content().as_str()))
+        .map(|entry| {
+            (
+                entry.key().path().as_str().to_owned(),
+                entry.content().as_str().to_owned(),
+            )
+        })
         .collect();
     if recorded != published {
         return Err(super::diagnostic::failure(

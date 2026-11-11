@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/ownership-state.schema.v1.0.0.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "pending",
+    "assignments"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/ownership-state/v1.0.0"
+    },
+    "pending": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "planDigest",
+            "journalDigest",
+            "phase",
+            "baseDigest"
+          ],
+          "properties": {
+            "planDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "journalDigest": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "phase": {
+              "enum": [
+                "publishing",
+                "restoring"
+              ]
+            },
+            "baseDigest": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "assignments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "module",
+          "symbol",
+          "mode",
+          "transition",
+          "artifacts"
+        ],
+        "properties": {
+          "module": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9_.:/@-]+$"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9_.:/@-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "enum": [
+              "observed",
+              "contracted",
+              "managed"
+            ]
+          },
+          "transition": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "binding",
+                "digest",
+                "lifecycle"
+              ],
+              "properties": {
+                "binding": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "symbol",
+                    "path",
+                    "nativeSymbol"
+                  ],
+                  "properties": {
+                    "symbol": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[A-Za-z0-9_.:/@-]+$"
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^(?!.*(?:^|/)(?:\\.\\.?|\\.git|\\.bb)(?:/|$))(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+$"
+                    },
+                    "nativeSymbol": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[A-Za-z0-9_.:/@-]+$"
+                    }
+                  }
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "lifecycle": {
+                  "enum": [
+                    "generated",
+                    "scaffolded"
+                  ]
+                }
+              }
+            },
+            "maxItems": 512
+          }
+        }
+      },
+      "maxItems": 512
+    }
+  }
+}

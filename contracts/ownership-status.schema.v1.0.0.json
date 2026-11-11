@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/ownership-status.schema.v1.0.0.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "project",
+    "evidenceBasis",
+    "legacy",
+    "assignments"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/ownership-status/v1.0.0"
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9_.:/@-]+$"
+    },
+    "evidenceBasis": {
+      "const": "declared-ownership"
+    },
+    "legacy": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "module",
+          "mode"
+        ],
+        "properties": {
+          "module": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9_.:/@-]+$"
+          },
+          "mode": {
+            "enum": [
+              "observed",
+              "contracted",
+              "managed"
+            ]
+          }
+        }
+      },
+      "maxItems": 512
+    },
+    "assignments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "module",
+          "symbol",
+          "mode",
+          "transition",
+          "artifacts"
+        ],
+        "properties": {
+          "module": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[A-Za-z0-9_.:/@-]+$"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9_.:/@-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "enum": [
+              "observed",
+              "contracted",
+              "managed"
+            ]
+          },
+          "transition": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "binding",
+                "digest",
+                "lifecycle"
+              ],
+              "properties": {
+                "binding": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "symbol",
+                    "path",
+                    "nativeSymbol"
+                  ],
+                  "properties": {
+                    "symbol": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[A-Za-z0-9_.:/@-]+$"
+                    },
+                    "path": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^(?!.*(?:^|/)(?:\\.\\.?|\\.git|\\.bb)(?:/|$))(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+$"
+                    },
+                    "nativeSymbol": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[A-Za-z0-9_.:/@-]+$"
+                    }
+                  }
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "lifecycle": {
+                  "enum": [
+                    "generated",
+                    "scaffolded"
+                  ]
+                }
+              }
+            },
+            "maxItems": 512
+          }
+        }
+      },
+      "maxItems": 512
+    }
+  }
+}

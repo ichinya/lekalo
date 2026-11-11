@@ -1,0 +1,572 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/ownership-journal.schema.v1.0.0.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "phase",
+    "plan",
+    "verification"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "lekalo/ownership-journal/v1.0.0"
+    },
+    "phase": {
+      "enum": [
+        "publishing",
+        "restoring"
+      ]
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "planDigest",
+        "project",
+        "request",
+        "from",
+        "inputs",
+        "baseline",
+        "candidate",
+        "edits",
+        "claims",
+        "semanticDiff"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/ownership-transition-plan/v1.0.0"
+        },
+        "planDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "project": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9_.:/@-]+$"
+        },
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaVersion",
+            "module",
+            "symbol",
+            "to",
+            "inputs",
+            "coverage",
+            "declaration",
+            "unknownBehavior",
+            "runner"
+          ],
+          "properties": {
+            "schemaVersion": {
+              "const": "lekalo/ownership-transition-request/v1.0.0"
+            },
+            "module": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[A-Za-z0-9_.:/@-]+$"
+            },
+            "symbol": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[A-Za-z0-9_.:/@-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "to": {
+              "enum": [
+                "observed",
+                "contracted",
+                "managed"
+              ]
+            },
+            "inputs": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^(?!.*(?:^|/)(?:\\.\\.?|\\.git|\\.bb)(?:/|$))(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+$"
+              },
+              "maxItems": 512
+            },
+            "coverage": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^(?!.*(?:^|/)(?:\\.\\.?|\\.git|\\.bb)(?:/|$))(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "declaration": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^(?!.*(?:^|/)(?:\\.\\.?|\\.git|\\.bb)(?:/|$))(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unknownBehavior": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9_.:/@-]+$"
+              },
+              "maxItems": 512
+            },
+            "runner": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "program",
+                "digest",
+                "args",
+                "expected"
+              ],
+              "properties": {
+                "program": {
+                  "enum": [
+                    "node",
+                    "python",
+                    "python3",
+                    "deno",
+                    "bun"
+                  ]
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "maxItems": 64
+                },
+                "expected": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "scenario",
+                      "output",
+                      "error",
+                      "state",
+                      "effects",
+                      "authorization",
+                      "transaction"
+                    ],
+                    "properties": {
+                      "scenario": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 256,
+                        "pattern": "^[A-Za-z0-9_.:/@-]+$"
+                      },
+                      "output": {},
+                      "error": {},
+                      "state": {},
+                      "effects": {
+                        "type": "array",
+                        "items": {},
+                        "maxItems": 512
+                      },
+                      "authorization": {},
+                      "transaction": {}
+                    }
+                  },
+                  "maxItems": 128,
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        },
+        "from": {
+          "enum": [
+            "observed",
+            "contracted",
+            "managed"
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "digest"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^(?!.*(?:^|/)(?:\\.\\.?|\\.git|\\.bb)(?:/|$))(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+$"
+              },
+              "digest": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "maxItems": 512
+        },
+        "baseline": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "symbol",
+              "path",
+              "nativeSymbol"
+            ],
+            "properties": {
+              "symbol": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9_.:/@-]+$"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^(?!.*(?:^|/)(?:\\.\\.?|\\.git|\\.bb)(?:/|$))(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+$"
+              },
+              "nativeSymbol": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9_.:/@-]+$"
+              }
+            }
+          },
+          "maxItems": 512
+        },
+        "candidate": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "symbol",
+              "path",
+              "nativeSymbol"
+            ],
+            "properties": {
+              "symbol": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9_.:/@-]+$"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^(?!.*(?:^|/)(?:\\.\\.?|\\.git|\\.bb)(?:/|$))(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+$"
+              },
+              "nativeSymbol": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9_.:/@-]+$"
+              }
+            }
+          },
+          "maxItems": 512
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "before",
+              "after",
+              "beforeContent",
+              "content"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^(?!.*(?:^|/)(?:\\.\\.?|\\.git|\\.bb)(?:/|$))(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+$"
+              },
+              "before": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "after": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "beforeContent": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 8388608
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "content": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 8388608
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "maxItems": 512
+        },
+        "claims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "binding",
+              "digest",
+              "lifecycle"
+            ],
+            "properties": {
+              "binding": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "symbol",
+                  "path",
+                  "nativeSymbol"
+                ],
+                "properties": {
+                  "symbol": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[A-Za-z0-9_.:/@-]+$"
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^(?!.*(?:^|/)(?:\\.\\.?|\\.git|\\.bb)(?:/|$))(?:[A-Za-z0-9_.@-]+/)*[A-Za-z0-9_.@-]+$"
+                  },
+                  "nativeSymbol": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^[A-Za-z0-9_.:/@-]+$"
+                  }
+                }
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "lifecycle": {
+                "enum": [
+                  "generated",
+                  "scaffolded"
+                ]
+              }
+            }
+          },
+          "maxItems": 512
+        },
+        "semanticDiff": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "subject",
+              "from",
+              "to"
+            ],
+            "properties": {
+              "kind": {
+                "const": "ownership.mode-changed"
+              },
+              "subject": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9_.:/@-]+$"
+              },
+              "from": {
+                "enum": [
+                  "observed",
+                  "contracted",
+                  "managed"
+                ]
+              },
+              "to": {
+                "enum": [
+                  "observed",
+                  "contracted",
+                  "managed"
+                ]
+              }
+            }
+          },
+          "maxItems": 512
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "planDigest",
+        "runnerDigest",
+        "verdict",
+        "observations",
+        "counterexample"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "lekalo/ownership-verification/v1.0.0"
+        },
+        "planDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "runnerDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "verdict": {
+          "enum": [
+            "match",
+            "mismatch"
+          ]
+        },
+        "observations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "scenario",
+              "baselineDigest",
+              "candidateDigest",
+              "expectedDigest"
+            ],
+            "properties": {
+              "scenario": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[A-Za-z0-9_.:/@-]+$"
+              },
+              "baselineDigest": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "candidateDigest": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^sha256:[0-9a-f]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "expectedDigest": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              }
+            }
+          },
+          "maxItems": 128
+        },
+        "counterexample": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[A-Za-z0-9_.:/@-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
