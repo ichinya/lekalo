@@ -354,6 +354,9 @@ fn load_validated_root_inner(
     if let Some(code) = crate::versioning::migration_recovery_code(&fs) {
         return failure(Status::Invalid, vec![Diagnostic::new(code)]);
     }
+    if let Some(code) = crate::ownership::recovery_code(&fs) {
+        return failure(Status::Invalid, vec![Diagnostic::new(code)]);
+    }
     if let Some(code) = crate::change::recovery_barrier_code(&fs) {
         // The change rule is admitted for the denied class: the barrier
         // outcome is denied (exit 3) instead of invalid.

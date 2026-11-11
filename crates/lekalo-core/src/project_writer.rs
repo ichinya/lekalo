@@ -35,6 +35,8 @@ pub(crate) enum MutationFamily {
     Format,
     Generate,
     Adoption,
+    Ownership,
+    Managed,
 }
 
 /// Why a mutating-writers entry refused: the shared lock itself, or a
@@ -98,7 +100,24 @@ impl WriterLock {
             let adoption = (family != MutationFamily::Adoption)
                 .then(|| crate::adoption::recovery_barrier_code(fs))
                 .flatten();
-            migration.or(format).or(adoption)
+            let ownership = (family != MutationFamily::Ownership)
+                .then(|| crate::ownership::recovery_code(fs))
+                .flatten();
+            let managed = (family != MutationFamily::Managed)
+                .then(|| {
+                    let lock_present = !matches!(
+                        fs.read_file_opt(
+                            crate::managed::history::CUSTODY,
+                            crate::managed::history::MUTATION_LOCK,
+                            1024
+                        ),
+                        Ok(None) | Err(crate::project_fs::FsErrorKind::NotFound)
+                    );
+                    (lock_present || crate::managed::history::assert_reconciled(root).is_err())
+                        .then_some("managed.recovery-required")
+                })
+                .flatten();
+            migration.or(format).or(adoption).or(ownership).or(managed)
         };
         match crate::project_fs::Fs::open(root).map(|fs| sibling(&fs)) {
             Ok(Some(code)) => return Err(MutationRefusal::SiblingJournal { code }),

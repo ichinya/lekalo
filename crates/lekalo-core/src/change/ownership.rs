@@ -246,6 +246,7 @@ pub(crate) fn prepare(
             member: "symbol-ownership",
         });
     }
+    crate::ownership::legacy_mutation_allowed(&load.root, subject).map_err(domain)?;
     let (before, policy) = read_source(&load.root)?;
     if receipt::bytes_digest(&before) != *ownership_digest {
         return Err(stale("ownership", "policy-digest"));

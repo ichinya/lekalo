@@ -73,6 +73,16 @@ pub(crate) const CUSTODY_MEMBER: &str = "custody";
 /// around what the host reports; the host reports measurements, never
 /// conclusions.
 pub trait VerificationHost {
+    /// Ownership handoffs require immutable consumed sources, with writes only
+    /// under private `scratch/**`. Older host implementations fail closed.
+    fn run_immutable(
+        &self,
+        _program: &Path,
+        _args: &[String],
+        _cwd: &Path,
+    ) -> Result<(Option<i32>, String), String> {
+        Err("immutable-verification-unavailable".to_owned())
+    }
     /// Resolve one qualified bare program name to its executable path
     /// through the host's PATH. `None` means the tool is honestly
     /// unavailable; the core records it, never invents a run.

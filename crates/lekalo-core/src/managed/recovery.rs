@@ -1204,6 +1204,13 @@ pub fn run(
     derive_authority: &dyn Fn(&str) -> Result<super::authority::Authority, DomainResult>,
 ) -> DomainResult {
     // The journal scan runs first, fully confined (finding 11): every
+    let _writer = match crate::project_writer::WriterLock::mutation(
+        root,
+        crate::project_writer::MutationFamily::Managed,
+    ) {
+        Ok(guard) => guard,
+        Err(_) => return invalid("recovery-writer-locked"),
+    };
     // custody read validates its ancestor chain, so a junctioned custody
     // home refuses before any mutation — including the lock clear below.
     let unresolved = match history::unresolved(root) {

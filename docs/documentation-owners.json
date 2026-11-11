@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "1.3.0",
-  "cliSourceDigest": "sha256:12b5c57e8d7db9bd369561e2535846605542b4ebdc0c2c70a24c00e2730de756",
+  "cliSourceDigest": "sha256:2e7d3a60664d3fe6e2847c1b3470c56e7ff55fce80b952d093c785e50568211b",
   "p0Pages": [
     {
       "page": "README.md",
@@ -2016,6 +2016,94 @@
       "status": "implemented"
     },
     {
+      "id": "cli:ownership",
+      "kind": "command",
+      "command": "ownership",
+      "usage": "lekalo ownership [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:8130d215af7cab884719b0b10a65273b1e045c1875272998a46484fb248c28d2",
+      "summary": "Verified scoped implementation ownership transitions (issue #111)",
+      "leaf": false,
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:ownership apply",
+      "kind": "command",
+      "command": "ownership apply",
+      "usage": "lekalo ownership apply [OPTIONS] --plan <FILE> --confirm <SHA256>",
+      "helpDigest": "sha256:910f5678cf7413d79aaf34b97ae7b57e2465aec7fe95f61fdc2e75ffa6231aac",
+      "summary": "Reverify and commit one exact confirmed handoff",
+      "leaf": true,
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:ownership plan",
+      "kind": "command",
+      "command": "ownership plan",
+      "usage": "lekalo ownership plan [OPTIONS] --request <FILE>",
+      "helpDigest": "sha256:b839ad1d6b985685bb65c14bb2f860bca7d75ce174247d46a6e303a815246584",
+      "summary": "Preview a reviewed scoped request without changing the project",
+      "leaf": true,
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:ownership recovery",
+      "kind": "command",
+      "command": "ownership recovery",
+      "usage": "lekalo ownership recovery [OPTIONS]",
+      "helpDigest": "sha256:8f5bcb467a6aedde0c3e5c45b1020cae5a059a58a1c40cca8f4a00d9e68fe15c",
+      "summary": "Inspect or explicitly recover the pending ownership transaction",
+      "leaf": true,
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:ownership rollback",
+      "kind": "command",
+      "command": "ownership rollback",
+      "usage": "lekalo ownership rollback [OPTIONS] --receipt <SHA256>",
+      "helpDigest": "sha256:79cc820f86299b114b012e78808746757aaca0a092e885d15e96f3b81029b72a",
+      "summary": "Preview restoration of one locally retained transition receipt",
+      "leaf": true,
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:ownership status",
+      "kind": "command",
+      "command": "ownership status",
+      "usage": "lekalo ownership status [OPTIONS]",
+      "helpDigest": "sha256:a6f67fab20cad73dc6ee78cefbe2b2da80e6b6804650aa97353279ca5f9784d5",
+      "summary": "Report declared module defaults and scoped handoffs, not a PASS verdict",
+      "leaf": true,
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:ownership trace",
+      "kind": "command",
+      "command": "ownership trace",
+      "usage": "lekalo ownership trace [OPTIONS] --receipt <SHA256>",
+      "helpDigest": "sha256:a18eddb58d07ece3701c8acbf4f1d814dc76d19a3f4f13c38ce8ab19d7005f20",
+      "summary": "Export neutral derived transition evidence for HLV/AIFHub consumers",
+      "leaf": true,
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:ownership verify",
+      "kind": "command",
+      "command": "ownership verify",
+      "usage": "lekalo ownership verify [OPTIONS] --plan <FILE>",
+      "helpDigest": "sha256:2153689ff35aea394643dd25107b902dcb2bf23aad1c24d813adfa2b4267086f",
+      "summary": "Execute both pinned implementations against the declared oracle",
+      "leaf": true,
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented"
+    },
+    {
       "id": "cli:pilot",
       "kind": "command",
       "command": "pilot",
@@ -3510,7 +3598,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.8.0.json",
-      "sourceDigest": "sha256:9bd318dde0da1e23b9ea26de0eddd12eaabd14d0a0f6a7a77615e65d33d35d7b",
+      "sourceDigest": "sha256:dd1521bedf1c9abb7d480e8e81fb3b8537b3243d5014143137f84c8c22174315",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -4484,6 +4572,87 @@
       "source": "contracts/orchestration-report.schema.v0.2.16.json",
       "sourceDigest": "sha256:9ec7b180c21129d185a74e105fe706dbdbc7538ce5b9fc8376ebcafd75d1004f",
       "owner": "docs/orchestration.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ownership-journal.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/ownership-journal.schema.v1.0.0.json",
+      "sourceDigest": "sha256:fd2bd6b4ef64d794ae376b7939b07c02af4d7fb0ca7cccbc2da33e9c90ed85c7",
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ownership-rollback-plan.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/ownership-rollback-plan.schema.v1.0.0.json",
+      "sourceDigest": "sha256:9088869ef5fedceff0617f22fd53ac79737be9b6e67108360c5bcd9f76f1d93c",
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ownership-state.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/ownership-state.schema.v1.0.0.json",
+      "sourceDigest": "sha256:1cb58bc3a64c45934f0a1bcaf8a3c867b43c4f594278406b4692f30fad27c7ab",
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ownership-status.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/ownership-status.schema.v1.0.0.json",
+      "sourceDigest": "sha256:cb825f11cd7b875eb29826afda252ba762188fa43536a0c204b0f5da018f7606",
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ownership-trace.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/ownership-trace.schema.v1.0.0.json",
+      "sourceDigest": "sha256:e360732a0d4e7c96f59f84c75551b115b0748a25215b8553995293092039e092",
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ownership-transition-plan.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/ownership-transition-plan.schema.v1.0.0.json",
+      "sourceDigest": "sha256:7fc5881cfad78f92521924bea46f52ddc25d6fa7cd77ced743cbc7956187cf39",
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ownership-transition-receipt.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/ownership-transition-receipt.schema.v1.0.0.json",
+      "sourceDigest": "sha256:a00cbd7bb0bdeda6cc26094756dfbb5fba48878c16eeff906224dec43cdc879a",
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ownership-transition-request.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/ownership-transition-request.schema.v1.0.0.json",
+      "sourceDigest": "sha256:d0070a7478761e37651df86bfb8c4907d22fad2b022d668a0f9016827698931e",
+      "owner": "docs/ownership-transitions.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/ownership-verification.schema.v1.0.0.json",
+      "kind": "contract",
+      "source": "contracts/ownership-verification.schema.v1.0.0.json",
+      "sourceDigest": "sha256:5c16ba3ed09cc03948a2e85abca19448b85563fdccfdf8eda5bcc7aa2adb910b",
+      "owner": "docs/ownership-transitions.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

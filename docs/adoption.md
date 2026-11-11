@@ -4,6 +4,10 @@ Status: **Implemented** bounded adoption/confirmation/conformance; the contribut
 
 Use [init/adopt](adopt.md) for safe discovery and skeleton writes, [observed mode](observed-mode.md) for derived code evidence, [bindings](bindings.md) for confirmation and [contracted mode](contracted-mode.md) for maintained implementation conformance.
 
+Use [verified ownership transitions](ownership-transitions.md) to transfer an
+explicit module or symbol between these owners, with behavioral verification,
+artifact custody and recoverable publication.
+
 The [public TypeScript scan](public-typescript-scan.md) qualifies its
 explicit standalone/workspace subset through the manifested CLI path.
 [Domain and client workspace](domain-client-workspace.md) demonstrates

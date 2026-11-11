@@ -509,6 +509,13 @@ pub fn apply(
         Err(error) => return error,
     };
     let result = (|| {
+        crate::ownership::legacy_paths_allowed(
+            root,
+            plan.restore
+                .iter()
+                .map(|row| row.path.as_str())
+                .chain(plan.delete.iter().map(|row| row.path.as_str())),
+        )?;
         history::assert_reconciled(root)?;
         // Destination compatibility is revalidated under the mutation
         // lock: a racer that moved the lock, the canonical Model, or the
@@ -788,6 +795,7 @@ pub fn resolve(
         Err(error) => return error,
     };
     let result = (|| -> Result<(), DomainResult> {
+        crate::ownership::legacy_paths_allowed(root, [path])?;
         history::assert_reconciled(root)?;
         // The pinned before-state is revalidated under the lock: the live
         // bytes must still be exactly the reviewed drifted bytes.

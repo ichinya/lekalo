@@ -182,6 +182,9 @@ pub fn apply(
     if plan.modules.len() != 1 || plan.targets.len() != 1 {
         return invalid("plan-scope");
     }
+    if let Err(error) = crate::ownership::legacy_mutation_allowed(root, &plan.modules[0]) {
+        return error;
+    }
     if !dry_run {
         if let Err(error) = require_confirmation(confirm, &plan.plan_digest) {
             return error;
@@ -328,6 +331,7 @@ pub fn apply(
     // before-state are revalidated now that this caller owns mutation, so
     // a racer that moved a pin between preflight and lock cannot win.
     let result = (|| -> Result<String, DomainResult> {
+        crate::ownership::legacy_mutation_allowed(root, &plan.modules[0])?;
         history::assert_reconciled(root)?;
         // The derived authority is revalidated as far as the live
         // filesystem allows without re-running the loader: the exact lock

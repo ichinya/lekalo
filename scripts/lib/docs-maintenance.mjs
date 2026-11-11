@@ -24,7 +24,7 @@ export function filesUnder(path) {
   });
 }
 export function binary() {
-  const result = join(ROOT, "target", "debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
+  const result = process.env.LEKALO_BIN ?? join(ROOT, "target", "debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
   assert.ok(existsSync(result), "binary-missing: cargo build -p lekalo-cli --locked");
   return result;
 }
@@ -44,6 +44,7 @@ export function discoverCommands(bin) {
   return rows.sort((a,b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 const commandOwners = {
+  ownership:"ownership-transitions",
   install:"agent-instructions",
   watch:"cli",
   explain:"explain",
@@ -65,6 +66,10 @@ export function commandOwner(command) {
   return `docs/${commandOwners[top]}.md`;
 }
 const families = {
+  "ownership-transition-request":"ownership-transitions", "ownership-transition-plan":"ownership-transitions",
+  "ownership-verification":"ownership-transitions", "ownership-transition-receipt":"ownership-transitions",
+  "ownership-state":"ownership-transitions", "ownership-journal":"ownership-transitions", "ownership-rollback-plan":"ownership-transitions",
+  "ownership-status":"ownership-transitions", "ownership-trace":"ownership-transitions",
   "context-result":"provider-contract",
   "watch-event":"cli", "watch-result":"cli",
   "managed-ownership":"managed-mode", "managed-coverage":"managed-mode", "managed-generation-plan":"managed-mode", "managed-generation-record":"managed-mode", "managed-transaction":"managed-mode", "managed-rollback-plan":"managed-mode", "managed-equivalence":"managed-mode",

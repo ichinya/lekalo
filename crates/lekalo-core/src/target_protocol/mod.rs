@@ -43,6 +43,7 @@ pub mod watch;
 pub mod wire;
 
 pub(crate) use native_host::NativeSandbox;
+pub use verification_host::run_confined_ownership_verification;
 pub use verification_host::run_confined_verification;
 
 use std::sync::atomic::AtomicBool;
