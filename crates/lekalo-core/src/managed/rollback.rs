@@ -51,6 +51,27 @@ fn refused(reason: &str) -> DomainResult {
     diagnostic::failure(ROLLBACK_REFUSED, &detail(reason))
 }
 
+/// A rollback publishes the destination's whole manifest, including paths
+/// outside its restore/delete lists. Its retained bytes must preserve every
+/// effective scoped claim as well as the legacy generation being restored.
+fn check_scoped_destination_manifest(
+    root: &std::path::Path,
+    plan: &RollbackPlan,
+) -> Result<(), DomainResult> {
+    let retained = super::custody::retained_manifest(root, &plan.destination_generation_digest)?;
+    if super::digest(&retained) != plan.manifest_digest {
+        return Err(refused("manifest"));
+    }
+    let manifest = crate::artifacts::ArtifactManifest::parse_canonical(&retained)
+        .map_err(|_| refused("manifest"))?;
+    crate::ownership::overlay_manifest(
+        root,
+        &mut std::collections::BTreeMap::new(),
+        manifest.artifacts(),
+    )
+    .map_err(|_| refused("scoped-ownership-manifest"))
+}
+
 fn drift(path: &str, reason: &str) -> DomainResult {
     diagnostic::failure(GENERATED_DRIFT, &[("path", path), ("reason", reason)])
 }
@@ -293,6 +314,7 @@ pub fn build(root: &std::path::Path, destination: &str) -> Result<RollbackPlan, 
         plan_digest: String::new(),
     };
     plan.plan_digest = plan_digest(&plan);
+    check_scoped_destination_manifest(root, &plan)?;
     Ok(plan)
 }
 
@@ -462,6 +484,9 @@ pub fn apply(
     if let Err(error) = check_dependency_closure(root, &destination_record, authority) {
         return error;
     }
+    if let Err(error) = check_scoped_destination_manifest(root, &plan) {
+        return error;
+    }
     // The baseline of every touched path is the committed current bytes:
     // restore and delete targets alike are revalidated before any plan
     // exists, so manual edits always require the exact resolve first.
@@ -534,6 +559,7 @@ pub fn apply(
         // (finding 13): a racer that deleted or edited the adapter entry
         // or a qualified binding after the preflight cannot win.
         check_dependency_closure(root, &destination_record, authority)?;
+        check_scoped_destination_manifest(root, &plan)?;
         staged(root, &plan, &bytes)
     })();
     drop(guard);

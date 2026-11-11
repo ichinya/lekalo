@@ -121,6 +121,65 @@ fn all_match(root: &Path, plan: &TransitionPlan, restored: bool) -> bool {
 }
 
 #[test]
+fn assignment_capacity_refuses_new_scope_but_allows_the_last_slot_and_replacement() {
+    for (count, replacement) in [
+        (MAX_FILES - 1, false),
+        (MAX_FILES, false),
+        (MAX_FILES, true),
+    ] {
+        let (root, prepared, host) = fixture();
+        let mut existing = OwnershipState {
+            assignments: (0..count)
+                .map(|index| Assignment {
+                    module: "archived".to_owned(),
+                    symbol: Some(format!("archived.scope_{index}")),
+                    mode: mg::Mode::Contracted,
+                    transition: mg::digest(b"retained scoped history"),
+                    artifacts: vec![],
+                })
+                .collect(),
+            ..OwnershipState::default()
+        };
+        if replacement {
+            // A canonical policy can declare an observed scope; replacing it
+            // consumes no additional assignment slot.
+            existing.assignments[count - 1] = Assignment {
+                module: "planner".to_owned(),
+                symbol: None,
+                mode: mg::Mode::Observed,
+                transition: mg::digest(b"observed policy"),
+                artifacts: vec![],
+            };
+        }
+        let before = bytes(&existing);
+        mg::fs::write_file(root.path(), STATE, &before).unwrap();
+        assert_eq!(state(root.path()).unwrap().assignments.len(), count);
+        let result = plan(root.path(), prepared.request);
+        if count == MAX_FILES && !replacement {
+            assert!(
+                result.is_err(),
+                "a 513th assignment must refuse during preparation"
+            );
+            assert_eq!(required(root.path(), STATE).unwrap(), before);
+            assert!(read(root.path(), PENDING).unwrap().is_none());
+            assert!(!root.path().join(format!("{HOME}/receipts")).exists());
+            assert_eq!(host.calls.get(), 0);
+        } else {
+            let accepted = result.unwrap();
+            apply(root.path(), &accepted, &accepted.plan_digest, &host).unwrap();
+            assert_eq!(state(root.path()).unwrap().assignments.len(), MAX_FILES);
+            rollback(
+                root.path(),
+                &accepted.plan_digest,
+                Some(&accepted.plan_digest),
+            )
+            .unwrap();
+            assert_eq!(required(root.path(), STATE).unwrap(), before);
+        }
+    }
+}
+
+#[test]
 fn every_publication_boundary_recovers_to_before_or_committed_after() {
     let mut cuts = 0;
     for boundary in 0..16 {

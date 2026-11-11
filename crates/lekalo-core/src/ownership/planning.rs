@@ -580,7 +580,12 @@ pub fn plan(root: &Path, request: Request) -> Outcome<TransitionPlan> {
     state
         .assignments
         .sort_by(|a, b| (&a.module, &a.symbol).cmp(&(&b.module, &b.symbol)));
-    edits.insert(STATE.to_owned(), Some(bytes(&state)));
+    // The edit is an opaque string in the plan schema; admit its resulting
+    // state through the reader's closed contract before publishing any plan.
+    // This also enforces the assignment count and bounded serialized size.
+    let state_bytes = bytes(&state);
+    decode::<OwnershipState>(&state_bytes)?;
+    edits.insert(STATE.to_owned(), Some(state_bytes));
     let mut file_edits = Vec::new();
     for (path, content) in edits {
         add(root, &mut paths, &path)?;
