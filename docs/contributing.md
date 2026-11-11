@@ -33,6 +33,23 @@ Cargo's [manifest options](https://doc.rust-lang.org/cargo/commands/cargo-build.
 
 [CI](../.github/workflows/ci.yml) owns the executable matrix and toolchain pins. A portable documentation run does not qualify native planner execution, MySQL persistence, macOS behavior or another adapter.
 
+Automatic branch checks run on pull requests and pushes to `main`. A push to a
+feature branch does not start a second copy of its PR checks. To check a branch
+before opening a PR, select the workflow and branch under **Actions → Run workflow**.
+The workflow must already be available on the default branch for manual dispatch.
+
+| Event | Workflows |
+| --- | --- |
+| Pull request opened, reopened or updated | CI, Audit, MCP Unit and Reference projects; Linux confinement when its path filters match |
+| Push to `main` | The same workflows, retaining Linux confinement's path filters |
+| Push of a `v*` tag | CI, Audit, MCP Unit and Linux confinement, including the CI release-version guard |
+| Manual dispatch | The selected workflow on the selected branch or tag |
+| Weekly schedule | Audit |
+
+Tag pushes do not use path filters. Reference projects has no automatic tag
+trigger; release asset builds use the separate Release binaries workflow.
+Fork PRs retain their GitHub-hosted runner routing and existing approval rules.
+
 For the Rust workspace:
 
 ```sh

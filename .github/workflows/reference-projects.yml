@@ -2,7 +2,8 @@ name: Reference projects
 on:
   pull_request:
   push:
-    branches: [main, 'feat/109-*']
+    branches: [main]
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
