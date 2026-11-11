@@ -1,0 +1,54 @@
+name: Reference projects
+on:
+  pull_request:
+  push:
+    branches: [main, 'feat/109-*']
+permissions:
+  contents: read
+concurrency:
+  group: reference-projects-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source-lock:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: node scripts/test-reference-projects.mjs --static
+  http-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      REFERENCE_TEST_FAULTS: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+      - name: Provision exact application dependencies before verification
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --prefix examples/planner-node
+          composer install --no-interaction --prefer-dist --no-scripts --working-dir examples/planner-laravel
+      - name: Start the isolated PostgreSQL and HTTP applications
+        run: docker compose -p lekalo-reference-109 -f examples/compose.yaml up -d --build
+      - name: Execute the same corpus on Node and Laravel, including actual concurrency and mutant refusal
+        run: node scripts/test-reference-projects.mjs
+      - name: Extract the read-only query module
+        run: docker compose -p lekalo-reference-109 -f examples/compose.yaml -f examples/extraction.compose.yaml up -d
+      - name: Re-run corpus and enforce read-only boundaries
+        run: node scripts/test-reference-projects.mjs --extraction
+      - name: Diagnostics
+        if: failure()
+        run: docker compose -p lekalo-reference-109 -f examples/compose.yaml -f examples/extraction.compose.yaml logs --no-color --tail 100
+      - name: Remove only this job's disposable runtime
+        if: always()
+        run: docker compose -p lekalo-reference-109 -f examples/compose.yaml -f examples/extraction.compose.yaml down --volumes --remove-orphans

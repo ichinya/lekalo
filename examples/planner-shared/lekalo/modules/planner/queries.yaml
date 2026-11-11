@@ -1,0 +1,57 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "derived_from": [
+        "PLANNER-REQ-002"
+      ],
+      "description": "Actor-owned unplanned tasks in stable task-id order",
+      "id": "planner.backlog_tasks",
+      "kind": "query",
+      "reads": [
+        "planner.task",
+        "planner.user_task_planning"
+      ],
+      "returns": {
+        "list": {
+          "ref": "planner.task_summary"
+        }
+      },
+      "version": 1
+    },
+    {
+      "derived_from": [
+        "PLANNER-REQ-002"
+      ],
+      "description": "The planning rows of earlier days, served at their original planned_for; a read never rewrites the stored date",
+      "id": "planner.carry_over",
+      "kind": "query",
+      "reads": [
+        "planner.user_task_planning"
+      ],
+      "returns": {
+        "list": {
+          "ref": "planner.planning_dto"
+        }
+      },
+      "version": 1
+    },
+    {
+      "derived_from": [
+        "PLANNER-REQ-002"
+      ],
+      "description": "The planning rows of the actor-local today; the date never shifts silently",
+      "id": "planner.today_planning",
+      "kind": "query",
+      "reads": [
+        "planner.user_task_planning"
+      ],
+      "returns": {
+        "list": {
+          "ref": "planner.planning_dto"
+        }
+      },
+      "version": 1
+    }
+  ]
+}

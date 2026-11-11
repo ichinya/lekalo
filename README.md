@@ -12,6 +12,7 @@ Status: **Implemented** within the profiles described in [feature status](docs/r
 | Create a project | [Minimal project](docs/project-layout.md#minimal-project) |
 | Add Lekalo to existing code | [Choose an adoption path](docs/adoption.md) |
 | Follow Laravel/Vue or TypeScript examples | [Tutorials](docs/README.md#tutorials) |
+| Run comparable Node/Laravel HTTP and PostgreSQL projects | [Executable reference projects](examples/README.md) |
 | Build, test or change Lekalo | [Contributor guide](docs/contributing.md) |
 | Look up a command or contract | [CLI index](docs/cli.md#command-index), [reference guide](docs/README.md#reference) |
 

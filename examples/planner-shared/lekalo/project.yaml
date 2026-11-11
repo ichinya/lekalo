@@ -1,0 +1,16 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "id": "planner",
+      "kind": "project",
+      "version": 1,
+      "description": "Synthetic portable planner HTTP reference, planner-reference-1",
+      "derived_from": [
+        "PLANNER-REQ-001",
+        "PLANNER-REQ-002",
+        "PLANNER-REQ-003"
+      ]
+    }
+  ]
+}

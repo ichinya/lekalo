@@ -30,6 +30,9 @@ adapters/php-laravel/adapter.php -whitespace
 # re-encode on checkout either. Appended; the rules above are predecessor
 # protections and stay verbatim.
 *.lock text eol=lf
+examples/**/*.sql text eol=lf
+examples/**/Dockerfile text eol=lf
+examples/**/.dockerignore text eol=lf
 tests/fixtures/managed/planner/lekalo.lock text eol=lf
 tests/fixtures/** text eol=lf
 # SQLite snapshots are binary exact-byte custody, never text-normalized.

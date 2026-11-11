@@ -14,4 +14,6 @@ Scripts here are maintained repository tools. Use [contributing](../docs/contrib
 
 Do not use fixture generators as a way to make failing gates pass. Keep committed schemas, goldens and manifests as reviewed inputs. Runtime output, logs, per-run reviews and temporary helper scripts belong under ignored `target/`, outside public fixture trees.
 
+The [reference-project quickstart](../examples/README.md) owns `test-reference-projects.mjs` (static pins or real HTTP/PostgreSQL), `test-reference-model.mjs` (production CLI and standalone exports), `test-reference-contract.mjs` (actual maintained reference bindings and drift refusals), `materialize-reference-project.mjs` (explicit new-directory export) and `update-reference-projects.mjs` (explicit reviewed source/adapter lock writer). Provision application dependencies and the isolated database before verification; verifiers never run the updater or installers.
+
 The four `reserve-030/031/032/040-regen.mjs` recipes were one-time migrations pinned to obsolete product binaries; they were removed from the current checkout. Their historical implementations remain in [Git history](https://github.com/ichinya/lekalo/tree/f1876ebca20a260b8a300d6bcde7bc8561977567/scripts). They are not a current release or suite-wide regeneration path.

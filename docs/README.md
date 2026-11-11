@@ -20,6 +20,7 @@ For the complete domain/client path, use the [MVP user workflow](mvp-workflow.md
 | Workflow | Working material |
 | --- | --- |
 | [Greenfield Laravel/Vue planner](tutorial-greenfield-planner.md) | Separate contracted and projection fixtures, generated client and maintained screen. |
+| [Executable reference projects](../examples/README.md) | Shared Node/Laravel HTTP/PostgreSQL scenarios, standalone exports, drift controls and query-module extraction. |
 | [Brownfield TypeScript/MySQL](tutorial-brownfield-typescript.md) | Synthetic Hono/Drizzle project; setup, HTTP checks, bounded adoption and database evidence. |
 | [Public Python observed scan](public-python-scan.md) | Offline static scan, explicit bindings and source-preserving change review. |
 | [Public FastAPI route evidence](public-fastapi-scan.md) | Opt-in static route/handler relations, router prefixes and source-bound uncertainty. |

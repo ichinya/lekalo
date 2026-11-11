@@ -1,0 +1,77 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "description": "The workspace tasks with no planning row yet",
+      "id": "planner.endpoint_backlog",
+      "invokes": "planner.backlog_tasks",
+      "kind": "endpoint",
+      "method": "GET",
+      "path": "/planning/backlog",
+      "version": 1
+    },
+    {
+      "description": "The planning rows of earlier days at their original dates",
+      "id": "planner.endpoint_carry_over",
+      "invokes": "planner.carry_over",
+      "kind": "endpoint",
+      "method": "GET",
+      "path": "/planning/carry-over",
+      "version": 1
+    },
+    {
+      "description": "Focus one task from a path id",
+      "id": "planner.endpoint_focus_task_by_id",
+      "invokes": "planner.focus_task",
+      "kind": "endpoint",
+      "method": "POST",
+      "path": "/tasks/{task_id}/focus",
+      "version": 1
+    },
+    {
+      "description": "Pause one planned task",
+      "id": "planner.endpoint_pause",
+      "invokes": "planner.pause_planning",
+      "kind": "endpoint",
+      "method": "POST",
+      "path": "/planning/{planning_id}/pause",
+      "version": 1
+    },
+    {
+      "description": "Plan one task into the actor's day",
+      "id": "planner.endpoint_plan",
+      "invokes": "planner.plan_task",
+      "kind": "endpoint",
+      "method": "POST",
+      "path": "/planning",
+      "version": 1
+    },
+    {
+      "description": "Reorder one planned day under the optimistic version",
+      "id": "planner.endpoint_reorder",
+      "invokes": "planner.reorder_planned",
+      "kind": "endpoint",
+      "method": "POST",
+      "path": "/planning/reorder",
+      "version": 1
+    },
+    {
+      "description": "The planning rows of the actor-local today",
+      "id": "planner.endpoint_today_planning",
+      "invokes": "planner.today_planning",
+      "kind": "endpoint",
+      "method": "GET",
+      "path": "/planning/today",
+      "version": 1
+    },
+    {
+      "description": "Remove one planned task from the plan",
+      "id": "planner.endpoint_unplan",
+      "invokes": "planner.unplan_task",
+      "kind": "endpoint",
+      "method": "DELETE",
+      "path": "/planning/{planning_id}",
+      "version": 1
+    }
+  ]
+}

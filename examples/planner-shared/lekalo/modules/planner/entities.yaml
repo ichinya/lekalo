@@ -1,0 +1,272 @@
+{
+  "schema_version": "0.2.16",
+  "definitions": [
+    {
+      "base": "date",
+      "description": "Calendar day a task is planned for; the actor-local date, never rewritten by reads",
+      "id": "planner.planning_date",
+      "kind": "scalar",
+      "version": 1,
+      "visibility": "project"
+    },
+    {
+      "base": "uuid",
+      "description": "Stable planning-row identifier",
+      "id": "planner.planning_id",
+      "kind": "scalar",
+      "version": 1,
+      "visibility": "project"
+    },
+    {
+      "base": "string",
+      "description": "Ordered planning-row ids of one planned day, joined by commas; the wire spelling of the reorder input",
+      "id": "planner.planning_order",
+      "kind": "scalar",
+      "version": 1,
+      "visibility": "project"
+    },
+    {
+      "base": "number",
+      "description": "One-based position of the task inside one planned day",
+      "id": "planner.position",
+      "kind": "scalar",
+      "version": 1,
+      "visibility": "project"
+    },
+    {
+      "base": "number",
+      "description": "Optimistic reorder version of one planned day; every reorder compares and swaps it inside the planning transaction",
+      "id": "planner.reorder_version",
+      "kind": "scalar",
+      "version": 1,
+      "visibility": "project"
+    },
+    {
+      "description": "A focusable task",
+      "fields": [
+        {
+          "name": "task_id",
+          "type": "planner.task_id",
+          "required": true
+        },
+        {
+          "name": "title",
+          "type": "planner.text",
+          "required": true
+        },
+        {
+          "name": "workspace_id",
+          "type": "planner.workspace_id",
+          "required": true
+        },
+        {
+          "name": "user_id",
+          "type": "planner.user_id",
+          "required": true
+        }
+      ],
+      "id": "planner.task",
+      "identity": [
+        "task_id"
+      ],
+      "kind": "entity",
+      "version": 1
+    },
+    {
+      "base": "uuid",
+      "description": "Stable task identifier",
+      "id": "planner.task_id",
+      "kind": "scalar",
+      "version": 1,
+      "visibility": "project"
+    },
+    {
+      "base": "string",
+      "description": "Human-readable text",
+      "id": "planner.text",
+      "kind": "scalar",
+      "version": 1
+    },
+    {
+      "base": "datetime",
+      "description": "UTC event timestamp",
+      "id": "planner.timestamp",
+      "kind": "scalar",
+      "version": 1,
+      "visibility": "project"
+    },
+    {
+      "base": "string",
+      "description": "Synthetic actor/workspace identifier",
+      "id": "planner.user_id",
+      "kind": "scalar",
+      "version": 1,
+      "visibility": "project"
+    },
+    {
+      "derived_from": [
+        "PLANNER-REQ-002"
+      ],
+      "description": "Actor/workspace-scoped planning row, unique for task and day; at most one active focus per actor",
+      "fields": [
+        {
+          "name": "planning_id",
+          "required": true,
+          "type": {
+            "ref": "planner.planning_id"
+          }
+        },
+        {
+          "name": "workspace_id",
+          "required": true,
+          "type": {
+            "ref": "planner.workspace_id"
+          }
+        },
+        {
+          "name": "user_id",
+          "required": true,
+          "type": {
+            "ref": "planner.user_id"
+          }
+        },
+        {
+          "name": "task_id",
+          "required": true,
+          "type": {
+            "ref": "planner.task_id"
+          }
+        },
+        {
+          "name": "planned_for",
+          "required": true,
+          "type": {
+            "ref": "planner.planning_date"
+          }
+        },
+        {
+          "name": "position",
+          "required": true,
+          "type": {
+            "ref": "planner.position"
+          }
+        },
+        {
+          "name": "paused_at",
+          "type": {
+            "optional": {
+              "ref": "planner.timestamp"
+            }
+          }
+        },
+        {
+          "name": "version",
+          "required": true,
+          "type": {
+            "ref": "planner.reorder_version"
+          }
+        },
+        {
+          "name": "focused",
+          "type": "planner.focus_flag",
+          "required": true
+        }
+      ],
+      "id": "planner.user_task_planning",
+      "identity": [
+        "planning_id"
+      ],
+      "kind": "entity",
+      "version": 1
+    },
+    {
+      "base": "string",
+      "description": "Synthetic actor/workspace identifier",
+      "id": "planner.workspace_id",
+      "kind": "scalar",
+      "version": 1,
+      "visibility": "project"
+    },
+    {
+      "id": "planner.focus_flag",
+      "kind": "scalar",
+      "version": 1,
+      "description": "Whether this planning row currently has focus",
+      "base": "boolean"
+    },
+    {
+      "id": "planner.planning_dto",
+      "kind": "value-object",
+      "version": 1,
+      "description": "HTTP planning projection; actor/workspace are implicit in the authenticated scope",
+      "fields": [
+        {
+          "name": "planning_id",
+          "required": true,
+          "type": {
+            "ref": "planner.planning_id"
+          }
+        },
+        {
+          "name": "task_id",
+          "required": true,
+          "type": {
+            "ref": "planner.task_id"
+          }
+        },
+        {
+          "name": "planned_for",
+          "required": true,
+          "type": {
+            "ref": "planner.planning_date"
+          }
+        },
+        {
+          "name": "position",
+          "required": true,
+          "type": {
+            "ref": "planner.position"
+          }
+        },
+        {
+          "name": "paused_at",
+          "type": {
+            "optional": {
+              "ref": "planner.timestamp"
+            }
+          }
+        },
+        {
+          "name": "version",
+          "required": true,
+          "type": {
+            "ref": "planner.reorder_version"
+          }
+        },
+        {
+          "name": "focused",
+          "type": "planner.focus_flag",
+          "required": true
+        }
+      ]
+    },
+    {
+      "id": "planner.task_summary",
+      "kind": "value-object",
+      "version": 1,
+      "description": "HTTP backlog projection of one actor-owned task",
+      "fields": [
+        {
+          "name": "task_id",
+          "type": "planner.task_id",
+          "required": true
+        },
+        {
+          "name": "title",
+          "type": "planner.text",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

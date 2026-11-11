@@ -1,0 +1,10 @@
+{
+  "revision": "planner-reference-1",
+  "clock": "2026-01-02T00:30:00Z",
+  "cases": [
+    "plan-and-unplan", "focus-and-pause", "today-and-carry-over", "timezone-boundary",
+    "tenant-and-owner-isolation", "authorization", "idempotent-replay", "idempotency-conflict",
+    "duplicate-planning", "reorder-and-stale-version", "plan-after-reorder", "reorder-must-be-a-permutation",
+    "invalid-input", "rollback-and-retry", "concurrent-focus", "concurrent-idempotency"
+  ]
+}
