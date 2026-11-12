@@ -17,7 +17,7 @@ unicode-normalization.workspace = true
 semver = "1.0.28"
 sha2 = "0.11"
 rusqlite.workspace = true
-jsonschema = { version = "0.60", default-features = false }
+jsonschema = { version = "0.61", default-features = false }
 tempfile.workspace = true
 
 [dev-dependencies]
