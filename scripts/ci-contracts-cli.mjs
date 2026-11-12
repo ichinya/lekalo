@@ -20,16 +20,21 @@ function plainFile(path) {
 
 // This artifact belongs only to the Linux/x64 Contracts producer and consumers.
 // SDK oracle and fresh-target builds must not use it.
-export function prepare({ binary, destination, sourceSha, platform = process.platform, arch = process.arch }) {
+export function prepare({ binary, destination, sourceSha, stripSymbols = false, platform = process.platform, arch = process.arch }) {
   requireSourceSha(sourceSha);
   if (platform !== 'linux' || arch !== 'x64') throw Error('Contracts CLI requires linux/x64');
   const bytes = plainFile(binary);
   if (bytes.length === 0) throw Error('Contracts CLI is empty');
-  const manifest = { schemaVersion: 1, sourceSha, binary: binaryName, sha256: digest(bytes), bytes: bytes.length, platform, arch };
   // Refuse an existing destination; never clean another job's files.
   mkdirSync(dirname(destination), { recursive: true });
   mkdirSync(destination);
-  writeFileSync(join(destination, binaryName), bytes, { flag: 'wx', mode: 0o755 });
+  const packagedBinary = join(destination, binaryName);
+  writeFileSync(packagedBinary, bytes, { flag: 'wx', mode: 0o755 });
+  // Strip only the artifact copy. Keep Cargo's output and fingerprints intact.
+  // A failed strip aborts preparation before a usable manifest is written.
+  if (stripSymbols) execFileSync('strip', ['--strip-unneeded', packagedBinary], { stdio: 'pipe' });
+  const packagedBytes = plainFile(packagedBinary);
+  const manifest = { schemaVersion: 1, sourceSha, binary: binaryName, sha256: digest(packagedBytes), bytes: packagedBytes.length, platform, arch };
   writeFileSync(join(destination, manifestName), `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' });
   return manifest;
 }
@@ -57,15 +62,16 @@ export function verify({ directory, sourceSha, platform = process.platform, arch
 
 function main() {
   const [mode, location, ...extra] = process.argv.slice(2);
-  if (!['prepare', 'verify'].includes(mode) || !location || extra.length) {
-    throw Error('Usage: node scripts/ci-contracts-cli.mjs prepare|verify <artifact-directory>');
+  const stripSymbols = mode === 'prepare' && extra.length === 1 && extra[0] === '--strip';
+  if (!['prepare', 'verify'].includes(mode) || !location || (extra.length && !stripSymbols)) {
+    throw Error('Usage: node scripts/ci-contracts-cli.mjs prepare <artifact-directory> [--strip] | verify <artifact-directory>');
   }
   const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   requireSourceSha(sourceSha);
   if (process.env.GITHUB_SHA && process.env.GITHUB_SHA !== sourceSha) throw Error('Checkout SHA differs from GITHUB_SHA');
   const directory = resolve(location);
   const manifest = mode === 'prepare'
-    ? prepare({ binary: resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', binaryName), destination: directory, sourceSha })
+    ? prepare({ binary: resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', binaryName), destination: directory, sourceSha, stripSymbols })
     : verify({ directory, sourceSha });
   console.log(`Contracts CLI ${mode}: ${manifest.sourceSha} sha256:${manifest.sha256}`);
 }

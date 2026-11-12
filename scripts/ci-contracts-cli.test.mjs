@@ -94,6 +94,49 @@ test('external Cargo target can package into a new checkout target directory', t
   assert.throws(() => prepare({ binary: f.binary, destination: join(f.root, 'empty'), ...f.options }), /empty/);
 });
 
+test('stripped Linux executable retains behavior and hashes the copy without changing Cargo output', {
+  skip: process.platform !== 'linux' || process.arch !== 'x64',
+}, t => {
+  const f = fixture(t);
+  const source = join(f.root, 'main.c');
+  writeFileSync(source, '#include <stdio.h>\nint main(void) { puts("contracts CLI fixture"); return 0; }\n');
+  execFileSync('cc', ['-g', source, '-o', f.binary]);
+  const original = readFileSync(f.binary);
+  const expected = execFileSync(f.binary, [], { encoding: 'utf8' });
+  const manifest = prepare({ binary: f.binary, destination: f.directory, ...f.options, stripSymbols: true });
+  const packagedBinary = join(f.directory, 'lekalo');
+  assert(manifest.bytes < original.length, 'fixture symbols should be removed');
+  assert.deepEqual(readFileSync(f.binary), original);
+  chmodSync(packagedBinary, 0o644);
+  assert.deepEqual(f.verify(), manifest);
+  assert.equal(execFileSync(packagedBinary, [], { encoding: 'utf8' }), expected);
+  writeFileSync(packagedBinary, 'tampered stripped executable');
+  assert.throws(() => f.verify(), /digest or size/);
+});
+
+test('failed stripping cannot publish a manifest or change the source', {
+  skip: process.platform !== 'linux' || process.arch !== 'x64',
+}, t => {
+  const f = fixture(t);
+  const original = readFileSync(f.binary);
+  assert.throws(() => prepare({ binary: f.binary, destination: f.directory, ...f.options, stripSymbols: true }));
+  assert.equal(existsSync(join(f.directory, 'contracts-cli.json')), false);
+  assert.deepEqual(readFileSync(f.binary), original);
+  assert.throws(() => f.verify(), /ENOENT/);
+});
+
+test('CLI accepts the strip option only once and only for preparation', t => {
+  const f = fixture(t);
+  const script = fileURLToPath(new URL('./ci-contracts-cli.mjs', import.meta.url));
+  for (const args of [['verify', f.directory, '--strip'], ['prepare', f.directory, '--strip', '--strip'],
+    ['prepare', f.directory, '--unknown']]) {
+    const result = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', cwd: f.root });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Usage:/);
+    assert.equal(existsSync(f.directory), false);
+  }
+});
+
 test('CLI refuses a workflow SHA different from the actual checkout before using an artifact', t => {
   const f = fixture(t);
   const script = fileURLToPath(new URL('./ci-contracts-cli.mjs', import.meta.url));

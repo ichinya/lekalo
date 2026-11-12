@@ -11,7 +11,7 @@ Scripts here are maintained repository tools. Use [contributing](../docs/contrib
 | Shared helpers | `lib/`, privacy helpers, [registry-union.mjs](registry-union.mjs), [model-fixture-manifest.mjs](model-fixture-manifest.mjs) and [requirements-trace-canonical.mjs](requirements-trace-canonical.mjs). |
 | Benchmarks and integrations | [bench-search.mjs](bench-search.mjs), [benchmark-ai-workspace-context.mjs](benchmark-ai-workspace-context.mjs), [ai-workspace-hook.mjs](ai-workspace-hook.mjs) and [pilot-brownfield-ts.mjs](pilot-brownfield-ts.mjs); use the owning reference's declared scope. |
 | Release tooling | [release.mjs](release.mjs), [release.test.mjs](release.test.mjs) and [release maintainer guide](../docs/releasing.md). |
-| CI artifact handoff | [ci-contracts-cli.mjs](ci-contracts-cli.mjs) packages and verifies the Contracts Linux CLI against the checkout SHA and content digest; [ci-contracts-cli.test.mjs](ci-contracts-cli.test.mjs) covers refused and matching artifacts. SDK oracles and release gates retain their own builds. |
+| CI artifact handoff | [ci-contracts-cli.mjs](ci-contracts-cli.mjs) packages and verifies the Contracts Linux CLI against the checkout SHA and content digest; `prepare <directory> --strip` removes unneeded symbols from the copy before hashing, leaving Cargo output intact. [ci-contracts-cli.test.mjs](ci-contracts-cli.test.mjs) covers refused and matching artifacts, including real Linux executables. SDK oracles and release gates retain their own builds. |
 
 Do not use fixture generators as a way to make failing gates pass. Keep committed schemas, goldens and manifests as reviewed inputs. Runtime output, logs, per-run reviews and temporary helper scripts belong under ignored `target/`, outside public fixture trees.
 
