@@ -7,7 +7,8 @@
 // explain documents must match the live binary byte-for-byte.
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { existsSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -35,7 +36,7 @@ const valid = (validator, value, name) => assert(validator(value), `${name}: ${J
 
 // ---------------------------------------------------------------------------
 // Gate mode: default runs everything; --schema-only skips the live-binary
-// and golden replay sections (the contracts CI job builds no binary).
+// and golden replay sections (the Contracts lane selects this mode).
 // ---------------------------------------------------------------------------
 const schemaOnly = process.argv.includes("--schema-only");
 const providerCatalogSchema = ajv.compile(read("contracts/explain-provider-catalog.schema.v0.8.0.json"));
@@ -135,24 +136,34 @@ for (const entry of own) assert.ok(catalogCodes.has(entry.code), `own family cod
 // ---------------------------------------------------------------------------
 const { execFileSync } = await import("node:child_process");
 const before = readFileSync(resolve(root, catalogPath));
+const beforeMtime = statSync(resolve(root, catalogPath), { bigint: true }).mtimeNs;
 execFileSync(process.execPath, [resolve(root, "scripts/gen-explain-catalog.mjs"), "--check"], { cwd: root, stdio: "pipe" });
 assert.equal(readFileSync(resolve(root, catalogPath)).equals(before), true, "generator --check mutated nothing");
 const drifted = structuredClone(catalog);
 drifted.entries[0].title = "drifted";
 const driftedBytes = Buffer.from(JSON.stringify(drifted, null, 2) + "\n");
-const scratch = resolve(root, "target/explain-catalog-drift-probe.json");
-const { writeFileSync, rmSync } = await import("node:fs");
-writeFileSync(resolve(root, catalogPath), driftedBytes);
-let checkFailed = false;
+// The catalog is a Rust include_bytes! input. Restoring its bytes after a
+// negative control still changes its mtime and invalidates Cargo's cache.
+// Exercise the real generator against a private copy of its complete inputs.
+const scratch = mkdtempSync(resolve(tmpdir(), "lekalo-explain-catalog-"));
 try {
-  execFileSync(process.execPath, [resolve(root, "scripts/gen-explain-catalog.mjs"), "--check"], { cwd: root, stdio: "pipe" });
-} catch {
-  checkFailed = true;
+  mkdirSync(resolve(scratch, "scripts"));
+  mkdirSync(resolve(scratch, "contracts"));
+  const generator = resolve(scratch, "scripts/gen-explain-catalog.mjs");
+  copyFileSync(resolve(root, "scripts/gen-explain-catalog.mjs"), generator);
+  copyFileSync(resolve(root, "contracts/diagnostic-registry.v0.8.0.json"), resolve(scratch, "contracts/diagnostic-registry.v0.8.0.json"));
+  const copiedCatalog = resolve(scratch, catalogPath);
+  writeFileSync(copiedCatalog, before);
+  execFileSync(process.execPath, [generator, "--check"], { cwd: scratch, stdio: "pipe" });
+  writeFileSync(copiedCatalog, driftedBytes);
+  const refused = spawnSync(process.execPath, [generator, "--check"], { cwd: scratch, encoding: "utf8", timeout: 30000 });
+  assert.equal(refused.status, 1, "generator --check must fail on catalog drift");
+  assert.equal(JSON.parse(refused.stderr).reason, "catalog-drift", "negative control must reach the drift check");
 } finally {
-  writeFileSync(resolve(root, catalogPath), before);
+  rmSync(scratch, { recursive: true, force: true });
 }
-assert.equal(checkFailed, true, "generator --check must fail on catalog drift");
-rmSync(scratch, { force: true });
+assert.equal(readFileSync(resolve(root, catalogPath)).equals(before), true, "drift probe leaves embedded catalog bytes unchanged");
+assert.equal(statSync(resolve(root, catalogPath), { bigint: true }).mtimeNs, beforeMtime, "drift probe must not invalidate the embedded catalog's Cargo fingerprint");
 
 // ---------------------------------------------------------------------------
 // 4. Live CLI behavior against the real binary (when present).
@@ -222,7 +233,6 @@ if (!schemaOnly && existsSync(binary)) {
   assert.equal(russian.status, 0);
   assert.equal(english.stdout, russian.stdout, "locale cannot change machine bytes");
   assert.match(run(["explain", "LEK-HIDDEN-009", "--locale", "ru"]).stdout, /Проверка:/);
-  const { mkdtempSync } = await import("node:fs");
   const stage = mkdtempSync(resolve(root, "target/explain-providers-"));
   try {
     const report = resolve(stage, "report.json");
