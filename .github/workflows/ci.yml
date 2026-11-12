@@ -135,7 +135,7 @@ jobs:
           node scripts/generate-adapter-sdk.mjs --check
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-adapter-sdk-contracts.mjs
       - name: Execute protocol semantic vectors through production Rust decoding
-        run: cargo test -p lekalo-core target_protocol_conformance --locked
+        run: cargo test -p lekalo-core --lib target_protocol_conformance --locked
       - name: Run contract checkers and suites
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
@@ -143,6 +143,7 @@ jobs:
           node scripts/check-contract-versions.mjs --base HEAD^
           node scripts/check-registry-union.mjs
           node scripts/test-contract-versions.mjs
+          node --test scripts/ci-rust-tests.test.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-workspace-hook.mjs
           node scripts/check-authority.mjs
           node scripts/test-authority-contracts.mjs
@@ -315,6 +316,15 @@ jobs:
         if: runner.os == 'Linux'
         run: /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/true
       - run: cargo build --workspace --locked
+      - name: Locate the built debug CLI for adapter conformance
+        run: |
+          node --input-type=module <<'NODE'
+          import { accessSync, appendFileSync, constants } from 'node:fs';
+          import { resolve, sep } from 'node:path';
+          const binary = resolve('target/debug', process.platform === 'win32' ? 'lekalo.exe' : 'lekalo').split(sep).join('/');
+          accessSync(binary, constants.X_OK);
+          appendFileSync(process.env.GITHUB_ENV, `LEKALO_DEBUG_BIN=${binary}\n`);
+          NODE
       - name: Run read-only watch native and poll probes (issue #95)
         id: watch
         timeout-minutes: 10
@@ -570,9 +580,6 @@ jobs:
           node scripts/test-format-cli.mjs
           node scripts/test-format-atomic.mjs
           node scripts/test-format-portability.mjs
-          node scripts/check-unix-compile.mjs
-          cargo test --locked -p lekalo-core --test format
-          cargo test --locked -p lekalo-cli --test format
       - name: Run the managed ownership, custody and planner gates (issue #41)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
@@ -646,7 +653,8 @@ jobs:
         # lekalo-target-sandbox-* dirs in the shared temp dir, which only
         # reports our own run when no sibling test holds one.
         run: cargo test -p lekalo-core --test target_protocol_security --locked -- --test-threads=1
-      - run: cargo test --workspace --locked --no-fail-fast
+      - name: Run the remaining Rust tests without repeating qualification
+        run: node scripts/ci-rust-tests.mjs
       - name: Run the golden fixture suite gates (issue #90)
         # The suite runs on every OS: byte-stable determinism lanes,
         # per-rule paired coverage with fresh execution receipts, the
@@ -835,7 +843,7 @@ jobs:
         run: |
           set -euo pipefail
           PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-scanner/protocol/generation.profile.json)
-          cargo run --locked -p lekalo-cli -- adapter test --profile default --report junit -- node adapters/node-typescript/adapter-zod.mjs --lekalo-project-profile-json "$PROFILE_JSON"
+          "$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node adapters/node-typescript/adapter-zod.mjs --lekalo-project-profile-json "$PROFILE_JSON"
       - name: Run the native gate suite (issue #48)
         run: node scripts/test-node-native-gates.mjs
       - name: Run the transport generator gate (issue #70)
@@ -914,24 +922,22 @@ jobs:
             ${{ runner.temp }}/lekalo-mvp-acceptance/
           if-no-files-found: ignore
           retention-days: 14
-      - name: Execute the native gate host suites (issue #48)
-        run: cargo test --locked -p lekalo-core --lib native_gate
       - name: Run the applicable conformance battery against the kernel adapter (bare)
-        run: cargo run --locked -p lekalo-cli -- adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs
+        run: '"$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs'
       - name: Run the conformance battery against the configured scanner adapter (issue #44)
         run: |
           set -euo pipefail
           PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-scanner/protocol/conformance.profile.json)
-          cargo run --locked -p lekalo-cli -- adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
-          cargo run --locked -p lekalo-cli -- adapter test --profile strict --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON" || test $? -eq 4
+          "$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
+          "$LEKALO_DEBUG_BIN" adapter test --profile strict --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON" || test $? -eq 4
       - name: Run the conformance battery against the transport-configured adapter (issue #70)
         run: |
           set -euo pipefail
           PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-transport/protocol/conformance.profile.json)
-          cargo run --locked -p lekalo-cli -- adapter test --profile default --report json -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
+          "$LEKALO_DEBUG_BIN" adapter test --profile default --report json -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
       - name: Run the target adapter conformance suite against the reference adapter
         timeout-minutes: 10
-        run: cargo run --locked -p lekalo-cli -- adapter test --profile strict --report junit --timeout-ms 60000 node tests/fixtures/target-protocol/fake-adapter.mjs --lekalo-adapter-variant fluent
+        run: '"$LEKALO_DEBUG_BIN" adapter test --profile strict --report junit --timeout-ms 60000 node tests/fixtures/target-protocol/fake-adapter.mjs --lekalo-adapter-variant fluent'
       - name: Run the adapter-SDK vector parity gate (issue #106)
         # Four provisioned runtimes (Node ships with the runner, Go/PHP
         # are provisioned above, Rust by the toolchain step) replay the

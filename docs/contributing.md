@@ -58,6 +58,30 @@ cargo test --workspace --locked
 
 Add `--offline` only after required dependencies are available. Record the source revision, failures, ignored tests and unavailable prerequisites. A process exiting successfully does not prove its skipped paths ran.
 
+CI runs the root Rust workspace as non-overlapping groups. The dedicated Unix
+confinement, Unix transport and adapter containment steps retain their existing
+platform conditions, serial execution and time limits. The remaining groups are
+selected by `scripts/ci-rust-tests.mjs` from Cargo metadata: CLI defaults, core
+unit tests, the other integration targets, doctests and examples. New integration
+targets are included automatically; unclassified workspace members, target kinds
+or conditional targets fail instead of silently losing coverage.
+
+Use `node scripts/ci-rust-tests.mjs --plan` to inspect group ownership and
+`node scripts/ci-rust-tests.mjs --check-coverage` to compare the complete
+workspace test listing with the combined groups, including qualification.
+The latter compiles test targets but only lists their cases. Running the script
+without an option executes only the remaining groups; it does not replace the
+three dedicated qualification steps. Local `cargo test --workspace --locked`
+still runs the complete default suite directly.
+
+Only failure diagnostics may repeat a root test group. The Unix transport
+test's child watchdog processes and tests of SDK packages extracted into fresh
+projects are intentional scenarios, not duplicate CI groups. Release-native
+gates continue to use the release CLI; direct debug-CLI conformance calls do not
+set a global `LEKALO_BIN`. The local Unix/WSL compile gate remains available as
+`node scripts/check-unix-compile.mjs`; CI already compiles those paths natively
+on its Linux/macOS legs.
+
 ## Documentation changes
 
 For prose and metadata validation without executing examples:
