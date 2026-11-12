@@ -14,10 +14,11 @@ runner/daemon pair has a separate four GiB RAM ceiling and up to two GiB of
 the host's existing swap (eight GiB swap maximum for the pool). Rust builds use
 one compiler job to keep Rust compilation within that ceiling. MemoryHigh equals
 MemoryMax so reclaim throttling cannot stall the runner listener below its hard
-budget. Dev/test builds retain line-table backtraces without full type debug
-information and disable incremental state to bound compiler memory. This does
-not disable debug assertions, overflow checks, tests or Clippy warnings. Release
-profiles and GitHub-hosted build-test jobs keep their existing settings. See the
+budget. The container defaults retain line-table debug information; CI overrides
+dev/test symbols to zero on every OS to reduce linking cost. Incremental state
+remains disabled on this pool to bound compiler memory. Debug assertions,
+overflow checks, tests and Clippy warnings remain enabled. Release profiles
+keep their existing settings. See the
 [Cargo profile documentation](https://doc.rust-lang.org/cargo/reference/profiles.html#debug).
 Each worker retains its own Actions tool cache and Cargo registry beneath
 `worker-NN/_work/.cache` across executor recreation. Node 24 is seeded into
@@ -27,6 +28,24 @@ The Mago installer may reuse an archive from the checksum-keyed tool cache;
 the committed SHA-256 is always verified before extraction and the real-toolchain
 gates always execute. Logs rotate at 10 MB with three files retained.
 `lekalo-ci-runtime.service` starts the pool after Docker on boot.
+
+The registry cache alone does not preserve compiled crates. Actions checkout
+cleans ignored workspace output, including a default `target/`, before each
+job. The Contracts Rust producer therefore sets its job-local `CARGO_TARGET_DIR`
+to `worker-NN/_work/.lekalo-contracts-target`, beneath the existing worker mount
+and outside the checkout. It is a sibling of the runner's writable `_temp`,
+so it does not require write access to the precreated registry/tool-cache parent.
+Each worker has its own directory; compiler
+jobs and incremental limits are unchanged. Cargo build and protocol conformance
+still execute and validate freshness every run. A toolchain or dependency
+change can rebuild it; a persistent target does not guarantee a sub-20-second
+build. SDK fresh-target builds and release builds do not use this directory.
+
+Only this producer compiles Contracts Rust code. The Node 18/24 matrix downloads
+its CLI artifact and verifies checkout SHA, size, digest and Linux/x64 runtime
+before executing it. Trusted producer and consumers use the same Ubuntu 24.04
+runner image; fork jobs all use the hosted Ubuntu image. No running worker or
+Compose configuration needs to be changed for this workflow-local target path.
 
 The pre-job hook restores the image's PHP CLI configuration before every job,
 so Mago's extension disabling cannot leak into later contract/pilot jobs.
