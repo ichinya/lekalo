@@ -82,6 +82,37 @@ set a global `LEKALO_BIN`. The local Unix/WSL compile gate remains available as
 `node scripts/check-unix-compile.mjs`; CI already compiles those paths natively
 on its Linux/macOS legs.
 
+CI disables dev/test debug symbols to avoid producing large PDBs for every
+Windows test executable. Debug assertions and integer overflow checks remain
+enabled explicitly; release settings are unaffected. Local builds keep their
+normal debugging information unless the same `CARGO_PROFILE_DEV_DEBUG=0` and
+`CARGO_PROFILE_TEST_DEBUG=0` environment settings are selected. The SDK vector
+gate logs its existing phase trace in CI so a long build or lifecycle probe is
+visible without changing its fresh-target builds, corpus or time limits.
+
+The release CLI and production native gates run in the independent
+`native-execution` job on the same three OS images. That lane provisions its
+own Node compiler, Ajv and Linux confinement prerequisites; it retains the
+same `native-acceptance-*` artifacts and cleanup. Ordinary debug-CLI gates no
+longer wait for the release build. All gate commands and budgets are retained;
+this split does not claim that the complete CI now meets a time target.
+
+Contracts builds the workspace CLI and runs Rust protocol conformance once in
+`contracts-rust`. Both Node 18 and Node 24 consumers receive that run's Linux/x64
+CLI artifact. Before executing probes, `scripts/ci-contracts-cli.mjs` checks
+the actual checkout SHA, runtime, binary size and SHA-256, then restores its
+executable permission. A missing or mismatched artifact fails the job; consumers
+do not fall back to a second Cargo build. This artifact is never used for SDK
+oracle builds or the release-native gates.
+
+On trusted self-hosted workers only, the producer keeps its Cargo target under
+the worker's persistent `_work/.lekalo-contracts-target` directory, outside
+the checkout cleaned by Actions. Cargo still checks freshness on every run;
+no source timestamps or compiler fingerprints are bypassed. Hosted fork jobs
+use their normal Rust cache and the same producer/consumer checks. See the
+[runner maintenance notes](../.github/runners/videos5/README.md) for resource
+limits and the distinction between dependency and build caches.
+
 ## Documentation changes
 
 For prose and metadata validation without executing examples:

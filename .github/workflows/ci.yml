@@ -10,6 +10,16 @@ on:
 permissions:
   contents: read
 
+# Full debug symbols make every Rust test executable expensive to link on
+# Windows. This changes symbol generation only; runtime checks stay enabled.
+env:
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  CARGO_PROFILE_DEV_DEBUG_ASSERTIONS: "true"
+  CARGO_PROFILE_TEST_DEBUG_ASSERTIONS: "true"
+  CARGO_PROFILE_DEV_OVERFLOW_CHECKS: "true"
+  CARGO_PROFILE_TEST_OVERFLOW_CHECKS: "true"
+
 # A superseded run of this suite is dead weight: cancel it everywhere
 # except main, where each push keeps a complete record.
 concurrency:
@@ -34,8 +44,47 @@ jobs:
           RELEASE_SOURCE_DIR: .
         run: node scripts/release.mjs check-version
 
+  contracts-rust:
+    name: Contracts Rust producer
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - name: Keep the trusted worker's Cargo target outside checkout cleanup
+        if: runner.environment == 'self-hosted'
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, mkdirSync } from 'node:fs';
+          import { resolve } from 'node:path';
+          const target = resolve(process.env.RUNNER_TEMP, '..', '.lekalo-contracts-target');
+          mkdirSync(target, { recursive: true });
+          appendFileSync(process.env.GITHUB_ENV, `CARGO_TARGET_DIR=${target}\n`);
+          NODE
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        if: runner.environment == 'github-hosted'
+        with:
+          shared-key: contracts-rust
+      - name: Build the checkout CLI for live contract probes
+        run: cargo build --workspace --locked
+      - name: Execute protocol semantic vectors through production Rust decoding
+        run: cargo test -p lekalo-core --lib target_protocol_conformance --locked
+      - name: Package the CLI with its checkout SHA and content digest
+        run: node scripts/ci-contracts-cli.mjs prepare target/contracts-cli
+      - name: Share the verified Contracts CLI
+        uses: actions/upload-artifact@v7
+        with:
+          name: contracts-cli
+          path: target/contracts-cli/
+          if-no-files-found: error
+          retention-days: 1
+
   contracts:
     name: Contracts (Node ${{ matrix.node-version }})
+    needs: contracts-rust
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
@@ -50,13 +99,13 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           package-manager-cache: false
-      - uses: dtolnay/rust-toolchain@stable
-      # The self-hosted worker keeps a warm target dir; cache only
-      # pays off on the disposable hosted fallback.
-      - uses: Swatinem/rust-cache@v2
-        if: runner.environment == 'github-hosted'
-      - name: Build the checkout CLI for live contract probes
-        run: cargo build --workspace --locked
+      - name: Receive the checkout CLI from the Rust producer
+        uses: actions/download-artifact@v8
+        with:
+          name: contracts-cli
+          path: target/debug
+      - name: Verify CLI provenance before any contract probe executes
+        run: node scripts/ci-contracts-cli.mjs verify target/debug
       - name: Provision exact Ajv 8.20.0 and the OpenAPI validator outside the checkout
         run: |
           set -euo pipefail
@@ -134,8 +183,6 @@ jobs:
           set -euo pipefail
           node scripts/generate-adapter-sdk.mjs --check
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-adapter-sdk-contracts.mjs
-      - name: Execute protocol semantic vectors through production Rust decoding
-        run: cargo test -p lekalo-core --lib target_protocol_conformance --locked
       - name: Run contract checkers and suites
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
@@ -144,6 +191,7 @@ jobs:
           node scripts/check-registry-union.mjs
           node scripts/test-contract-versions.mjs
           node --test scripts/ci-rust-tests.test.mjs
+          node --test scripts/ci-contracts-cli.test.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-workspace-hook.mjs
           node scripts/check-authority.mjs
           node scripts/test-authority-contracts.mjs
@@ -257,8 +305,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          # The job builds the debug workspace AND the release CLI:
-          # caching target cuts the largest compile bill in CI.
+          # The release/native lane has its own cache and runs in parallel.
+          # This job keeps the debug workspace and ordinary gate suites.
           shared-key: build-test
       - uses: actions/setup-node@v7
         with:
@@ -886,6 +934,119 @@ jobs:
         run: |
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-native-gate-contracts.mjs
+      - name: Run the applicable conformance battery against the kernel adapter (bare)
+        run: '"$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs'
+      - name: Run the conformance battery against the configured scanner adapter (issue #44)
+        run: |
+          set -euo pipefail
+          PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-scanner/protocol/conformance.profile.json)
+          "$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
+          "$LEKALO_DEBUG_BIN" adapter test --profile strict --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON" || test $? -eq 4
+      - name: Run the conformance battery against the transport-configured adapter (issue #70)
+        run: |
+          set -euo pipefail
+          PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-transport/protocol/conformance.profile.json)
+          "$LEKALO_DEBUG_BIN" adapter test --profile default --report json -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
+      - name: Run the target adapter conformance suite against the reference adapter
+        timeout-minutes: 10
+        run: '"$LEKALO_DEBUG_BIN" adapter test --profile strict --report junit --timeout-ms 60000 node tests/fixtures/target-protocol/fake-adapter.mjs --lekalo-adapter-variant fluent'
+      - name: Run the adapter-SDK vector parity gate (issue #106)
+        # Four provisioned runtimes (Node ships with the runner, Go/PHP
+        # are provisioned above, Rust by the toolchain step) replay the
+        # shared corpus; a missing runtime is a failed setup, not a skip.
+        # The lane also runs the real per-language lifecycle lanes, the
+        # file-transport exchange, and the full-corpus production oracle
+        # (issue #106 review r2 #8/#10).
+        timeout-minutes: 15
+        env:
+          LEKALO_SDK_VECTOR_TRACE: "1"
+        run: node scripts/test-adapter-sdk-vectors.mjs --language all
+      - name: Run the adapter-SDK Go unit smoke (issue #106 review r2 #17)
+        # The Go SDK ships its own smoke suite beside the vectors runner
+        # so `go test ./...` exercises the runtime directly.
+        run: go test ./...
+        working-directory: sdk/go
+      - name: Run the adapter-SDK conformance and package gates (issue #106)
+        # The host binary was built above in this job, so the confined
+        # strict battery, the feature-limited examples, and the packed
+        # release-candidate verification run on every OS.
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          node scripts/test-adapter-sdk-conformance.mjs --language all --profile strict --repeats 3 --timeout-ms 60000
+          node scripts/test-adapter-sdk-packages.mjs --verify
+      - name: Remove the CI-only AppArmor launcher prerequisite
+        if: always() && runner.os == 'Linux'
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          bash .github/ci/bwrap-apparmor.sh remove
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          if sudo grep -Eq '^lekalo-ci-bwrap(-child)? ' /sys/kernel/security/apparmor/profiles; then
+            exit 1
+          fi
+
+  native-execution:
+    name: Native execution (${{ matrix.os }})
+    # Independent of the debug CLI and the ordinary Rust/adapter suites.
+    # Build the real release CLI once here; no debug substitution.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-26.04, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: native-execution
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - name: Use physical temporary paths for synthetic project fixtures
+        run: |
+          node --input-type=module <<'NODE'
+          import {appendFileSync, realpathSync} from 'node:fs';
+          import {tmpdir} from 'node:os';
+          // The native Windows resolver also expands 8.3 names.
+          const root = realpathSync.native(tmpdir());
+          for (const name of ['TEMP', 'TMP', 'TMPDIR']) {
+            appendFileSync(process.env.GITHUB_ENV, `${name}=${root}\n`);
+          }
+          NODE
+      - name: Provision exact Ajv 8.20.0 outside the checkout (issues #32, #48)
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.20.0" --ignore-scripts --no-audit --no-fund --no-save ajv@8.20.0
+          export NODE_PATH="$RUNNER_TEMP/lekalo-ajv-8.20.0/node_modules"
+          test "$(node -p "require('ajv/package.json').version")" = "8.20.0"
+      - name: Provision the Linux process confinement backend
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap ripgrep
+      - name: Load the CI-only AppArmor launcher prerequisite
+        if: runner.os == 'Linux'
+        id: apparmor
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          bash .github/ci/bwrap-apparmor.sh load
+      - name: Verify the Linux namespace backend before adapter probes
+        if: runner.os == 'Linux'
+        run: /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/true
+      - name: Provision the vendored compiler bundle custody (issue #44)
+        run: |
+          set -euo pipefail
+          npm ci --prefix adapters/node-typescript --ignore-scripts --no-audit --no-fund
+          node adapters/node-typescript/provision-compiler.mjs
+          node adapters/node-typescript/build.mjs --check
       - name: Execute approved native plans through the release CLI (issue #151)
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
@@ -922,45 +1083,6 @@ jobs:
             ${{ runner.temp }}/lekalo-mvp-acceptance/
           if-no-files-found: ignore
           retention-days: 14
-      - name: Run the applicable conformance battery against the kernel adapter (bare)
-        run: '"$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs'
-      - name: Run the conformance battery against the configured scanner adapter (issue #44)
-        run: |
-          set -euo pipefail
-          PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-scanner/protocol/conformance.profile.json)
-          "$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
-          "$LEKALO_DEBUG_BIN" adapter test --profile strict --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON" || test $? -eq 4
-      - name: Run the conformance battery against the transport-configured adapter (issue #70)
-        run: |
-          set -euo pipefail
-          PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-transport/protocol/conformance.profile.json)
-          "$LEKALO_DEBUG_BIN" adapter test --profile default --report json -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
-      - name: Run the target adapter conformance suite against the reference adapter
-        timeout-minutes: 10
-        run: '"$LEKALO_DEBUG_BIN" adapter test --profile strict --report junit --timeout-ms 60000 node tests/fixtures/target-protocol/fake-adapter.mjs --lekalo-adapter-variant fluent'
-      - name: Run the adapter-SDK vector parity gate (issue #106)
-        # Four provisioned runtimes (Node ships with the runner, Go/PHP
-        # are provisioned above, Rust by the toolchain step) replay the
-        # shared corpus; a missing runtime is a failed setup, not a skip.
-        # The lane also runs the real per-language lifecycle lanes, the
-        # file-transport exchange, and the full-corpus production oracle
-        # (issue #106 review r2 #8/#10).
-        timeout-minutes: 15
-        run: node scripts/test-adapter-sdk-vectors.mjs --language all
-      - name: Run the adapter-SDK Go unit smoke (issue #106 review r2 #17)
-        # The Go SDK ships its own smoke suite beside the vectors runner
-        # so `go test ./...` exercises the runtime directly.
-        run: go test ./...
-        working-directory: sdk/go
-      - name: Run the adapter-SDK conformance and package gates (issue #106)
-        # The host binary was built above in this job, so the confined
-        # strict battery, the feature-limited examples, and the packed
-        # release-candidate verification run on every OS.
-        timeout-minutes: 20
-        run: |
-          set -euo pipefail
-          node scripts/test-adapter-sdk-conformance.mjs --language all --profile strict --repeats 3 --timeout-ms 60000
-          node scripts/test-adapter-sdk-packages.mjs --verify
       - name: Remove the CI-only AppArmor launcher prerequisite
         if: always() && runner.os == 'Linux'
         timeout-minutes: 1
