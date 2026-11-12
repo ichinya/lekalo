@@ -70,10 +70,10 @@ jobs:
           shared-key: contracts-rust
       - name: Build the checkout CLI for live contract probes
         run: cargo build --workspace --locked
-      - name: Execute protocol semantic vectors through production Rust decoding
-        run: cargo test -p lekalo-core --lib target_protocol_conformance --locked
+      # Protocol semantic vectors belong to core-lib in Build and test on all
+      # three OSes. Do not compile that full unit-test executable again here.
       - name: Package the CLI with its checkout SHA and content digest
-        run: node scripts/ci-contracts-cli.mjs prepare target/contracts-cli
+        run: node scripts/ci-contracts-cli.mjs prepare target/contracts-cli --strip
       - name: Share the verified Contracts CLI
         uses: actions/upload-artifact@v7
         with:

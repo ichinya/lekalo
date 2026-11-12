@@ -97,9 +97,14 @@ same `native-acceptance-*` artifacts and cleanup. Ordinary debug-CLI gates no
 longer wait for the release build. All gate commands and budgets are retained;
 this split does not claim that the complete CI now meets a time target.
 
-Contracts builds the workspace CLI and runs Rust protocol conformance once in
-`contracts-rust`. Both Node 18 and Node 24 consumers receive that run's Linux/x64
-CLI artifact. Before executing probes, `scripts/ci-contracts-cli.mjs` checks
+Contracts builds the workspace CLI once in `contracts-rust`. The four
+`target_protocol_conformance` unit tests run in the ordinary `core-lib` group
+on Linux, Windows and macOS; the producer does not compile that unit-test
+executable a second time. Both Node 18 and Node 24 consumers receive that run's
+Linux/x64 CLI artifact. Preparation uses `--strip` to remove unneeded symbols
+from the artifact copy only; Cargo's original executable is unchanged. The
+manifest records the copied executable after stripping. Before executing
+probes, `scripts/ci-contracts-cli.mjs` checks
 the actual checkout SHA, runtime, binary size and SHA-256, then restores its
 executable permission. A missing or mismatched artifact fails the job; consumers
 do not fall back to a second Cargo build. This artifact is never used for SDK

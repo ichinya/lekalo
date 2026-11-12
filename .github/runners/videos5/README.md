@@ -36,15 +36,19 @@ to `worker-NN/_work/.lekalo-contracts-target`, beneath the existing worker mount
 and outside the checkout. It is a sibling of the runner's writable `_temp`,
 so it does not require write access to the precreated registry/tool-cache parent.
 Each worker has its own directory; compiler
-jobs and incremental limits are unchanged. Cargo build and protocol conformance
-still execute and validate freshness every run. A toolchain or dependency
+jobs and incremental limits are unchanged. Cargo build still executes and
+validates freshness every run. Protocol conformance unit tests belong to the
+ordinary three-OS `core-lib` group, avoiding a duplicate unit-test build in the
+Contracts producer. A toolchain or dependency
 change can rebuild it; a persistent target does not guarantee a sub-20-second
 build. SDK fresh-target builds and release builds do not use this directory.
 
 Only this producer compiles Contracts Rust code. The Node 18/24 matrix downloads
 its CLI artifact and verifies checkout SHA, size, digest and Linux/x64 runtime
 before executing it. Trusted producer and consumers use the same Ubuntu 24.04
-runner image; fork jobs all use the hosted Ubuntu image. No running worker or
+runner image; fork jobs all use the hosted Ubuntu image. Preparation strips
+unneeded symbols from the artifact copy using the image's binutils, leaving
+Cargo output intact; the manifest hashes the final copy. No running worker or
 Compose configuration needs to be changed for this workflow-local target path.
 
 The pre-job hook restores the image's PHP CLI configuration before every job,
