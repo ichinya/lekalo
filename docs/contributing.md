@@ -110,6 +110,13 @@ executable permission. A missing or mismatched artifact fails the job; consumers
 do not fall back to a second Cargo build. This artifact is never used for SDK
 oracle builds or the release-native gates.
 
+On trusted self-hosted workers, the producer uses the stable toolchain already
+installed in the runner image, logs its Rust/Cargo versions and fails if it is
+missing. It does not update or auto-install a compiler during artifact creation.
+The ordinary three-OS build/test and Clippy jobs still select current stable;
+MSRV stays separate. Hosted producers, including fork PRs, retain their stable
+installer. Updating the trusted image remains the runner maintenance operation.
+
 On trusted self-hosted workers only, the producer keeps its Cargo target under
 the worker's persistent `_work/.lekalo-contracts-target` directory, outside
 the checkout cleaned by Actions. Cargo still checks freshness on every run;

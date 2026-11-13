@@ -2411,16 +2411,15 @@ impl FormatWrite {
         };
         match std::fs::symlink_metadata(dir_path.join(name)) {
             Ok(metadata) => {
-                if metadata.file_type().is_symlink() || !metadata.is_file() {
-                    return false;
-                }
+                let regular = !metadata.file_type().is_symlink() && metadata.is_file();
                 #[cfg(windows)]
                 {
-                    if reparse_point(&metadata) {
-                        return false;
-                    }
+                    regular && !reparse_point(&metadata)
                 }
-                true
+                #[cfg(not(windows))]
+                {
+                    regular
+                }
             }
             Err(_) => false,
         }

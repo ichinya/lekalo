@@ -43,6 +43,14 @@ Contracts producer. A toolchain or dependency
 change can rebuild it; a persistent target does not guarantee a sub-20-second
 build. SDK fresh-target builds and release builds do not use this directory.
 
+This producer selects the image's installed `stable` toolchain with
+`RUSTUP_TOOLCHAIN=stable` and `RUSTUP_AUTO_INSTALL=0`, prints Rust/Cargo versions
+and fails if that toolchain is absent. It does not download compiler updates
+on the artifact path. The image supplies stable and MSRV during its build;
+ordinary stable build/test and Clippy lanes still update normally. Hosted
+producers retain `dtolnay/rust-toolchain@stable`. No worker restart or image
+deployment is needed for this workflow change.
+
 Only this producer compiles Contracts Rust code. The Node 18/24 matrix downloads
 its CLI artifact and verifies checkout SHA, size, digest and Linux/x64 runtime
 before executing it. Trusted producer and consumers use the same Ubuntu 24.04
