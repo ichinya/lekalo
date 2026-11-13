@@ -31,7 +31,7 @@ test('Unix qualifications retain serial invocations; Windows owns its empty Unix
   }
   const groups = buildGroups(metadata(), 'win32');
   assert.deepEqual(groups.filter(g => g.delegated).map(g => g.id), ['containment']);
-  assert(!groups.find(g => g.id === 'core-lib').args.includes('--skip'));
+  assert(groups.find(g => g.id === 'core-lib').args.includes('--skip'));
   assert(groups.find(g => g.id === 'core-integration').args.includes('target_transport_unix'));
 });
 
@@ -90,19 +90,23 @@ test('spawn errors and signals produce a failure while later groups still execut
 });
 
 const casesFor = args => {
-  if (args.includes('--workspace')) return ['cli_case', 'core_case', 'unix_confined_case', 'format_case', 'security_case', 'transport_case', 'doc_case'];
+  const core = ['core_case', 'unix_confined_case', 'watch::targets::tests::startup_case'];
+  if (args.includes('--workspace')) return ['cli_case', ...core, 'format_case', 'security_case', 'transport_case', 'doc_case'];
   if (args.includes('lekalo-cli')) return ['cli_case'];
   if (args.includes('--doc')) return ['doc_case'];
-  if (args.includes('--lib')) return args.includes('--skip') ? ['core_case'] : ['unix_confined_case'];
-  if (args.includes('target_protocol_security')) return ['security_case'];
-  if (args.includes('target_transport_unix')) return ['transport_case'];
-  return ['format_case'];
+  if (args.includes('--lib')) {
+    const separator = args.indexOf('--');
+    const filter = args.slice(0, separator < 0 ? args.length : separator).find(a => ['unix_confined_', 'watch::targets::tests::'].includes(a));
+    const skipped = args.flatMap((a, i) => a === '--skip' ? [args[i + 1]] : []);
+    return core.filter(name => (!filter || name.includes(filter)) && !skipped.some(s => name.includes(s)));
+  }
+  return [['format', 'format_case'], ['target_protocol_security', 'security_case'], ['target_transport_unix', 'transport_case']].filter(([target]) => args.includes(target)).map(([, name]) => name);
 };
 const listing = transform => args => ({ status: 0, stdout: transform(casesFor(args), args).map(name => `${name}: test`).join('\n'), stderr: '' });
 
 test('coverage listing compares the complete multiset including delegated suites', () => {
   const result = checkCoverage(buildGroups(metadata(), 'linux'), listing(names => names));
-  assert.equal(result.cases, 7);
+  assert.equal(result.cases, 8);
   assert.equal(result.groups.length, 7);
   assert.deepEqual(listedCases('Running tests\r\nfixture: test\r\n0 tests, 0 benchmarks\r\n'), ['fixture: test']);
 });
@@ -117,4 +121,17 @@ test('coverage listing detects omissions, duplicate executions and empty qualifi
 
 test('a failed listing is not accepted as an empty successful suite', () => {
   assert.throws(() => checkCoverage(buildGroups(metadata(), 'linux'), () => ({ status: 101, stderr: 'compile failed' })), /test listing failed/);
+});
+
+test('Windows watch fixtures have bounded concurrency and complete nonoverlapping library coverage', () => {
+  const groups = buildGroups(metadata(), 'win32');
+  const watch = groups.find(g => g.id === 'windows-watch');
+  assert(watch.args.includes('--test-threads=2'));
+  assert(!watch.delegated);
+  assert.equal(groups.find(g => g.id === 'core-lib').args.at(-1), 'watch::targets::tests::');
+  assert.equal(checkCoverage(groups, listing(names => names)).cases, 8);
+  for (const transform of [
+    (names, args) => args.includes('watch::targets::tests::') && !args.includes('--skip') ? [] : names,
+    (names, args) => args.includes('--skip') ? [...names, 'watch::targets::tests::startup_case'] : names,
+  ]) assert.throws(() => checkCoverage(groups, listing(transform)), /inventory differs|Windows watch filter selects no tests/);
 });

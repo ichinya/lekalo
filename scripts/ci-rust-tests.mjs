@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const unix = platform => platform === 'linux' || platform === 'darwin';
 const testArgs = pkg => ['test', '--locked', '-p', pkg, '--no-fail-fast'];
+const windowsWatch = 'watch::targets::tests::';
 
 export function buildGroups(metadata, platform = process.platform) {
   assert(['linux', 'darwin', 'win32'].includes(platform), 'unsupported CI platform');
@@ -47,7 +48,14 @@ export function buildGroups(metadata, platform = process.platform) {
   if (unix(platform)) {
     add('unix-confinement', ['test', '-p', core.name, '--lib', 'unix_confined_', '--locked', '--', '--nocapture'], ['core/lib/unix_confined_'], true);
   }
-  add('core-lib', [...testArgs(core.name), '--lib', ...(unix(platform) ? ['--', '--skip', 'unix_confined_'] : [])], ['core/lib/rest']);
+  // These tests launch deadline-bound Node fixtures. Keep Windows process
+  // startup out of contention with the rest of the parallel library suite.
+  // Bound their own concurrency without serializing all deadline probes;
+  // preserve their real deadlines and run each case exactly once.
+  if (platform === 'win32') {
+    add('windows-watch', [...testArgs(core.name), '--lib', windowsWatch, '--', '--test-threads=2'], ['core/lib/watch-targets']);
+  }
+  add('core-lib', [...testArgs(core.name), '--lib', '--', '--skip', unix(platform) ? 'unix_confined_' : windowsWatch], ['core/lib/rest']);
   add('containment', ['test', '-p', core.name, '--test', 'target_protocol_security', '--locked', '--', '--test-threads=1'], ['core/test/target_protocol_security'], true);
   if (unix(platform)) {
     add('unix-transport', ['test', '-p', core.name, '--test', 'target_transport_unix', '--locked', '--', '--test-threads=1'], ['core/test/target_transport_unix'], true);
@@ -104,6 +112,8 @@ export function checkCoverage(groups, run = invoke) {
   const selected = groups.filter(g => g.args[0] === 'test').map(g => ({ group: g.id, cases: list(g.args) }));
   const qualification = selected.find(g => g.group === 'unix-confinement');
   if (qualification) assert(qualification.cases.length > 0, 'Unix qualification filter selects no tests');
+  const watch = selected.find(g => g.group === 'windows-watch');
+  if (watch) assert(watch.cases.length > 0, 'Windows watch filter selects no tests');
   const combined = selected.flatMap(g => g.cases).sort();
   assert.deepEqual(combined, baseline, 'test inventory differs: missing or repeated cases');
   return { cases: baseline.length, groups: selected.map(g => ({ group: g.group, cases: g.cases.length })) };
