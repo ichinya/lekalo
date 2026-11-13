@@ -2,6 +2,6 @@
   "name": "lekalo/reference-planner-laravel",
   "description": "Synthetic maintained Laravel planner reference application",
   "type": "project",
-  "require": { "php": ">=8.3", "laravel/framework": "13.33.0" },
+  "require": { "php": ">=8.3", "laravel/framework": "13.40.0" },
   "config": { "sort-packages": true, "platform": { "php": "8.3.35" } }
 }
