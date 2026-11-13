@@ -39,6 +39,7 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   assert(build<pack&&pack<upload);assert.equal(field(p.steps[pack].raw,'id',8),'package');assert.equal(field(p.steps[upload].raw,'id',8),'upload');
   assert.equal(field(p.steps[upload].raw,'name',10),`runtime-${profile}-${expr('inputs.os')}-${expr('github.run_attempt')}`);
   assert.equal(field(p.steps[upload].raw,'retention-days',10),'7');
+  assert.equal(field(p.steps[upload].raw,'compression-level',10),'6','Runtime binaries must be compressed');
   assert.equal(field(p.steps[upload].raw,'if-no-files-found',10),'error');
   assert(p.steps.every(s=>!s.condition));
  }

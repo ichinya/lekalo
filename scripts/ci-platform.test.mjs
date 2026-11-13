@@ -25,6 +25,7 @@ const mutations=[
  ['missing producer binary',s=>s.replace('          cargo build -p lekalo-core --example typescript-native-contract --locked\n','')],
  ['rerun name collision',s=>s.replace('runtime-debug-${{ inputs.os }}-${{ github.run_attempt }}','runtime-debug-${{ inputs.os }}')],
  ['shortened retention',s=>s.replace('retention-days: 7','retention-days: 1')],
+ ['uncompressed runtime uploads',s=>s.replace('compression-level: 6','compression-level: 0')],
  ['duplicate under another name',s=>s.replace('  rust:\n','  rust:\n').replace('      - name: Run the classification CLI e2e gate (issue #87)','      - name: Unexpected duplicate\n        run: node scripts/test-classification-cli.mjs\n      - name: Run the classification CLI e2e gate (issue #87)')],
 ];
 for(const [name,change] of mutations)test(`graph guard rejects ${name}`,()=>{const changed=change(callee);assert.notEqual(changed,callee,'Negative test must mutate its input');assert.throws(()=>checkPlatform({callee:changed}));});

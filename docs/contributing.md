@@ -80,6 +80,8 @@ contract example. The manifest binds the checkout SHA, workflow run, producer
 attempt, OS, architecture, runner label, hosted `ImageOS` family, profile,
 byte sizes and SHA-256 digests. A rolling label moving to another image family
 requires a new producer; patch updates within that family remain compatible.
+Runtime uploads use compression level 6 to reduce storage and repeated download
+traffic without changing the executable bytes or the seven-day rerun window.
 Consumers download by producer output artifact ID and validate every file
 before installing executables. A missing or unsuitable artifact fails the job;
 privacy, brownfield and SDK gates cannot hide it with a Cargo fallback in CI.

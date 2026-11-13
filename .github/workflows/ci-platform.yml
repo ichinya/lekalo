@@ -56,7 +56,7 @@ jobs:
           name: runtime-debug-${{ inputs.os }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/runtime-debug/
           if-no-files-found: error
-          compression-level: 0
+          compression-level: 6
           retention-days: 7
 
   build-release:
@@ -95,7 +95,7 @@ jobs:
           name: runtime-release-${{ inputs.os }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/runtime-release/
           if-no-files-found: error
-          compression-level: 0
+          compression-level: 6
           retention-days: 7
 
   cli-core:
