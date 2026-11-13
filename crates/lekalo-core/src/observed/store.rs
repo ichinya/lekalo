@@ -18,17 +18,15 @@ const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
 /// Whether the metadata carries a symlink/junction/reparse point: the
 /// shared rejection predicate of every confined writer and reader.
 pub(crate) fn is_link(metadata: &std::fs::Metadata) -> bool {
-    if metadata.file_type().is_symlink() {
-        return true;
-    }
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
-        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        metadata.file_type().is_symlink()
+            || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
     }
     #[cfg(unix)]
     {
-        false
+        metadata.file_type().is_symlink()
     }
 }
 

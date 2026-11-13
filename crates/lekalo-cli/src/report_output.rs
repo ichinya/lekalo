@@ -164,17 +164,15 @@ fn parent_chain_has_links(path: &Path) -> bool {
 /// reparse point (a junction, mount point, or symlink — all of which
 /// redirect resolution and are refused as destination ancestors).
 fn is_link_metadata(metadata: &std::fs::Metadata) -> bool {
-    if metadata.file_type().is_symlink() {
-        return true;
-    }
     #[cfg(windows)]
     {
         const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
         use std::os::windows::fs::MetadataExt;
-        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        metadata.file_type().is_symlink()
+            || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
     }
     #[cfg(not(windows))]
-    false
+    metadata.file_type().is_symlink()
 }
 
 /// The confined absolute spelling of one destination: the deepest

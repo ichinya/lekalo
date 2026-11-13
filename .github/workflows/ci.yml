@@ -47,6 +47,9 @@ jobs:
   contracts-rust:
     name: Contracts Rust producer
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
+    env:
+      RUSTUP_TOOLCHAIN: stable
+      RUSTUP_AUTO_INSTALL: "0"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -63,7 +66,13 @@ jobs:
           mkdirSync(target, { recursive: true });
           appendFileSync(process.env.GITHUB_ENV, `CARGO_TARGET_DIR=${target}\n`);
           NODE
+      - name: Verify the trusted image's installed stable toolchain
+        if: runner.environment == 'self-hosted'
+        run: |
+          rustup run stable rustc --version
+          rustup run stable cargo --version
       - uses: dtolnay/rust-toolchain@stable
+        if: runner.environment == 'github-hosted'
       - uses: Swatinem/rust-cache@v2
         if: runner.environment == 'github-hosted'
         with:
