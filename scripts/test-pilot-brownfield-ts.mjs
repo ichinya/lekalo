@@ -24,9 +24,9 @@ const fixture = join(repoRoot, "tests", "fixtures", "pilot", "brownfield-ts");
 const exe = process.platform === "win32" ? "lekalo.exe" : "lekalo";
 const binary = join(repoRoot, "target", "debug", exe);
 
-// Prefer building (the committed gate proves the build too); other
-// gates assume a prior CI build step, this one does not.
+// Local standalone runs can build a missing CLI. CI requires verified handoff.
 if (!existsSync(binary)) {
+  assert.notEqual(process.env.LEKALO_CI_RUNTIME, "required", "Verified CI runtime is missing; refusing Cargo fallback");
   const build = spawnSync("cargo", ["build", "-p", "lekalo-cli"], {
     cwd: repoRoot, encoding: "utf8", timeout: 900_000, stdio: "inherit",
   });

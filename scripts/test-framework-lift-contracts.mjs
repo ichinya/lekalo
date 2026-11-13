@@ -1,3 +1,4 @@
+import {assertRuntimeGate} from './lib/ci-workflow.mjs';
 // Live production gate for all five #100 closed families. Fixtures are simulations.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -61,7 +62,7 @@ try {
  // +8) joined at the same product generation, so the predecessor
  // projection excludes both families added after the baseline.
  assert.equal(registry.entries.length,514);assert.equal(predecessor.entries,500);assert.equal(digest(registry.entries.filter(e=>!e.id.startsWith('evaluation.')&&!e.id.startsWith('metrics-export.'))),predecessor.digest,'all predecessor entries unchanged');
- const ci=readFileSync(join(root,'.github/workflows/ci.yml'),'utf8');const build=ci.indexOf('cargo build --workspace --locked'),gate=ci.indexOf('node scripts/test-framework-lift-contracts.mjs');assert.ok(build>=0&&gate>build,'mandatory gate follows build');assert.match(ci.slice(gate-300,gate),/LEKALO_AJV_NODE_PATH/);
+ assertRuntimeGate('test-framework-lift-contracts.mjs',{ajv:true});
  const original=readFileSync(join(root,'tests/fixtures/framework-lift-baseline/workspace/application.txt'));
  const workspace=join(scratch,'workspace');cpSync(join(root,'tests/fixtures/framework-lift-baseline/workspace'),workspace,{recursive:true});
  run(['preflight',...common,'--workspace',workspace]);writeFileSync(join(workspace,'application.txt'),'drift');run(['preflight',...common,'--workspace',workspace],{exit:1,code:'evaluation.baseline-drift'});writeFileSync(join(workspace,'application.txt'),original);

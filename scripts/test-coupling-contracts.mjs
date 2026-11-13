@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {assertRuntimeGate} from './lib/ci-workflow.mjs';
 // Issue #77: mandatory production producer, five closed families, pinned Ajv.
 // Read-only against the checkout. Every mutation below is a temporary probe.
 import assert from 'node:assert/strict';
@@ -49,8 +50,7 @@ try {
  const entries=registry.entries.filter(e=>e.id.startsWith('coupling.'));assert.equal(entries.length,15);
  assert.deepEqual(entries.map(e=>e.code).sort(),Array.from({length:15},(_,i)=>`LEK-COUPLING-${String(i+1).padStart(3,'0')}`));
  assert.ok(read('tests/fixtures/fixture-provenance.json').families.some(f=>f.family==='coupling'&&f.origin==='synthetic'));
- const ci=readFileSync(join(root,'.github/workflows/ci.yml'),'utf8');const build=ci.indexOf('cargo build --workspace --locked'),gate=ci.indexOf('node scripts/test-coupling-contracts.mjs');
- assert.ok(build>=0&&gate>build,'gate must follow build');assert.match(ci.slice(gate-300,gate),/LEKALO_AJV_NODE_PATH/);
+ assertRuntimeGate('test-coupling-contracts.mjs',{ajv:true});
  const golden={report:'planner.report.json',profile:'advisory.profile.json',comparison:'planner.comparison.json',evidence:'planner.evidence.json','change-input':'planner.change-input.json'};
  for(const [family,path]of Object.entries(golden)){validates(family,read(`${fixture}/golden/${path}`));checked.push(`golden-${family}`);}
  for(const name of ['planner.evidence-report.json','taskhub.report.json','provider.report.json'])validates('report',read(`${fixture}/golden/${name}`));

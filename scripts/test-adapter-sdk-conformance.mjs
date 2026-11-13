@@ -82,9 +82,10 @@ const runBattery = (adapterArgs, profile_, repeats_, timeout_) => {
 const checkStatePattern = (report) =>
   Object.fromEntries(report.checks.map((check) => [check.id, check.state]));
 
-// 1. The host CLI and template build artifacts must exist (built in this
-// job before the wrappers invoke them — never downloaded).
+// 1. CI receives the verified host CLI. Local standalone runs may build it.
+// Template builds below stay local, including fresh package/oracle checks.
 if (!existsSync(CLI)) {
+  if (process.env.LEKALO_CI_RUNTIME === "required") fail("cli-missing", "Verified CI runtime is missing; refusing Cargo fallback");
   const build = run("cargo", ["build", "--locked", "-p", "lekalo-cli"]);
   if (build.status !== 0) fail("cli-missing", `build the host CLI first: ${(build.stderr ?? "").slice(-400)}`);
 }

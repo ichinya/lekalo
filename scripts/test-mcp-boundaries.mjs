@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {assertRuntimeGate,assertContractsGate} from './lib/ci-workflow.mjs';
 // Issue #33 boundary gate: source-level dependency and read-only checks
 // that keep the MCP surface pure and the ordinary CLI independent. The
 // transport module must stay network-free, write-free, and adapter-free;
@@ -181,10 +182,9 @@ const contractFiles = readdirSync(join(root, "contracts")).filter(
   (name) => name.startsWith("mcp") && name.endsWith(".v0.8.0.json"),
 );
 check(contractFiles.length === 18, "contract-family-size", contractFiles.length);
-const ci = read(".github/workflows/ci.yml");
-check(ci.includes("test-mcp-contracts.mjs"), "ci-schema-gate");
-check(ci.includes("test-mcp-stdio.mjs"), "ci-stdio-gate");
-check(ci.includes("test-mcp-boundaries.mjs"), "ci-boundary-gate");
+assertContractsGate("test-mcp-contracts.mjs");
+assertRuntimeGate("test-mcp-stdio.mjs", {ajv: true});
+assertContractsGate("test-mcp-boundaries.mjs");
 
 // ---- The docs and the extension example exist. -----------------------------
 
