@@ -124,6 +124,13 @@ unit tests, the other integration targets, doctests and examples. New integratio
 targets are included automatically; unclassified workspace members, target kinds
 or conditional targets fail instead of silently losing coverage.
 
+On Windows, the `windows-watch` group runs `watch::targets::tests::` with at most
+two test threads;
+the parallel core unit group excludes that same prefix. These Node fixture
+tests keep their existing deadlines and assertions, without competing with
+unrelated unit tests for process startup. Coverage listing rejects an empty
+watch group and proves that the split neither omits nor repeats cases.
+
 Use `node scripts/ci-rust-tests.mjs --plan` to inspect group ownership and
 `node scripts/ci-rust-tests.mjs --check-coverage` to compare the complete
 workspace test listing with the combined groups, including qualification.
