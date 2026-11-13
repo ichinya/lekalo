@@ -206,7 +206,7 @@ jobs:
           rg --version
       - name: "Check platform CI ownership and artifact guards"
         run: |
-          node --test scripts/ci-runtime-artifacts.test.mjs scripts/ci-platform.test.mjs scripts/ci-rust-tests.test.mjs scripts/ci-contracts-cli.test.mjs
+          node --test scripts/ci-runtime-artifacts.test.mjs scripts/ci-platform.test.mjs scripts/ci-rust-tests.test.mjs scripts/ci-contracts-cli.test.mjs scripts/privacy-runtime-helpers.test.mjs
           node scripts/check-ci-platform.mjs
       - name: Reject provenance pipe stalls and unsafe Git custody
         timeout-minutes: 3
@@ -1071,7 +1071,41 @@ jobs:
         # reports our own run when no sibling test holds one.
         run: cargo test -p lekalo-core --test target_protocol_security --locked -- --test-threads=1
       - name: Run the remaining Rust tests without repeating qualification
-        run: node scripts/ci-rust-tests.mjs
+        run: node scripts/ci-rust-tests.mjs --lane=core
+      - *ci-setup-104
+
+  rust-process:
+    name: "rust-process"
+    runs-on: ${{ inputs.os }}
+    env:
+      RUNTIME_IMAGE: ${{ inputs.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - *ci-setup-7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-platform-rust-process
+      - *ci-setup-6
+      - *ci-setup-90
+      - *ci-setup-8
+      - *ci-setup-9
+      - *ci-setup-10
+      - *ci-setup-11
+      - *ci-setup-26
+      - *ci-setup-46
+      - *ci-setup-35
+      - *ci-setup-36
+      - run: cargo build --workspace --locked
+      - name: Run CLI and Windows process fixtures independently
+        run: node scripts/ci-rust-tests.mjs --lane=process
       - *ci-setup-104
 
   native-execution:

@@ -6,9 +6,14 @@ import {root,assertRuntimeGate,assertContractsGate,platformGraph,expandSetupStep
 import {checkPlatform} from './check-ci-platform.mjs';
 const caller=readFileSync(join(root,'.github/workflows/ci.yml'),'utf8').replaceAll('\r\n','\n');
 const callee=readFileSync(join(root,'.github/workflows/ci-platform.yml'),'utf8').replaceAll('\r\n','\n');
-test('all 91 original gates have one owner with preserved semantics',()=>assert.deepEqual(checkPlatform(),{ok:true,gates:91,platforms:3,jobsPerPlatform:11}));
+test('all 91 original gates have one owner with preserved semantics',()=>assert.deepEqual(checkPlatform(),{ok:true,gates:91,platforms:3,jobsPerPlatform:12}));
 const mutations=[
  ['Rust barrier',s=>s.replace('  rust:\n','  rust:\n    needs: build-debug\n')],
+ ['process Rust barrier',s=>s.replace('  rust-process:\n','  rust-process:\n    needs: build-debug\n')],
+ ['optional process Rust',s=>s.replace('  rust-process:\n','  rust-process:\n    if: false\n')],
+ ['core Rust repeats all groups',s=>s.replace('--lane=core','--lane=all')],
+ ['process Rust repeats core groups',s=>s.replace('--lane=process','--lane=core')],
+ ['conditional process group',s=>s.replace('      - name: Run CLI and Windows process fixtures independently','      - name: Run CLI and Windows process fixtures independently\n        if: false')],
  ['release barrier',s=>s.replace('    needs: build-debug','    needs: [build-debug, build-release]')],
  ['cross-OS runner',s=>s.replace('runs-on: ${{ inputs.os }}','runs-on: ubuntu-24.04')],
  ['current consumer attempt',s=>s.replace('RUNTIME_PRODUCER_ATTEMPT: ${{ needs.build-debug.outputs.producer-attempt }}','RUNTIME_PRODUCER_ATTEMPT: ${{ github.run_attempt }}')],
@@ -34,6 +39,7 @@ test('caller cannot change event/fork policy or remove an OS',()=>{
  assert.throws(()=>checkPlatform({caller:caller.replace('pull_request:', 'pull_request_target:')}));
 });
 test('live structural guards resolve the called workflow and pinned handoff',()=>{
+ for(const script of ['test-privacy-evaluator-parity.mjs','test-privacy-runtime-cli.mjs','test-privacy-leak-corpus.mjs'])assertRuntimeGate(script);
  assertContractsGate('test-mcp-contracts.mjs');assertContractsGate('test-mcp-boundaries.mjs');
  for(const script of ['test-coupling-contracts.mjs','test-framework-lift-contracts.mjs','test-ai-lint-report-contracts.mjs','test-waivers-contracts.mjs','test-mcp-stdio.mjs'])assertRuntimeGate(script,{ajv:true});
  const graph=platformGraph();graph['cli-core'].steps.find(s=>s.run?.includes('ci-runtime-artifacts.mjs verify')).condition='false';

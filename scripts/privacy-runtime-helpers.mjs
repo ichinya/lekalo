@@ -11,7 +11,8 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 
 export function findLekaloBinary() {
   const binaryName = process.platform === "win32" ? "lekalo.exe" : "lekalo";
-  for (const profile of ["debug", "release"]) {
+  const profiles = process.env.LEKALO_CI_RUNTIME === "required" ? ["debug"] : ["debug", "release"];
+  for (const profile of profiles) {
     const candidate = join(root, "target", profile, binaryName);
     if (existsSync(candidate)) return candidate;
   }
@@ -19,6 +20,11 @@ export function findLekaloBinary() {
 }
 
 export function buildLekaloBinary() {
+  if (process.env.LEKALO_CI_RUNTIME === "required") {
+    const binary = findLekaloBinary();
+    assert(binary, "Verified CI runtime is missing; refusing Cargo fallback");
+    return binary;
+  }
   const build = spawnSync("cargo", ["build", "-p", "lekalo-cli", "--locked"], {
     cwd: root,
     encoding: "utf8",

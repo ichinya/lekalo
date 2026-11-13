@@ -54,13 +54,15 @@ export function buildGroups(metadata, platform = process.platform) {
   // preserve their real deadlines and run each case exactly once.
   if (platform === 'win32') {
     add('windows-watch', [...testArgs(core.name), '--lib', windowsWatch, '--', '--test-threads=2'], ['core/lib/watch-targets']);
+    assert(integration.some(t => t.name === 'target_protocol_boundaries'), 'missing Windows boundary target');
+    add('windows-boundaries', [...testArgs(core.name), '--test', 'target_protocol_boundaries', '--', '--test-threads=2'], ['core/test/target_protocol_boundaries']);
   }
   add('core-lib', [...testArgs(core.name), '--lib', '--', '--skip', unix(platform) ? 'unix_confined_' : windowsWatch], ['core/lib/rest']);
   add('containment', ['test', '-p', core.name, '--test', 'target_protocol_security', '--locked', '--', '--test-threads=1'], ['core/test/target_protocol_security'], true);
   if (unix(platform)) {
     add('unix-transport', ['test', '-p', core.name, '--test', 'target_transport_unix', '--locked', '--', '--test-threads=1'], ['core/test/target_transport_unix'], true);
   }
-  const ownedTests = integration.filter(t => t.name !== 'target_protocol_security' && (!unix(platform) || t.name !== 'target_transport_unix')).sort((a, b) => a.name.localeCompare(b.name));
+  const ownedTests = integration.filter(t => t.name !== 'target_protocol_security' && (!unix(platform) || t.name !== 'target_transport_unix') && (platform !== 'win32' || t.name !== 'target_protocol_boundaries')).sort((a, b) => a.name.localeCompare(b.name));
   if (ownedTests.length) {
     add('core-integration', [...testArgs(core.name), ...ownedTests.flatMap(t => ['--test', t.name])], ownedTests.map(t => `core/test/${t.name}`));
   }
@@ -76,6 +78,32 @@ export function buildGroups(metadata, platform = process.platform) {
   assert.equal(new Set(targetKeys).size, targetKeys.length, 'overlapping target ownership');
   assert.equal(groups.flatMap(g => g.targets).filter(t => t.startsWith('core/test/')).length, integration.length, 'uncovered core integration target');
   return groups;
+}
+
+// Both independent jobs use this partition. Qualification stays delegated to
+// the core lane; process fixtures run sequentially on their own runner.
+export function selectGroups(groups, lane = 'all') {
+  assert(['all', 'core', 'process'].includes(lane), 'unknown Rust lane');
+  if (lane === 'all') return groups;
+  const processGroups = new Set(['cli', 'windows-watch', 'windows-boundaries']);
+  const selected = groups.filter(g => processGroups.has(g.id) === (lane === 'process'));
+  assert(selected.length > 0, `empty Rust lane: ${lane}`);
+  return selected;
+}
+
+export function parseOptions(argv) {
+  let mode, lane;
+  for (const arg of argv) {
+    if (['--plan', '--check-coverage'].includes(arg)) {
+      assert(!mode, 'duplicate Rust mode');
+      mode = arg;
+    } else {
+      assert(/^--lane=(all|core|process)$/.test(arg) && !lane, 'usage: ci-rust-tests.mjs [--plan|--check-coverage] [--lane=all|core|process]');
+      lane = arg.slice('--lane='.length);
+    }
+  }
+  assert(mode !== '--check-coverage' || !lane || lane === 'all', 'coverage must include all Rust lanes');
+  return { mode, lane: lane ?? 'all' };
 }
 
 function invoke(args, capture = false) {
@@ -114,21 +142,23 @@ export function checkCoverage(groups, run = invoke) {
   if (qualification) assert(qualification.cases.length > 0, 'Unix qualification filter selects no tests');
   const watch = selected.find(g => g.group === 'windows-watch');
   if (watch) assert(watch.cases.length > 0, 'Windows watch filter selects no tests');
+  const boundaries = selected.find(g => g.group === 'windows-boundaries');
+  if (boundaries) assert(boundaries.cases.length > 0, 'Windows boundary filter selects no tests');
   const combined = selected.flatMap(g => g.cases).sort();
   assert.deepEqual(combined, baseline, 'test inventory differs: missing or repeated cases');
   return { cases: baseline.length, groups: selected.map(g => ({ group: g.group, cases: g.cases.length })) };
 }
 
 export function main(argv = process.argv.slice(2)) {
-  assert(argv.length <= 1 && argv.every(a => ['--plan', '--check-coverage'].includes(a)), 'usage: node scripts/ci-rust-tests.mjs [--plan|--check-coverage]');
+  const { mode, lane } = parseOptions(argv);
   const result = invoke(['metadata', '--locked', '--no-deps', '--format-version', '1'], true);
   assert(!result.error && result.status === 0, `cargo metadata failed: ${result.stderr ?? result.error ?? ''}`);
-  const groups = buildGroups(JSON.parse(result.stdout));
-  if (argv[0] === '--plan') {
-    console.log(JSON.stringify({ platform: process.platform, groups }, null, 2));
+  const groups = selectGroups(buildGroups(JSON.parse(result.stdout)), lane);
+  if (mode === '--plan') {
+    console.log(JSON.stringify({ platform: process.platform, lane, groups }, null, 2));
     return 0;
   }
-  if (argv[0] === '--check-coverage') {
+  if (mode === '--check-coverage') {
     console.log(JSON.stringify({ ok: true, ...checkCoverage(groups) }));
     return 0;
   }

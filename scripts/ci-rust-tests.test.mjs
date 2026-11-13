@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildGroups, checkCoverage, listedCases, runGroups } from './ci-rust-tests.mjs';
+import { buildGroups, checkCoverage, listedCases, parseOptions, runGroups, selectGroups } from './ci-rust-tests.mjs';
 
 const target = (name, kind, options = {}) => ({ name, kind: [kind], test: kind !== 'example', doctest: kind === 'lib', ...options });
 const metadata = () => ({
   workspace_members: ['core', 'cli'],
   packages: [
-    { id: 'core', name: 'lekalo-core', targets: [target('lekalo_core', 'lib'), target('format', 'test'), target('target_protocol_security', 'test'), target('target_transport_unix', 'test'), target('generate', 'example')] },
+    { id: 'core', name: 'lekalo-core', targets: [target('lekalo_core', 'lib'), target('format', 'test'), target('target_protocol_security', 'test'), target('target_transport_unix', 'test'), target('target_protocol_boundaries', 'test'), target('generate', 'example')] },
     { id: 'cli', name: 'lekalo-cli', targets: [target('lekalo', 'bin'), target('adapter-sdk-oracle', 'bin'), target('format', 'test')] },
   ],
 });
@@ -91,7 +91,7 @@ test('spawn errors and signals produce a failure while later groups still execut
 
 const casesFor = args => {
   const core = ['core_case', 'unix_confined_case', 'watch::targets::tests::startup_case'];
-  if (args.includes('--workspace')) return ['cli_case', ...core, 'format_case', 'security_case', 'transport_case', 'doc_case'];
+  if (args.includes('--workspace')) return ['cli_case', ...core, 'format_case', 'security_case', 'transport_case', 'boundary_case', 'doc_case'];
   if (args.includes('lekalo-cli')) return ['cli_case'];
   if (args.includes('--doc')) return ['doc_case'];
   if (args.includes('--lib')) {
@@ -100,13 +100,13 @@ const casesFor = args => {
     const skipped = args.flatMap((a, i) => a === '--skip' ? [args[i + 1]] : []);
     return core.filter(name => (!filter || name.includes(filter)) && !skipped.some(s => name.includes(s)));
   }
-  return [['format', 'format_case'], ['target_protocol_security', 'security_case'], ['target_transport_unix', 'transport_case']].filter(([target]) => args.includes(target)).map(([, name]) => name);
+  return [['format', 'format_case'], ['target_protocol_security', 'security_case'], ['target_transport_unix', 'transport_case'], ['target_protocol_boundaries','boundary_case']].filter(([target]) => args.includes(target)).map(([, name]) => name);
 };
 const listing = transform => args => ({ status: 0, stdout: transform(casesFor(args), args).map(name => `${name}: test`).join('\n'), stderr: '' });
 
 test('coverage listing compares the complete multiset including delegated suites', () => {
   const result = checkCoverage(buildGroups(metadata(), 'linux'), listing(names => names));
-  assert.equal(result.cases, 8);
+  assert.equal(result.cases, 9);
   assert.equal(result.groups.length, 7);
   assert.deepEqual(listedCases('Running tests\r\nfixture: test\r\n0 tests, 0 benchmarks\r\n'), ['fixture: test']);
 });
@@ -129,9 +129,51 @@ test('Windows watch fixtures have bounded concurrency and complete nonoverlappin
   assert(watch.args.includes('--test-threads=2'));
   assert(!watch.delegated);
   assert.equal(groups.find(g => g.id === 'core-lib').args.at(-1), 'watch::targets::tests::');
-  assert.equal(checkCoverage(groups, listing(names => names)).cases, 8);
+  assert.equal(checkCoverage(groups, listing(names => names)).cases, 9);
   for (const transform of [
     (names, args) => args.includes('watch::targets::tests::') && !args.includes('--skip') ? [] : names,
     (names, args) => args.includes('--skip') ? [...names, 'watch::targets::tests::startup_case'] : names,
   ]) assert.throws(() => checkCoverage(groups, listing(transform)), /inventory differs|Windows watch filter selects no tests/);
+});
+
+test('independent Rust lanes cover each group once and keep qualification in core',()=>{
+  for(const platform of ['linux','darwin','win32']) {
+    const groups=buildGroups(metadata(),platform),core=selectGroups(groups,'core'),process=selectGroups(groups,'process');
+    assert.deepEqual([...core,...process].map(g=>g.id).sort(),groups.map(g=>g.id).sort());
+    assert.deepEqual(core.filter(g=>g.delegated),groups.filter(g=>g.delegated));
+    assert(process.some(g=>g.id==='cli'));assert(!core.some(g=>g.id==='cli'));
+    assert.equal(process.length,platform==='win32'?3:1);
+    assert.equal(checkCoverage([...core,...process],listing(names=>names)).cases,9);
+    for(const transform of [gs=>gs.filter(g=>g.id!=='cli'),gs=>[...gs,...process]]) {
+      assert.throws(()=>checkCoverage(transform([...core,...process]),listing(names=>names)),/inventory differs/);
+    }
+  }
+  assert.throws(()=>selectGroups(buildGroups(metadata()),'typo'),/unknown Rust lane/);
+  assert.throws(()=>selectGroups([],'process'),/empty Rust lane/);
+});
+
+test('Windows boundary fixtures have bounded concurrency and one integration owner',()=>{
+  const groups=buildGroups(metadata(),'win32'),boundary=groups.find(g=>g.id==='windows-boundaries');
+  assert(boundary.args.includes('--test-threads=2'));
+  assert(!groups.find(g=>g.id==='core-integration').args.includes('target_protocol_boundaries'));
+  assert.equal(selectGroups(groups,'process').filter(g=>g.id==='windows-boundaries').length,1);
+  assert.throws(()=>checkCoverage(groups,listing((names,args)=>args.includes('target_protocol_boundaries')?[]:names)),/Windows boundary filter selects no tests/);
+  const missing=metadata();missing.packages[0].targets=missing.packages[0].targets.filter(t=>t.name!=='target_protocol_boundaries');
+  assert.throws(()=>buildGroups(missing,'win32'),/missing Windows boundary target/);
+});
+
+test('each independent Rust lane returns failure and still executes its later groups',()=>{
+  for(const lane of ['core','process']) {
+    const groups=selectGroups(buildGroups(metadata(),'win32'),lane),called=[];
+    const code=runGroups(groups,{run(args){called.push(args);return {status:called.length===1?101:0};},report(){}});
+    assert.equal(code,101);
+    assert.deepEqual(called,groups.filter(g=>!g.delegated).map(g=>g.args));
+  }
+});
+
+test('Rust CLI options reject unknown lanes, duplicate modes and partial coverage',()=>{
+  assert.deepEqual(parseOptions([]),{mode:undefined,lane:'all'});
+  assert.deepEqual(parseOptions(['--lane=process','--plan']),{mode:'--plan',lane:'process'});
+  assert.deepEqual(parseOptions(['--lane=core']),{mode:undefined,lane:'core'});
+  for(const args of [['--lane=typo'],['--lane=core','--lane=process'],['--plan','--plan'],['--plan','--check-coverage'],['--check-coverage','--lane=core'],['--check-coverage','--lane=process'],['--unknown']])assert.throws(()=>parseOptions(args));
 });
