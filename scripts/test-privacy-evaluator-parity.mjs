@@ -374,13 +374,17 @@ const BINARY_CANDIDATES = [
 ];
 
 function findBinary() {
-  for (const candidate of BINARY_CANDIDATES) {
+  // CI must use the verified debug handoff, never a stray release build.
+  const candidates = process.env.LEKALO_CI_RUNTIME === "required"
+    ? BINARY_CANDIDATES.slice(0, 1) : BINARY_CANDIDATES;
+  for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
   }
   return null;
 }
 
 function buildBinary() {
+  assert.notEqual(process.env.LEKALO_CI_RUNTIME, "required", "Verified CI runtime is missing; refusing Cargo fallback");
   const build = spawnSync("cargo", ["build", "-p", "lekalo-cli", "--locked"], {
     cwd: root, encoding: "utf8", windowsHide: true,
   });

@@ -1,3 +1,4 @@
+import {assertRuntimeGate} from './ci-workflow.mjs';
 // Issue #88: schemas AND fresh binary disposition/expiry/review behavior.
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
@@ -212,7 +213,7 @@ function modelShapeCases(env, evidence, lintArgs, modelFacts) {
 }
 export function gate(family){
  assert.ok(validators.has(family));const update=process.argv.includes('--update');
- const ci=readFileSync(join(root,'.github/workflows/ci.yml'),'utf8').split('  build-test:')[1];assert.ok(ci.indexOf('node scripts/test-waivers-contracts.mjs')>ci.indexOf('cargo build --workspace --locked'));
+ assertRuntimeGate('test-waivers-contracts.mjs',{ajv:true});
  const provenance=JSON.parse(readFileSync(join(root,'tests/fixtures/fixture-provenance.json')));for(const f of validators.keys())assert.equal(provenance.families.find(row=>row.family===f)?.origin,'synthetic');
  const generated=spawnSync(process.execPath,[join(root,'scripts/gen-waivers-contracts.mjs'),'--check'],{cwd:root,encoding:'utf8'});assert.equal(generated.status,0,generated.stderr);
  const env=environment();let assertions=0;try{

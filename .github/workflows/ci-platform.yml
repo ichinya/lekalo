@@ -1,0 +1,1144 @@
+name: Platform CI
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+  CARGO_PROFILE_DEV_DEBUG_ASSERTIONS: "true"
+  CARGO_PROFILE_TEST_DEBUG_ASSERTIONS: "true"
+  CARGO_PROFILE_DEV_OVERFLOW_CHECKS: "true"
+  CARGO_PROFILE_TEST_OVERFLOW_CHECKS: "true"
+
+jobs:
+  build-debug:
+    name: "build-debug"
+    runs-on: ${{ inputs.os }}
+    env:
+      RUNTIME_IMAGE: ${{ inputs.os }}
+      RUNTIME_PROFILE: debug
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      manifest-sha256: ${{ steps.package.outputs.manifest-sha256 }}
+      producer-attempt: ${{ steps.package.outputs.producer-attempt }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-platform-build-debug
+      - name: "Build runtime executables"
+        run: |
+          cargo build -p lekalo-cli --bin lekalo --locked
+          cargo build -p lekalo-core --example typescript-native-contract --locked
+      - name: "Package the runtime and bind its source"
+        id: package
+        run: |
+          node scripts/ci-runtime-artifacts.mjs prepare "$RUNNER_TEMP/runtime-debug"
+      - uses: actions/upload-artifact@v7
+        id: upload
+        with:
+          name: runtime-debug-${{ inputs.os }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/runtime-debug/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  build-release:
+    name: "build-release"
+    runs-on: ${{ inputs.os }}
+    env:
+      RUNTIME_IMAGE: ${{ inputs.os }}
+      RUNTIME_PROFILE: release
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      manifest-sha256: ${{ steps.package.outputs.manifest-sha256 }}
+      producer-attempt: ${{ steps.package.outputs.producer-attempt }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-platform-build-release
+      - name: "Build runtime executables"
+        run: |
+          cargo build --release -p lekalo-cli --bin lekalo --locked
+      - name: "Package the runtime and bind its source"
+        id: package
+        run: |
+          node scripts/ci-runtime-artifacts.mjs prepare "$RUNNER_TEMP/runtime-release"
+      - uses: actions/upload-artifact@v7
+        id: upload
+        with:
+          name: runtime-release-${{ inputs.os }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/runtime-release/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  cli-core:
+    name: "cli-core"
+    runs-on: ${{ inputs.os }}
+    needs: build-debug
+    env:
+      RUNTIME_IMAGE: ${{ inputs.os }}
+      RUNTIME_PROFILE: debug
+      LEKALO_CI_RUNTIME: required
+      RUNTIME_PRODUCER_ATTEMPT: ${{ needs.build-debug.outputs.producer-attempt }}
+      RUNTIME_MANIFEST_SHA256: ${{ needs.build-debug.outputs.manifest-sha256 }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - &ci-setup-7
+        name: Use physical temporary paths for synthetic project fixtures
+        run: |
+          node --input-type=module <<'NODE'
+          import {appendFileSync, realpathSync} from 'node:fs';
+          import {tmpdir} from 'node:os';
+          // The native Windows resolver also expands 8.3 names.
+          const root = realpathSync.native(tmpdir());
+          for (const name of ['TEMP', 'TMP', 'TMPDIR']) {
+            appendFileSync(process.env.GITHUB_ENV, `${name}=${root}\n`);
+          }
+          NODE
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build-debug.outputs.artifact-id }}
+          path: ${{ runner.temp }}/runtime-debug
+          merge-multiple: true
+      - name: "Verify and install runtime before gates"
+        run: |
+          node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-debug"
+      - &ci-setup-6
+        name: Provision PHP 8.3 (issue #54, visible setup step, no project install)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          # Composer is needed on every OS by the issue #56 fixture
+          # provisioning step (the locked vendor tree is not committed).
+          tools: composer
+          # The locked Laravel runtime of the issue #56 fixture needs its
+          # platform extensions; every dependency-free suite is unaffected.
+          extensions: mbstring, openssl, pdo_sqlite, sqlite3, tokenizer, xml, dom, xmlwriter, ctype, fileinfo, iconv, session
+        id: php
+      - &ci-setup-8
+        name: Provision exact Ajv 8.20.0 outside the checkout (issues #32, #48)
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.20.0" --ignore-scripts --no-audit --no-fund --no-save ajv@8.20.0
+          export NODE_PATH="$RUNNER_TEMP/lekalo-ajv-8.20.0/node_modules"
+          test "$(node -p "require('ajv/package.json').version")" = "8.20.0"
+      - &ci-setup-9
+        name: Provision the Linux process confinement backend
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes bubblewrap ripgrep
+      - &ci-setup-10
+        name: Load the CI-only AppArmor launcher prerequisite
+        if: runner.os == 'Linux'
+        id: apparmor
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          bash .github/ci/bwrap-apparmor.sh load
+      - &ci-setup-11
+        name: Verify the Linux namespace backend before adapter probes
+        if: runner.os == 'Linux'
+        run: /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/true
+      - &ci-setup-26
+        name: Provision the vendored compiler bundle custody (issue #44)
+        run: |
+          set -euo pipefail
+          npm ci --prefix adapters/node-typescript --ignore-scripts --no-audit --no-fund
+          node adapters/node-typescript/provision-compiler.mjs
+          node adapters/node-typescript/build.mjs --check
+      - &ci-setup-46
+        name: Provision the planner fixture vendor tree per the committed lock (issues #52/#56)
+        # Explicit setup, before both maintained-native and later adapter gates.
+        # Runtime/compile processes never install packages or run lifecycle scripts.
+        timeout-minutes: 15
+        run: composer install --no-interaction --prefer-dist --no-scripts --working-dir tests/fixtures/php-laravel/planner
+      - &ci-setup-35
+        name: Provision ripgrep for the Windows search comparison
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ripgrep --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rg --version
+      - &ci-setup-36
+        name: Provision ripgrep for the macOS search comparison
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: |
+          brew install ripgrep
+          rg --version
+      - name: "Check platform CI ownership and artifact guards"
+        run: |
+          node --test scripts/ci-runtime-artifacts.test.mjs scripts/ci-platform.test.mjs scripts/ci-rust-tests.test.mjs scripts/ci-contracts-cli.test.mjs
+          node scripts/check-ci-platform.mjs
+      - name: Reject provenance pipe stalls and unsafe Git custody
+        timeout-minutes: 3
+        run: |
+          node scripts/test-fixture-git.mjs
+          node scripts/test-fixture-provenance.mjs
+      - name: Verify release packaging and publication guards
+        run: node --test scripts/release.test.mjs
+      - name: Run read-only watch native and poll probes (issue #95)
+        id: watch
+        timeout-minutes: 10
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-platform.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-watch-boundaries.mjs
+          node scripts/test-watch-equivalence.mjs
+          node scripts/test-watch-faults.mjs
+          node scripts/test-watch-successor.mjs
+          node scripts/test-watch-consumers.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        if: failure() && steps.watch.outcome == 'failure' && runner.os != 'Windows'
+      - name: Diagnose a failed watch lane with the synthetic confined runtime
+        if: failure() && steps.watch.outcome == 'failure' && runner.os != 'Windows'
+        run: cargo test -p lekalo-core --lib unix_confined_ --locked -- --nocapture
+      - name: Run the live portability contract gate (issue #19)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-portability-contracts.mjs
+      - name: Run neutral trace evidence and assessment contracts (issue #35)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-evidence-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-trace-assessment-contracts.mjs --require-binary
+      - name: Run the graph contract gate against the live binary (issue #52)
+        # The Ajv job validates golden self-consistency without a build;
+        # here the built CLI re-exports every pinned golden's owning
+        # fixture and byte-compares the canonical rendering against the
+        # pinned bytes, so a stale-but-schema-valid golden fails the Node
+        # gate at the same commit the Rust golden tests would catch it.
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-graph-contracts.mjs --require-binary
+      - name: Run the CI report smoke and gate (issue #103)
+        # Dogfood the closed report surface on every OS: validate over a
+        # fixture with all four report formats, the blocked readiness
+        # gate, and the drift side-channel guarantee. The report bytes
+        # are uploaded with the job artifacts (below). The report
+        # directory is exported through the step env (never a plain
+        # shell variable) so the Node assertions always see it, and the
+        # upload names explicit finalized files guarded on existence.
+        timeout-minutes: 5
+        env:
+          REPORTS: ${{ runner.temp }}/lekalo-ci-reports
+        run: |
+          set -euo pipefail
+          mkdir -p "$REPORTS"
+          rm -rf target/ci-report-smoke
+          cp -r tests/fixtures/loader/valid-direct-visibility target/ci-report-smoke
+          cd target/ci-report-smoke
+          BIN=../../target/debug/lekalo
+          "$BIN" --version > /dev/null
+          # validate: the passing run + the four projections.
+          "$BIN" --json validate --report-file "$REPORTS/validate.json" --project . > /dev/null
+          "$BIN" --json validate --report-file "$REPORTS/validate.sarif" --report-format sarif --project . > /dev/null
+          "$BIN" --json validate --report-file "$REPORTS/validate.junit.xml" --report-format junit --project . > /dev/null
+          "$BIN" --json validate --report-file "$REPORTS/validate.md" --report-format md --project . > /dev/null
+          node -e "const r=require(process.env.REPORTS + '/validate.json'); if (r.schema_version !== 'lekalo/ci-report/v0.6.3') process.exit(1); if (r.evaluation.verdict !== 'ready') process.exit(1);"
+          # readiness --check: the blocked release gate is a nonzero exit
+          # with the typed unavailable envelope, and its report still lands.
+          set +e
+          "$BIN" --json readiness --phase release --check --report-file "$REPORTS/readiness.json" --project . > "$REPORTS/readiness-envelope.txt" 2>&1
+          code=$?
+          set -e
+          test "$code" -ne 0 || { echo 'blocked readiness --check must not exit 0'; exit 1; }
+          node -e "const r=require(process.env.REPORTS + '/readiness.json'); if (r.evaluation.verdict !== 'blocked' || r.evaluation.exitCode === 0) process.exit(1);"
+          # The canonical report identity and the exact digest spelling.
+          node -e "const r=require(process.env.REPORTS + '/validate.json'); const c=require('crypto'); const h=c.createHash('sha256').update(JSON.stringify(r)+'\\n').digest('hex'); if (!/^[0-9a-f]{64}$/.test(h)) process.exit(1);"
+          cd ../..
+          echo "REPORTS_DIR=$REPORTS" >> "$GITHUB_ENV"
+      - name: Upload the CI report artifacts (issue #103)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lekalo-ci-reports-${{ inputs.os }}-${{ github.run_attempt }}
+          # Explicit finalized filenames from the confined report
+          # directory: never a broad glob over the runner root, and a
+          # missing destination fails the upload instead of widening.
+          path: |
+            ${{ runner.temp }}/lekalo-ci-reports/validate.json
+            ${{ runner.temp }}/lekalo-ci-reports/validate.sarif
+            ${{ runner.temp }}/lekalo-ci-reports/validate.junit.xml
+            ${{ runner.temp }}/lekalo-ci-reports/validate.md
+            ${{ runner.temp }}/lekalo-ci-reports/readiness.json
+            ${{ runner.temp }}/lekalo-ci-reports/readiness-envelope.txt
+          if-no-files-found: error
+          retention-days: 7
+      - name: Run AI lint contract families (issue #76)
+        id: ai-lint
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-report-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-evidence-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-config-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-waivers-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ai-lint-comparison-contracts.mjs
+      - uses: dtolnay/rust-toolchain@stable
+        if: failure() && steps.ai-lint.outcome == 'failure' && runner.os != 'Windows'
+      - name: Diagnose a failed AI lint lane with the synthetic confined runtimes
+        if: failure() && steps.ai-lint.outcome == 'failure' && runner.os != 'Windows'
+        run: cargo test -p lekalo-core --lib unix_confined_ --locked -- --nocapture
+      - name: Run scoped governance waiver contracts (issue #88)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-waivers-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-waiver-input-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-waiver-audit-contracts.mjs
+      - name: Run the context-budget contract gate (issue #75)
+        # Needs the binary built above; the schema-only Ajv list in the
+        # contracts job never builds one (R2-B1).
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-context-budget-contracts.mjs
+      - name: Run the coupling contract gate (issue #77)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-coupling-contracts.mjs
+      - name: Run the module API boundary gate (issue #113)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-module-api-contracts.mjs
+      - name: Run every Framework Lift family live gate (issue #100)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          for family in baseline task campaign arm result; do
+            NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-framework-lift-contracts.mjs --family "$family"
+          done
+          node scripts/gen-framework-lift-v11.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-framework-lift-v11.mjs
+      - name: Run the local run-history end-to-end gate (issue #121)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-run-history-cli.mjs
+      - name: Run the semantic search live and benchmark gates (issue #93)
+        # Every OS provisions ripgrep explicitly for the comparison leg.
+        # The binary is the workspace build above. Both gates
+        # fail closed when their inputs are missing.
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-search-cli.mjs
+          node scripts/bench-search.mjs
+      - name: Run the semantic change contract and live CLI gates (issue #73)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-cli.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-extended.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-bindings.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-errors.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-symbols.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-ownership.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-ownership-contracts.mjs
+          node scripts/test-ownership-transitions.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-defaults.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-enum-wire.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-query-inputs.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-command-results.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-emissions.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-query-input-bindings.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-query-transport-bindings.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-change-transactions.mjs
+      - name: Run the versioned fix recipe contract and live CLI gates (issue #74)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-fix-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-fix-cli.mjs
+      - name: Run the diagnostic explanation contract and live CLI gates (issue #96)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-explain-contracts.mjs
+      - name: Run the architecture profile contract gate (issue #84)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-architecture-profile-contracts.mjs
+      - name: Run the canonical formatter gates (issue #94)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-format-contracts.mjs
+          node scripts/test-format-cli.mjs
+          node scripts/test-format-atomic.mjs
+          node scripts/test-format-portability.mjs
+      - name: Run the managed ownership, custody and planner gates (issue #41)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/gen-managed-contracts.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-managed-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-managed-cli.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-managed-planner-e2e.mjs
+      - name: Run the public metrics contract and live CLI gates (issue #102)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          for family in evaluation-export-input metrics-aggregation-definition public-metrics metrics-export-manifest metrics-export-preview; do
+            NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-metrics-export-contracts.mjs --family "$family"
+          done
+      - name: Run the workflow-provider discovery boundary gate (issue #34)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-provider-contracts.mjs
+      - name: Run the privacy evaluator parity gate (issue #119)
+        run: node scripts/test-privacy-evaluator-parity.mjs
+      - name: Run the privacy runtime CLI gate (issue #119)
+        run: node scripts/test-privacy-runtime-cli.mjs
+      - name: Run the privacy leak-corpus gate (issue #119)
+        run: node scripts/test-privacy-leak-corpus.mjs
+      - name: Run the classification CLI e2e gate (issue #87)
+        run: node scripts/test-classification-cli.mjs
+      - name: Run the golden fixture suite gates (issue #90)
+        # The suite runs on every OS: byte-stable determinism lanes,
+        # per-rule paired coverage with fresh execution receipts, the
+        # P0 planner chain, the newline/separator normalization vectors
+        # (they execute the CLI), and the digest-bound update-flow
+        # rehearsal — all in external sandboxes against the binary
+        # built above.
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        timeout-minutes: 20
+        run: |
+          node scripts/run-golden.mjs --verify
+          node scripts/test-golden-normalization.mjs
+          node scripts/test-golden-determinism.mjs
+          node scripts/test-golden-diagnostic-coverage.mjs
+          node scripts/test-golden-planner-e2e.mjs
+          node scripts/test-reference-projects.mjs --static
+          node scripts/test-reference-model.mjs
+          node scripts/test-reference-contract.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-golden-update-policy.mjs
+      - name: Run the issue-136 adoption gates against the real binary
+        # The contracts gate (schemas + registry + live read-only
+        # flows), the selective-refactor gate (verified apply with
+        # real baseline/candidate runs, negatives, exact rollback,
+        # forged-custody/drift/confinement/version probes, receipt
+        # obstruction recovery, rollback preflight, temp hygiene), the
+        # hybrid gate (three-mode conformed fixture, live conformance
+        # freshness, executed provenance joins, recovery deferral), and
+        # the tutorial replay (the documented walkthrough runs
+        # verbatim). All need the binary built above.
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        timeout-minutes: 20
+        run: |
+          node scripts/gen-discovery-scope-contracts.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-discovery-scope-contracts.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-adoption-contracts.mjs
+          node scripts/test-adoption-refactor.mjs
+          node scripts/test-adoption-hybrid.mjs
+          node scripts/test-adoption-tutorial.mjs
+      - name: Qualify the domain/client workspace without a backend (issue #153)
+        run: node scripts/test-domain-workspace.mjs
+      - name: Qualify managed agent instruction installation (issue #157)
+        run: node scripts/test-install-prompt.mjs
+      - name: Check source and context reuse in the research harness (issue #167)
+        run: |
+          node --test scripts/research/test-framework-lift-workspace.mjs
+          node --test scripts/research/test-framework-lift-public-result.mjs
+          node --test scripts/research/test-framework-lift-history-preview.mjs
+          node --test scripts/research/test-framework-lift-research-report.mjs
+      - &ci-setup-104
+        name: Remove the CI-only AppArmor launcher prerequisite
+        if: always() && runner.os == 'Linux'
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          bash .github/ci/bwrap-apparmor.sh remove
+          test "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns)" = 1
+          if sudo grep -Eq '^lekalo-ci-bwrap(-child)? ' /sys/kernel/security/apparmor/profiles; then
+            exit 1
+          fi
+
+  node-typescript:
+    name: "node-typescript"
+    runs-on: ${{ inputs.os }}
+    needs: build-debug
+    env:
+      RUNTIME_IMAGE: ${{ inputs.os }}
+      RUNTIME_PROFILE: debug
+      LEKALO_CI_RUNTIME: required
+      RUNTIME_PRODUCER_ATTEMPT: ${{ needs.build-debug.outputs.producer-attempt }}
+      RUNTIME_MANIFEST_SHA256: ${{ needs.build-debug.outputs.manifest-sha256 }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - *ci-setup-7
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build-debug.outputs.artifact-id }}
+          path: ${{ runner.temp }}/runtime-debug
+          merge-multiple: true
+      - name: "Verify and install runtime before gates"
+        run: |
+          node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-debug"
+      - *ci-setup-6
+      - *ci-setup-8
+      - *ci-setup-9
+      - *ci-setup-10
+      - *ci-setup-11
+      - *ci-setup-26
+      - name: Locate the built debug CLI for adapter conformance
+        run: |
+          node --input-type=module <<'NODE'
+          import { accessSync, appendFileSync, constants } from 'node:fs';
+          import { resolve, sep } from 'node:path';
+          const binary = resolve('target/debug', process.platform === 'win32' ? 'lekalo.exe' : 'lekalo').split(sep).join('/');
+          accessSync(binary, constants.X_OK);
+          appendFileSync(process.env.GITHUB_ENV, `LEKALO_DEBUG_BIN=${binary}\n`);
+          NODE
+      - name: Run the Node/TypeScript kernel suite (issue #43)
+        run: node scripts/test-node-typescript-kernel.mjs
+      - name: Run the adapter manifest contract gate (issue #32)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: node scripts/test-adapter-manifest-contracts.mjs
+      - name: Verify the shipped adapter manifest golden (issue #32, #54)
+        run: node scripts/test-adapter-manifest-golden.mjs
+      - name: Run the TypeScript scanner suite (issue #44)
+        run: node scripts/test-node-typescript-scanner.mjs
+      - name: Qualify the TypeScript 7 native runtime contract
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        timeout-minutes: 10
+        run: |
+          node scripts/test-typescript-native-runtime.mjs
+      - name: Qualify the public manifested TypeScript scan (issue #150)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        timeout-minutes: 10
+        run: |
+          node scripts/gen-public-scan-protocol.mjs --check
+          node scripts/test-public-typescript-scan.mjs
+          node scripts/gen-native-symbols-protocol.mjs --check
+          node scripts/test-public-typescript-roundtrip.mjs
+      - name: Run the Hono framework-binding suites (issue #115)
+        timeout-minutes: 15
+        run: node scripts/test-node-hono-bindings.mjs
+      - name: Run the Hono read-only scan gate (issue #115)
+        timeout-minutes: 10
+        run: node scripts/test-node-hono-readonly.mjs
+      - name: Run the Drizzle evidence suite (issue #116)
+        run: node scripts/test-node-drizzle.mjs
+      - name: Run the brownfield TypeScript pilot gate (issue #118)
+        # The observed-mode pilot path end to end over the committed
+        # synthetic consumer fixture: adopt dry-run purity, scan +
+        # binding + projections, staleness on a controlled change, and
+        # the closed privacy-safe metrics schema.
+        timeout-minutes: 10
+        run: node scripts/test-pilot-brownfield-ts.mjs
+      - name: Run the Zod generator suite (issue #45)
+        run: node scripts/test-node-zod-gen.mjs
+      - name: Verify the generation artifact against the conformance battery (issue #45)
+        run: |
+          set -euo pipefail
+          PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-scanner/protocol/generation.profile.json)
+          "$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node adapters/node-typescript/adapter-zod.mjs --lekalo-project-profile-json "$PROFILE_JSON"
+      - name: Run the native gate suite (issue #48)
+        run: node scripts/test-node-native-gates.mjs
+      - name: Run the transport generator gate (issue #70)
+        run: node scripts/test-node-typescript-transport.mjs
+      - name: Run the OpenAPI generator gate (issue #46)
+        run: node scripts/test-node-openapi.mjs
+      - name: Run the scenario-test compiler gate (issue #47)
+        run: node scripts/test-node-scenario-tests.mjs
+      - name: Run the scenario unit suites (issue #47 review F-11)
+        run: node scripts/test-node-scenario-units.mjs
+      - name: Run the native gate contract gate (issue #48)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-native-gate-contracts.mjs
+      - name: Run the applicable conformance battery against the kernel adapter (bare)
+        run: '"$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs'
+      - name: Run the conformance battery against the configured scanner adapter (issue #44)
+        run: |
+          set -euo pipefail
+          PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-scanner/protocol/conformance.profile.json)
+          "$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
+          "$LEKALO_DEBUG_BIN" adapter test --profile strict --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON" || test $? -eq 4
+      - name: Run the conformance battery against the transport-configured adapter (issue #70)
+        run: |
+          set -euo pipefail
+          PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-transport/protocol/conformance.profile.json)
+          "$LEKALO_DEBUG_BIN" adapter test --profile default --report json -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
+      - name: Run the target adapter conformance suite against the reference adapter
+        timeout-minutes: 10
+        run: '"$LEKALO_DEBUG_BIN" adapter test --profile strict --report junit --timeout-ms 60000 node tests/fixtures/target-protocol/fake-adapter.mjs --lekalo-adapter-variant fluent'
+      - *ci-setup-104
+
+  php-laravel:
+    name: "php-laravel"
+    runs-on: ${{ inputs.os }}
+    needs: build-debug
+    env:
+      RUNTIME_IMAGE: ${{ inputs.os }}
+      RUNTIME_PROFILE: debug
+      LEKALO_CI_RUNTIME: required
+      RUNTIME_PRODUCER_ATTEMPT: ${{ needs.build-debug.outputs.producer-attempt }}
+      RUNTIME_MANIFEST_SHA256: ${{ needs.build-debug.outputs.manifest-sha256 }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - *ci-setup-7
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build-debug.outputs.artifact-id }}
+          path: ${{ runner.temp }}/runtime-debug
+          merge-multiple: true
+      - name: "Verify and install runtime before gates"
+        run: |
+          node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-debug"
+      - *ci-setup-6
+      - *ci-setup-8
+      - *ci-setup-9
+      - *ci-setup-10
+      - *ci-setup-11
+      - *ci-setup-26
+      - *ci-setup-46
+      - name: Run the task-links pilot gates (issue #52)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-task-links-contracts.mjs
+          node scripts/test-task-links-scenarios.mjs
+          node scripts/test-task-links-outbox.mjs
+          node scripts/test-task-links-impact-portability.mjs
+          node scripts/test-task-links-native.mjs
+          node scripts/test-task-links-public-evidence.mjs
+      - name: Run the provisioned task-links native gate (issue #52)
+        # Executes the Rust/SQLite battery and the locked maintained Laravel
+        # port in synchronized/killed/restarted worker processes. Only the live
+        # owner can qualify its matching implementation/build/profile;
+        # exported files/DB rows never authenticate a past native execution.
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          LEKALO_TASKLINKS_NATIVE=1 \
+            LEKALO_TASKLINKS_NATIVE_DB="$RUNNER_TEMP/tasklinks-native/provisioned.sqlite" \
+            node scripts/test-task-links-native.mjs
+          test -f "$RUNNER_TEMP/tasklinks-native/provisioned.sqlite.qualified.json"
+      - name: Run the PHP types contract gate (issue #58)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: node scripts/test-php-types-contracts.mjs
+      - name: Run the PHP/Laravel adapter suite (issue #54)
+        # Runs on every OS: the PHP unit suites and packaging gate run
+        # wherever PHP runs; the confined conformance battery proves for
+        # real on Linux, and on macOS/Windows reports the platform's
+        # confinement limitation as an explicit, logged skip.
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-adapter.mjs
+      - name: Run the PHP scenario binding custody gate (issue #56)
+        # Scaffold-once and checked-binding semantics over the pure
+        # compile exchange — needs PHP only, no vendor tree: generation
+        # and verification never execute project code.
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-scenario-bindings.mjs
+      - name: Run the PHP type generation gate (issue #58)
+        # The closed mapping, the three custody modes, and the golden
+        # digests over the shared Planner corpus — needs PHP only.
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-types.mjs
+      - name: Run the PHP type round-trip gate (issue #58)
+        # Executable codec vectors over both corpora; the Mago leg
+        # records an honest skip here (the real-toolchain leg runs it
+        # with --require-mago) and never counts as Mago acceptance.
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-type-roundtrip.mjs
+      - name: Run the Composer/Laravel native-gates harness (issue #61)
+        # Pure planner legs on every OS: targeted selection, mandatory
+        # cross-module gates, exactly-once suites, hostile decoder
+        # probes, stale-custody zero-spawn refusals, and the release-
+        # full fallback — driven in-process with process-launching
+        # functions disabled, so zero-spawn claims are enforced by the
+        # interpreter. The Rust `native run` parity leg runs when the
+        # built binary is present; the confined runtime qualification
+        # leg stays pending its operator/CI provisioning (research doc
+        # section 8.5) and never fakes a pass.
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-native-gates.mjs
+      - name: Run the Mago integration gate, fake mode (issue #55)
+        # Requires PHP but no Mago binary and no network: the receipt
+        # decoder, the analysis states, and the strict-profile gates run
+        # against the committed artifact with injected fakes.
+        run: node scripts/test-mago-integration.mjs --fake
+      - name: Run the Laratesto scenario E2E gate (issue #56)
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-scenario-tests.mjs
+      - name: Run the Laravel routes runtime gate (issue #60)
+        # The composed types + operations + routes generation through
+        # the real adapter exchange, then the planner fixture serving
+        # the Today/focus endpoints through the generated surface over
+        # the real HTTP kernel (the provisioned vendor tree above).
+        timeout-minutes: 15
+        run: node scripts/test-php-laravel-routes.mjs
+      - name: Run the Laravel migration pipeline gate (issue #57)
+        # The pipeline stages (CLI goldens, PHP artifacts, custody)
+        # run wherever the repo's gates run; the PostgreSQL execution
+        # stage uses the docker engine available on the runner and
+        # records an explicit skip when it is absent — never a pass.
+        timeout-minutes: 15
+        run: node scripts/test-php-laravel-migrations.mjs
+      - name: Run the Node/Laravel scenario parity gate (issue #56)
+        # Both backends run the same committed scenario corpus under
+        # their real runners; the durable run records must normalize to
+        # identical semantic row tuples, including the shared failing
+        # mutation.
+        timeout-minutes: 10
+        run: node scripts/test-php-laravel-parity.mjs
+      - *ci-setup-104
+
+  python:
+    name: "python"
+    runs-on: ${{ inputs.os }}
+    needs: build-debug
+    env:
+      RUNTIME_IMAGE: ${{ inputs.os }}
+      RUNTIME_PROFILE: debug
+      LEKALO_CI_RUNTIME: required
+      RUNTIME_PRODUCER_ATTEMPT: ${{ needs.build-debug.outputs.producer-attempt }}
+      RUNTIME_MANIFEST_SHA256: ${{ needs.build-debug.outputs.manifest-sha256 }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - *ci-setup-7
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build-debug.outputs.artifact-id }}
+          path: ${{ runner.temp }}/runtime-debug
+          merge-multiple: true
+      - name: "Verify and install runtime before gates"
+        run: |
+          node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-debug"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-platform-python
+          cache-targets: false
+      - *ci-setup-8
+      - *ci-setup-9
+      - *ci-setup-10
+      - *ci-setup-11
+      - *ci-setup-26
+      - name: "Run Python adapter unit, protocol and observed-host regressions (issue #146)"
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path adapters/python/Cargo.toml --locked
+          cargo build --manifest-path adapters/python/Cargo.toml --locked
+          node --test adapters/python/tests/scan-protocol.test.mjs adapters/python/tests/observed-host.test.mjs
+          node scripts/test-public-python-scan.mjs
+          node --test adapters/python/tests/fastapi.test.mjs
+          node scripts/gen-http-scan-protocol.mjs --check
+          node scripts/test-public-fastapi-scan.mjs --validate-contracts
+      - *ci-setup-104
+
+  sdk:
+    name: "sdk"
+    runs-on: ${{ inputs.os }}
+    needs: build-debug
+    env:
+      RUNTIME_IMAGE: ${{ inputs.os }}
+      RUNTIME_PROFILE: debug
+      LEKALO_CI_RUNTIME: required
+      RUNTIME_PRODUCER_ATTEMPT: ${{ needs.build-debug.outputs.producer-attempt }}
+      RUNTIME_MANIFEST_SHA256: ${{ needs.build-debug.outputs.manifest-sha256 }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - *ci-setup-7
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build-debug.outputs.artifact-id }}
+          path: ${{ runner.temp }}/runtime-debug
+          merge-multiple: true
+      - name: "Verify and install runtime before gates"
+        run: |
+          node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-debug"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-platform-sdk
+          cache-targets: false
+      - *ci-setup-6
+      - &ci-setup-90
+        name: Provision the pinned Go toolchain for the client-SDK gate (issue #72)
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.23.5"
+          # The SDK gate creates its Go module in a disposable directory.
+          # There is no repository-root dependency file to use as a cache key.
+          cache: false
+      - *ci-setup-8
+      - *ci-setup-9
+      - *ci-setup-10
+      - *ci-setup-11
+      - *ci-setup-26
+      - name: Run the client-SDK generator gate (issue #72)
+        run: node scripts/test-node-client-sdk.mjs
+      - name: Run the client-SDK runtime gate (issue #72)
+        env:
+          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/lekalo-client-sdk-vue" --ignore-scripts --no-audit --no-fund --no-save typescript@5.9.3 @vue/compiler-sfc@3.4.38
+          # NODE_PATH is colon-delimited on POSIX and semicolon-delimited on Windows.
+          delim=":"; if [ "$RUNNER_OS" = "Windows" ]; then delim=";"; fi
+          NODE_PATH="$NODE_PATH$delim$RUNNER_TEMP/lekalo-client-sdk-vue/node_modules" node scripts/test-client-sdk-runtime.mjs
+      - name: Run the adapter-SDK vector parity gate (issue #106)
+        # Four provisioned runtimes (Node ships with the runner, Go/PHP
+        # are provisioned above, Rust by the toolchain step) replay the
+        # shared corpus; a missing runtime is a failed setup, not a skip.
+        # The lane also runs the real per-language lifecycle lanes, the
+        # file-transport exchange, and the full-corpus production oracle
+        # (issue #106 review r2 #8/#10).
+        timeout-minutes: 15
+        env:
+          LEKALO_SDK_VECTOR_TRACE: "1"
+        run: node scripts/test-adapter-sdk-vectors.mjs --language all
+      - name: Run the adapter-SDK Go unit smoke (issue #106 review r2 #17)
+        # The Go SDK ships its own smoke suite beside the vectors runner
+        # so `go test ./...` exercises the runtime directly.
+        run: go test ./...
+        working-directory: sdk/go
+      - name: Run the adapter-SDK conformance and package gates (issue #106)
+        # The host binary was built above in this job, so the confined
+        # strict battery, the feature-limited examples, and the packed
+        # release-candidate verification run on every OS.
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          node scripts/test-adapter-sdk-conformance.mjs --language all --profile strict --repeats 3 --timeout-ms 60000
+          node scripts/test-adapter-sdk-packages.mjs --verify
+      - *ci-setup-104
+
+  docs:
+    name: "docs"
+    runs-on: ${{ inputs.os }}
+    needs: build-debug
+    env:
+      RUNTIME_IMAGE: ${{ inputs.os }}
+      RUNTIME_PROFILE: debug
+      LEKALO_CI_RUNTIME: required
+      RUNTIME_PRODUCER_ATTEMPT: ${{ needs.build-debug.outputs.producer-attempt }}
+      RUNTIME_MANIFEST_SHA256: ${{ needs.build-debug.outputs.manifest-sha256 }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - *ci-setup-7
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build-debug.outputs.artifact-id }}
+          path: ${{ runner.temp }}/runtime-debug
+          merge-multiple: true
+      - name: "Verify and install runtime before gates"
+        run: |
+          node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-debug"
+      - *ci-setup-6
+      - *ci-setup-8
+      - *ci-setup-9
+      - *ci-setup-10
+      - *ci-setup-11
+      - *ci-setup-26
+      - *ci-setup-46
+      - name: "Provision the locked tutorial Vue runtime"
+        run: |
+          npm install --prefix "$RUNNER_TEMP/lekalo-client-sdk-vue" --ignore-scripts --no-audit --no-fund --no-save typescript@5.9.3 @vue/compiler-sfc@3.4.38
+      - name: Replay portable documentation commands in disposable copies (issue #105)
+        timeout-minutes: 60
+        env:
+          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          node scripts/test-docs-ownership.mjs
+          node scripts/test-fixture-git.mjs
+          node scripts/test-docs-examples.mjs
+      - name: Replay the Laravel and Vue tutorial in a disposable copy (issue #105)
+        timeout-minutes: 20
+        env:
+          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          delim=":"; if [ "$RUNNER_OS" = "Windows" ]; then delim=";"; fi
+          NODE_PATH="$NODE_PATH$delim$RUNNER_TEMP/lekalo-client-sdk-vue/node_modules" node scripts/test-docs-examples.mjs --lane planner
+      - *ci-setup-104
+
+  mcp:
+    name: "mcp"
+    runs-on: ${{ inputs.os }}
+    needs: build-debug
+    env:
+      RUNTIME_IMAGE: ${{ inputs.os }}
+      RUNTIME_PROFILE: debug
+      LEKALO_CI_RUNTIME: required
+      RUNTIME_PRODUCER_ATTEMPT: ${{ needs.build-debug.outputs.producer-attempt }}
+      RUNTIME_MANIFEST_SHA256: ${{ needs.build-debug.outputs.manifest-sha256 }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - *ci-setup-7
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build-debug.outputs.artifact-id }}
+          path: ${{ runner.temp }}/runtime-debug
+          merge-multiple: true
+      - name: "Verify and install runtime before gates"
+        run: |
+          node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-debug"
+      - *ci-setup-8
+      - name: Run the read-only MCP stdio gate (issue #33)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-stdio.mjs
+          node scripts/test-mcp-notifications.mjs
+      - name: Provision the qualified MCP host SDK outside the checkout
+        run: npm install --prefix "$RUNNER_TEMP/lekalo-mcp-sdk" --ignore-scripts --no-audit --no-fund --no-save @modelcontextprotocol/sdk@1.32.1
+      - name: Qualify the real MCP host connection (issue #33)
+        env:
+          NODE_PATH: ${{ runner.temp }}/lekalo-mcp-sdk/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          node scripts/test-mcp-host.mjs
+          node scripts/test-context-successor.mjs
+      - name: Provision the pinned AI Factory extension installer (issue #33)
+        run: npm install --prefix "$RUNNER_TEMP/lekalo-ai-factory" --ignore-scripts --no-audit --no-fund --no-save ai-factory@2.19.0
+      - name: Qualify the installed AI Factory extension (issue #33)
+        timeout-minutes: 5
+        env:
+          NODE_PATH: ${{ runner.temp }}/lekalo-mcp-sdk/node_modules
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+          LEKALO_AI_FACTORY_DIR: ${{ runner.temp }}/lekalo-ai-factory/node_modules/ai-factory
+        run: node scripts/test-mcp-ai-factory.mjs
+
+  rust:
+    name: "rust"
+    runs-on: ${{ inputs.os }}
+    env:
+      RUNTIME_IMAGE: ${{ inputs.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - *ci-setup-7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-platform-rust
+      - *ci-setup-6
+      - *ci-setup-90
+      - *ci-setup-8
+      - *ci-setup-9
+      - *ci-setup-10
+      - *ci-setup-11
+      - *ci-setup-26
+      - *ci-setup-46
+      - *ci-setup-35
+      - *ci-setup-36
+      - run: cargo build --workspace --locked
+      - name: Qualify confined Unix execution and denied host paths
+        if: runner.os != 'Windows'
+        timeout-minutes: 3
+        run: cargo test -p lekalo-core --lib unix_confined_ --locked -- --nocapture
+      - name: Qualify bounded Unix process and request-file lifecycle
+        if: runner.os != 'Windows'
+        timeout-minutes: 3
+        run: cargo test -p lekalo-core --test target_transport_unix --locked -- --test-threads=1
+      - name: Run the adapter containment suite (issue #89)
+        timeout-minutes: 5
+        # Serialized: the staging-cleanup assertions count live
+        # lekalo-target-sandbox-* dirs in the shared temp dir, which only
+        # reports our own run when no sibling test holds one.
+        run: cargo test -p lekalo-core --test target_protocol_security --locked -- --test-threads=1
+      - name: Run the remaining Rust tests without repeating qualification
+        run: node scripts/ci-rust-tests.mjs
+      - *ci-setup-104
+
+  native-execution:
+    name: "native-execution"
+    runs-on: ${{ inputs.os }}
+    needs: build-release
+    env:
+      RUNTIME_IMAGE: ${{ inputs.os }}
+      RUNTIME_PROFILE: release
+      LEKALO_CI_RUNTIME: required
+      RUNTIME_PRODUCER_ATTEMPT: ${{ needs.build-release.outputs.producer-attempt }}
+      RUNTIME_MANIFEST_SHA256: ${{ needs.build-release.outputs.manifest-sha256 }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          package-manager-cache: false
+      - *ci-setup-7
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build-release.outputs.artifact-id }}
+          path: ${{ runner.temp }}/runtime-release
+          merge-multiple: true
+      - name: "Verify and install runtime before gates"
+        run: |
+          node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-release"
+      - *ci-setup-8
+      - *ci-setup-9
+      - *ci-setup-10
+      - *ci-setup-11
+      - *ci-setup-26
+      - name: Execute approved native plans through the release CLI (issue #151)
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+        run: |
+          set -euo pipefail
+          node scripts/gen-native-execution-protocol.mjs --check
+          node scripts/gen-native-execution-contracts.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-native-execution.mjs
+      - name: Execute declared workspace tools through production verify (issue #156)
+        timeout-minutes: 15
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+          LEKALO_NODE_TOOLS_HOME: ${{ runner.temp }}/lekalo-declared-node-tools
+          LEKALO_NATIVE_REPORTS_DIR: ${{ runner.temp }}/lekalo-native-acceptance
+        run: |
+          set -euo pipefail
+          node scripts/gen-node-native-contracts.mjs --check
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-node-native-tools.mjs --provision
+      - name: "Qualify the clean MVP user workflow (issue #1)"
+        timeout-minutes: 15
+        env:
+          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
+          LEKALO_NODE_TOOLS_HOME: ${{ runner.temp }}/lekalo-declared-node-tools
+          LEKALO_NATIVE_REPORTS_DIR: ${{ runner.temp }}/lekalo-mvp-acceptance
+        run: node scripts/test-mvp-workflow.mjs
+      - name: Retain native plans and measured verify reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-acceptance-${{ inputs.os }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/lekalo-native-acceptance/
+            ${{ runner.temp }}/lekalo-mvp-acceptance/
+          if-no-files-found: ignore
+          retention-days: 14
+      - *ci-setup-104

@@ -248,6 +248,7 @@ if (lifecycleNames.length === 0) fail("family-directory-empty", "lifecycle");
 
 const hostCli = join(ROOT, "target", "debug", process.platform === "win32" ? "lekalo.exe" : "lekalo");
 if (!existsSync(hostCli)) {
+  if (process.env.LEKALO_CI_RUNTIME === "required") fail("cli-missing", "Verified CI runtime is missing; refusing Cargo fallback");
   const build = run("cargo", ["build", "--locked", "-p", "lekalo-cli"]);
   if (build.status !== 0) fail("cli-missing", `build the host CLI first: ${(build.stderr ?? "").slice(-400)}`);
 }

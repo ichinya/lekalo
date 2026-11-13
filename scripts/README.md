@@ -1,5 +1,22 @@
 # Maintenance scripts
 
+Platform CI uses [ci-runtime-artifacts.mjs](ci-runtime-artifacts.mjs) to package
+and verify debug/release CLI files and the debug TypeScript native example on
+Linux, Windows and macOS. Its manifest binds source/run/producer attempt,
+OS/architecture/runner label/hosted `ImageOS` family/profile and every file's
+size and SHA-256. Verification
+rejects unknown files, unsafe paths, symlinks and missing or mismatched data
+before installing anything. Executable permissions are restored afterwards.
+
+[check-ci-platform.mjs](check-ci-platform.mjs) checks the reusable job graph,
+runtime handoff, original gate inventory and unchanged event/release policies.
+[lib/ci-workflow.mjs](lib/ci-workflow.mjs) reads the repository's strict block
+layout and complete setup-step aliases; actionlint validates the YAML itself.
+Run `node --test scripts/ci-runtime-artifacts.test.mjs scripts/ci-platform.test.mjs`
+for the handoff and negative graph controls. See the [contributor guide](../docs/contributing.md#platform-ci-lanes)
+for owners, prerequisites, cache separation and rerun procedure. The separate
+Linux/x64 Contracts helper keeps its existing ABI and artifact contract.
+
 Scripts here are maintained repository tools. Use [contributing](../docs/contributing.md) for setup and check selection. This page inventories script roles. A fixture writer may be required even when CI invokes only its verifier.
 
 | Family | Purpose and entry points |

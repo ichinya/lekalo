@@ -50,6 +50,62 @@ Tag pushes do not use path filters. Reference projects has no automatic tag
 trigger; release asset builds use the separate Release binaries workflow.
 Fork PRs retain their GitHub-hosted runner routing and existing approval rules.
 
+### Platform CI lanes
+
+The local [platform workflow](../.github/workflows/ci-platform.yml) is called
+once per Ubuntu 26.04, Windows and macOS image. Each call starts `build-debug`,
+`build-release` and `rust` independently. Debug consumers need only their own
+OS's `build-debug`; `native-execution` needs only `build-release`.
+
+| Owner | Gates and prerequisites |
+| --- | --- |
+| `cli-core` | Domain/governance, watch/search, privacy, goldens and CI reports; Node, PHP/Composer, planner vendor, compiler bundle and confinement |
+| `node-typescript` | Adapters, scanner, framework bindings, generation, TypeScript native example and brownfield pilot; Node, PHP, compiler bundle and confinement |
+| `php-laravel` | PHP, Laravel, task-links, planner and Node/PHP scenario parity; Node, PHP/Composer, planner vendor, compiler bundle and confinement |
+| `python` | Standalone Rust adapter build/test, protocol, observed/public scan and FastAPI; Rust, Node, Python, compiler bundle and confinement |
+| `sdk` | Client/adapter SDK, vectors, Go smoke, conformance and extracted packages; Rust, Go, Node, PHP, compiler bundle and confinement |
+| `docs` | Portable and Laravel/Vue replay; Node, PHP/Composer, planner vendor, pinned Vue/TypeScript, compiler bundle and confinement |
+| `mcp` | Stdio, real host SDK and installed extension; Node and pinned host/extension packages |
+| `rust` | Existing non-overlapping Rust groups and qualifications; Rust, Node, PHP, Go, planner vendor, compiler bundle and confinement |
+| `native-execution` | Native plans, Node workspace tools and MVP workflow; release CLI, Node, compiler bundle and confinement |
+
+The frozen [gate inventory](../.github/ci/platform-gates.json) retains the exact
+baseline arguments, env, conditions, budgets and artifact settings.
+`node scripts/check-ci-platform.mjs` checks that each gate has one owner and
+that event/fork, unrelated jobs and release policies remain intact. Common
+setup steps use YAML anchors; each job still provisions its own directories.
+
+Runtime artifacts contain only the CLI and, for debug, the TypeScript native
+contract example. The manifest binds the checkout SHA, workflow run, producer
+attempt, OS, architecture, runner label, hosted `ImageOS` family, profile,
+byte sizes and SHA-256 digests. A rolling label moving to another image family
+requires a new producer; patch updates within that family remain compatible.
+Consumers download by producer output artifact ID and validate every file
+before installing executables. A missing or unsuitable artifact fails the job;
+privacy, brownfield and SDK gates cannot hide it with a Cargo fallback in CI.
+Standalone local invocations retain their build fallback.
+
+Rust builds its own test targets independently. Python retains its standalone
+adapter builds; SDK retains production-oracle, fresh-template and extracted
+package builds. These test builds are intentionally separate from the shared
+runtime producers. Cargo caches have separate lane keys; SDK/Python cache only
+outside the target directory, so a cache cannot replace the verified host CLI.
+No full Cargo target or Rust test executable is transferred.
+
+For a consumer-only rerun within seven days, rerun the individual job and retain
+the successful producer's artifact ID, manifest digest and producer attempt.
+Do not derive an artifact name from the consumer's current `run_attempt`.
+Rerunning a producer creates a new attempt-qualified artifact; dependent jobs
+use its new outputs. Expired artifacts require rerunning the producer. Check
+the actual CI result after either operation: local handoff tests do not attest
+GitHub's rerun scheduling. Compatible `lekalo-ci-reports-*` and
+`native-acceptance-*` report prefixes and failure cleanup are retained.
+
+Measure Windows CI from workflow creation through the last mandatory Windows
+job, including queue, setup, transfer and post steps. Record full workflow
+wall-clock and other OS results separately; execution times of parallel jobs
+must not be added together or substituted for that measurement.
+
 For the Rust workspace:
 
 ```sh

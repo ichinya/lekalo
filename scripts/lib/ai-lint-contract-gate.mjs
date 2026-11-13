@@ -1,3 +1,4 @@
+import {assertRuntimeGate} from './ci-workflow.mjs';
 // Issue #76. Every family gate checks committed bytes AND fresh CLI behavior.
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -288,7 +289,7 @@ export function gate(family) {
   assert.equal(productProbe.status,0);assert.equal(productProbe.stdout.trim(),`lekalo ${product}`,'built product must match exact golden selection');
   const update=process.argv.includes('--update'),env=environment();
   try {
-    const ci=readFileSync(join(root,'.github/workflows/ci.yml'),'utf8').split('  build-test:')[1];assert.ok(ci,'build-test job');const buildAt=ci.indexOf('cargo build --workspace --locked');assert.ok(buildAt>=0);for(const f of ['report','evidence','config','waivers','comparison']) {assert.ok(ci.indexOf('node scripts/test-ai-lint-'+f+'-contracts.mjs')>buildAt,'gate runs after build');assert.equal(read('tests/fixtures/fixture-provenance.json').families.find(e=>e.family==='ai-lint-'+f)?.origin,'synthetic');}
+    for(const f of ['report','evidence','config','waivers','comparison']) {assertRuntimeGate('test-ai-lint-'+f+'-contracts.mjs',{ajv:true});assert.equal(read('tests/fixtures/fixture-provenance.json').families.find(e=>e.family==='ai-lint-'+f)?.origin,'synthetic');}
     if(family==='report') {for(const generator of ['gen-ai-lint-contracts.mjs','gen-ai-lint-protocol.mjs']) {const r=spawnSync(process.execPath,[join(root,'scripts',generator),'--check'],{cwd:root,encoding:'utf8'});assert.equal(r.status,0,r.stderr);}}
     if(family==='report')reportCases(env,update);
     else if(family==='evidence'){evidenceCases(env,update);adapterCases(env,update);}
