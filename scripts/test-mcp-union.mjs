@@ -28,6 +28,9 @@ try {
     copyFileSync(join(root, "scripts", script), join(stage, "scripts", script));
   }
   copyFileSync(join(root, "scripts", "lib", "registry-union.mjs"), join(stage, "scripts", "lib", "registry-union.mjs"));
+  // The boundary gate imports the workflow guard before it can run admission.
+  // Stage that dependency too, so negatives exercise the registry refusal.
+  copyFileSync(join(root, "scripts", "lib", "ci-workflow.mjs"), join(stage, "scripts", "lib", "ci-workflow.mjs"));
   // The gates read their sibling contract pins (predecessor registries,
   // the mcp family artifacts, schemas) from contracts/: stage the whole
   // family the same way the checkout lays it out, then mutate ONLY the

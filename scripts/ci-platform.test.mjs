@@ -43,3 +43,10 @@ test('unsupported aliases, duplicate anchors and overrides fail closed',()=>{
  assert.throws(()=>expandSetupSteps('      - &ci-one\n        run: true\n      - &ci-one\n        run: true'),/Duplicate/);
  assert.throws(()=>expandSetupSteps('      - &ci-one\n        run: true\n      - *ci-one\n        if: false'),/override/);
 });
+test('docs replay requires its own Go toolchain for the UI checked join',()=>{
+ const start=callee.indexOf('  docs:'),end=callee.indexOf('  mcp:',start);
+ assert(start>=0&&end>start);
+ const block=callee.slice(start,end),missing=block.replace('      - *ci-setup-90\n','');
+ assert.notEqual(block,missing,'Docs must explicitly provision Go/gofmt');
+ assert.throws(()=>checkPlatform({callee:callee.slice(0,start)+missing+callee.slice(end)}),/docs: missing or altered prerequisite/);
+});

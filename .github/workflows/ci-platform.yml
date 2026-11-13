@@ -947,6 +947,7 @@ jobs:
       - *ci-setup-11
       - *ci-setup-26
       - *ci-setup-46
+      - *ci-setup-90
       - name: "Provision the locked tutorial Vue runtime"
         run: |
           npm install --prefix "$RUNNER_TEMP/lekalo-client-sdk-vue" --ignore-scripts --no-audit --no-fund --no-save typescript@5.9.3 @vue/compiler-sfc@3.4.38

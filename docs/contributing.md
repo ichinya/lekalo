@@ -64,7 +64,7 @@ OS's `build-debug`; `native-execution` needs only `build-release`.
 | `php-laravel` | PHP, Laravel, task-links, planner and Node/PHP scenario parity; Node, PHP/Composer, planner vendor, compiler bundle and confinement |
 | `python` | Standalone Rust adapter build/test, protocol, observed/public scan and FastAPI; Rust, Node, Python, compiler bundle and confinement |
 | `sdk` | Client/adapter SDK, vectors, Go smoke, conformance and extracted packages; Rust, Go, Node, PHP, compiler bundle and confinement |
-| `docs` | Portable and Laravel/Vue replay; Node, PHP/Composer, planner vendor, pinned Vue/TypeScript, compiler bundle and confinement |
+| `docs` | Portable and Laravel/Vue replay; Node, PHP/Composer, Go/gofmt, planner vendor, pinned Vue/TypeScript, compiler bundle and confinement |
 | `mcp` | Stdio, real host SDK and installed extension; Node and pinned host/extension packages |
 | `rust` | Existing non-overlapping Rust groups and qualifications; Rust, Node, PHP, Go, planner vendor, compiler bundle and confinement |
 | `native-execution` | Native plans, Node workspace tools and MVP workflow; release CLI, Node, compiler bundle and confinement |
