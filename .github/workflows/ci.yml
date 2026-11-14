@@ -434,7 +434,7 @@ jobs:
           test "$PIN_VERSION" = "1.0.0"
           # Resolve THIS runner's platform entry from the lock — the
           # digest is custody, not decoration.
-          read -r PLATFORM ARCHIVE WANT_SHA <<EOF
+          read -r _PLATFORM ARCHIVE WANT_SHA <<EOF
           $(node -e "
             const lock = require('./$LOCK');
             const platform = process.arch === 'arm64' && process.platform === 'darwin'

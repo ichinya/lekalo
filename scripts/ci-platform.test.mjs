@@ -1,12 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {root,assertRuntimeGate,assertContractsGate,platformGraph,expandSetupSteps} from './lib/ci-workflow.mjs';
+import {root,jobs,assertRuntimeGate,assertContractsGate,platformGraph,expandSetupSteps} from './lib/ci-workflow.mjs';
 import {checkPlatform} from './check-ci-platform.mjs';
 const caller=readFileSync(join(root,'.github/workflows/ci.yml'),'utf8').replaceAll('\r\n','\n');
 const callee=readFileSync(join(root,'.github/workflows/ci-platform.yml'),'utf8').replaceAll('\r\n','\n');
 test('all 91 original gates have one owner with preserved semantics',()=>assert.deepEqual(checkPlatform(),{ok:true,gates:91,platforms:3,jobsPerPlatform:12}));
+test('Mago lint cleanup only renames the intentionally discarded platform field',()=>{
+ const job=jobs(caller)['mago-real'].raw;
+ assert.equal(job.split('read -r _PLATFORM ARCHIVE WANT_SHA <<EOF').length,2);
+ const original=job.replace('read -r _PLATFORM ARCHIVE WANT_SHA <<EOF','read -r PLATFORM ARCHIVE WANT_SHA <<EOF');
+ // Preserve the source job byte for byte apart from this one identifier.
+ assert.equal(createHash('sha256').update(original).digest('hex'),'630abb445f2609326c70acf4cad07a922055e3619c1cb0bc40c1afdad4d843c7');
+ const changed=caller.replace('read -r _PLATFORM ARCHIVE WANT_SHA <<EOF','read -r _PLATFORM WANT_SHA ARCHIVE <<EOF');
+ assert.notEqual(changed,caller);
+ assert.throws(()=>checkPlatform({caller:changed}),/Unrelated job mago-real changed/);
+});
 const mutations=[
  ['Rust barrier',s=>s.replace('  rust:\n','  rust:\n    needs: build-debug\n')],
  ['process Rust barrier',s=>s.replace('  rust-process:\n','  rust-process:\n    needs: build-debug\n')],
