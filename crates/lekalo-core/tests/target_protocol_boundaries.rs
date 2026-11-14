@@ -88,7 +88,7 @@ fn plan(client: &mut TargetClient, cmd: &AdapterCommand, p: &Project) -> String 
         p,
         request(Operation::Generate, Some(true), None),
     )
-    .unwrap()
+    .unwrap_or_else(|failure| panic!("generate dry-run failed: {failure:?}"))
     .plan_id
     .unwrap()
 }
@@ -582,7 +582,7 @@ fn unicode_error_codes_preserve_classification_and_public_redaction() {
         assert_eq!(
             matches!(failure, TargetFailure::OperationFailed { .. }),
             valid,
-            "{vector}"
+            "{vector}: {failure:?}"
         );
         let public = lekalo_core::DomainResult::from(&failure).to_json_string();
         if valid {
@@ -593,7 +593,10 @@ fn unicode_error_codes_preserve_classification_and_public_redaction() {
             assert!(!public.contains(&code));
             assert!(public.contains("adapter-error"));
         } else {
-            assert!(matches!(failure, TargetFailure::ResponseInvalid { .. }));
+            assert!(
+                matches!(failure, TargetFailure::ResponseInvalid { .. }),
+                "{vector}: {failure:?}"
+            );
         }
         p.unchanged();
     }

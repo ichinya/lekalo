@@ -1810,6 +1810,23 @@
       11,
       26,
       104
+    ],
+    "rust-process": [
+      0,
+      3,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      26,
+      35,
+      36,
+      46,
+      90,
+      104
     ]
   },
   "expectedOutcome": "All mandatory gates succeed; only original platform conditions may skip. Failure diagnostics retain their original failure-only conditions."

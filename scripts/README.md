@@ -17,6 +17,15 @@ for the handoff and negative graph controls. See the [contributor guide](../docs
 for owners, prerequisites, cache separation and rerun procedure. The separate
 Linux/x64 Contracts helper keeps its existing ABI and artifact contract.
 
+[ci-rust-tests.mjs](ci-rust-tests.mjs) partitions remaining tests into independent
+`--lane=core` and `--lane=process` jobs. The latter owns CLI tests and the bounded
+Windows watch/boundary fixtures; qualifications stay in the former. Use
+`--check-coverage` across all lanes to detect omitted or repeated cases.
+[privacy-runtime-helpers.test.mjs](privacy-runtime-helpers.test.mjs) verifies
+that privacy runtime gates use the required debug handoff with Cargo absent
+and refuse a missing handoff rather than building or using a release binary.
+Run it with `node --test scripts/privacy-runtime-helpers.test.mjs`.
+
 Scripts here are maintained repository tools. Use [contributing](../docs/contributing.md) for setup and check selection. This page inventories script roles. A fixture writer may be required even when CI invokes only its verifier.
 
 | Family | Purpose and entry points |

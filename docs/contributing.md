@@ -54,7 +54,7 @@ Fork PRs retain their GitHub-hosted runner routing and existing approval rules.
 
 The local [platform workflow](../.github/workflows/ci-platform.yml) is called
 once per Ubuntu 26.04, Windows and macOS image. Each call starts `build-debug`,
-`build-release` and `rust` independently. Debug consumers need only their own
+`build-release`, `rust` and `rust-process` independently. Debug consumers need only their own
 OS's `build-debug`; `native-execution` needs only `build-release`.
 
 | Owner | Gates and prerequisites |
@@ -66,7 +66,8 @@ OS's `build-debug`; `native-execution` needs only `build-release`.
 | `sdk` | Client/adapter SDK, vectors, Go smoke, conformance and extracted packages; Rust, Go, Node, PHP, compiler bundle and confinement |
 | `docs` | Portable and Laravel/Vue replay; Node, PHP/Composer, Go/gofmt, planner vendor, pinned Vue/TypeScript, compiler bundle and confinement |
 | `mcp` | Stdio, real host SDK and installed extension; Node and pinned host/extension packages |
-| `rust` | Existing non-overlapping Rust groups and qualifications; Rust, Node, PHP, Go, planner vendor, compiler bundle and confinement |
+| `rust` | Core Rust groups and existing qualifications; Rust, Node, PHP, Go, planner vendor, compiler bundle and confinement |
+| `rust-process` | CLI tests and Windows watch/boundary process fixtures, run sequentially by group; same test prerequisites as `rust`, on an independent runner |
 | `native-execution` | Native plans, Node workspace tools and MVP workflow; release CLI, Node, compiler bundle and confinement |
 
 The frozen [gate inventory](../.github/ci/platform-gates.json) retains the exact
@@ -86,6 +87,8 @@ Consumers download by producer output artifact ID and validate every file
 before installing executables. A missing or unsuitable artifact fails the job;
 privacy, brownfield and SDK gates cannot hide it with a Cargo fallback in CI.
 Standalone local invocations retain their build fallback.
+Both privacy runtime gates reuse that debug CLI without invoking Cargo; a
+missing debug executable fails even if a release binary is present.
 
 Rust builds its own test targets independently. Python retains its standalone
 adapter builds; SDK retains production-oracle, fresh-template and extracted
@@ -93,6 +96,9 @@ package builds. These test builds are intentionally separate from the shared
 runtime producers. Cargo caches have separate lane keys; SDK/Python cache only
 outside the target directory, so a cache cannot replace the verified host CLI.
 No full Cargo target or Rust test executable is transferred.
+The two Rust lanes compile their own workspace/test prerequisites and use
+separate Cargo cache keys. This is test compilation, not an additional runtime
+publisher. Neither Rust lane waits for producers or for the other Rust lane.
 
 For a consumer-only rerun within seven days, rerun the individual job and retain
 the successful producer's artifact ID, manifest digest and producer attempt.
@@ -130,6 +136,12 @@ the parallel core unit group excludes that same prefix. These Node fixture
 tests keep their existing deadlines and assertions, without competing with
 unrelated unit tests for process startup. Coverage listing rejects an empty
 watch group and proves that the split neither omits nor repeats cases.
+The `windows-boundaries` group similarly owns all `target_protocol_boundaries`
+tests with two threads and their unchanged 10-second request deadlines.
+Both Windows fixture groups run after the CLI group in `rust-process`, away
+from parallel core unit/integration tests. Other operating systems retain
+boundary tests in the ordinary integration group. Hosted stability still needs
+CI confirmation; lower concurrency is not evidence of a reproduced root cause.
 
 Use `node scripts/ci-rust-tests.mjs --plan` to inspect group ownership and
 `node scripts/ci-rust-tests.mjs --check-coverage` to compare the complete
@@ -138,6 +150,10 @@ The latter compiles test targets but only lists their cases. Running the script
 without an option executes only the remaining groups; it does not replace the
 three dedicated qualification steps. Local `cargo test --workspace --locked`
 still runs the complete default suite directly.
+CI uses `--lane=core` in `rust` and `--lane=process` in `rust-process`.
+`--plan` may be combined with a lane to inspect its ownership. Coverage checks
+must include all lanes: `--check-coverage` refuses a partial lane. Unit controls
+check that the two lanes cover each group exactly once and propagate failures.
 
 Only failure diagnostics may repeat a root test group. The Unix transport
 test's child watchdog processes and tests of SDK packages extracted into fresh

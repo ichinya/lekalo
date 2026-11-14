@@ -19,7 +19,7 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
  assert.match(callee,/permissions:\n  contents: read\n/);
  const cargo=environment(callee.slice(0,callee.indexOf('\njobs:')),0);
  assert.deepEqual(cargo,{CARGO_PROFILE_DEV_DEBUG:'0',CARGO_PROFILE_TEST_DEBUG:'0',CARGO_PROFILE_DEV_DEBUG_ASSERTIONS:'true',CARGO_PROFILE_TEST_DEBUG_ASSERTIONS:'true',CARGO_PROFILE_DEV_OVERFLOW_CHECKS:'true',CARGO_PROFILE_TEST_OVERFLOW_CHECKS:'true'});
- assert.deepEqual(Object.keys(graph).sort(),['build-debug','build-release','rust',...consumers].sort());
+ assert.deepEqual(Object.keys(graph).sort(),['build-debug','build-release','rust','rust-process',...consumers].sort());
  for(const job of Object.values(graph)){
   assert.equal(job.runner,expr('inputs.os'),`${job.id}: OS isolation`);
   assert(!field(job.raw,'if')&&!field(job.raw,'continue-on-error'),`${job.id}: mandatory job`);
@@ -43,9 +43,18 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   assert.equal(field(p.steps[upload].raw,'if-no-files-found',10),'error');
   assert(p.steps.every(s=>!s.condition));
  }
- assert.deepEqual(graph.rust.needs,[]);assert(!graph.rust.steps.some(s=>s.uses?.startsWith('actions/download-artifact')));
- assert(graph.rust.steps.some(s=>s.run==='cargo build --workspace --locked'));
- for(const tool of ['shivammathur/setup-php@v2','actions/setup-go@v7'])assert(graph.rust.steps.some(s=>s.uses===tool),`Rust parity needs ${tool}`);
+ for(const owner of ['rust','rust-process']){
+  const job=graph[owner];
+  assert.deepEqual(job.needs,[]);assert(!job.steps.some(s=>s.uses?.startsWith('actions/download-artifact')));
+  assert(job.steps.some(s=>s.run==='cargo build --workspace --locked'));
+  for(const tool of ['shivammathur/setup-php@v2','actions/setup-go@v7'])assert(job.steps.some(s=>s.uses===tool),`${owner} parity needs ${tool}`);
+  const lane=owner==='rust'?'core':'process';
+  const runs=job.steps.filter(s=>s.run?.includes('node scripts/ci-rust-tests.mjs'));
+  assert.equal(runs.length,1,`${owner}: one Rust lane invocation`);
+  assert.equal(runs[0].run,`node scripts/ci-rust-tests.mjs --lane=${lane}`);
+  assert(!runs[0].condition,`${owner}: conditional Rust lane`);
+ }
+ assert(!graph['rust-process'].steps.some(s=>s.run?.includes('cargo test')), 'Qualification must stay in core Rust lane');
  for(const owner of consumers){
   const j=graph[owner],profile=owner==='native-execution'?'release':'debug';
   // Apply the same handoff guard as live contract gates, using a unique marker.
@@ -65,6 +74,8 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   const position=graph[owner].steps.findIndex(s=>s.raw===expected);
   assert(position>=0,`${owner}: missing or altered prerequisite ${s.name??s.uses}`);
   const gates=inventory.gates.filter(g=>g.owner===owner).map(g=>graph[owner].steps.findIndex(s=>s.name===g.name));
+  if(owner==='rust-process')gates.push(graph[owner].steps.findIndex(s=>s.run==='node scripts/ci-rust-tests.mjs --lane=process'));
+  assert(gates.length>0&&gates.every(p=>p>=0),`${owner}: missing execution step`);
   if(index===104)assert(position>Math.max(...gates),`${owner}: premature cleanup`);
   else assert(position<Math.min(...gates),`${owner}: prerequisite runs after a gate`);
  }
@@ -76,6 +87,9 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   if(gate.id==='build-test-075')expected=expected.replace('          cargo build -p lekalo-core --example typescript-native-contract --locked\n','');
   if(gate.id==='native-execution-10')expected=expected.replace('          cargo build --release -p lekalo-cli --locked\n','');
   if(gate.id==='native-execution-13')expected=expected.replace('name: native-acceptance-'+expr('inputs.os'),'name: native-acceptance-'+expr('inputs.os')+'-'+expr('github.run_attempt'));
+  // The original test set is now partitioned between two mandatory jobs;
+  // selectGroups/checkCoverage prove the union, and both commands are pinned above.
+  if(gate.id==='build-test-056')expected=expected.replace('run: node scripts/ci-rust-tests.mjs','run: node scripts/ci-rust-tests.mjs --lane=core');
   const matches=Object.values(graph).flatMap(job=>job.steps.filter(s=>s.name===gate.name).map(s=>({job,s})));
   assert.equal(matches.length,1,`${gate.id}: one owner`);assert.equal(matches[0].job.id,gate.owner,`${gate.id}: wrong owner`);
   assert.equal(matches[0].s.raw,expected,`${gate.id}: gate arguments/env/conditions/timeout changed`);
