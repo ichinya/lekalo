@@ -1688,7 +1688,7 @@
     "msrv": "601c45fdf40e9d7d866cd7d6b65b472a897fde451c71e0b70cb6214bc5adebab",
     "mysql-docs": "aec0cb474724d11db8ecefce5cd8a9327e0a9b37e8ded4ef24c71aecb289f751",
     "postgres-migrations": "cd2dedd47200730945d55ee9e81dfce3bb644d30746473ce52795bffc5fc8c31",
-    "mago-real": "630abb445f2609326c70acf4cad07a922055e3619c1cb0bc40c1afdad4d843c7",
+    "mago-real": "c2de82dae9281a5c3a22cccd1313e33b4d9b504beabf092eb2165c0c3def73c7",
     "worklog-changelog-pilot": "cf42275186ce568b938a6889f41a9080d8762da917ec6caec74361304fbef935"
   },
   "callerPreambleSha256": "528b38b92e26539fbd21da259165029b4e9e85d3b343f9f4276f025a12a0d7e2",
