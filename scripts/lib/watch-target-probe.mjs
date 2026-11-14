@@ -7,6 +7,19 @@ import {cpSync,mkdirSync,mkdtempSync,readFileSync,readdirSync,renameSync,rmSync,
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {StringDecoder} from 'node:string_decoder';
+// Windows can refuse replacement while the watcher holds a read handle.
+// Retry that editor operation only, never the probe or adapter request.
+export function replaceFixture(staged,source,deadline,{platform=process.platform,rename=renameSync,now=Date.now,wait=ms=>Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,ms)}={}){
+ const until=Math.min(deadline,now()+5000);let retries=0;
+ for(;;){
+  try{rename(staged,source);return retries;}
+  catch(error){
+   const remaining=until-now();
+   if(platform!=='win32'||!['EPERM','EACCES','EBUSY'].includes(error.code)||remaining<=0)throw error;
+   wait(Math.min(1,remaining));retries++;
+  }
+ }
+}
 function inventory(dir,prefix=''){
  return readdirSync(dir,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name)).flatMap(e=>{
   assert(e.isFile()||e.isDirectory());const path=prefix+e.name;
@@ -16,6 +29,7 @@ function inventory(dir,prefix=''){
 export async function selectiveTargetProbe({root,binary,env,fixture='project'}){
  const project=mkdtempSync(join(tmpdir(),'lekalo-watch-selected-'));
  const staged=project+'.entities-next';
+ let oracle,comparison;
  try{
   cpSync(join(root,'tests/fixtures/watch',fixture),project,{recursive:true});
   mkdirSync(join(project,'adapters'));mkdirSync(join(project,'src'));
@@ -25,15 +39,17 @@ export async function selectiveTargetProbe({root,binary,env,fixture='project'}){
   const lock=spawnSync(binary,['--no-cache','--json','lock','--',process.execPath,entry],{cwd:project,env,encoding:'utf8',timeout:30000});
   assert.ifError(lock.error);assert.equal(lock.status,0,lock.stdout+lock.stderr);
   const source=join(project,'lekalo/modules/planner/entities.yaml'),original=readFileSync(source,'utf8');
-  const events=[],completed=[],decoder=new StringDecoder('utf8');let pending='',stderr='',failure,cancelOnStart=false,expected=inventory(project);
+  const events=[],completed=[],decoder=new StringDecoder('utf8');let pending='',stderr='',failure,cancelOnStart=false,atomicReplaceRetries=0,expected=inventory(project);
   // Copied Node launches include macOS loader/codesign startup work. This
   // fixture deadline is independent of the cancellation/read-only assertions.
   const adapterTimeout=process.platform==='darwin'?'15000':'5000';
   const flags=['watch',...(fixture==='project-successor'?['--locked']:[]),'--backend','poll','--poll-interval-ms','100','--reconcile-ms','100','--debounce-ms','30','--max-wait-ms','150','--adapter-timeout-ms',adapterTimeout,'--target','watch-fixture','--validate','--json-lines'];
+  const deadline=Date.now()+120000;
+  const oracleTimeout=()=>{const remaining=Math.min(30000,deadline-Date.now());assert(remaining>0,'selective target deadline before oracle');return remaining;};
   const child=spawn(binary,[...flags,'--stop-after-runs','4'],{cwd:project,env,stdio:['ignore','pipe','pipe']});
   const edit=mode=>{writeFileSync(control,mode);expected=inventory(project);};
   await new Promise((resolve,reject)=>{
-   const timer=setTimeout(()=>{child.kill();reject(new Error('selective target deadline: '+stderr));},120000);
+   const timer=setTimeout(()=>{child.kill();reject(new Error('selective target deadline: '+stderr));},Math.max(1,deadline-Date.now()));
    child.on('error',error=>{clearTimeout(timer);reject(error);});
    child.stderr.on('data',data=>{stderr+=data;});
    child.stdout.on('data',data=>{try{
@@ -53,7 +69,7 @@ export async function selectiveTargetProbe({root,binary,env,fixture='project'}){
       // replace atomically on the same filesystem; keep all rapid saves.
       for(let version=2;version<=9;version++){
        writeFileSync(staged,original.replace('version: 1',`version: ${version}`),{flag:'wx'});
-       renameSync(staged,source);
+       atomicReplaceRetries+=replaceFixture(staged,source,deadline);
       }
       expected=inventory(project);
      }else if(completed.length===2){
@@ -61,34 +77,13 @@ export async function selectiveTargetProbe({root,binary,env,fixture='project'}){
       assert(work.some(w=>w.module==='planner'&&w.state==='executed'));
       assert(work.some(w=>w.module==='unrelated'&&w.state==='reused'));
       assert.deepEqual(e.result.diagnostics,completed[0].result.diagnostics,'rapid planner edits cannot lose the unrelated adapter failure');
-      // Clean full verification of the same settled tree is independent
-      // of watch reuse/partition merging. Work in a private copy because
-      // ordinary verify owns its ephemeral IR staging conventions.
-      const oracle=mkdtempSync(join(tmpdir(),'lekalo-watch-target-oracle-'));
-      try{
-       cpSync(project,oracle,{recursive:true});
-       if(fixture==='project-successor'){
-        const clean=spawnSync(binary,['--no-cache',...flags,'--stop-after-runs','1'],{cwd:oracle,env,encoding:'utf8',timeout:30000,maxBuffer:16*1024*1024});
-        assert.ifError(clean.error);
-        const result=clean.stdout.trim().split(/\r?\n/).map(JSON.parse).find(e=>e.event==='run-completed');
-        assert.equal(result.status,e.status,'successor targeted status equals a fresh no-reuse captured cycle');
-        assert.deepEqual(result.result.diagnostics,e.result.diagnostics);
-        assert.equal(result.result.pins.modelVersion,'0.8.0');
-        assert.equal(result.result.pins.versions.ir,'0.8.0');
-       }else{
-       const loaded=spawnSync(binary,['--no-cache','--json','load','--ir'],{cwd:oracle,env,encoding:'utf8',timeout:30000});
-       assert.ifError(loaded.error);assert.equal(loaded.status,0,loaded.stdout+loaded.stderr);
-       const ir=JSON.parse(loaded.stdout).ir;
-       mkdirSync(join(oracle,'.lekalo/cache/ir'),{recursive:true});
-       writeFileSync(join(oracle,'.lekalo/cache/ir',ir.project.id+'.json'),JSON.stringify(ir));
-       const clean=spawnSync(binary,['--no-cache','--json','verify','--target','watch-fixture','--report-file',join(oracle,'verification.json'),'--',process.execPath,join(oracle,'adapters/fixture.mjs')],{cwd:oracle,env,encoding:'utf8',timeout:30000,maxBuffer:16*1024*1024});
-       assert.ifError(clean.error);const result=JSON.parse(clean.stdout.trim()||clean.stderr.trim());
-       assert.equal(result.status,'invalid',JSON.stringify(result));
-       const report=JSON.parse(readFileSync(join(oracle,'verification.json'),'utf8'));
-       assert.equal(report.checks.find(c=>c.id==='adapter.watch-fixture')?.sourceOutcome,'fail');
-       assert.equal(e.status,result.status,'settled targeted status equals full clean adapter validation');
-       }
-      }finally{rmSync(oracle,{recursive:true,force:true});}
+      // Freeze this exact settled tree now, but run the independent oracle
+      // only after the primary child closes. A synchronous oracle here
+      // blocks stream handling and overlaps deadline-bound adapter startups.
+      oracle=mkdtempSync(join(tmpdir(),'lekalo-watch-target-oracle-'));
+      cpSync(project,oracle,{recursive:true});
+      assert.deepEqual(inventory(oracle),expected,'oracle snapshot matches the settled tree');
+      comparison=e;
       cancelOnStart=true;edit('hang');
      }else if(completed.length===3){
       assert(e.result.diagnostics.some(d=>d.id==='target.operation-failed'),'cancelled work cannot erase retained diagnostics');
@@ -104,6 +99,31 @@ export async function selectiveTargetProbe({root,binary,env,fixture='project'}){
   assert(events.some(e=>e.event==='run-cancelled'));
   for(const start of events.filter(e=>e.event==='run-started'))assert.equal(events.filter(e=>['run-completed','run-cancelled'].includes(e.event)&&e.runId===start.runId).length,1);
   assert.deepEqual(inventory(project),expected);
-  return {settled:completed.length,cancelled:events.filter(e=>e.event==='run-cancelled').length,cleanAdapterComparisons:1};
- }finally{rmSync(staged,{force:true});rmSync(project,{recursive:true,force:true});}
+  // Retain the original 120-second probe budget across both phases, with
+  // each oracle command still bounded by its former 30-second limit.
+  assert(oracle&&comparison,'the second settled cycle must have an oracle snapshot');
+  if(fixture==='project-successor'){
+   const clean=spawnSync(binary,['--no-cache',...flags,'--stop-after-runs','1'],{cwd:oracle,env,encoding:'utf8',timeout:oracleTimeout(),maxBuffer:16*1024*1024});
+   assert.ifError(clean.error);
+   const result=clean.stdout.trim().split(/\r?\n/).map(JSON.parse).find(e=>e.event==='run-completed');
+   assert.equal(result.status,comparison.status,'successor targeted status equals a fresh no-reuse captured cycle');
+   assert.deepEqual(result.result.diagnostics,comparison.result.diagnostics,'fresh successor oracle diagnostics match the captured cycle');
+   assert.equal(result.result.pins.modelVersion,'0.8.0');
+   assert.equal(result.result.pins.versions.ir,'0.8.0');
+  }else{
+   const loaded=spawnSync(binary,['--no-cache','--json','load','--ir'],{cwd:oracle,env,encoding:'utf8',timeout:oracleTimeout()});
+   assert.ifError(loaded.error);assert.equal(loaded.status,0,loaded.stdout+loaded.stderr);
+   const ir=JSON.parse(loaded.stdout).ir;
+   mkdirSync(join(oracle,'.lekalo/cache/ir'),{recursive:true});
+   writeFileSync(join(oracle,'.lekalo/cache/ir',ir.project.id+'.json'),JSON.stringify(ir));
+   const clean=spawnSync(binary,['--no-cache','--json','verify','--target','watch-fixture','--report-file',join(oracle,'verification.json'),'--',process.execPath,join(oracle,'adapters/fixture.mjs')],{cwd:oracle,env,encoding:'utf8',timeout:oracleTimeout(),maxBuffer:16*1024*1024});
+   assert.ifError(clean.error);const result=JSON.parse(clean.stdout.trim()||clean.stderr.trim());
+   assert.equal(result.status,'invalid',JSON.stringify(result));
+   const report=JSON.parse(readFileSync(join(oracle,'verification.json'),'utf8'));
+   assert.equal(report.checks.find(c=>c.id==='adapter.watch-fixture')?.sourceOutcome,'fail');
+   assert.equal(comparison.status,result.status,'settled targeted status equals full clean adapter validation');
+  }
+  assert.deepEqual(inventory(project),expected,'clean adapter comparison never changes the primary project');
+  return {settled:completed.length,cancelled:events.filter(e=>e.event==='run-cancelled').length,cleanAdapterComparisons:1,atomicReplaceRetries};
+ }finally{if(oracle)rmSync(oracle,{recursive:true,force:true});rmSync(staged,{force:true});rmSync(project,{recursive:true,force:true});}
 }

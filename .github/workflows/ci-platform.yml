@@ -206,7 +206,7 @@ jobs:
           rg --version
       - name: "Check platform CI ownership and artifact guards"
         run: |
-          node --test scripts/ci-runtime-artifacts.test.mjs scripts/ci-platform.test.mjs scripts/ci-rust-tests.test.mjs scripts/ci-contracts-cli.test.mjs scripts/privacy-runtime-helpers.test.mjs
+          node --test scripts/ci-runtime-artifacts.test.mjs scripts/ci-platform.test.mjs scripts/ci-rust-tests.test.mjs scripts/ci-contracts-cli.test.mjs scripts/privacy-runtime-helpers.test.mjs scripts/lib/watch-target-probe.test.mjs
           node scripts/check-ci-platform.mjs
       - name: Reject provenance pipe stalls and unsafe Git custody
         timeout-minutes: 3
