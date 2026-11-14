@@ -794,6 +794,11 @@ jobs:
           node-version: 24.x
           package-manager-cache: false
       - *ci-setup-7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-platform-python
+          cache-targets: false
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.build-debug.outputs.artifact-id }}
@@ -802,11 +807,6 @@ jobs:
       - name: "Verify and install runtime before gates"
         run: |
           node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-debug"
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ci-platform-python
-          cache-targets: false
       - *ci-setup-8
       - *ci-setup-9
       - *ci-setup-10
@@ -847,6 +847,11 @@ jobs:
           node-version: 24.x
           package-manager-cache: false
       - *ci-setup-7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-platform-sdk
+          cache-targets: false
       - uses: actions/download-artifact@v8
         with:
           artifact-ids: ${{ needs.build-debug.outputs.artifact-id }}
@@ -855,11 +860,6 @@ jobs:
       - name: "Verify and install runtime before gates"
         run: |
           node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-debug"
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ci-platform-sdk
-          cache-targets: false
       - *ci-setup-6
       - &ci-setup-90
         name: Provision the pinned Go toolchain for the client-SDK gate (issue #72)

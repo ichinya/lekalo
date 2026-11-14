@@ -62,6 +62,7 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   assertRuntimeGate(marker,{profile,graph:{[owner]:probe}});
   const verify=j.steps.findIndex(s=>s.run?.includes('ci-runtime-artifacts.mjs verify'));
   assert.equal(j.steps[verify].run,`node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-${profile}"`);
+  for(const [index,step] of j.steps.entries())if(step.uses==='Swatinem/rust-cache@v2')assert(index<verify,`${owner}: Rust cache must run before verified runtime installation`);
   assert.equal(field(j.steps.find(s=>s.uses==='actions/download-artifact@v8').raw,'path',10),`${expr('runner.temp')}/runtime-${profile}`);
   for(const s of j.steps)if(s.run?.includes('cargo build')||s.run?.includes('cargo test'))assert(['sdk','python'].includes(owner)||s.condition?.includes('failure()'),`Hidden Cargo in ${owner}`);
   if(['sdk','python'].includes(owner))assert(j.steps.some(s=>s.uses==='Swatinem/rust-cache@v2'&&field(s.raw,'cache-targets',10)==='false'),'A cache must not overwrite verified host binaries');

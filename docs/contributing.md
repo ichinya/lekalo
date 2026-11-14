@@ -94,7 +94,9 @@ Rust builds its own test targets independently. Python retains its standalone
 adapter builds; SDK retains production-oracle, fresh-template and extracted
 package builds. These test builds are intentionally separate from the shared
 runtime producers. Cargo caches have separate lane keys; SDK/Python cache only
-outside the target directory, so a cache cannot replace the verified host CLI.
+outside the target directory. Restore those caches before installing the verified
+host CLI: a partial cache match can still prune `target` even with target caching
+disabled. The workflow guard rejects cache restoration after runtime installation.
 No full Cargo target or Rust test executable is transferred.
 The two Rust lanes compile their own workspace/test prerequisites and use
 separate Cargo cache keys. This is test compilation, not an additional runtime

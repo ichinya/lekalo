@@ -49,6 +49,19 @@ test('caller cannot change event/fork policy or remove an OS',()=>{
  assert.throws(()=>checkPlatform({caller:caller.replace('os: [ubuntu-26.04, windows-latest, macos-latest]','os: [ubuntu-26.04, windows-latest]')}));
  assert.throws(()=>checkPlatform({caller:caller.replace('pull_request:', 'pull_request_target:')}));
 });
+
+for(const owner of ['python','sdk'])test(`${owner} cache restoration cannot remove an installed runtime`,()=>{
+ const start=callee.indexOf(`  ${owner}:\n`);
+ assert(start>=0,'Negative control needs the consumer job');
+ const next=/\n  [\w-]+:\n/.exec(callee.slice(start+1)),end=next?start+1+next.index:callee.length;
+ const block=callee.slice(start,end);
+ const cache=`      - uses: Swatinem/rust-cache@v2\n        with:\n          shared-key: ci-platform-${owner}\n          cache-targets: false\n`;
+ const verify='          node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-debug"\n';
+ assert(block.includes(cache)&&block.includes(verify),'Negative control needs both cache and runtime installation');
+ const changed=block.replace(cache,'').replace(verify,verify+cache);
+ assert.notEqual(changed,block);
+ assert.throws(()=>checkPlatform({callee:callee.slice(0,start)+changed+callee.slice(end)}),new RegExp(`${owner}: Rust cache must run before verified runtime installation`));
+});
 test('live structural guards resolve the called workflow and pinned handoff',()=>{
  for(const script of ['test-privacy-evaluator-parity.mjs','test-privacy-runtime-cli.mjs','test-privacy-leak-corpus.mjs'])assertRuntimeGate(script);
  assertContractsGate('test-mcp-contracts.mjs');assertContractsGate('test-mcp-boundaries.mjs');
