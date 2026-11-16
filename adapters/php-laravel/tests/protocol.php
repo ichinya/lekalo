@@ -589,7 +589,24 @@ echo json_encode([
 CHILD;
 $childPath = tempnam(sys_get_temp_dir(), 'lekalo-provider-');
 file_put_contents($childPath, $providerChild);
-$childOutput = shell_exec(escapeshellarg(PHP_BINARY) . ' -n ' . escapeshellarg($childPath) . ' ' . escapeshellarg(dirname(__DIR__)) . ' 2>/dev/null');
+// The child spawns through proc_open with piped stdio (the process
+// suite's pattern): no shell redirection, so the leg is identical on
+// Windows, macOS, and Linux.
+$childCommand = escapeshellarg(PHP_BINARY) . ' -n ' . escapeshellarg($childPath)
+    . ' ' . escapeshellarg(dirname(__DIR__));
+$process = proc_open($childCommand, [
+    0 => ['pipe', 'r'],
+    1 => ['pipe', 'w'],
+    2 => ['pipe', 'w'],
+], $pipes);
+$childOutput = false;
+if (is_resource($process)) {
+    fclose($pipes[0]);
+    $childOutput = stream_get_contents($pipes[1]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    proc_close($process);
+}
 unlink($childPath);
 $degraded = json_decode((string) $childOutput, true);
 check(is_array($degraded), 'the empty-registry child reports');
