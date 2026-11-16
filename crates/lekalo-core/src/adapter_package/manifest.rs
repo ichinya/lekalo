@@ -1029,12 +1029,13 @@ mod committed_exemplar_tests {
         // 0.9.0; the wire protocol remains independently pinned at
         // 0.6.4.
         assert_eq!(document.adapter_version().as_str(), "0.9.0");
-        // The runtime is the closed php spelling with the 8.3 floor of
-        // the issue's requirements, checked against the raw canonical
-        // bytes (the wire struct keeps the runtime block opaque).
+        // The runtime is the closed php spelling with the 8.0 floor
+        // (lekalo-php#1: all current PHP versions 8.0-8.6), checked
+        // against the raw canonical bytes (the wire struct keeps the
+        // runtime block opaque).
         let value: serde_json::Value = serde_json::from_slice(bytes).expect("manifest is JSON");
         assert_eq!(value["executable"]["runtime"]["kind"], "php");
-        assert_eq!(value["executable"]["runtime"]["minVersion"], "8.3.0");
+        assert_eq!(value["executable"]["runtime"]["minVersion"], "8.0.0");
         // The permission posture is the strict shipped default.
         assert_eq!(
             value["permissions"]["network"]["mode"],

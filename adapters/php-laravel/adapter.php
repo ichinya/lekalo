@@ -602,13 +602,13 @@ final class AnalysisOutcome
 {
     /** @param array<int, array<string, mixed>> $diagnostics */
     public function __construct(
-        public readonly string $state,
-        public readonly array $diagnostics = [],
-        public readonly array $symbols = [],
-        public readonly array $relations = [],
-        public readonly array $fixes = [],
-        public readonly ?string $reason = null,
-        public readonly ?string $receiptDigest = null,
+        public string $state,
+        public array $diagnostics = [],
+        public array $symbols = [],
+        public array $relations = [],
+        public array $fixes = [],
+        public ?string $reason = null,
+        public ?string $receiptDigest = null,
     ) {
     }
 
@@ -707,8 +707,8 @@ final class FakeAnalyzer implements Analyzer
 {
     /** @param array<string, mixed> $canned */
     public function __construct(
-        private readonly array $canned = [],
-        private readonly string $state = 'unavailable',
+        private array $canned = [],
+        private string $state = 'unavailable',
     ) {
     }
 
@@ -1726,6 +1726,23 @@ function load_route_modules(): void
     }
 }
 
+// PHP 8.0 compatibility (lekalo-php#1: all current PHP versions):
+// array_is_list ships with PHP 8.1; the guarded userland spelling is
+// the standard polyfill and no-ops on every newer runtime. The kernel
+// is the first-executed module of every load chain that needs it.
+if (!function_exists('array_is_list')) {
+    function array_is_list(array $array): bool
+    {
+        $expected = 0;
+        foreach ($array as $key => $_) {
+            if ($key !== $expected++) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
 final class RequestRefusal extends RuntimeException
 {
     public function __construct(string $code)
@@ -1821,7 +1838,7 @@ final class DuplicateKeyScanner
 {
     public int $position = 0;
 
-    public function __construct(private readonly string $text)
+    public function __construct(private string $text)
     {
     }
 
@@ -8291,8 +8308,8 @@ final class DefaultMetadataUnsupported extends RuntimeException
     public ?string $pointer = null;
 
     public function __construct(
-        public readonly string $fieldName,
-        public readonly string $member,
+        public string $fieldName,
+        public string $member,
     ) {
         parent::__construct('default-unsupported');
     }

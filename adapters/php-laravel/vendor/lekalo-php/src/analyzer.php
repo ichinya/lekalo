@@ -52,13 +52,13 @@ final class AnalysisOutcome
 {
     /** @param array<int, array<string, mixed>> $diagnostics */
     public function __construct(
-        public readonly string $state,
-        public readonly array $diagnostics = [],
-        public readonly array $symbols = [],
-        public readonly array $relations = [],
-        public readonly array $fixes = [],
-        public readonly ?string $reason = null,
-        public readonly ?string $receiptDigest = null,
+        public string $state,
+        public array $diagnostics = [],
+        public array $symbols = [],
+        public array $relations = [],
+        public array $fixes = [],
+        public ?string $reason = null,
+        public ?string $receiptDigest = null,
     ) {
     }
 
@@ -157,8 +157,8 @@ final class FakeAnalyzer implements Analyzer
 {
     /** @param array<string, mixed> $canned */
     public function __construct(
-        private readonly array $canned = [],
-        private readonly string $state = 'unavailable',
+        private array $canned = [],
+        private string $state = 'unavailable',
     ) {
     }
 

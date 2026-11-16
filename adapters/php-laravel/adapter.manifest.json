@@ -107,7 +107,7 @@
   "executable": {
     "runtime": {
       "kind": "php",
-      "minVersion": "8.3.0"
+      "minVersion": "8.0.0"
     },
     "entry": "adapter.php",
     "argvPreview": [
@@ -120,12 +120,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:ef0195bc13aa2175e99e524b1890851050295a4f7c99443bc57bb30840974188",
+    "packageDigest": "sha256:4de85def079304f6347eb904f05df4cce560db1d2eb9fff81f823a32368c7c34",
     "files": [
       {
         "path": "adapter.php",
-        "digest": "sha256:73ca41f5e541ed7a22ef7e777f3c2fb917266217360f866ff6833907fbf9885e",
-        "bytes": 681398
+        "digest": "sha256:24d27255b6ac9cc566952915f94d060e11d1764939762f0bf04155b52f67de41",
+        "bytes": 681847
       }
     ],
     "signaturePolicy": "unsigned",

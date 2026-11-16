@@ -43,10 +43,14 @@ outside those read grants.
   producer version in headers and sidecars), and with no provider
   registered the framework families refuse with the stable
   `provider-missing` code instead of silently degrading. Since M2 the
-  source lives in the external repositories: `lekalo-php` (language,
-  main @ 8bfd082) and `lekalo-php-laravel` (framework, main @ d803152);
-  this directory vendors their pinned releases and builds the same
-  unified artifact from those bytes.
+  source lives in the external repositories (`lekalo-php`,
+  `lekalo-php-laravel`); this directory vendors their pinned releases
+  and builds the same unified artifact from those bytes. The runtime
+  floor drops to PHP 8.0: the adapter works on every current version
+  8.0-8.6 (verified by the CI `php-versions` matrix and the packages'
+  docker `version-matrix.sh` scripts), the 8.1+ `array_is_list` rides
+  a guarded kernel polyfill, and the emitted type code keeps its own
+  8.2+ target.
 
 ## Component composition (issue #54 architecture)
 

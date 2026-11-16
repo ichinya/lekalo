@@ -4,12 +4,12 @@
     {
       "name": "lekalo-php",
       "repo": "https://github.com/ichinya/lekalo-php",
-      "commit": "8bfd082738187a66da3247349d42f7d638958aa6",
+      "commit": "4a05caf0f1431499f5b4b49681c5dc59088024dd",
       "files": {
         "mago-toolchain.lock.json": "sha256:4b51e68a2d4eb3bcb25f6a9a5fb6e6451771f9468ca60b3a36d2f5aaa0cc490d",
         "src/ai-lint.php": "sha256:a3d4a376777da71192cc678558f1ee62e00e846f0023773fcb38ccf187a1c5d7",
-        "src/analyzer.php": "sha256:95898e2fc628ad489db9a3c096578d101ae5de0279e2bbf3f7d38b0b818b132f",
-        "src/kernel.php": "sha256:786250825c6749222e2404492098f4d54eca33645ebce0d34f5ea8323d333e9e",
+        "src/analyzer.php": "sha256:8dfad2a14eeeb5f65792b1a6de00ff7ccc4ffdd14b50af18b7d43c6a0deac7ee",
+        "src/kernel.php": "sha256:c0d2b5d46c360490ec8207c0b09e75e28a31a30f99e5887a52bfd4a24be2f925",
         "src/operation-bindings.php": "sha256:f2f10cc501288530aae0de94af6be632a5843b295e1b1e8b30c89272200a31f9",
         "src/operation-emit.php": "sha256:9d65a82580a4a7db4e3fc8a14542ae414d29e8d4b65d40ea206b223456a8bebf",
         "src/operation-map.php": "sha256:3fdc04778d7ccb4a5768629e620c59b411c1df6208989f697ad2398f419f8352",
@@ -23,7 +23,7 @@
         "src/type-codec.php": "sha256:be3f44aee64d0610b0107bc9effba8721cf564af25c0b252f52202641d74e99a",
         "src/type-emit.php": "sha256:3f516153cbb60e5fde77df10e307a66784c6dbda6658f4a99ec9f3624e1b22c1",
         "src/type-map.php": "sha256:161af40fb5b4065ad848f279d87ac7289c8feb23f72855b90ed1543a1c4c2a26",
-        "src/type-policy.php": "sha256:72c8ad9987cbac30754bc6b2f8af54f2b8eae958f39e3b48c2695b0bfb5a22c3",
+        "src/type-policy.php": "sha256:c1c6ff6e9dd41b2731541e3afe693f001b1fe965c9004dc35a8f63628aa4d15b",
         "tests/analyzer.php": "sha256:517faaa0f20fba92fcd0bd7f9126286e2e401429069a41a3855805471734fe61",
         "tests/protocol.php": "sha256:2fc0ad86214cd22c4c4575f6c31c2a5814c83c24572b3ba5781c03fc1ca326f5"
       }
@@ -31,7 +31,7 @@
     {
       "name": "lekalo-php-laravel",
       "repo": "https://github.com/ichinya/lekalo-php-laravel",
-      "commit": "d803152f3c16f2c3906a9a22bacc7885737839c5",
+      "commit": "256e78e44d2c6d6e0ec7692b151b0b061493712f",
       "files": {
         "composer-gates-policy.json": "sha256:af3d21a5a53b05a42bef111ed190bc60ad3086e3f1472b1b4d78d7d810ed5732",
         "src/laravel-lint.php": "sha256:be38febffa8d0df2ecc6c06a7a80895572ba030d345bf3d01564eb1703ddddea",

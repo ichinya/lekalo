@@ -56,7 +56,7 @@ const PROVIDER_MODULES = [
     'vendor/lekalo-php-laravel/src/laravel-provider.php',
 ];
 
-function fail(string $message): never
+function fail(string $message): void
 {
     fwrite(STDERR, $message . "\n");
     exit(1);

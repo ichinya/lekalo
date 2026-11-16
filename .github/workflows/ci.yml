@@ -473,6 +473,38 @@ jobs:
         # ran. A missing tool fails this leg, never a silent skip.
         run: node scripts/test-php-laravel-type-roundtrip.mjs --require-mago
 
+  php-versions:
+    name: PHP version matrix (lekalo-php#1, all current versions)
+    # The vendored language and framework suites, the unified
+    # artifact's describe handshake, and the deterministic rebuild all
+    # run on every current PHP version (8.6 rides its RC until GA).
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.0', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: none
+          extensions: none
+      - name: Vendored language and framework suites
+        run: |
+          set -euo pipefail
+          php -n adapters/php-laravel/vendor/lekalo-php/tests/protocol.php
+          php -n adapters/php-laravel/vendor/lekalo-php/tests/analyzer.php
+          php -n adapters/php-laravel/vendor/lekalo-php-laravel/tests/laravel.php
+      - name: The unified artifact answers describe on this version
+        run: |
+          set -euo pipefail
+          printf '%s' '{"protocol":"lekalo.target/v1","protocol_version":"0.6.4","operation":"describe","request_id":"req-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","project_root":"."}' \
+            | php -n adapters/php-laravel/adapter.php | grep -q '"version":"0.9.0"'
+      - name: The deterministic rebuild is byte-identical on this version
+        run: php -n adapters/php-laravel/build.php --check
+
   worklog-changelog-pilot:
     name: Worklog-changelog pilot binary gates (issue #51)
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}

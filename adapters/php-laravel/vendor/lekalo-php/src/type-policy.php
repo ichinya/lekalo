@@ -375,8 +375,8 @@ final class DefaultMetadataUnsupported extends RuntimeException
     public ?string $pointer = null;
 
     public function __construct(
-        public readonly string $fieldName,
-        public readonly string $member,
+        public string $fieldName,
+        public string $member,
     ) {
         parent::__construct('default-unsupported');
     }

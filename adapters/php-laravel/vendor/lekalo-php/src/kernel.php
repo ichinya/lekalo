@@ -379,6 +379,23 @@ function load_route_modules(): void
     }
 }
 
+// PHP 8.0 compatibility (lekalo-php#1: all current PHP versions):
+// array_is_list ships with PHP 8.1; the guarded userland spelling is
+// the standard polyfill and no-ops on every newer runtime. The kernel
+// is the first-executed module of every load chain that needs it.
+if (!function_exists('array_is_list')) {
+    function array_is_list(array $array): bool
+    {
+        $expected = 0;
+        foreach ($array as $key => $_) {
+            if ($key !== $expected++) {
+                return false;
+            }
+        }
+        return true;
+    }
+}
+
 final class RequestRefusal extends RuntimeException
 {
     public function __construct(string $code)
@@ -474,7 +491,7 @@ final class DuplicateKeyScanner
 {
     public int $position = 0;
 
-    public function __construct(private readonly string $text)
+    public function __construct(private string $text)
     {
     }
 

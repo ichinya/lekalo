@@ -59,6 +59,6 @@
   },
   "adapters": {
     "adapters/node-typescript/adapter.manifest.json": "sha256:766e3826a951835fcb74a02774d45f702fa30a68b9d95a5eb14cf43f8077f1aa",
-    "adapters/php-laravel/adapter.manifest.json": "sha256:1b730bc21122b4942bf3d9531d58484dcaa10d4ec6446d3c2ee7527288c4585c"
+    "adapters/php-laravel/adapter.manifest.json": "sha256:fed03b3d0039de58d876c718cba6c0171e9b112dd00661e050f259e5b1b49df8"
   }
 }
