@@ -1485,13 +1485,14 @@ function load_provider_module(): void
 }
 
 /**
- * The scenario compiler modules, in fixed load order. `build.php`
+ * The scenario compiler map, in fixed load order. `build.php`
  * concatenates the kernel plus these modules into the shipped
  * single-file artifact, so inside the shipped artifact the functions
  * are already defined and loading is a no-op; the source-tree kernel
  * loads them directly. The map is language-owned; the test emitter is
- * a provider-owned family (`scenario.emit`) resolved through the
- * registry — the kernel never names the framework.
+ * a provider-owned family (`scenario.emit`) resolved lazily at the
+ * emission site — mapping, validation, and describe never need it, so
+ * the language-only adapter works without a provider.
  */
 function load_scenario_modules(): void
 {
@@ -1500,18 +1501,14 @@ function load_scenario_modules(): void
         return;
     }
     $loaded = true;
-    if (function_exists('php_map_scenario') && function_exists('php_emit_scenario_tests')) {
+    if (function_exists('php_map_scenario')) {
         return;
     }
-    load_provider_module();
     foreach ([__DIR__ . '/scenario-map.php'] as $module) {
         if (!is_file($module)) {
             throw new RequestRefusal('compiler-module-missing');
         }
         require_once $module;
-    }
-    if (!function_exists('php_emit_scenario_tests')) {
-        lekalo_provider_call('scenario.emit');
     }
 }
 
@@ -1568,33 +1565,98 @@ function load_type_modules(): void
 }
 
 /**
- * The checked-in Composer execution policy bytes (issue #61). The
- * shipped artifact embeds them verbatim (build.php, custody binds to
- * the artifact digest); the source-tree kernel reads the checked-in
- * file beside the build script. Either way the bytes are the trusted
- * launch input — confirmation data, never execution authority.
+ * The checked-in Composer execution policy bytes (issue #61) are
+ * framework custody since the stage-4 separation: the registered
+ * provider owns the bytes (the shipped artifact embeds them verbatim;
+ * the source-tree package reads the checked-in file at its package
+ * root). Either way the bytes are the trusted launch input —
+ * confirmation data, never execution authority — and an absent
+ * provider is the typed `provider-missing` refusal.
  */
 function native_gates_policy_document(): array
 {
-    if (defined('NATIVE_GATES_POLICY_BUNDLED')) {
-        $bytes = NATIVE_GATES_POLICY_BUNDLED;
-    } else {
-        $path = dirname(__DIR__) . '/composer-gates-policy.json';
-        $bytes = is_file($path) ? (string) file_get_contents($path) : '';
-    }
-    if ($bytes === '') {
-        throw new RequestRefusal('native-policy-absent');
-    }
-    try {
-        $document = json_decode($bytes, true, 64, JSON_THROW_ON_ERROR);
-    } catch (JsonException) {
-        throw new RequestRefusal('native-policy-unparsable');
-    }
+    load_provider_module();
+    $document = lekalo_provider_call('native.gates', ['policy_document']);
     if (!is_array($document)) {
         throw new RequestRefusal('native-policy-unparsable');
     }
     return $document;
 }
+
+/** The digest domain of the checked-in Composer execution policy. */
+const PHP_POLICY_DIGEST_DOMAIN = 'lekalo.native-policy.v0.4.0';
+
+/**
+ * The canonical text encoding shared with the native gate modules
+ * (moved beside the kernel in the stage-4 split: the kernel computes
+ * the policy custody digest before any framework module loads).
+ * Delegates to the kernel's byte-compatible encoder; the recursive
+ * spelling below is the closed fallback for standalone module loading.
+ */
+function php_canonical_text(array|bool|int|string|null $value): string
+{
+    if (function_exists('write_canonical')) {
+        return write_canonical($value);
+    }
+    if ($value === null) {
+        return 'null';
+    }
+    if (is_bool($value)) {
+        return $value ? 'true' : 'false';
+    }
+    if (is_int($value)) {
+        return (string) $value;
+    }
+    if (is_string($value)) {
+        $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        return $encoded;
+    }
+    if (array_is_list($value)) {
+        return '[' . implode(',', array_map(__FUNCTION__, $value)) . ']';
+    }
+    $keys = array_keys($value);
+    usort($keys, 'strcmp');
+    $body = [];
+    foreach ($keys as $key) {
+        $body[] = json_encode((string) $key, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)
+            . ':' . php_canonical_text($value[$key]);
+    }
+    return '{' . implode(',', $body) . '}';
+}
+
+/** sha256 over the pinned domain joined with the canonical bytes. */
+function php_domain_digest(string $domain, array|bool|int|string|null $value): string
+{
+    return 'sha256:' . hash('sha256', $domain . php_canonical_text($value));
+}
+
+// Stage-4 split: the comment-safe projection is a language-owned text
+// helper (moved from the scenario emitter; every load chain places the
+// kernel first).
+/**
+ * One comment-safe single-line projection of free wire text: every line
+ * terminator and control character collapses, so a core-valid `summary`
+ * can never close a generated comment and inject live code into the
+ * emitted test.
+ */
+function php_comment_safe(mixed $text): string
+{
+    $value = (string) ($text ?? '');
+    $value = preg_replace('/\r\n|[\r\n\x{0085}\x{2028}\x{2029}]|\p{Cc}/u', ' ', $value) ?? '';
+    $value = preg_replace('/\s+/', ' ', $value) ?? '';
+    $value = trim($value);
+    // Byte-exact truncation: the scenario byte-range maps account bytes,
+    // so the cap must count bytes (mb_* would count characters and
+    // desynchronize the map); it also keeps php -n runtimes safe.
+    $value = substr($value, 0, 200);
+    // A one-line comment also ends at the mid-line close-tag pair (the
+    // question-mark/greater-than sequence a hostile summary can carry):
+    // lints clean, dumps the file tail as output, and the test class
+    // never gets defined. Break the pair — a one-line comment has no
+    // other close sequence — so no projection can re-open PHP mode.
+    return str_replace('?>', '? >', $value);
+}
+
 
 /**
  * One request that failed closed decoding/validation before any
@@ -1632,13 +1694,15 @@ function load_operation_modules(): void
 }
 
 /**
- * The routes-generator modules, in fixed load order (issue #60). They
- * depend on the type modules' naming and codec helpers and on the
- * operations modules' handler naming, so both load first. Inside the
- * shipped artifact everything is appended and loading is a no-op. The
- * policy and map are language-owned (the framework-neutral HTTP
- * vocabulary); the emitter is a provider-owned family (`routes.emit`)
- * resolved through the registry.
+ * The routes-generator policy and map, in fixed load order (issue
+ * #60). They depend on the type modules' naming and codec helpers and
+ * on the operations modules' handler naming, so both load first.
+ * Inside the shipped artifact everything is appended and loading is a
+ * no-op. The policy and map are language-owned (the framework-neutral
+ * HTTP vocabulary); the emitter is a provider-owned family
+ * (`routes.emit`) resolved lazily at the emission site — describe and
+ * validation never need it, so the language-only adapter works
+ * without a provider.
  */
 function load_route_modules(): void
 {
@@ -1648,10 +1712,9 @@ function load_route_modules(): void
     }
     $loaded = true;
     load_operation_modules();
-    if (function_exists('php_validate_routes_input') && function_exists('php_emit_routes')) {
+    if (function_exists('php_validate_routes_input')) {
         return;
     }
-    load_provider_module();
     foreach ([
         __DIR__ . '/route-policy.php',
         __DIR__ . '/route-map.php',
@@ -1660,9 +1723,6 @@ function load_route_modules(): void
             throw new RequestRefusal('compiler-module-missing');
         }
         require_once $module;
-    }
-    if (!function_exists('php_emit_routes')) {
-        lekalo_provider_call('routes.emit');
     }
 }
 
@@ -3398,7 +3458,11 @@ function routes_generation(array $request): array
             'lifecycle' => $file['lifecycle'] ?? 'generated',
         ];
     }
-    // The managed routes emission under the closed generated root.
+    // The managed routes emission under the closed generated root:
+    // the framework emitter resolves through the provider seam here,
+    // at the emission site (language-only adapters refuse typed).
+    load_provider_module();
+    lekalo_provider_call('routes.emit');
     $emitted = php_emit_routes([
         'projectId' => $input['projectId'],
         'mapped' => $mapped,
@@ -3622,6 +3686,11 @@ function scenario_generation(array $request): array
     if ($mapped['state'] === 'refused') {
         return ['refusal' => 'scenario-' . $mapped['refusal'], 'files' => [], 'findings' => []];
     }
+    // The scenario test emission resolves through the provider seam
+    // here, at the emission site (language-only adapters refuse
+    // typed).
+    load_provider_module();
+    lekalo_provider_call('scenario.emit');
     $files = php_emit_scenario_tests([
         'models' => $mapped['scenarios'],
         'inputDigest' => 'sha256:' . hash('sha256', $scenarioText),
@@ -6456,30 +6525,6 @@ function php_identifier_of(string $id): string
     // Extension-free leading-digit probe: strspn ships with ext/standard,
     // so the check survives `php -n` runtimes where ctype is absent.
     return strspn($sanitized, '0123456789') > 0 ? '_' . $sanitized : $sanitized;
-}
-
-/**
- * One comment-safe single-line projection of free wire text: every line
- * terminator and control character collapses, so a core-valid `summary`
- * can never close a generated comment and inject live code into the
- * emitted test.
- */
-function php_comment_safe(mixed $text): string
-{
-    $value = (string) ($text ?? '');
-    $value = preg_replace('/\r\n|[\r\n\x{0085}\x{2028}\x{2029}]|\p{Cc}/u', ' ', $value) ?? '';
-    $value = preg_replace('/\s+/', ' ', $value) ?? '';
-    $value = trim($value);
-    // Byte-exact truncation: the scenario byte-range maps account bytes,
-    // so the cap must count bytes (mb_* would count characters and
-    // desynchronize the map); it also keeps php -n runtimes safe.
-    $value = substr($value, 0, 200);
-    // A one-line comment also ends at the mid-line close-tag pair (the
-    // question-mark/greater-than sequence a hostile summary can carry):
-    // lints clean, dumps the file tail as output, and the test class
-    // never gets defined. Break the pair — a one-line comment has no
-    // other close sequence — so no projection can re-open PHP mode.
-    return str_replace('?>', '? >', $value);
 }
 
 /**
@@ -14855,9 +14900,6 @@ const NATIVE_GATES_POLICY_BUNDLED = '{
  */
 
 
-/** The digest domain of the checked-in Composer execution policy. */
-const PHP_POLICY_DIGEST_DOMAIN = 'lekalo.native-policy.v0.4.0';
-
 /** The closed v0.4.0 gate-kind metadata set (mirrors the successor schema). */
 const PHP_GATE_KINDS = [
     'composer-script', 'mago-format', 'mago-lint', 'mago-analyze', 'mago-guard',
@@ -14909,49 +14951,6 @@ function php_is_safe_literal(string $text): bool
         }
     }
     return true;
-}
-
-/**
- * Canonical JSON text: recursively bytewise key-sorted, compact, UTF-8.
- * Delegates to the kernel's byte-compatible encoder when loaded (the
- * shipped artifact concatenates the kernel first); standalone test
- * loading falls back to the same closed encoder inline.
- */
-function php_canonical_text(array|bool|int|string|null $value): string
-{
-    if (function_exists('write_canonical')) {
-        return write_canonical($value);
-    }
-    if ($value === null) {
-        return 'null';
-    }
-    if (is_bool($value)) {
-        return $value ? 'true' : 'false';
-    }
-    if (is_int($value)) {
-        return (string) $value;
-    }
-    if (is_string($value)) {
-        $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-        return $encoded;
-    }
-    if (array_is_list($value)) {
-        return '[' . implode(',', array_map(__FUNCTION__, $value)) . ']';
-    }
-    $keys = array_keys($value);
-    usort($keys, 'strcmp');
-    $body = [];
-    foreach ($keys as $key) {
-        $body[] = json_encode((string) $key, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)
-            . ':' . php_canonical_text($value[$key]);
-    }
-    return '{' . implode(',', $body) . '}';
-}
-
-/** sha256 over the pinned domain joined with the canonical bytes. */
-function php_domain_digest(string $domain, array|bool|int|string|null $value): string
-{
-    return 'sha256:' . hash('sha256', $domain . php_canonical_text($value));
 }
 
 /**
@@ -16539,6 +16538,34 @@ function lekalo_laravel_lint_facts(): array
  * registers from there; the compiled-in registration is transitional.
  */
 
+/**
+ * The Laravel package's Composer execution policy document (issue
+ * #61): the bundled bytes inside the unified artifact, or the
+ * checked-in `composer-gates-policy.json` at this package's root in
+ * source mode. Confirmation data only — never execution authority.
+ */
+function lekalo_laravel_native_policy_document(): array
+{
+    if (defined('NATIVE_GATES_POLICY_BUNDLED')) {
+        $bytes = NATIVE_GATES_POLICY_BUNDLED;
+    } else {
+        $path = dirname(__DIR__) . '/composer-gates-policy.json';
+        $bytes = is_file($path) ? (string) file_get_contents($path) : '';
+    }
+    if ($bytes === '') {
+        throw new RequestRefusal('native-policy-absent');
+    }
+    try {
+        $document = json_decode($bytes, true, 64, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        throw new RequestRefusal('native-policy-unparsable');
+    }
+    if (!is_array($document)) {
+        throw new RequestRefusal('native-policy-unparsable');
+    }
+    return $document;
+}
+
 lekalo_provider_register([
     'id' => 'lekalo-php-laravel',
     'version' => '0.1.0',
@@ -16574,12 +16601,21 @@ lekalo_provider_register([
                 require_once __DIR__ . '/scenario-emit.php';
             }
         },
-        // Native gates: the Composer/Laravel execution-policy modules.
-        'native.gates' => static function (): void {
+        // Native gates: the Composer/Laravel execution-policy modules
+        // and the policy document itself (framework custody since the
+        // stage-4 separation; the kernel asks by method name).
+        'native.gates' => static function (string $method = 'load'): mixed {
+            if ($method === 'policy_document') {
+                return lekalo_laravel_native_policy_document();
+            }
+            if ($method !== 'load') {
+                throw new RequestRefusal('provider-descriptor');
+            }
             if (!function_exists('php_build_native_plan')) {
                 require_once __DIR__ . '/native-policy.php';
                 require_once __DIR__ . '/native-plan.php';
             }
+            return null;
         },
         // The runner registry the scenario mapper resolves against.
         // The Laratesto entry mirrors the bridge's declared facts on

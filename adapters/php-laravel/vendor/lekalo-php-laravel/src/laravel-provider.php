@@ -18,6 +18,34 @@
  * registers from there; the compiled-in registration is transitional.
  */
 
+/**
+ * The Laravel package's Composer execution policy document (issue
+ * #61): the bundled bytes inside the unified artifact, or the
+ * checked-in `composer-gates-policy.json` at this package's root in
+ * source mode. Confirmation data only — never execution authority.
+ */
+function lekalo_laravel_native_policy_document(): array
+{
+    if (defined('NATIVE_GATES_POLICY_BUNDLED')) {
+        $bytes = NATIVE_GATES_POLICY_BUNDLED;
+    } else {
+        $path = dirname(__DIR__) . '/composer-gates-policy.json';
+        $bytes = is_file($path) ? (string) file_get_contents($path) : '';
+    }
+    if ($bytes === '') {
+        throw new RequestRefusal('native-policy-absent');
+    }
+    try {
+        $document = json_decode($bytes, true, 64, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        throw new RequestRefusal('native-policy-unparsable');
+    }
+    if (!is_array($document)) {
+        throw new RequestRefusal('native-policy-unparsable');
+    }
+    return $document;
+}
+
 lekalo_provider_register([
     'id' => 'lekalo-php-laravel',
     'version' => '0.1.0',
@@ -53,12 +81,21 @@ lekalo_provider_register([
                 require_once __DIR__ . '/scenario-emit.php';
             }
         },
-        // Native gates: the Composer/Laravel execution-policy modules.
-        'native.gates' => static function (): void {
+        // Native gates: the Composer/Laravel execution-policy modules
+        // and the policy document itself (framework custody since the
+        // stage-4 separation; the kernel asks by method name).
+        'native.gates' => static function (string $method = 'load'): mixed {
+            if ($method === 'policy_document') {
+                return lekalo_laravel_native_policy_document();
+            }
+            if ($method !== 'load') {
+                throw new RequestRefusal('provider-descriptor');
+            }
             if (!function_exists('php_build_native_plan')) {
                 require_once __DIR__ . '/native-policy.php';
                 require_once __DIR__ . '/native-plan.php';
             }
+            return null;
         },
         // The runner registry the scenario mapper resolves against.
         // The Laratesto entry mirrors the bridge's declared facts on

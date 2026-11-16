@@ -32,26 +32,28 @@ const ADAPTER_VERSION = '0.9.0';
 
 /** The bundled module order: dependencies first, kernel last. */
 const BUNDLED_MODULES = [
-    'src/provider.php',
-    'src/ai-lint.php',
-    'src/analyzer.php',
-    'src/strict-profile.php',
-    'src/kernel.php',
+    'vendor/lekalo-php/src/provider.php',
+    'vendor/lekalo-php/src/ai-lint.php',
+    'vendor/lekalo-php/src/analyzer.php',
+    'vendor/lekalo-php/src/strict-profile.php',
+    'vendor/lekalo-php/src/kernel.php',
 ];
 
 /**
- * The provider-owned modules (lekalo-php#1, issue #241 stage 4 M1):
+ * The provider-owned modules (lekalo-php#1, issue #241 stage 4):
  * the Laravel framework package's emitter, lint facts, and its
  * registration descriptor ride after the native gate modules — the
  * registration runs at parse time, so the registry is populated
  * before `main()` dispatches, and the loader hooks stay inert through
  * their `function_exists` guards (the same 1:1 source/artifact
- * relation every kernel loader keeps).
+ * relation every kernel loader keeps). Stage 4 M2: the bytes come
+ * from the vendored pinned package releases, never from a source tree
+ * beside the build (php-packages.lock.json pins every vendored file).
  */
 const PROVIDER_MODULES = [
-    'src/laravel-migrations.php',
-    'src/laravel-lint.php',
-    'src/laravel-provider.php',
+    'vendor/lekalo-php-laravel/src/laravel-migrations.php',
+    'vendor/lekalo-php-laravel/src/laravel-lint.php',
+    'vendor/lekalo-php-laravel/src/laravel-provider.php',
 ];
 
 function fail(string $message): never
@@ -62,31 +64,35 @@ function fail(string $message): never
 
 $adapterRoot = dirname(__FILE__);
 $artifactPath = $adapterRoot . '/adapter.php';
-$lockPath = $adapterRoot . '/mago-toolchain.lock.json';
-$policyPath = $adapterRoot . '/composer-gates-policy.json';
+$lockPath = $adapterRoot . '/vendor/lekalo-php/mago-toolchain.lock.json';
+$policyPath = $adapterRoot . '/vendor/lekalo-php-laravel/composer-gates-policy.json';
 $scenarioModulePaths = [
-    $adapterRoot . '/src/scenario-map.php',
-    $adapterRoot . '/src/scenario-emit.php',
+    $adapterRoot . '/vendor/lekalo-php/src/scenario-map.php',
+    $adapterRoot . '/vendor/lekalo-php-laravel/src/scenario-emit.php',
     // The type-generator modules ride last, in the fixed order the
     // kernel's `load_type_modules()` names (issue #58).
-    $adapterRoot . '/src/type-policy.php',
-    $adapterRoot . '/src/type-map.php',
-    $adapterRoot . '/src/type-codec.php',
-    $adapterRoot . '/src/type-emit.php',
-    $adapterRoot . '/src/type-bindings.php',
+    $adapterRoot . '/vendor/lekalo-php/src/type-policy.php',
+    $adapterRoot . '/vendor/lekalo-php/src/type-map.php',
+    $adapterRoot . '/vendor/lekalo-php/src/type-codec.php',
+    $adapterRoot . '/vendor/lekalo-php/src/type-emit.php',
+    $adapterRoot . '/vendor/lekalo-php/src/type-bindings.php',
     // The operations-generator modules ride last, in the fixed order
     // the kernel's `load_operation_modules()` names (issue #59).
-    $adapterRoot . '/src/operation-policy.php',
-    $adapterRoot . '/src/operation-map.php',
-    $adapterRoot . '/src/operation-emit.php',
-    $adapterRoot . '/src/operation-bindings.php',
+    $adapterRoot . '/vendor/lekalo-php/src/operation-policy.php',
+    $adapterRoot . '/vendor/lekalo-php/src/operation-map.php',
+    $adapterRoot . '/vendor/lekalo-php/src/operation-emit.php',
+    $adapterRoot . '/vendor/lekalo-php/src/operation-bindings.php',
     // The routes-generator modules ride last, in the fixed order the
-    // kernel's `load_route_modules()` names (issue #60).
-    $adapterRoot . '/src/route-policy.php',
-    $adapterRoot . '/src/route-map.php',
-    $adapterRoot . '/src/route-emit.php',
+    // kernel's `load_route_modules()` names (issue #60); the emitter
+    // is the framework package's module (stage 4).
+    $adapterRoot . '/vendor/lekalo-php/src/route-policy.php',
+    $adapterRoot . '/vendor/lekalo-php/src/route-map.php',
+    $adapterRoot . '/vendor/lekalo-php-laravel/src/route-emit.php',
 ];
-$nativeModulePaths = [$adapterRoot . '/src/native-policy.php', $adapterRoot . '/src/native-plan.php'];
+$nativeModulePaths = [
+    $adapterRoot . '/vendor/lekalo-php-laravel/src/native-policy.php',
+    $adapterRoot . '/vendor/lekalo-php-laravel/src/native-plan.php',
+];
 
 $lockBytes = file_get_contents($lockPath);
 if ($lockBytes === false || $lockBytes === '') {
@@ -213,7 +219,7 @@ foreach (BUNDLED_MODULES as $module) {
     // The bundled lock rides immediately before the analyzer module:
     // the analyzer (or any consumer) reads it through the
     // MAGO_TOOLCHAIN_LOCK_BUNDLED constant, never from the filesystem.
-    if ($module === 'src/analyzer.php') {
+    if ($module === 'vendor/lekalo-php/src/analyzer.php') {
         $body .= $lockEmbed;
     }
     $body .= $source;

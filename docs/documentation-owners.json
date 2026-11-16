@@ -5704,154 +5704,154 @@
     {
       "id": "protocol:php-laravel:lekalo/ai-lint-evidence/v0.6.4",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/laravel-migration-input/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/laravel-migration-ledger/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/native-gate-plan/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/native-selection/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-operations-evidence/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-operations-input/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-operations-map/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-routes-evidence/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-routes-input/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-routes-map/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-test-port/v0.1.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-types-evidence/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-types-input/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-types-map/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/provider-evidence/v0.1.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/provider/v0.1.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/scenario-ir/v0.2.16",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/scenario-run/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/scenario-test-map/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/scenario-toolchain/v0.1.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/transport-http/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/src",
+      "source": "adapters/php-laravel/vendor",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },

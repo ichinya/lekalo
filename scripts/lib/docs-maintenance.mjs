@@ -109,10 +109,20 @@ export function protocolRecords() {
   }
   for(const [id,source] of [["owners","scripts/test-docs-ownership.mjs"],["examples","scripts/test-docs-examples.mjs"]]) result.push({id:`protocol:docs:${id}`,kind:"protocol",source,owner:"docs/architecture.md",status:"implemented"});
   for (const operation of ["describe","scan","bind","validate","generate","verify","plan-clean","clean","plan-native"]) result.push({id:`protocol:target:${operation}`,kind:"protocol",source:"contracts/target-protocol.schema.v0.3.2.json",owner:"docs/target-protocol.md",status:"implemented"});
-  for (const adapter of ["node-typescript","php-laravel"]) {
-    const roots = filesUnder(join(ROOT,"adapters",adapter,"src"));
-    const identities = new Set(roots.flatMap(path => [...readFileSync(path,"utf8").matchAll(/["'](lekalo\/[a-z0-9-]+\/v[0-9.]+)["']/g)].map(x=>x[1])));
-    for (const identity of [...identities].sort()) result.push({id:`protocol:${adapter}:${identity}`,kind:"protocol",source:`adapters/${adapter}/src`,owner:`adapters/${adapter}/README.md`,status:"implemented"});
+  // Stage 4 (issue #241): the PHP adapter's source lives in the
+  // vendored pinned packages (lekalo-php, lekalo-php-laravel); every
+  // discovered protocol stays owned by the transitional unified
+  // adapter README during the transition.
+  const adapterSources = {
+    "node-typescript": { dirs: [join(ROOT,"adapters","node-typescript","src")], label: "adapters/node-typescript/src" },
+    "php-laravel": {
+      dirs: [join(ROOT,"adapters","php-laravel","vendor","lekalo-php","src"), join(ROOT,"adapters","php-laravel","vendor","lekalo-php-laravel","src")],
+      label: "adapters/php-laravel/vendor",
+    },
+  };
+  for (const [adapter, { dirs, label }] of Object.entries(adapterSources)) {
+    const identities = new Set(dirs.flatMap(dir => filesUnder(dir)).flatMap(path => [...readFileSync(path,"utf8").matchAll(/["'](lekalo\/[a-z0-9-]+\/v[0-9.]+)["']/g)].map(x=>x[1])));
+    for (const identity of [...identities].sort()) result.push({id:`protocol:${adapter}:${identity}`,kind:"protocol",source:label,owner:`adapters/${adapter}/README.md`,status:"implemented"});
   }
   return result.sort((a,b)=>a.id.localeCompare(b.id,"en"));
 }

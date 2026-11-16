@@ -132,30 +132,6 @@ function php_identifier_of(string $id): string
 }
 
 /**
- * One comment-safe single-line projection of free wire text: every line
- * terminator and control character collapses, so a core-valid `summary`
- * can never close a generated comment and inject live code into the
- * emitted test.
- */
-function php_comment_safe(mixed $text): string
-{
-    $value = (string) ($text ?? '');
-    $value = preg_replace('/\r\n|[\r\n\x{0085}\x{2028}\x{2029}]|\p{Cc}/u', ' ', $value) ?? '';
-    $value = preg_replace('/\s+/', ' ', $value) ?? '';
-    $value = trim($value);
-    // Byte-exact truncation: the scenario byte-range maps account bytes,
-    // so the cap must count bytes (mb_* would count characters and
-    // desynchronize the map); it also keeps php -n runtimes safe.
-    $value = substr($value, 0, 200);
-    // A one-line comment also ends at the mid-line close-tag pair (the
-    // question-mark/greater-than sequence a hostile summary can carry):
-    // lints clean, dumps the file tail as output, and the test class
-    // never gets defined. Break the pair — a one-line comment has no
-    // other close sequence — so no projection can re-open PHP mode.
-    return str_replace('?>', '? >', $value);
-}
-
-/**
  * Emit every generated file of one mapped scenario document.
  *
  * `input` is `{models, inputDigest, adapterVersion, portModulePath,

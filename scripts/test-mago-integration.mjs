@@ -31,7 +31,7 @@ import { dirname, join, resolve } from "node:path";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const adapterRoot = join(root, "adapters", "php-laravel");
 const fixtureRoot = join(root, "tests", "fixtures", "mago", "toolchain");
-const lock = JSON.parse(readFileSync(join(adapterRoot, "mago-toolchain.lock.json"), "utf8"));
+const lock = JSON.parse(readFileSync(join(adapterRoot, "vendor", "lekalo-php", "mago-toolchain.lock.json"), "utf8"));
 const fail = (reason, detail) => {
   process.stderr.write(`${JSON.stringify({ ok: false, reason, detail }, null, 2)}\n`);
   process.exit(1);
@@ -184,7 +184,14 @@ function runFakeSuite(php) {
   // 3. The fake gate drives the same gates with staged evidence by
   //    running the kernel suites (which inject fakes through the same
   //    decoder) — the unit suites cover ok/incompatible/failed.
-  const suites = ["tests/protocol.php", "tests/process.php", "tests/analyzer.php"];
+  // Stage 4 (issue #241): the protocol and analyzer suites live in the
+  // vendored lekalo-php package; the process suite stays beside the
+  // transitional unified artifact.
+  const suites = [
+    "vendor/lekalo-php/tests/protocol.php",
+    "tests/process.php",
+    "vendor/lekalo-php/tests/analyzer.php",
+  ];
   for (const suite of suites) {
     const outcome = spawnSync(php, ["-n", join(adapterRoot, suite)], {
       cwd: adapterRoot,

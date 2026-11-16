@@ -1,0 +1,48 @@
+{
+  "formatVersion": 1,
+  "packages": [
+    {
+      "name": "lekalo-php",
+      "repo": "https://github.com/ichinya/lekalo-php",
+      "commit": "8bfd082738187a66da3247349d42f7d638958aa6",
+      "files": {
+        "mago-toolchain.lock.json": "sha256:4b51e68a2d4eb3bcb25f6a9a5fb6e6451771f9468ca60b3a36d2f5aaa0cc490d",
+        "src/ai-lint.php": "sha256:a3d4a376777da71192cc678558f1ee62e00e846f0023773fcb38ccf187a1c5d7",
+        "src/analyzer.php": "sha256:95898e2fc628ad489db9a3c096578d101ae5de0279e2bbf3f7d38b0b818b132f",
+        "src/kernel.php": "sha256:786250825c6749222e2404492098f4d54eca33645ebce0d34f5ea8323d333e9e",
+        "src/operation-bindings.php": "sha256:f2f10cc501288530aae0de94af6be632a5843b295e1b1e8b30c89272200a31f9",
+        "src/operation-emit.php": "sha256:9d65a82580a4a7db4e3fc8a14542ae414d29e8d4b65d40ea206b223456a8bebf",
+        "src/operation-map.php": "sha256:3fdc04778d7ccb4a5768629e620c59b411c1df6208989f697ad2398f419f8352",
+        "src/operation-policy.php": "sha256:4dd6098ec24ff8a664cc8d0224e291df8435776cda4475034775ac7a029abfb8",
+        "src/provider.php": "sha256:87ea4ba29d000273f360bbd3ef9a55886482a15cea796dcf6be0fb6bafc0ab85",
+        "src/route-map.php": "sha256:891373d649975e7ee376e8f297b08124768f1d138f85fde809a35b36389930d5",
+        "src/route-policy.php": "sha256:f8b38bfef6bfd048975b53fff2fdf7e4adbbe6c94f26a6867400ec5dda782480",
+        "src/scenario-map.php": "sha256:711165c9487026498e36e040e217058587a707bfcd85fb4b8eda1d9f42071e32",
+        "src/strict-profile.php": "sha256:8334bc169aad3c04eac798bec5437801157f2a486fc2c443d51ad26e1e3abe5f",
+        "src/type-bindings.php": "sha256:0c0e5113d188a3f79c455f1c43f9955d1ed6b4cf62d87f83f3b849401c357f05",
+        "src/type-codec.php": "sha256:be3f44aee64d0610b0107bc9effba8721cf564af25c0b252f52202641d74e99a",
+        "src/type-emit.php": "sha256:3f516153cbb60e5fde77df10e307a66784c6dbda6658f4a99ec9f3624e1b22c1",
+        "src/type-map.php": "sha256:161af40fb5b4065ad848f279d87ac7289c8feb23f72855b90ed1543a1c4c2a26",
+        "src/type-policy.php": "sha256:72c8ad9987cbac30754bc6b2f8af54f2b8eae958f39e3b48c2695b0bfb5a22c3",
+        "tests/analyzer.php": "sha256:517faaa0f20fba92fcd0bd7f9126286e2e401429069a41a3855805471734fe61",
+        "tests/protocol.php": "sha256:2fc0ad86214cd22c4c4575f6c31c2a5814c83c24572b3ba5781c03fc1ca326f5"
+      }
+    },
+    {
+      "name": "lekalo-php-laravel",
+      "repo": "https://github.com/ichinya/lekalo-php-laravel",
+      "commit": "d803152f3c16f2c3906a9a22bacc7885737839c5",
+      "files": {
+        "composer-gates-policy.json": "sha256:af3d21a5a53b05a42bef111ed190bc60ad3086e3f1472b1b4d78d7d810ed5732",
+        "src/laravel-lint.php": "sha256:be38febffa8d0df2ecc6c06a7a80895572ba030d345bf3d01564eb1703ddddea",
+        "src/laravel-migrations.php": "sha256:93521901376eb2fd2ed8656aa5a1e9be53e4a04e555a073362f9a28832ec71b3",
+        "src/laravel-provider.php": "sha256:1b6bcb2cb4c0c49f25938f24b1a99769c00b91870cb6d3c57e4b7ca38d85b9c8",
+        "src/native-plan.php": "sha256:13c0d2bcbc370e8dd7cb9719986931a29c619f30473be2bdbc2c6310ef103f95",
+        "src/native-policy.php": "sha256:020e7c9e7256047f48ee89338907a3e4e42c0537d5b7b8f74d777ddd14be905c",
+        "src/route-emit.php": "sha256:4cc3314608eca1ea2e680e6b8d0f50719c315980ecf064ed36f8c37dce542680",
+        "src/scenario-emit.php": "sha256:1c6d418819e5d73f3f9d6f1b9f47b530dc15c1dd2fc2fceff53c0f532efbbd1f",
+        "tests/laravel.php": "sha256:80d7288a5fff9c2d49bcfa79549ebcfb81910431c620088977b00383e28ed3d0"
+      }
+    }
+  ]
+}

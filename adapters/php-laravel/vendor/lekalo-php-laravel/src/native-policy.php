@@ -24,9 +24,6 @@
 
 declare(strict_types=1);
 
-/** The digest domain of the checked-in Composer execution policy. */
-const PHP_POLICY_DIGEST_DOMAIN = 'lekalo.native-policy.v0.4.0';
-
 /** The closed v0.4.0 gate-kind metadata set (mirrors the successor schema). */
 const PHP_GATE_KINDS = [
     'composer-script', 'mago-format', 'mago-lint', 'mago-analyze', 'mago-guard',
@@ -78,49 +75,6 @@ function php_is_safe_literal(string $text): bool
         }
     }
     return true;
-}
-
-/**
- * Canonical JSON text: recursively bytewise key-sorted, compact, UTF-8.
- * Delegates to the kernel's byte-compatible encoder when loaded (the
- * shipped artifact concatenates the kernel first); standalone test
- * loading falls back to the same closed encoder inline.
- */
-function php_canonical_text(array|bool|int|string|null $value): string
-{
-    if (function_exists('write_canonical')) {
-        return write_canonical($value);
-    }
-    if ($value === null) {
-        return 'null';
-    }
-    if (is_bool($value)) {
-        return $value ? 'true' : 'false';
-    }
-    if (is_int($value)) {
-        return (string) $value;
-    }
-    if (is_string($value)) {
-        $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-        return $encoded;
-    }
-    if (array_is_list($value)) {
-        return '[' . implode(',', array_map(__FUNCTION__, $value)) . ']';
-    }
-    $keys = array_keys($value);
-    usort($keys, 'strcmp');
-    $body = [];
-    foreach ($keys as $key) {
-        $body[] = json_encode((string) $key, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)
-            . ':' . php_canonical_text($value[$key]);
-    }
-    return '{' . implode(',', $body) . '}';
-}
-
-/** sha256 over the pinned domain joined with the canonical bytes. */
-function php_domain_digest(string $domain, array|bool|int|string|null $value): string
-{
-    return 'sha256:' . hash('sha256', $domain . php_canonical_text($value));
 }
 
 /**
