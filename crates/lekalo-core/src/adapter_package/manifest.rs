@@ -1025,9 +1025,10 @@ mod committed_exemplar_tests {
         let document = super::ManifestDocument::from_bytes(bytes)
             .expect("the committed PHP adapter manifest must parse");
         assert_eq!(document.adapter_id(), "lekalo-target-php-laravel");
-        // M8 publishes finite cache-evidence scopes under adapter 0.8.0;
-        // the wire protocol remains independently pinned at 0.6.4.
-        assert_eq!(document.adapter_version().as_str(), "0.8.0");
+        // Stage 4 (issue #241): the provider seam lands under adapter
+        // 0.9.0; the wire protocol remains independently pinned at
+        // 0.6.4.
+        assert_eq!(document.adapter_version().as_str(), "0.9.0");
         // The runtime is the closed php spelling with the 8.3 floor of
         // the issue's requirements, checked against the raw canonical
         // bytes (the wire struct keeps the runtime block opaque).

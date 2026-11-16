@@ -12,6 +12,275 @@
  */
 
 declare(strict_types=1);
+/**
+ * The versioned provider API between the language adapter and a
+ * framework package (lekalo-php#1, issue #241 stage 4).
+ *
+ * A framework package registers exactly one provider descriptor: its
+ * identity, the provider API version it speaks, a closed capability
+ * matrix, and one hook callable per declared capability family. The
+ * language adapter never names a framework: it resolves capability
+ * families through this registry, so a missing provider is a typed
+ * refusal with a stable code (`provider-missing`), a version mismatch
+ * is `provider-version-conflict`, and a duplicate registration is
+ * `provider-duplicate` — never a silent capability downgrade.
+ *
+ * Stage M1 (issue #241): the Laravel provider is compiled into the
+ * unified artifact (build.php PROVIDER_MODULES), so the shipped
+ * behavior is byte-compatible with the pre-seam adapter. The registry
+ * is wire-invisible in M1 (no response envelope changes); the packages
+ * become independently shippable in M2, and framework-pack discovery
+ * (lekalo#197) replaces the compiled-in registration afterwards.
+ */
+
+const PROVIDER_API_SCHEMA_VERSION = 'lekalo/provider/v0.1.0';
+const PROVIDER_API_IDENTITY = 'dev.lekalo.provider@0.1.0';
+
+/** The closed capability families the language adapter resolves. */
+const PROVIDER_FAMILIES = [
+    'migrations.emit',
+    'routes.emit',
+    'scenario.runners',
+    'scenario.emit',
+    'native.gates',
+    'lint.framework-semantics',
+];
+
+/** The closed per-family support states (absence means unsupported). */
+const PROVIDER_CAPABILITY_STATES = ['full', 'partial'];
+
+/** The bounded provider count of one process (reviewed registry size). */
+const PROVIDER_REGISTRY_LIMIT = 8;
+
+/** The registered providers, id-sorted; keyed by provider id. */
+function &lekalo_provider_registry(): array
+{
+    static $providers = [];
+    return $providers;
+}
+
+/**
+ * Register one provider descriptor. The shape is closed and validated
+ * before any state changes: unknown members, unknown families, unknown
+ * states, a hook without its capability, a capability without its
+ * hook, an api version other than the one this adapter speaks, or a
+ * duplicate id each refuse with their own stable code.
+ */
+function lekalo_provider_register(array $provider): void
+{
+    $required = ['id', 'version', 'api', 'capabilities', 'hooks'];
+    foreach (array_keys($provider) as $member) {
+        if (!in_array($member, $required, true)) {
+            throw new RequestRefusal('provider-descriptor');
+        }
+    }
+    foreach ($required as $member) {
+        if (!array_key_exists($member, $provider)) {
+            throw new RequestRefusal('provider-descriptor');
+        }
+    }
+    if (!is_string($provider['id'])
+        || !preg_match('/^[a-z][a-z0-9-]{2,63}$/D', $provider['id'])) {
+        throw new RequestRefusal('provider-descriptor');
+    }
+    if (!is_string($provider['version'])
+        || !preg_match('/^\d+\.\d+\.\d+$/D', $provider['version'])) {
+        throw new RequestRefusal('provider-descriptor');
+    }
+    // Version negotiation is deterministic: the adapter speaks exactly
+    // one provider API version and refuses any other on registration,
+    // before a half-negotiated provider can serve a single family.
+    if ($provider['api'] !== PROVIDER_API_SCHEMA_VERSION) {
+        throw new RequestRefusal('provider-version-conflict');
+    }
+    if (!is_array($provider['capabilities']) || !is_array($provider['hooks'])) {
+        throw new RequestRefusal('provider-descriptor');
+    }
+    foreach ($provider['capabilities'] as $family => $state) {
+        if (!in_array((string) $family, PROVIDER_FAMILIES, true)) {
+            throw new RequestRefusal('provider-descriptor');
+        }
+        if (!in_array($state, PROVIDER_CAPABILITY_STATES, true)) {
+            throw new RequestRefusal('provider-descriptor');
+        }
+    }
+    foreach (array_keys($provider['capabilities']) as $family) {
+        if (!is_callable($provider['hooks'][$family] ?? null)) {
+            throw new RequestRefusal('provider-descriptor');
+        }
+    }
+    foreach (array_keys($provider['hooks']) as $family) {
+        if (!array_key_exists($family, $provider['capabilities'])) {
+            throw new RequestRefusal('provider-descriptor');
+        }
+    }
+    $registry = &lekalo_provider_registry();
+    if (isset($registry[$provider['id']])) {
+        throw new RequestRefusal('provider-duplicate');
+    }
+    if (count($registry) >= PROVIDER_REGISTRY_LIMIT) {
+        throw new RequestRefusal('provider-registry-limit');
+    }
+    $registry[$provider['id']] = $provider;
+    ksort($registry, SORT_STRING);
+}
+
+/** The registered provider summaries, id-sorted, for describe/debugging. */
+function lekalo_providers(): array
+{
+    $out = [];
+    foreach (lekalo_provider_registry() as $id => $provider) {
+        $out[] = [
+            'id' => $id,
+            'version' => $provider['version'],
+            'api' => $provider['api'],
+            'capabilities' => $provider['capabilities'],
+        ];
+    }
+    return $out;
+}
+
+/**
+ * The first id-sorted provider declaring the family, or null when no
+ * registered provider does. The non-throwing probe: language code that
+ * merely conditions framework semantics on a provider's presence (the
+ * ai-lint Eloquent islands) resolves here and degrades honestly when
+ * the registry is empty.
+ */
+function lekalo_provider_capability(string $family): ?array
+{
+    if (!in_array($family, PROVIDER_FAMILIES, true)) {
+        return null;
+    }
+    foreach (lekalo_provider_registry() as $id => $provider) {
+        if (array_key_exists($family, $provider['capabilities'])) {
+            return [
+                'provider' => $id,
+                'version' => $provider['version'],
+                'state' => $provider['capabilities'][$family],
+            ];
+        }
+    }
+    return null;
+}
+
+/**
+ * The capability of one family or a typed refusal: a family nobody
+ * declares is `provider-missing`, never a silent pass (lekalo-php#1).
+ */
+function lekalo_provider_require(string $family): array
+{
+    $capability = lekalo_provider_capability($family);
+    if ($capability === null) {
+        throw new RequestRefusal('provider-missing');
+    }
+    return $capability;
+}
+
+/** Invoke one family's hook through the negotiated provider. */
+function lekalo_provider_call(string $family, array $arguments = []): mixed
+{
+    $capability = lekalo_provider_require($family);
+    $provider = lekalo_provider_registry()[$capability['provider']];
+    return $provider['hooks'][$family](...$arguments);
+}
+
+/**
+ * The merged scenario-runner declarations of every provider that
+ * declares `scenario.runners`, id-sorted, with duplicate runner ids
+ * refused: two providers may not silently shadow one runner. The
+ * merged table is computed once per process.
+ */
+function lekalo_provider_scenario_runner_table(): ?array
+{
+    static $table = false;
+    if ($table !== false) {
+        return $table;
+    }
+    $table = null;
+    $runners = [];
+    foreach (lekalo_provider_registry() as $provider) {
+        if (!array_key_exists('scenario.runners', $provider['capabilities'])) {
+            continue;
+        }
+        $declaration = $provider['hooks']['scenario.runners']();
+        if (!is_array($declaration)
+            || !isset($declaration['runners'])
+            || !is_array($declaration['runners'])
+            || (isset($declaration['default']) && !is_string($declaration['default']))) {
+            throw new RequestRefusal('provider-descriptor');
+        }
+        if ($table === null) {
+            $table = ['runners' => [], 'default' => null];
+        }
+        foreach ($declaration['runners'] as $runnerId => $entry) {
+            if (isset($runners[$runnerId])) {
+                throw new RequestRefusal('provider-runner-conflict');
+            }
+            $runners[$runnerId] = $entry;
+        }
+        if ($table['default'] === null && is_string($declaration['default'] ?? null)) {
+            $table['default'] = $declaration['default'];
+        }
+    }
+    if ($table !== null) {
+        ksort($runners, SORT_STRING);
+        $table['runners'] = $runners;
+    }
+    return $table;
+}
+
+/** The provider-supplied runner registry, or null with no provider. */
+function lekalo_provider_scenario_runners(): ?array
+{
+    $table = lekalo_provider_scenario_runner_table();
+    return $table === null ? null : $table['runners'];
+}
+
+/** The provider-supplied default runner, or null with no provider. */
+function lekalo_provider_default_scenario_runner(): ?string
+{
+    $table = lekalo_provider_scenario_runner_table();
+    return $table === null ? null : $table['default'];
+}
+
+/**
+ * The lint framework facts of the registered lint provider (or null):
+ * the resolved model base-class FQN the provider classifies as its
+ * persisted-model base. Cached per process; one provider lookup, never
+ * per class declaration in the lint walk.
+ */
+function lekalo_provider_lint_facts(): ?array
+{
+    static $facts = false;
+    if ($facts !== false) {
+        return $facts;
+    }
+    $facts = null;
+    if (lekalo_provider_capability('lint.framework-semantics') !== null) {
+        $declared = lekalo_provider_call('lint.framework-semantics');
+        if (!is_array($declared)) {
+            throw new RequestRefusal('provider-descriptor');
+        }
+        $facts = $declared;
+    }
+    return $facts;
+}
+
+/** Whether the resolved base-class FQN is the provider's model base. */
+function lekalo_provider_lint_classifies_model(string $resolvedBase): bool
+{
+    $facts = lekalo_provider_lint_facts();
+    return $facts !== null
+        && is_string($facts['model_base'] ?? null)
+        && $resolvedBase === $facts['model_base'];
+}
+
+/** Whether observer-effect lint semantics have a provider behind them. */
+function lekalo_provider_lint_observer_semantics(): bool
+{
+    return lekalo_provider_capability('lint.framework-semantics') !== null;
+}
 /** Issue #76: static token collection only. Never loads the application. */
 function lint_unknown(): array { return ['state' => 'unknown']; }
 function lint_known(mixed $value): array { return ['state' => 'known', 'value' => $value]; }
@@ -68,6 +337,13 @@ function lint_read_source(string $path): string
 function lint_collect(array $request): array
 {
     lint_require_tokenizer();
+    // The framework semantics (the persisted-model base classification
+    // and the observer-effect rules) are provider-owned since the
+    // stage-4 separation: the registry degrades honestly to the
+    // language-only outcome when no provider is registered.
+    if (!function_exists('lekalo_provider_lint_classifies_model')) {
+        require_once __DIR__ . '/provider.php';
+    }
     $lint=$request['lint_request'];$sources=[];$locations=[];$records=[];$files=[];$bytesTotal=0;$work=0;
     foreach ($lint['files'] as $path) {
         $text=lint_read_source($path);$bytesTotal+=strlen($text);if ($bytesTotal>8*1024*1024) {throw new RequestRefusal('lint-source','limit');}
@@ -90,7 +366,7 @@ function lint_collect(array $request): array
             if ($tokens[$i]['kind']===T_CLASS && ($tokens[$i-1]['text']??'')!=='::') {
                 $name=$tokens[$i+1]['text']??'';$j=$i+2;while ($j<$n && $tokens[$j]['text']!=='{') {$j++;}
                 $baseName=($tokens[$i+2]['kind']??null)===T_EXTENDS?($tokens[$i+3]['text']??''):'';
-                $classes[$path.'#'.$name]=['name'=>$name,'native'=>$path.'#'.$name,'eloquent'=>($imports[$baseName]??ltrim($baseName,'\\'))==='Illuminate\\Database\\Eloquent\\Model','methods'=>[]];$class=$path.'#'.$name;$classDepth=$depth+1;
+                $classes[$path.'#'.$name]=['name'=>$name,'native'=>$path.'#'.$name,'eloquent'=>lekalo_provider_lint_classifies_model($imports[$baseName]??ltrim($baseName,'\\')),'methods'=>[]];$class=$path.'#'.$name;$classDepth=$depth+1;
             }
             if ($class!==null && $tokens[$i]['kind']===T_FUNCTION && ($tokens[$i+1]['kind']??null)===T_STRING) {
                 $name=$tokens[$i+1]['text'];$j=$i+2;while ($j<$n && $tokens[$j]['text']!=='{') {$j++;}if ($j===$n) {continue;}
@@ -139,7 +415,7 @@ function lint_collect(array $request): array
         $locations=array_intersect_key($locations,$retained);$records=$kept;
     }
     $rules=['ambiguity.implicit-target-defaults','ambiguity.multiple-resolutions','ambiguity.scattered-state-writes','hidden.convention-only-path','hidden.dispatch-without-binding','hidden.observer-write','hidden.path-without-trace-owner','hidden.reflective-call','hidden.string-reference','hidden.undeclared-effect','indirection.depth-exceeded'];$coverage=[];
-    foreach ($rules as $rule) {foreach ($lint['scope'] as $scope) {$supported=in_array($rule,['hidden.observer-write','hidden.reflective-call','ambiguity.scattered-state-writes'],true);$coverage[]=['rule'=>$rule,'target'=>$request['target'],'scope'=>$scope,'state'=>$supported&&count($files)>0?'partial':'unsupported','eligible'=>lint_unknown(),'examined'=>lint_known(count($methods)),'limitations'=>$supported?['bounded-token-files',...$limit]:['detector-unsupported']];}}
+    foreach ($rules as $rule) {foreach ($lint['scope'] as $scope) {$supported=in_array($rule,['hidden.observer-write','hidden.reflective-call','ambiguity.scattered-state-writes'],true)&&($rule!=='hidden.observer-write'||lekalo_provider_lint_observer_semantics());$coverage[]=['rule'=>$rule,'target'=>$request['target'],'scope'=>$scope,'state'=>$supported&&count($files)>0?'partial':'unsupported','eligible'=>lint_unknown(),'examined'=>lint_known(count($methods)),'limitations'=>$supported?['bounded-token-files',...$limit]:['detector-unsupported']];}}
     return ['schemaVersion'=>'lekalo/ai-lint-evidence/v0.6.4','identity'=>'dev.lekalo.ai-lint-evidence@0.6.4','target'=>$request['target'],'scope'=>$lint['scope'],'producer'=>['id'=>ADAPTER_ID,'version'=>ADAPTER_VERSION,'artifactDigest'=>'sha256:'.hash_file('sha256', __FILE__),'tool'=>'php-token-static','compiler'=>lint_known('php/'.PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION),'framework'=>lint_unknown(),'recipe'=>'ai-readability/1'],'pins'=>$lint['pins'],'inputManifestDigest'=>lint_hash($sources),'sources'=>$sources,'locations'=>array_values($locations),'records'=>array_values($records),'coverage'=>$coverage,'limitations'=>['static-files-only','no-application-execution','framework-version-unknown','external-class-resolution-unsupported',...$limit]];
 }
 
@@ -1131,7 +1407,7 @@ const ADAPTER_ID = 'lekalo-target-php-laravel';
 /**
  * The adapter identity token.
  */
-const ADAPTER_VERSION = '0.8.0';
+const ADAPTER_VERSION = '0.9.0';
 /** The adapter target token (the wire `target` of generate/bind). */
 const TARGET_TOKEN = 'php-laravel';
 /** The default profile token; the strict profile rides the analysis seam. */
@@ -1195,11 +1471,27 @@ const PHP_OBSERVED_INDEX_PATH = '.lekalo/import/observed/index.json';
 const IR_EVIDENCE_HOME = '.lekalo/cache/ir';
 
 /**
+ * The provider registry module (lekalo-php#1, stage 4): the registry
+ * resolves framework capability families, so every family loader
+ * touches it before its first provider lookup. Inside the shipped
+ * artifact `provider.php` is appended ahead of the kernel and loading
+ * is a no-op; the source-tree kernel loads it directly.
+ */
+function load_provider_module(): void
+{
+    if (!function_exists('lekalo_provider_call')) {
+        require_once __DIR__ . '/provider.php';
+    }
+}
+
+/**
  * The scenario compiler modules, in fixed load order. `build.php`
  * concatenates the kernel plus these modules into the shipped
  * single-file artifact, so inside the shipped artifact the functions
  * are already defined and loading is a no-op; the source-tree kernel
- * loads them directly.
+ * loads them directly. The map is language-owned; the test emitter is
+ * a provider-owned family (`scenario.emit`) resolved through the
+ * registry — the kernel never names the framework.
  */
 function load_scenario_modules(): void
 {
@@ -1211,18 +1503,25 @@ function load_scenario_modules(): void
     if (function_exists('php_map_scenario') && function_exists('php_emit_scenario_tests')) {
         return;
     }
-    foreach ([__DIR__ . '/scenario-map.php', __DIR__ . '/scenario-emit.php'] as $module) {
+    load_provider_module();
+    foreach ([__DIR__ . '/scenario-map.php'] as $module) {
         if (!is_file($module)) {
             throw new RequestRefusal('compiler-module-missing');
         }
         require_once $module;
     }
+    if (!function_exists('php_emit_scenario_tests')) {
+        lekalo_provider_call('scenario.emit');
+    }
 }
 
 /**
- * The native gate modules, in fixed load order (issue #61). Inside the
- * shipped artifact the functions are already defined and loading is a
- * no-op; the source-tree kernel loads them directly.
+ * The native gate family (issue #61): provider-owned since the stage-4
+ * separation — the Composer/artisan execution policy is framework
+ * knowledge. Inside the shipped artifact the modules are appended and
+ * the provider's loader hook is a no-op; the source-tree hook requires
+ * the modules directly. An unregistered provider is the typed
+ * `provider-missing` refusal, never a silent skip.
  */
 function load_native_modules(): void
 {
@@ -1234,12 +1533,8 @@ function load_native_modules(): void
     if (function_exists('php_build_native_plan') && function_exists('php_verify_confirmations')) {
         return;
     }
-    foreach ([__DIR__ . '/native-policy.php', __DIR__ . '/native-plan.php'] as $module) {
-        if (!is_file($module)) {
-            throw new RequestRefusal('native-module-missing');
-        }
-        require_once $module;
-    }
+    load_provider_module();
+    lekalo_provider_call('native.gates');
 }
 
 /**
@@ -1340,7 +1635,10 @@ function load_operation_modules(): void
  * The routes-generator modules, in fixed load order (issue #60). They
  * depend on the type modules' naming and codec helpers and on the
  * operations modules' handler naming, so both load first. Inside the
- * shipped artifact everything is appended and loading is a no-op.
+ * shipped artifact everything is appended and loading is a no-op. The
+ * policy and map are language-owned (the framework-neutral HTTP
+ * vocabulary); the emitter is a provider-owned family (`routes.emit`)
+ * resolved through the registry.
  */
 function load_route_modules(): void
 {
@@ -1353,15 +1651,18 @@ function load_route_modules(): void
     if (function_exists('php_validate_routes_input') && function_exists('php_emit_routes')) {
         return;
     }
+    load_provider_module();
     foreach ([
         __DIR__ . '/route-policy.php',
         __DIR__ . '/route-map.php',
-        __DIR__ . '/route-emit.php',
     ] as $module) {
         if (!is_file($module)) {
             throw new RequestRefusal('compiler-module-missing');
         }
         require_once $module;
+    }
+    if (!function_exists('php_emit_routes')) {
+        lekalo_provider_call('routes.emit');
     }
 }
 
@@ -3645,17 +3946,21 @@ function kernel_artifact(array $request): array
     $target = $request['target'] ?? TARGET_TOKEN;
     $profile = $request['profile'] ?? PROFILE_TOKEN;
     $irPath = $request['ir_path'] ?? '.lekalo/ir/planner.json';
-    // Issue #57: a bound Laravel migration input document drives the
-    // migration emitter; everything else rides the kernel fixture
-    // artifact. The input path must sit inside the declared read
-    // scope and carry the closed contract identity.
+    // Issue #57: a bound storage-transition migration input document
+    // drives the migration emitter; everything else rides the kernel
+    // fixture artifact. The input path must sit inside the declared
+    // read scope and carry the closed contract identity. Stage 4: the
+    // emitter is provider-owned (`migrations.emit`) — the framework
+    // package decodes its closed input contract and renders the
+    // migration plus the append-only ledger; the same typed refusals
+    // ride the provider seam.
     if (str_ends_with($irPath, '.migration-input.json')
         && scope_covers('.lekalo/ir/**', $irPath)
         && is_file($irPath)) {
         $bytes = file_get_contents($irPath);
         if ($bytes !== false) {
-            $input = decode_storage_input($bytes);
-            return emit_laravel_migrations($input, $target, $irPath);
+            load_provider_module();
+            return lekalo_provider_call('migrations.emit', [$bytes, $target, $irPath]);
         }
     }
     $header = sprintf(
@@ -3702,408 +4007,11 @@ function plan_id(array $writes): string
 }
 
 // ---------------------------------------------------------------------------
-// 5a. The Laravel migration emitter (issue #57).
+// 5a. The Laravel migration emitter (issue #57) — provider-owned since
+//     the stage-4 separation: moved verbatim to
+//     `src/laravel-migrations.php`, resolved through the provider
+//     registry family `migrations.emit` (lekalo-php#1, issue #241).
 // ---------------------------------------------------------------------------
-
-/** The closed step-kind vocabulary the emitter consumes (the plan v1 set). */
-const MIGRATION_OPERATION_KINDS = [
-    'create_table', 'drop_table', 'rename_table', 'add_column',
-    'drop_column', 'alter_column_type', 'set_column_null',
-    'set_column_default', 'add_primary_key', 'rename_constraint',
-    'drop_constraint', 'add_unique', 'add_foreign_key', 'add_check',
-    'drop_check', 'add_index', 'drop_index', 'create_enum_type',
-    'alter_enum_type', 'enable_rls', 'disable_rls', 'create_policy',
-    'drop_policy', 'create_sequence', 'alter_sequence',
-    'rename_sequence', 'drop_sequence', 'create_extension',
-    'backfill', 'rename_column',
-];
-
-/** The closed rollback classes (the contract spelling). */
-const MIGRATION_ROLLBACK_CLASSES = [
-    'reversible', 'data-loss-on-rollback', 'irreversible',
-];
-
-/** The closed effective-status vocabulary. */
-const MIGRATION_STATUSES = ['ready', 'blocked', 'confirmed'];
-
-/** The declared UTC timestamp base of the fixture pipeline (policy, never the wall clock). */
-const MIGRATION_TIMESTAMP_BASE = '2026_09_27_000001';
-
-/**
- * Decode and validate one bounded Laravel migration input document.
- * The closed shape mirrors contracts/laravel-migration-input.schema
- * exactly: unknown members refuse, every closed vocabulary is checked,
- * and every digest pin must be a canonical sha256 spelling.
- */
-function decode_storage_input(string $bytes): array
-{
-    if (strlen($bytes) > MAX_REQUEST_BYTES) {
-        throw new RequestRefusal('input-too-large');
-    }
-    try {
-        $document = json_decode($bytes, true, 64, JSON_THROW_ON_ERROR);
-    } catch (JsonException) {
-        throw new RequestRefusal('input-syntax');
-    }
-    if (!is_json_object($document)) {
-        throw new RequestRefusal('input-shape');
-    }
-    $required = [
-        'schemaVersion', 'identity', 'engine', 'engineVersion',
-        'projectId', 'baseDigest', 'candidateDigest', 'diffDigest',
-        'planId', 'gated', 'backfillGated', 'effectiveStatus',
-        'operations',
-    ];
-    $known = array_merge($required, ['historyDigest']);
-    foreach (array_keys($document) as $key) {
-        if (!in_array($key, $known, true)) {
-            throw new RequestRefusal('input-member');
-        }
-    }
-    foreach ($required as $key) {
-        if (!array_key_exists($key, $document)) {
-            throw new RequestRefusal('input-member');
-        }
-    }
-    if ($document['schemaVersion'] !== 'lekalo/laravel-migration-input/v0.4.0'
-        || $document['identity'] !== 'dev.lekalo.laravel-migration-input@0.4.0') {
-        throw new RequestRefusal('input-identity');
-    }
-    if ($document['engine'] !== 'postgres'
-        || !is_contract_version($document['engineVersion'])) {
-        throw new RequestRefusal('input-engine');
-    }
-    foreach (['baseDigest', 'candidateDigest', 'diffDigest', 'planId'] as $key) {
-        if (!is_sha256_digest($document[$key])) {
-            throw new RequestRefusal('input-digest');
-        }
-    }
-    if (array_key_exists('historyDigest', $document)
-        && !is_sha256_digest($document['historyDigest'])) {
-        throw new RequestRefusal('input-digest');
-    }
-    if (!is_bool($document['gated']) || !is_bool($document['backfillGated'])) {
-        throw new RequestRefusal('input-shape');
-    }
-    if (!in_array($document['effectiveStatus'], MIGRATION_STATUSES, true)) {
-        throw new RequestRefusal('input-status');
-    }
-    // The effective gate closes: a blocked document generates zero
-    // bytes. The refusal is the honest state, never a partial file.
-    if ($document['effectiveStatus'] === 'blocked') {
-        throw new RequestRefusal('input-gated');
-    }
-    if (!is_array($document['operations']) || !array_is_list($document['operations'])
-        || count($document['operations']) > 1024) {
-        throw new RequestRefusal('input-operations');
-    }
-    $previous = 0;
-    foreach ($document['operations'] as $operation) {
-        if (!is_json_object($operation)) {
-            throw new RequestRefusal('input-operation');
-        }
-        $operationKnown = ['ordinal', 'kind', 'statement', 'risk', 'requires', 'rollback', 'inverse'];
-        $operationRequired = ['ordinal', 'kind', 'statement', 'risk', 'rollback'];
-        foreach (array_keys($operation) as $key) {
-            if (!in_array($key, $operationKnown, true)) {
-                throw new RequestRefusal('input-member');
-            }
-        }
-        foreach ($operationRequired as $key) {
-            if (!array_key_exists($key, $operation)) {
-                throw new RequestRefusal('input-operation');
-            }
-        }
-        if (!is_int($operation['ordinal']) || $operation['ordinal'] <= $previous) {
-            throw new RequestRefusal('input-order');
-        }
-        $previous = $operation['ordinal'];
-        if (!in_array($operation['kind'], MIGRATION_OPERATION_KINDS, true)) {
-            throw new RequestRefusal('input-kind');
-        }
-        if (!is_string($operation['statement']) || $operation['statement'] === ''
-            || strlen($operation['statement']) > 4096) {
-            throw new RequestRefusal('input-statement');
-        }
-        if (!in_array($operation['risk'], ['none', 'backfill_required', 'destructive'], true)) {
-            throw new RequestRefusal('input-risk');
-        }
-        if (array_key_exists('requires', $operation)) {
-            if (!is_array($operation['requires']) || !array_is_list($operation['requires'])) {
-                throw new RequestRefusal('input-operation');
-            }
-            foreach ($operation['requires'] as $requirement) {
-                if (!is_int($requirement) || $requirement < 1
-                    || $requirement >= $operation['ordinal']) {
-                    throw new RequestRefusal('input-requires');
-                }
-            }
-        }
-        if (!in_array($operation['rollback'], MIGRATION_ROLLBACK_CLASSES, true)) {
-            throw new RequestRefusal('input-rollback');
-        }
-        if (array_key_exists('inverse', $operation)
-            && (!is_string($operation['inverse']) || $operation['inverse'] === ''
-                || strlen($operation['inverse']) > 4096)) {
-            throw new RequestRefusal('input-inverse');
-        }
-        // A reversible operation carries its inverse: the plan v1
-        // metadata fully determines it, so the absence would be a
-        // truncated document, and an irreversible or data-loss class
-        // never carries one.
-        $hasInverse = array_key_exists('inverse', $operation);
-        if (($operation['rollback'] === 'reversible') !== $hasInverse) {
-            throw new RequestRefusal('input-inverse');
-        }
-    }
-    return $document;
-}
-
-/**
- * Emit the deterministic Laravel migration artifacts for one bounded
- * input: one PHP class whose up() executes exactly the planned SQL in
- * dependency order and whose down() either inverts a fully reversible
- * plan or refuses before any statement, plus the append-only ledger.
- * Two runs with identical inputs are byte-identical; the artifact set
- * never contains anything but the migration file and the ledger.
- */
-function emit_laravel_migrations(array $input, string $target, string $irPath): array
-{
-    // The effective gate closes here too: emit never renders a blocked
-    // transition, defense in depth against a bypassed decode.
-    if (($input['effectiveStatus'] ?? '') === 'blocked') {
-        throw new RequestRefusal('input-gated');
-    }
-    $shortDigest = substr(sha256_hex(canonical_json($input)), 0, 12);
-    $class = 'Lekalo' . strtoupper(substr(sha256_hex($shortDigest), 0, 8)) . 'Migration';
-    $directory = '.lekalo/generated/php-laravel/' . $target . '/migrations';
-    $filename = MIGRATION_TIMESTAMP_BASE . '_lekalo_' . $shortDigest . '.php';
-    $path = $directory . '/' . $filename;
-    $bytes = render_migration_class($input, $class, $target, $irPath);
-    $ledgerPath = $directory . '/ledger.json';
-    $entry = [
-        'filename' => $filename,
-        'digest' => sha256_digest($bytes),
-        'bytes' => strlen($bytes),
-        'planId' => $input['planId'],
-        'inputDigest' => sha256_digest(canonical_json($input)),
-        'baseDigest' => $input['baseDigest'],
-        'candidateDigest' => $input['candidateDigest'],
-        'timestampBase' => MIGRATION_TIMESTAMP_BASE,
-        'gated' => $input['gated'],
-        'backfillGated' => $input['backfillGated'],
-        'effectiveStatus' => $input['effectiveStatus'],
-    ];
-    // The ledger is append-only custody: a published ledger never
-    // shrinks and never rewrites an entry. The emitter reads the
-    // published document, proves the append with assert_append_only,
-    // and writes the merged ledger — so a second generate --apply
-    // appends instead of dying write-denied on the existing file, and
-    // a byte-identical regeneration replans exactly the published
-    // bytes (a true no-op at apply time).
-    $published = read_published_ledger($ledgerPath);
-    if ($published === null) {
-        $ledger = [
-            'schemaVersion' => 'lekalo/laravel-migration-ledger/v0.4.0',
-            'identity' => 'dev.lekalo.laravel-migration-ledger@0.4.0',
-            'projectId' => $input['projectId'],
-            'engine' => $input['engine'],
-            'engineVersion' => $input['engineVersion'],
-            'migrations' => [[
-                'ordinal' => 1,
-            ] + $entry],
-        ];
-        $ledgerBytes = canonical_json($ledger) . "\n";
-        $ledgerAction = 'create';
-    } else {
-        $publishedMigrations = $published['migrations'];
-        $alreadyPublished = null;
-        $highestOrdinal = 0;
-        foreach ($publishedMigrations as $publishedEntry) {
-            $highestOrdinal = max($highestOrdinal, (int) $publishedEntry['ordinal']);
-            if (($publishedEntry['filename'] ?? null) === $filename) {
-                $alreadyPublished = $publishedEntry;
-            }
-        }
-        if ($alreadyPublished !== null && $alreadyPublished['digest'] !== $entry['digest']) {
-            // The same published filename with different bytes is a
-            // custody violation: a migration file is named by its
-            // input digest, so the published class must be identical.
-            throw new RequestRefusal('ledger-conflict');
-        }
-        if ($alreadyPublished !== null) {
-            // Byte-identical regeneration: the entry is already
-            // published, the ledger keeps its published bytes, and the
-            // planned write replays them exactly (no-op on disk).
-            $ledgerBytes = file_get_contents($ledgerPath);
-            if ($ledgerBytes === false) {
-                throw new RequestRefusal('ledger-shape');
-            }
-            $ledgerAction = 'create';
-        } else {
-            $entry = ['ordinal' => $highestOrdinal + 1] + $entry;
-            $merged = $published;
-            $merged['migrations'][] = $entry;
-            assert_append_only($published, $merged);
-            $ledgerBytes = canonical_json($merged) . "\n";
-            $ledgerAction = 'replace';
-        }
-    }
-    return [
-        'path' => $path,
-        'bytes' => $bytes,
-        'digest' => sha256_digest($bytes),
-        'action' => 'create',
-        'ledger' => [
-            'path' => $ledgerPath,
-            'bytes' => $ledgerBytes,
-            'digest' => sha256_digest($ledgerBytes),
-            'action' => $ledgerAction,
-        ],
-        'filename' => $filename,
-    ];
-}
-
-/**
- * The published ledger of one migrations directory, or null when this
- * adapter has not published one yet. A present-but-invalid ledger
- * refuses: append-only custody cannot be proven over a corrupt
- * document, and silently starting a fresh ledger would orphan every
- * published migration.
- */
-function read_published_ledger(string $path): ?array
-{
-    if (!is_file($path)) {
-        return null;
-    }
-    $bytes = file_get_contents($path);
-    if ($bytes === false) {
-        throw new RequestRefusal('ledger-shape');
-    }
-    try {
-        $document = json_decode($bytes, true, 64, JSON_THROW_ON_ERROR);
-    } catch (JsonException) {
-        throw new RequestRefusal('ledger-shape');
-    }
-    if (!is_json_object($document)
-        || !isset($document['migrations'])
-        || !is_array($document['migrations'])
-        || !array_is_list($document['migrations'])) {
-        throw new RequestRefusal('ledger-shape');
-    }
-    return $document;
-}
-
-/**
- * Render one Laravel migration class: strict types, an anonymous
- * class extending Illuminate\Database\Migrations\Migration, up() as
- * sequential DB::statement calls of the planned SQL, and down() from
- * the typed reverse plan or an explicit refusal. The SQL travels as
- * single-quoted PHP literals byte-for-byte — quotes, backslashes,
- * dollar signs, and Unicode survive exactly — never through eval or
- * string interpolation.
- */
-function render_migration_class(array $input, string $class, string $target, string $irPath): string
-{
-    $lines = [];
-    $lines[] = '<?php';
-    $lines[] = '';
-    $lines[] = '// generated by ' . ADAPTER_ID . '@' . ADAPTER_VERSION . ' (issue #57)';
-    $lines[] = 'declare(strict_types=1);';
-    $lines[] = '';
-    $lines[] = '// target: ' . $target;
-    $lines[] = '// engine: postgres ' . $input['engineVersion'];
-    $lines[] = '// project: ' . $input['projectId'];
-    $lines[] = '// plan: ' . $input['planId'];
-    $lines[] = '// input: ' . $irPath;
-    $lines[] = '';
-    $lines[] = 'use Illuminate\Database\Migrations\Migration;';
-    $lines[] = 'use Illuminate\Database\Schema\Blueprint;' ;
-    $lines[] = 'use Illuminate\Support\Facades\DB;';
-    $lines[] = '';
-    $lines[] = '/**';
-    $lines[] = ' * Lekalo storage transition: ' . count($input['operations']) . ' operation(s),';
-    $lines[] = ' * effective gate ' . $input['effectiveStatus'] . '.';
-    $lines[] = ' */';
-    $lines[] = 'return new class extends Migration';
-    $lines[] = '{';
-    $lines[] = '    /** Execute the planned transition in dependency order. */';
-    $lines[] = '    public function up(): void';
-    $lines[] = '    {';
-    foreach ($input['operations'] as $operation) {
-        $literal = php_single_quote($operation['statement']);
-        $lines[] = '        DB::statement(\'' . $literal . '\');';
-    }
-    $lines[] = '    }';
-    $lines[] = '';
-    $reverses = [];
-    foreach ($input['operations'] as $operation) {
-        $reverses[] = $operation['rollback'] === 'reversible'
-            ? $operation['inverse']
-            : null;
-    }
-    $fullyReversible = !in_array(null, $reverses, true);
-    $lines[] = '    /** Reverse the transition; refuses before any statement when unsafe. */';
-    $lines[] = '    public function down(): void';
-    $lines[] = '    {';
-    if ($fullyReversible) {
-        foreach (array_reverse($reverses) as $inverse) {
-            $literal = php_single_quote($inverse);
-            $lines[] = '        DB::statement(\'' . $literal . '\');';
-        }
-    } else {
-        $lines[] = '        // The plan carries irreversible or data-loss-on-rollback';
-        $lines[] = '        // operations: the rollback refuses before the first statement.';
-        $lines[] = '        throw new \RuntimeException(\'lekalo: rollback is not safe for this migration\');';
-    }
-    $lines[] = '    }';
-    $lines[] = '};';
-    return implode("\n", $lines) . "\n";
-}
-
-/**
- * One single-quoted PHP string literal preserving the exact SQL bytes:
- * backslash and single quote escape, everything else travels raw
- * (dollar signs, double quotes, Unicode). No eval, no interpolation.
- */
-function php_single_quote(string $sql): string
-{
-    return str_replace(["\\", "'"], ['\\\\', "\\'"], $sql);
-}
-
-/**
- * The append-only custody check: a published migration ledger never
- * loses entries and never rewrites a published file. An existing
- * ledger accepts only a byte-identical regeneration (no-op) or an
- * append with a strictly higher ordinal; any other shape refuses.
- */
-function assert_append_only(array $existing, array $next): void
-{
-    if (!is_json_object($existing)
-        || !isset($existing['migrations'])
-        || !is_array($existing['migrations'])
-        || !array_is_list($existing['migrations'])) {
-        throw new RequestRefusal('ledger-shape');
-    }
-    $published = $existing['migrations'];
-    $nextMigrations = $next['migrations'];
-    $count = count($published);
-    if (count($nextMigrations) < $count) {
-        throw new RequestRefusal('ledger-shrunk');
-    }
-    foreach ($published as $index => $entry) {
-        if ($nextMigrations[$index] !== $entry) {
-            throw new RequestRefusal('ledger-rewritten');
-        }
-    }
-    $previous = 0;
-    foreach ($nextMigrations as $entry) {
-        if (!is_int($entry['ordinal']) || $entry['ordinal'] <= $previous) {
-            throw new RequestRefusal('ledger-order');
-        }
-        $previous = $entry['ordinal'];
-    }
-}
 
 // ---------------------------------------------------------------------------
 // 6. Response envelope construction.
@@ -5325,30 +5233,14 @@ const PHP_PORT_DOC_IDENTITY = 'dev.lekalo.php-test-port@0.1.0';
 const PHP_PORT_CLASS_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*)*$/';
 
 /**
- * The closed PHP runner registry. The Laratesto entry mirrors the
- * bridge's declared facts on the pinned toolchain: the Laravel suite is
- * sequential (fresh application per test), so `testing.concurrency`
- * stays deliberately absent — a race case compiles to an explicit
- * unsupported outcome, never to a serial run that would lie.
+ * The PHP runner registry is provider-owned since the stage-4
+ * separation (lekalo-php#1, issue #241): the registered framework
+ * provider declares its runners and default through the
+ * `scenario.runners` capability, and the mapper resolves against the
+ * merged table (`lekalo_provider_scenario_runners()`). The kernel's
+ * `load_provider_module()` runs before this module loads, so the
+ * lookup functions exist by the time a scenario resolves.
  */
-const PHP_RUNNER_REGISTRY = [
-    'laratesto' => [
-        'capabilities' => [
-            'testing.clock',
-            'testing.db-refresh',
-            'testing.event-capture',
-            'testing.fixtures',
-            'testing.http',
-            'testing.session',
-        ],
-        'concurrency' => false,
-        'eventCapture' => 'plugin',
-        'syntax' => 'laratesto',
-    ],
-];
-
-/** The default runner when a scenario declares no native binding. */
-const PHP_DEFAULT_RUNNER = 'laratesto';
 
 /**
  * Binding capabilities the port's `invoke` surface itself provides when
@@ -5713,7 +5605,13 @@ function php_resolve_operation(array $index, string $id): ?array
     return null;
 }
 
-/** The resolved runner entry, or an unknown-runner finding with the default. */
+/**
+ * The resolved runner entry, or an unknown-runner finding with the
+ * default. The registry and the default are provider-supplied
+ * (`scenario.runners`): with no provider registered the mapping
+ * refuses typed (`provider-missing`) — a scenario is a framework
+ * family and never silently unbound (lekalo-php#1).
+ */
 function php_resolve_runner(array $scenario, array &$findings): array
 {
     $nativeBinding = null;
@@ -5723,18 +5621,23 @@ function php_resolve_runner(array $scenario, array &$findings): array
             break;
         }
     }
+    $registry = lekalo_provider_scenario_runners();
+    $default = lekalo_provider_default_scenario_runner();
+    if ($registry === null || $default === null || !isset($registry[$default])) {
+        throw new RequestRefusal('provider-missing');
+    }
     $runnerId = is_string($nativeBinding['runner'] ?? null)
         ? $nativeBinding['runner']
-        : PHP_DEFAULT_RUNNER;
-    if (!isset(PHP_RUNNER_REGISTRY[$runnerId])) {
+        : $default;
+    if (!isset($registry[$runnerId])) {
         $findings[] = [
             'code' => 'scenario.runner-unknown',
             'symbol' => $scenario['scenarioId'],
             'detail' => php_bound_token($runnerId),
         ];
-        $runnerId = PHP_DEFAULT_RUNNER;
+        $runnerId = $default;
     }
-    $entry = PHP_RUNNER_REGISTRY[$runnerId];
+    $entry = $registry[$runnerId];
     $runner = array_merge(['id' => $runnerId], $entry);
     if (is_string($nativeBinding['runnerVersion'] ?? null)) {
         $runner['declaredVersion'] = $nativeBinding['runnerVersion'];
@@ -16177,5 +16080,541 @@ function php_build_native_plan(array $input): array
     $plan['plan_digest'] = php_plan_digest($plan);
     return $plan;
 }
+
+// ----- bundled provider module: laravel-migrations.php -----
+
+/**
+ * The Laravel migration emitter (issue #57), provider-owned since the
+ * stage-4 separation (lekalo-php#1, issue #241 M1): the storage
+ * transition input contract and the Illuminate migration rendering are
+ * framework knowledge and ride the `migrations.emit` capability of the
+ * registered Laravel provider. Moved verbatim from the kernel; the
+ * kernel resolves the family through the provider registry and never
+ * names Laravel itself.
+ */
+
+// ---------------------------------------------------------------------------
+// 5a. The Laravel migration emitter (issue #57).
+// ---------------------------------------------------------------------------
+
+/** The closed step-kind vocabulary the emitter consumes (the plan v1 set). */
+const MIGRATION_OPERATION_KINDS = [
+    'create_table', 'drop_table', 'rename_table', 'add_column',
+    'drop_column', 'alter_column_type', 'set_column_null',
+    'set_column_default', 'add_primary_key', 'rename_constraint',
+    'drop_constraint', 'add_unique', 'add_foreign_key', 'add_check',
+    'drop_check', 'add_index', 'drop_index', 'create_enum_type',
+    'alter_enum_type', 'enable_rls', 'disable_rls', 'create_policy',
+    'drop_policy', 'create_sequence', 'alter_sequence',
+    'rename_sequence', 'drop_sequence', 'create_extension',
+    'backfill', 'rename_column',
+];
+
+/** The closed rollback classes (the contract spelling). */
+const MIGRATION_ROLLBACK_CLASSES = [
+    'reversible', 'data-loss-on-rollback', 'irreversible',
+];
+
+/** The closed effective-status vocabulary. */
+const MIGRATION_STATUSES = ['ready', 'blocked', 'confirmed'];
+
+/** The declared UTC timestamp base of the fixture pipeline (policy, never the wall clock). */
+const MIGRATION_TIMESTAMP_BASE = '2026_09_27_000001';
+
+/**
+ * Decode and validate one bounded Laravel migration input document.
+ * The closed shape mirrors contracts/laravel-migration-input.schema
+ * exactly: unknown members refuse, every closed vocabulary is checked,
+ * and every digest pin must be a canonical sha256 spelling.
+ */
+function decode_storage_input(string $bytes): array
+{
+    if (strlen($bytes) > MAX_REQUEST_BYTES) {
+        throw new RequestRefusal('input-too-large');
+    }
+    try {
+        $document = json_decode($bytes, true, 64, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        throw new RequestRefusal('input-syntax');
+    }
+    if (!is_json_object($document)) {
+        throw new RequestRefusal('input-shape');
+    }
+    $required = [
+        'schemaVersion', 'identity', 'engine', 'engineVersion',
+        'projectId', 'baseDigest', 'candidateDigest', 'diffDigest',
+        'planId', 'gated', 'backfillGated', 'effectiveStatus',
+        'operations',
+    ];
+    $known = array_merge($required, ['historyDigest']);
+    foreach (array_keys($document) as $key) {
+        if (!in_array($key, $known, true)) {
+            throw new RequestRefusal('input-member');
+        }
+    }
+    foreach ($required as $key) {
+        if (!array_key_exists($key, $document)) {
+            throw new RequestRefusal('input-member');
+        }
+    }
+    if ($document['schemaVersion'] !== 'lekalo/laravel-migration-input/v0.4.0'
+        || $document['identity'] !== 'dev.lekalo.laravel-migration-input@0.4.0') {
+        throw new RequestRefusal('input-identity');
+    }
+    if ($document['engine'] !== 'postgres'
+        || !is_contract_version($document['engineVersion'])) {
+        throw new RequestRefusal('input-engine');
+    }
+    foreach (['baseDigest', 'candidateDigest', 'diffDigest', 'planId'] as $key) {
+        if (!is_sha256_digest($document[$key])) {
+            throw new RequestRefusal('input-digest');
+        }
+    }
+    if (array_key_exists('historyDigest', $document)
+        && !is_sha256_digest($document['historyDigest'])) {
+        throw new RequestRefusal('input-digest');
+    }
+    if (!is_bool($document['gated']) || !is_bool($document['backfillGated'])) {
+        throw new RequestRefusal('input-shape');
+    }
+    if (!in_array($document['effectiveStatus'], MIGRATION_STATUSES, true)) {
+        throw new RequestRefusal('input-status');
+    }
+    // The effective gate closes: a blocked document generates zero
+    // bytes. The refusal is the honest state, never a partial file.
+    if ($document['effectiveStatus'] === 'blocked') {
+        throw new RequestRefusal('input-gated');
+    }
+    if (!is_array($document['operations']) || !array_is_list($document['operations'])
+        || count($document['operations']) > 1024) {
+        throw new RequestRefusal('input-operations');
+    }
+    $previous = 0;
+    foreach ($document['operations'] as $operation) {
+        if (!is_json_object($operation)) {
+            throw new RequestRefusal('input-operation');
+        }
+        $operationKnown = ['ordinal', 'kind', 'statement', 'risk', 'requires', 'rollback', 'inverse'];
+        $operationRequired = ['ordinal', 'kind', 'statement', 'risk', 'rollback'];
+        foreach (array_keys($operation) as $key) {
+            if (!in_array($key, $operationKnown, true)) {
+                throw new RequestRefusal('input-member');
+            }
+        }
+        foreach ($operationRequired as $key) {
+            if (!array_key_exists($key, $operation)) {
+                throw new RequestRefusal('input-operation');
+            }
+        }
+        if (!is_int($operation['ordinal']) || $operation['ordinal'] <= $previous) {
+            throw new RequestRefusal('input-order');
+        }
+        $previous = $operation['ordinal'];
+        if (!in_array($operation['kind'], MIGRATION_OPERATION_KINDS, true)) {
+            throw new RequestRefusal('input-kind');
+        }
+        if (!is_string($operation['statement']) || $operation['statement'] === ''
+            || strlen($operation['statement']) > 4096) {
+            throw new RequestRefusal('input-statement');
+        }
+        if (!in_array($operation['risk'], ['none', 'backfill_required', 'destructive'], true)) {
+            throw new RequestRefusal('input-risk');
+        }
+        if (array_key_exists('requires', $operation)) {
+            if (!is_array($operation['requires']) || !array_is_list($operation['requires'])) {
+                throw new RequestRefusal('input-operation');
+            }
+            foreach ($operation['requires'] as $requirement) {
+                if (!is_int($requirement) || $requirement < 1
+                    || $requirement >= $operation['ordinal']) {
+                    throw new RequestRefusal('input-requires');
+                }
+            }
+        }
+        if (!in_array($operation['rollback'], MIGRATION_ROLLBACK_CLASSES, true)) {
+            throw new RequestRefusal('input-rollback');
+        }
+        if (array_key_exists('inverse', $operation)
+            && (!is_string($operation['inverse']) || $operation['inverse'] === ''
+                || strlen($operation['inverse']) > 4096)) {
+            throw new RequestRefusal('input-inverse');
+        }
+        // A reversible operation carries its inverse: the plan v1
+        // metadata fully determines it, so the absence would be a
+        // truncated document, and an irreversible or data-loss class
+        // never carries one.
+        $hasInverse = array_key_exists('inverse', $operation);
+        if (($operation['rollback'] === 'reversible') !== $hasInverse) {
+            throw new RequestRefusal('input-inverse');
+        }
+    }
+    return $document;
+}
+
+/**
+ * Emit the deterministic Laravel migration artifacts for one bounded
+ * input: one PHP class whose up() executes exactly the planned SQL in
+ * dependency order and whose down() either inverts a fully reversible
+ * plan or refuses before any statement, plus the append-only ledger.
+ * Two runs with identical inputs are byte-identical; the artifact set
+ * never contains anything but the migration file and the ledger.
+ */
+function emit_laravel_migrations(array $input, string $target, string $irPath): array
+{
+    // The effective gate closes here too: emit never renders a blocked
+    // transition, defense in depth against a bypassed decode.
+    if (($input['effectiveStatus'] ?? '') === 'blocked') {
+        throw new RequestRefusal('input-gated');
+    }
+    $shortDigest = substr(sha256_hex(canonical_json($input)), 0, 12);
+    $class = 'Lekalo' . strtoupper(substr(sha256_hex($shortDigest), 0, 8)) . 'Migration';
+    $directory = '.lekalo/generated/php-laravel/' . $target . '/migrations';
+    $filename = MIGRATION_TIMESTAMP_BASE . '_lekalo_' . $shortDigest . '.php';
+    $path = $directory . '/' . $filename;
+    $bytes = render_migration_class($input, $class, $target, $irPath);
+    $ledgerPath = $directory . '/ledger.json';
+    $entry = [
+        'filename' => $filename,
+        'digest' => sha256_digest($bytes),
+        'bytes' => strlen($bytes),
+        'planId' => $input['planId'],
+        'inputDigest' => sha256_digest(canonical_json($input)),
+        'baseDigest' => $input['baseDigest'],
+        'candidateDigest' => $input['candidateDigest'],
+        'timestampBase' => MIGRATION_TIMESTAMP_BASE,
+        'gated' => $input['gated'],
+        'backfillGated' => $input['backfillGated'],
+        'effectiveStatus' => $input['effectiveStatus'],
+    ];
+    // The ledger is append-only custody: a published ledger never
+    // shrinks and never rewrites an entry. The emitter reads the
+    // published document, proves the append with assert_append_only,
+    // and writes the merged ledger — so a second generate --apply
+    // appends instead of dying write-denied on the existing file, and
+    // a byte-identical regeneration replans exactly the published
+    // bytes (a true no-op at apply time).
+    $published = read_published_ledger($ledgerPath);
+    if ($published === null) {
+        $ledger = [
+            'schemaVersion' => 'lekalo/laravel-migration-ledger/v0.4.0',
+            'identity' => 'dev.lekalo.laravel-migration-ledger@0.4.0',
+            'projectId' => $input['projectId'],
+            'engine' => $input['engine'],
+            'engineVersion' => $input['engineVersion'],
+            'migrations' => [[
+                'ordinal' => 1,
+            ] + $entry],
+        ];
+        $ledgerBytes = canonical_json($ledger) . "\n";
+        $ledgerAction = 'create';
+    } else {
+        $publishedMigrations = $published['migrations'];
+        $alreadyPublished = null;
+        $highestOrdinal = 0;
+        foreach ($publishedMigrations as $publishedEntry) {
+            $highestOrdinal = max($highestOrdinal, (int) $publishedEntry['ordinal']);
+            if (($publishedEntry['filename'] ?? null) === $filename) {
+                $alreadyPublished = $publishedEntry;
+            }
+        }
+        if ($alreadyPublished !== null && $alreadyPublished['digest'] !== $entry['digest']) {
+            // The same published filename with different bytes is a
+            // custody violation: a migration file is named by its
+            // input digest, so the published class must be identical.
+            throw new RequestRefusal('ledger-conflict');
+        }
+        if ($alreadyPublished !== null) {
+            // Byte-identical regeneration: the entry is already
+            // published, the ledger keeps its published bytes, and the
+            // planned write replays them exactly (no-op on disk).
+            $ledgerBytes = file_get_contents($ledgerPath);
+            if ($ledgerBytes === false) {
+                throw new RequestRefusal('ledger-shape');
+            }
+            $ledgerAction = 'create';
+        } else {
+            $entry = ['ordinal' => $highestOrdinal + 1] + $entry;
+            $merged = $published;
+            $merged['migrations'][] = $entry;
+            assert_append_only($published, $merged);
+            $ledgerBytes = canonical_json($merged) . "\n";
+            $ledgerAction = 'replace';
+        }
+    }
+    return [
+        'path' => $path,
+        'bytes' => $bytes,
+        'digest' => sha256_digest($bytes),
+        'action' => 'create',
+        'ledger' => [
+            'path' => $ledgerPath,
+            'bytes' => $ledgerBytes,
+            'digest' => sha256_digest($ledgerBytes),
+            'action' => $ledgerAction,
+        ],
+        'filename' => $filename,
+    ];
+}
+
+/**
+ * The published ledger of one migrations directory, or null when this
+ * adapter has not published one yet. A present-but-invalid ledger
+ * refuses: append-only custody cannot be proven over a corrupt
+ * document, and silently starting a fresh ledger would orphan every
+ * published migration.
+ */
+function read_published_ledger(string $path): ?array
+{
+    if (!is_file($path)) {
+        return null;
+    }
+    $bytes = file_get_contents($path);
+    if ($bytes === false) {
+        throw new RequestRefusal('ledger-shape');
+    }
+    try {
+        $document = json_decode($bytes, true, 64, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        throw new RequestRefusal('ledger-shape');
+    }
+    if (!is_json_object($document)
+        || !isset($document['migrations'])
+        || !is_array($document['migrations'])
+        || !array_is_list($document['migrations'])) {
+        throw new RequestRefusal('ledger-shape');
+    }
+    return $document;
+}
+
+/**
+ * Render one Laravel migration class: strict types, an anonymous
+ * class extending Illuminate\Database\Migrations\Migration, up() as
+ * sequential DB::statement calls of the planned SQL, and down() from
+ * the typed reverse plan or an explicit refusal. The SQL travels as
+ * single-quoted PHP literals byte-for-byte — quotes, backslashes,
+ * dollar signs, and Unicode survive exactly — never through eval or
+ * string interpolation.
+ */
+function render_migration_class(array $input, string $class, string $target, string $irPath): string
+{
+    $lines = [];
+    $lines[] = '<?php';
+    $lines[] = '';
+    $lines[] = '// generated by ' . ADAPTER_ID . '@' . ADAPTER_VERSION . ' (issue #57)';
+    $lines[] = 'declare(strict_types=1);';
+    $lines[] = '';
+    $lines[] = '// target: ' . $target;
+    $lines[] = '// engine: postgres ' . $input['engineVersion'];
+    $lines[] = '// project: ' . $input['projectId'];
+    $lines[] = '// plan: ' . $input['planId'];
+    $lines[] = '// input: ' . $irPath;
+    $lines[] = '';
+    $lines[] = 'use Illuminate\Database\Migrations\Migration;';
+    $lines[] = 'use Illuminate\Database\Schema\Blueprint;' ;
+    $lines[] = 'use Illuminate\Support\Facades\DB;';
+    $lines[] = '';
+    $lines[] = '/**';
+    $lines[] = ' * Lekalo storage transition: ' . count($input['operations']) . ' operation(s),';
+    $lines[] = ' * effective gate ' . $input['effectiveStatus'] . '.';
+    $lines[] = ' */';
+    $lines[] = 'return new class extends Migration';
+    $lines[] = '{';
+    $lines[] = '    /** Execute the planned transition in dependency order. */';
+    $lines[] = '    public function up(): void';
+    $lines[] = '    {';
+    foreach ($input['operations'] as $operation) {
+        $literal = php_single_quote($operation['statement']);
+        $lines[] = '        DB::statement(\'' . $literal . '\');';
+    }
+    $lines[] = '    }';
+    $lines[] = '';
+    $reverses = [];
+    foreach ($input['operations'] as $operation) {
+        $reverses[] = $operation['rollback'] === 'reversible'
+            ? $operation['inverse']
+            : null;
+    }
+    $fullyReversible = !in_array(null, $reverses, true);
+    $lines[] = '    /** Reverse the transition; refuses before any statement when unsafe. */';
+    $lines[] = '    public function down(): void';
+    $lines[] = '    {';
+    if ($fullyReversible) {
+        foreach (array_reverse($reverses) as $inverse) {
+            $literal = php_single_quote($inverse);
+            $lines[] = '        DB::statement(\'' . $literal . '\');';
+        }
+    } else {
+        $lines[] = '        // The plan carries irreversible or data-loss-on-rollback';
+        $lines[] = '        // operations: the rollback refuses before the first statement.';
+        $lines[] = '        throw new \RuntimeException(\'lekalo: rollback is not safe for this migration\');';
+    }
+    $lines[] = '    }';
+    $lines[] = '};';
+    return implode("\n", $lines) . "\n";
+}
+
+/**
+ * One single-quoted PHP string literal preserving the exact SQL bytes:
+ * backslash and single quote escape, everything else travels raw
+ * (dollar signs, double quotes, Unicode). No eval, no interpolation.
+ */
+function php_single_quote(string $sql): string
+{
+    return str_replace(["\\", "'"], ['\\\\', "\\'"], $sql);
+}
+
+/**
+ * The append-only custody check: a published migration ledger never
+ * loses entries and never rewrites a published file. An existing
+ * ledger accepts only a byte-identical regeneration (no-op) or an
+ * append with a strictly higher ordinal; any other shape refuses.
+ */
+function assert_append_only(array $existing, array $next): void
+{
+    if (!is_json_object($existing)
+        || !isset($existing['migrations'])
+        || !is_array($existing['migrations'])
+        || !array_is_list($existing['migrations'])) {
+        throw new RequestRefusal('ledger-shape');
+    }
+    $published = $existing['migrations'];
+    $nextMigrations = $next['migrations'];
+    $count = count($published);
+    if (count($nextMigrations) < $count) {
+        throw new RequestRefusal('ledger-shrunk');
+    }
+    foreach ($published as $index => $entry) {
+        if ($nextMigrations[$index] !== $entry) {
+            throw new RequestRefusal('ledger-rewritten');
+        }
+    }
+    $previous = 0;
+    foreach ($nextMigrations as $entry) {
+        if (!is_int($entry['ordinal']) || $entry['ordinal'] <= $previous) {
+            throw new RequestRefusal('ledger-order');
+        }
+        $previous = $entry['ordinal'];
+    }
+}
+
+// ----- bundled provider module: laravel-lint.php -----
+
+/**
+ * The Laravel lint facts, provider-owned since the stage-4 separation
+ * (lekalo-php#1, issue #241 M1): the persisted-model base class of the
+ * framework, served through the `lint.framework-semantics` capability.
+ * The language walk in `ai-lint.php` resolves class base names
+ * generically and asks the provider whether one is its model base —
+ * with no provider registered the eloquent classification is uniformly
+ * false and observer-effect records are uniformly absent (the honest
+ * language-only outcome), never a silent Laravel assumption.
+ */
+
+/** The Laravel framework lint facts consumed by the language walk. */
+function lekalo_laravel_lint_facts(): array
+{
+    return [
+        'model_base' => 'Illuminate\\Database\\Eloquent\\Model',
+    ];
+}
+
+// ----- bundled provider module: laravel-provider.php -----
+
+/**
+ * The Laravel framework provider, registered into the language
+ * adapter's provider registry (lekalo-php#1, issue #241 stage 4 M1).
+ *
+ * This descriptor owns every Laravel-specific decision of the adapter
+ * process: the storage-transition migration emitter, the Illuminate
+ * route emitter, the Laratesto scenario runner registry and test
+ * emitter, the Composer/artisan native gate modules, and the Eloquent
+ * lint facts. The language kernel resolves each family by capability
+ * id through `lekalo_provider_require` and never names Laravel.
+ *
+ * The loader hooks stay inert inside the unified artifact: build.php
+ * appends the owned modules, so their functions already exist when the
+ * hooks run and each `function_exists` guard skips the source require
+ * — the same 1:1 source/artifact relation every kernel loader keeps.
+ * In M2 this descriptor moves to the `lekalo-php-laravel` package and
+ * registers from there; the compiled-in registration is transitional.
+ */
+
+lekalo_provider_register([
+    'id' => 'lekalo-php-laravel',
+    'version' => '0.1.0',
+    'api' => PROVIDER_API_SCHEMA_VERSION,
+    'capabilities' => [
+        'migrations.emit' => 'full',
+        'routes.emit' => 'full',
+        'scenario.runners' => 'full',
+        'scenario.emit' => 'full',
+        'native.gates' => 'full',
+        'lint.framework-semantics' => 'partial',
+    ],
+    'hooks' => [
+        // Storage transitions: decode the closed migration input
+        // contract and emit the migration class plus its ledger.
+        'migrations.emit' => static function (string $bytes, string $target, string $irPath): array {
+            if (!function_exists('emit_laravel_migrations')) {
+                require_once __DIR__ . '/laravel-migrations.php';
+            }
+            return emit_laravel_migrations(decode_storage_input($bytes), $target, $irPath);
+        },
+        // Routes: the framework HTTP vocabulary emitter (Illuminate
+        // request/response/route facades) behind the generic map.
+        'routes.emit' => static function (): void {
+            if (!function_exists('php_emit_routes')) {
+                require_once __DIR__ . '/route-emit.php';
+            }
+        },
+        // Scenario tests: the Laratesto emitter behind the generic
+        // scenario compiler map.
+        'scenario.emit' => static function (): void {
+            if (!function_exists('php_emit_scenario_tests')) {
+                require_once __DIR__ . '/scenario-emit.php';
+            }
+        },
+        // Native gates: the Composer/Laravel execution-policy modules.
+        'native.gates' => static function (): void {
+            if (!function_exists('php_build_native_plan')) {
+                require_once __DIR__ . '/native-policy.php';
+                require_once __DIR__ . '/native-plan.php';
+            }
+        },
+        // The runner registry the scenario mapper resolves against.
+        // The Laratesto entry mirrors the bridge's declared facts on
+        // the pinned toolchain: the Laravel suite is sequential (fresh
+        // application per test), so `testing.concurrency` stays
+        // deliberately absent — a race case compiles to an explicit
+        // unsupported outcome, never to a serial run that would lie.
+        'scenario.runners' => static function (): array {
+            return [
+                'runners' => [
+                    'laratesto' => [
+                        'capabilities' => [
+                            'testing.clock',
+                            'testing.db-refresh',
+                            'testing.event-capture',
+                            'testing.fixtures',
+                            'testing.http',
+                            'testing.session',
+                        ],
+                        'concurrency' => false,
+                        'eventCapture' => 'plugin',
+                        'syntax' => 'laratesto',
+                    ],
+                ],
+                'default' => 'laratesto',
+            ];
+        },
+        // The framework lint facts of the persisted-model base class.
+        'lint.framework-semantics' => static function (): array {
+            if (!function_exists('lekalo_laravel_lint_facts')) {
+                require_once __DIR__ . '/laravel-lint.php';
+            }
+            return lekalo_laravel_lint_facts();
+        },
+    ],
+]);
 
 exit(main());

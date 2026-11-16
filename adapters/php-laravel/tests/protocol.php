@@ -13,6 +13,15 @@ require __DIR__ . '/../src/analyzer.php';
 require __DIR__ . '/../src/strict-profile.php';
 require __DIR__ . '/../src/kernel.php';
 require __DIR__ . '/../src/scenario-emit.php';
+// The provider registry and the Laravel package ride like production
+// (issue #241 stage 4): the framework families resolve through the
+// registered provider, and the negotiation checks below exercise the
+// seam both with it and without it.
+require __DIR__ . '/../src/provider.php';
+require __DIR__ . '/../src/laravel-provider.php';
+// The migration emitter unit leg calls the provider-owned module
+// directly (the family itself still resolves through the hook).
+require __DIR__ . '/../src/laravel-migrations.php';
 
 $GLOBALS['__lekalo_failures'] = [];
 $GLOBALS['__lekalo_checks'] = 0;
@@ -491,6 +500,103 @@ $reopen = php_comment_safe('x?><?php exit(1);');
 check(strpos($reopen, '?>') === false, 'close-tag-plus-reopen collapses to inert text');
 check(strpos($reopen, '<?php') !== false, 'the reopened php token stays inside the neutralized comment');
 check(php_comment_safe('Seed a task, focus it, and observe.') === 'Seed a task, focus it, and observe.', 'clean summaries project unchanged');
+
+// --- provider registry (lekalo-php#1, issue #241 stage 4) -------------------
+
+// The registered Laravel provider resolves every framework family the
+// kernel dispatches, with its negotiated state.
+$capability = lekalo_provider_require('migrations.emit');
+check($capability['provider'] === 'lekalo-php-laravel', 'migration family resolves through the provider');
+check($capability['state'] === 'full', 'migration family negotiates full support');
+check(lekalo_provider_require('lint.framework-semantics')['state'] === 'partial', 'lint family negotiates partial support');
+$providers = lekalo_providers();
+check(count($providers) === 1 && $providers[0]['id'] === 'lekalo-php-laravel', 'exactly one provider is registered');
+check($providers[0]['api'] === PROVIDER_API_SCHEMA_VERSION, 'the provider speaks the adapter provider API version');
+
+// The scenario runner table is provider-supplied and complete.
+$runners = lekalo_provider_scenario_runners();
+check(isset($runners['laratesto']) && $runners['laratesto']['concurrency'] === false, 'the laratesto runner arrives from the provider');
+check(lekalo_provider_default_scenario_runner() === 'laratesto', 'the default runner arrives from the provider');
+
+// The lint facts classify the framework model base and nothing else.
+check(lekalo_provider_lint_classifies_model('Illuminate\\Database\\Eloquent\\Model'), 'the eloquent model base classifies through the provider');
+check(!lekalo_provider_lint_classifies_model('App\\Model'), 'an unrelated base class does not classify');
+check(lekalo_provider_lint_observer_semantics(), 'observer lint semantics have a provider');
+
+// Descriptor refusals are stable codes, never silent downgrades.
+try {
+    lekalo_provider_register([
+        'id' => 'lekalo-php-laravel', 'version' => '0.0.1',
+        'api' => PROVIDER_API_SCHEMA_VERSION, 'capabilities' => [], 'hooks' => [],
+    ]);
+    check(false, 'duplicate provider registration refused');
+} catch (RequestRefusal $r) {
+    check($r->getMessage() === 'provider-duplicate', 'duplicate provider registration refused');
+}
+try {
+    lekalo_provider_register([
+        'id' => 'synthetic-second', 'version' => '0.1.0',
+        'api' => 'lekalo/provider/v9.9.9', 'capabilities' => [], 'hooks' => [],
+    ]);
+    check(false, 'foreign provider API version refused');
+} catch (RequestRefusal $r) {
+    check($r->getMessage() === 'provider-version-conflict', 'foreign provider API version refused');
+}
+try {
+    lekalo_provider_register([
+        'id' => 'synthetic-second', 'version' => '0.1.0',
+        'api' => PROVIDER_API_SCHEMA_VERSION,
+        'capabilities' => ['not-a-family' => 'full'], 'hooks' => [],
+    ]);
+    check(false, 'unknown capability family refused');
+} catch (RequestRefusal $r) {
+    check($r->getMessage() === 'provider-descriptor', 'unknown capability family refused');
+}
+try {
+    lekalo_provider_register([
+        'id' => 'synthetic-second', 'version' => '0.1.0',
+        'api' => PROVIDER_API_SCHEMA_VERSION,
+        'capabilities' => ['routes.emit' => 'full'], 'hooks' => [],
+    ]);
+    check(false, 'capability without hook refused');
+} catch (RequestRefusal $r) {
+    check($r->getMessage() === 'provider-descriptor', 'capability without hook refused');
+}
+
+// With no provider registered the registry degrades honestly: probes
+// return null, negotiation is the typed provider-missing refusal, and
+// the language-only lint walk carries no framework classification. The
+// registry is process-global, so the empty-registry leg runs in a
+// child interpreter with only the provider contract loaded.
+$providerChild = <<<'CHILD'
+<?php
+// The provider contract's refusals ride the kernel's RequestRefusal;
+// the child declares the transport stub so the contract loads alone.
+final class RequestRefusal extends RuntimeException {}
+require $argv[1] . '/src/provider.php';
+$missed = false;
+try {
+    lekalo_provider_require('routes.emit');
+} catch (RequestRefusal $r) {
+    $missed = $r->getMessage() === 'provider-missing';
+}
+echo json_encode([
+    'probe' => lekalo_provider_capability('routes.emit') === null,
+    'missed' => $missed,
+    'runners' => lekalo_provider_scenario_runners() === null,
+    'model' => lekalo_provider_lint_classifies_model('Illuminate\\Database\\Eloquent\\Model') === false,
+]) . "\n";
+CHILD;
+$childPath = tempnam(sys_get_temp_dir(), 'lekalo-provider-');
+file_put_contents($childPath, $providerChild);
+$childOutput = shell_exec(escapeshellarg(PHP_BINARY) . ' -n ' . escapeshellarg($childPath) . ' ' . escapeshellarg(dirname(__DIR__)) . ' 2>/dev/null');
+unlink($childPath);
+$degraded = json_decode((string) $childOutput, true);
+check(is_array($degraded), 'the empty-registry child reports');
+check($degraded['probe'] ?? false, 'with no provider the family probe is null');
+check($degraded['missed'] ?? false, 'with no provider the negotiation refuses provider-missing');
+check($degraded['runners'] ?? false, 'with no provider the runner table is null');
+check($degraded['model'] ?? false, 'with no provider no base class classifies as a model');
 
 // --- summary ----------------------------------------------------------------
 

@@ -57,30 +57,14 @@ const PHP_PORT_DOC_IDENTITY = 'dev.lekalo.php-test-port@0.1.0';
 const PHP_PORT_CLASS_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*)*$/';
 
 /**
- * The closed PHP runner registry. The Laratesto entry mirrors the
- * bridge's declared facts on the pinned toolchain: the Laravel suite is
- * sequential (fresh application per test), so `testing.concurrency`
- * stays deliberately absent — a race case compiles to an explicit
- * unsupported outcome, never to a serial run that would lie.
+ * The PHP runner registry is provider-owned since the stage-4
+ * separation (lekalo-php#1, issue #241): the registered framework
+ * provider declares its runners and default through the
+ * `scenario.runners` capability, and the mapper resolves against the
+ * merged table (`lekalo_provider_scenario_runners()`). The kernel's
+ * `load_provider_module()` runs before this module loads, so the
+ * lookup functions exist by the time a scenario resolves.
  */
-const PHP_RUNNER_REGISTRY = [
-    'laratesto' => [
-        'capabilities' => [
-            'testing.clock',
-            'testing.db-refresh',
-            'testing.event-capture',
-            'testing.fixtures',
-            'testing.http',
-            'testing.session',
-        ],
-        'concurrency' => false,
-        'eventCapture' => 'plugin',
-        'syntax' => 'laratesto',
-    ],
-];
-
-/** The default runner when a scenario declares no native binding. */
-const PHP_DEFAULT_RUNNER = 'laratesto';
 
 /**
  * Binding capabilities the port's `invoke` surface itself provides when
@@ -445,7 +429,13 @@ function php_resolve_operation(array $index, string $id): ?array
     return null;
 }
 
-/** The resolved runner entry, or an unknown-runner finding with the default. */
+/**
+ * The resolved runner entry, or an unknown-runner finding with the
+ * default. The registry and the default are provider-supplied
+ * (`scenario.runners`): with no provider registered the mapping
+ * refuses typed (`provider-missing`) — a scenario is a framework
+ * family and never silently unbound (lekalo-php#1).
+ */
 function php_resolve_runner(array $scenario, array &$findings): array
 {
     $nativeBinding = null;
@@ -455,18 +445,23 @@ function php_resolve_runner(array $scenario, array &$findings): array
             break;
         }
     }
+    $registry = lekalo_provider_scenario_runners();
+    $default = lekalo_provider_default_scenario_runner();
+    if ($registry === null || $default === null || !isset($registry[$default])) {
+        throw new RequestRefusal('provider-missing');
+    }
     $runnerId = is_string($nativeBinding['runner'] ?? null)
         ? $nativeBinding['runner']
-        : PHP_DEFAULT_RUNNER;
-    if (!isset(PHP_RUNNER_REGISTRY[$runnerId])) {
+        : $default;
+    if (!isset($registry[$runnerId])) {
         $findings[] = [
             'code' => 'scenario.runner-unknown',
             'symbol' => $scenario['scenarioId'],
             'detail' => php_bound_token($runnerId),
         ];
-        $runnerId = PHP_DEFAULT_RUNNER;
+        $runnerId = $default;
     }
-    $entry = PHP_RUNNER_REGISTRY[$runnerId];
+    $entry = $registry[$runnerId];
     $runner = array_merge(['id' => $runnerId], $entry);
     if (is_string($nativeBinding['runnerVersion'] ?? null)) {
         $runner['declaredVersion'] = $nativeBinding['runnerVersion'];

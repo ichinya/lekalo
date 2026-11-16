@@ -55,6 +55,13 @@ function lint_read_source(string $path): string
 function lint_collect(array $request): array
 {
     lint_require_tokenizer();
+    // The framework semantics (the persisted-model base classification
+    // and the observer-effect rules) are provider-owned since the
+    // stage-4 separation: the registry degrades honestly to the
+    // language-only outcome when no provider is registered.
+    if (!function_exists('lekalo_provider_lint_classifies_model')) {
+        require_once __DIR__ . '/provider.php';
+    }
     $lint=$request['lint_request'];$sources=[];$locations=[];$records=[];$files=[];$bytesTotal=0;$work=0;
     foreach ($lint['files'] as $path) {
         $text=lint_read_source($path);$bytesTotal+=strlen($text);if ($bytesTotal>8*1024*1024) {throw new RequestRefusal('lint-source','limit');}
@@ -77,7 +84,7 @@ function lint_collect(array $request): array
             if ($tokens[$i]['kind']===T_CLASS && ($tokens[$i-1]['text']??'')!=='::') {
                 $name=$tokens[$i+1]['text']??'';$j=$i+2;while ($j<$n && $tokens[$j]['text']!=='{') {$j++;}
                 $baseName=($tokens[$i+2]['kind']??null)===T_EXTENDS?($tokens[$i+3]['text']??''):'';
-                $classes[$path.'#'.$name]=['name'=>$name,'native'=>$path.'#'.$name,'eloquent'=>($imports[$baseName]??ltrim($baseName,'\\'))==='Illuminate\\Database\\Eloquent\\Model','methods'=>[]];$class=$path.'#'.$name;$classDepth=$depth+1;
+                $classes[$path.'#'.$name]=['name'=>$name,'native'=>$path.'#'.$name,'eloquent'=>lekalo_provider_lint_classifies_model($imports[$baseName]??ltrim($baseName,'\\')),'methods'=>[]];$class=$path.'#'.$name;$classDepth=$depth+1;
             }
             if ($class!==null && $tokens[$i]['kind']===T_FUNCTION && ($tokens[$i+1]['kind']??null)===T_STRING) {
                 $name=$tokens[$i+1]['text'];$j=$i+2;while ($j<$n && $tokens[$j]['text']!=='{') {$j++;}if ($j===$n) {continue;}
@@ -126,6 +133,6 @@ function lint_collect(array $request): array
         $locations=array_intersect_key($locations,$retained);$records=$kept;
     }
     $rules=['ambiguity.implicit-target-defaults','ambiguity.multiple-resolutions','ambiguity.scattered-state-writes','hidden.convention-only-path','hidden.dispatch-without-binding','hidden.observer-write','hidden.path-without-trace-owner','hidden.reflective-call','hidden.string-reference','hidden.undeclared-effect','indirection.depth-exceeded'];$coverage=[];
-    foreach ($rules as $rule) {foreach ($lint['scope'] as $scope) {$supported=in_array($rule,['hidden.observer-write','hidden.reflective-call','ambiguity.scattered-state-writes'],true);$coverage[]=['rule'=>$rule,'target'=>$request['target'],'scope'=>$scope,'state'=>$supported&&count($files)>0?'partial':'unsupported','eligible'=>lint_unknown(),'examined'=>lint_known(count($methods)),'limitations'=>$supported?['bounded-token-files',...$limit]:['detector-unsupported']];}}
+    foreach ($rules as $rule) {foreach ($lint['scope'] as $scope) {$supported=in_array($rule,['hidden.observer-write','hidden.reflective-call','ambiguity.scattered-state-writes'],true)&&($rule!=='hidden.observer-write'||lekalo_provider_lint_observer_semantics());$coverage[]=['rule'=>$rule,'target'=>$request['target'],'scope'=>$scope,'state'=>$supported&&count($files)>0?'partial':'unsupported','eligible'=>lint_unknown(),'examined'=>lint_known(count($methods)),'limitations'=>$supported?['bounded-token-files',...$limit]:['detector-unsupported']];}}
     return ['schemaVersion'=>'lekalo/ai-lint-evidence/v0.6.4','identity'=>'dev.lekalo.ai-lint-evidence@0.6.4','target'=>$request['target'],'scope'=>$lint['scope'],'producer'=>['id'=>ADAPTER_ID,'version'=>ADAPTER_VERSION,'artifactDigest'=>'sha256:'.hash_file('sha256', __FILE__),'tool'=>'php-token-static','compiler'=>lint_known('php/'.PHP_MAJOR_VERSION.'.'.PHP_MINOR_VERSION),'framework'=>lint_unknown(),'recipe'=>'ai-readability/1'],'pins'=>$lint['pins'],'inputManifestDigest'=>lint_hash($sources),'sources'=>$sources,'locations'=>array_values($locations),'records'=>array_values($records),'coverage'=>$coverage,'limitations'=>['static-files-only','no-application-execution','framework-version-unknown','external-class-resolution-unsupported',...$limit]];
 }

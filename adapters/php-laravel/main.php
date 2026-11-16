@@ -10,6 +10,7 @@
 
 declare(strict_types=1);
 
+require __DIR__ . '/src/provider.php';
 require __DIR__ . '/src/analyzer.php';
 require __DIR__ . '/src/strict-profile.php';
 require __DIR__ . '/src/kernel.php';
@@ -25,5 +26,12 @@ require __DIR__ . '/src/type-map.php';
 require __DIR__ . '/src/type-codec.php';
 require __DIR__ . '/src/type-emit.php';
 require __DIR__ . '/src/type-bindings.php';
+// The provider-owned modules ride last (issue #241 stage 4): the
+// Laravel package's registration runs at parse time, populating the
+// provider registry before `main()` dispatches — the same order
+// build.php's PROVIDER_MODULES keeps in the artifact.
+require __DIR__ . '/src/laravel-migrations.php';
+require __DIR__ . '/src/laravel-lint.php';
+require __DIR__ . '/src/laravel-provider.php';
 
 exit(main());

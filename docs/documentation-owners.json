@@ -5814,6 +5814,13 @@
       "status": "implemented"
     },
     {
+      "id": "protocol:php-laravel:lekalo/provider/v0.1.0",
+      "kind": "protocol",
+      "source": "adapters/php-laravel/src",
+      "owner": "adapters/php-laravel/README.md",
+      "status": "implemented"
+    },
+    {
       "id": "protocol:php-laravel:lekalo/scenario-ir/v0.2.16",
       "kind": "protocol",
       "source": "adapters/php-laravel/src",

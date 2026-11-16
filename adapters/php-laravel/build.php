@@ -28,14 +28,30 @@
 declare(strict_types=1);
 
 const ADAPTER_ID = 'lekalo-target-php-laravel';
-const ADAPTER_VERSION = '0.8.0';
+const ADAPTER_VERSION = '0.9.0';
 
 /** The bundled module order: dependencies first, kernel last. */
 const BUNDLED_MODULES = [
+    'src/provider.php',
     'src/ai-lint.php',
     'src/analyzer.php',
     'src/strict-profile.php',
     'src/kernel.php',
+];
+
+/**
+ * The provider-owned modules (lekalo-php#1, issue #241 stage 4 M1):
+ * the Laravel framework package's emitter, lint facts, and its
+ * registration descriptor ride after the native gate modules — the
+ * registration runs at parse time, so the registry is populated
+ * before `main()` dispatches, and the loader hooks stay inert through
+ * their `function_exists` guards (the same 1:1 source/artifact
+ * relation every kernel loader keeps).
+ */
+const PROVIDER_MODULES = [
+    'src/laravel-migrations.php',
+    'src/laravel-lint.php',
+    'src/laravel-provider.php',
 ];
 
 function fail(string $message): never
@@ -113,6 +129,21 @@ $policyEmbed = "\n// ---- bundled Composer gates policy (issue #61) ------------
     . "// Confirmation data only — never execution authority. The exact\n"
     . "// bytes are part of this artifact (upgrade custody binds).\n"
     . "const NATIVE_GATES_POLICY_BUNDLED = " . php_single_quoted($policyBytes) . ";\n";
+
+$providerModules = '';
+foreach (PROVIDER_MODULES as $module) {
+    $source = file_get_contents($adapterRoot . '/' . $module);
+    if ($source === false || $source === '') {
+        fail("build: provider module {$module} is missing or empty");
+    }
+    if (str_starts_with($source, "<?php\n")) {
+        $source = substr($source, 6);
+    } else {
+        fail("build: provider module {$module} must start with the open tag");
+    }
+    $providerModules .= "\n// ----- bundled provider module: " . basename($module) . " -----\n\n"
+        . $source;
+}
 
 $nativeModules = '';
 foreach ($nativeModulePaths as $modulePath) {
@@ -198,6 +229,10 @@ $body .= $policyEmbed;
 // The native gate modules ride after the scenario modules in the
 // fixed order `load_native_modules()` names (issue #61).
 $body .= $nativeModules;
+// The provider-owned modules ride last: the registration descriptor
+// executes at parse time and populates the provider registry before
+// `main()` runs (issue #241 stage 4, lekalo-php#1).
+$body .= $providerModules;
 
 $artifact = $banner . $body
     . "\nexit(main());\n";
