@@ -43,3 +43,12 @@ incremental = false
 [profile.test]
 debug = 0
 incremental = false
+
+# External process custody hashes executable bytes on each exchange. Keep the
+# hash implementation fast in development without disabling any pin checks,
+# debug assertions, or overflow checks in the host.
+[profile.dev.package.sha2]
+opt-level = 3
+
+[profile.test.package.sha2]
+opt-level = 3

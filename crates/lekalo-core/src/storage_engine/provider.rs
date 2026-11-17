@@ -11,7 +11,7 @@ use crate::storage_projection::{Index, StorageProjectionAttachment};
 use serde_json::{json, Value};
 
 pub(crate) fn call(operation: &str, input: Value) -> Result<Value, DiagnosticSet> {
-    let fail = |detail| diagnostic::rule_invalid(diagnostic::MAPPING_INVALID, detail, None);
+    let fail = |detail: &str| diagnostic::rule_invalid(diagnostic::MAPPING_INVALID, detail, None);
     // Compatibility entry point for legacy storage commands. The value is a
     // Source (package reference or {command:[...]}), never shell text.
     let source = match std::env::var("LEKALO_STORAGE_PROVIDER") {
@@ -32,14 +32,14 @@ pub(crate) fn call(operation: &str, input: Value) -> Result<Value, DiagnosticSet
             *slot = Some((
                 key,
                 crate::runtime::Session::new(&root, &source)
-                    .map_err(|_| fail("provider-execution"))?,
+                    .map_err(|error| fail(&format!("provider-{}", error.detail)))?,
             ));
         }
         slot.as_ref()
             .unwrap()
             .1
             .invoke(operation, input)
-            .map_err(|_| fail("provider-execution"))
+            .map_err(|error| fail(&format!("provider-{}", error.detail)))
     })?;
     if let Some(error) = response.get("error") {
         let rule = if error["kind"] == "render" {

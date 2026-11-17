@@ -82,6 +82,8 @@ pub(super) fn check_project_boundary(root: &Path) -> Result<(), Failure> {
         }
         let metadata = std::fs::symlink_metadata(&path).map_err(|_| Failure::Spawn)?;
         if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            #[cfg(test)]
+            eprintln!("Windows project boundary: reparse point {path:?}");
             return Err(Failure::Spawn);
         }
         let mut acl = null_mut();
@@ -99,6 +101,8 @@ pub(super) fn check_project_boundary(root: &Path) -> Result<(), Failure> {
             )
         };
         if code != ERROR_SUCCESS {
+            #[cfg(test)]
+            eprintln!("Windows project boundary: security descriptor error {code} at {path:?}");
             return Err(Failure::Spawn);
         }
         struct Descriptor(PSECURITY_DESCRIPTOR);
@@ -111,6 +115,8 @@ pub(super) fn check_project_boundary(root: &Path) -> Result<(), Failure> {
         }
         let _descriptor = Descriptor(descriptor);
         if acl.is_null() {
+            #[cfg(test)]
+            eprintln!("Windows project boundary: null ACL at {path:?}");
             return Err(Failure::Spawn);
         }
         for index in 0..unsafe { (*acl).AceCount } {
@@ -125,6 +131,11 @@ pub(super) fn check_project_boundary(root: &Path) -> Result<(), Failure> {
                 continue;
             }
             if header.AceType != 0 {
+                #[cfg(test)]
+                eprintln!(
+                    "Windows project boundary: unsupported ACE {} at {path:?}",
+                    header.AceType
+                );
                 return Err(Failure::Spawn);
             }
             let entry = unsafe { &*ace.cast::<ACCESS_ALLOWED_ACE>() };
@@ -133,6 +144,8 @@ pub(super) fn check_project_boundary(root: &Path) -> Result<(), Failure> {
                 || (0..capabilities.count)
                     .any(|i| unsafe { EqualSid(sid, *capabilities.sids.add(i as usize)) != 0 })
             {
+                #[cfg(test)]
+                eprintln!("Windows project boundary: ambient package access at {path:?}");
                 return Err(Failure::Spawn);
             }
         }

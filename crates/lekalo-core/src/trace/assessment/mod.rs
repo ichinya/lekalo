@@ -616,13 +616,13 @@ fn mapping_results(
     }
     let root = std::env::current_dir().map_err(|_| diagnostic::invalid("provider-root"))?;
     let provider = crate::runtime::services::one(&root, "trace")
-        .map_err(|_| diagnostic::invalid("provider-unavailable"))?;
+        .map_err(|error| diagnostic::invalid(&format!("provider-unavailable-{}", error.detail)))?;
     let response = provider
         .invoke(
             "trace.mappings",
             json!({"schema":"lekalo/trace-mappings/v1","mappings":rows}),
         )
-        .map_err(|_| diagnostic::invalid("provider-execution"))?;
+        .map_err(|error| diagnostic::invalid(&format!("provider-execution-{}", error.detail)))?;
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
     struct Row {

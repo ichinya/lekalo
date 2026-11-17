@@ -393,7 +393,16 @@ fn exchange(
             .zip(package_root.as_deref())
             .map(|(p, root)| (root, &p.files)),
     )
-    .map_err(|_| error("runtime-execution-failed"))?;
+    .map_err(|failure| {
+        #[cfg(test)]
+        eprintln!("runtime exchange refused in {root:?}: {failure:?}");
+        match failure {
+            crate::target_protocol::TargetFailure::TransportFailed { detail } => {
+                error(&format!("runtime-{detail}"))
+            }
+            _ => error("runtime-execution-failed"),
+        }
+    })?;
     if response.exit_code != 0 {
         return Err(error("runtime-exit-failed"));
     }
