@@ -1,105 +1,32 @@
-# External implementation ownership
+# External package ownership
 
-The source repositories own runtime and integration implementations. The core
-owns process supervision, protocol admission, confined filesystem capabilities,
-the model, generic trace/requirements reports, and public contract comparison.
+The host resolves external `lekalo/runtime/v1` packages or installed executables and validates portable contract rules. See [runtime configuration](external-runtimes.md). A new runtime does not require adding its language to the host.
 
-| Repository | Maintained implementation | Transitional core supply |
-| --- | --- | --- |
-| `ichinya/lekalo-php` | PHP language runtime | `adapters/php-laravel/vendor/lekalo-php` |
-| `ichinya/lekalo-php-laravel` | Laravel provider | `adapters/php-laravel/vendor/lekalo-php-laravel` |
-| `ichinya/lekalo-python` | Python language scanning and process entry | `adapters/python` |
-| `ichinya/lekalo-python-fastapi` | FastAPI registration analysis | pinned dependency of `lekalo-python` |
-| `ichinya/lekalo-typescript` | TypeScript runtime, compiler client, generators and existing extensions | `adapters/node-typescript` |
-| `ichinya/lekalo-go` | Go module/workspace discovery and conventional gate proposals | `packages/lekalo-go-discovery` |
-| `ichinya/lekalo-rust` | Cargo package/workspace discovery and conventional gate proposals | `packages/lekalo-rust-discovery` |
-| `ichinya/lekalo-openspec` | OpenSpec parsing, catalog projection and conflict semantics | `packages/lekalo-openspec` |
-| `ichinya/lekalo-hlv` | HLV revision mapping policy | `packages/lekalo-hlv` |
+The following implementations are maintained outside this repository:
 
-Source snapshots are generated dependencies, not a second implementation to edit.
-`external-packages.lock.json` records source repository, exact commit, source
-path and SHA-256 for every supplied file. PHP retains its existing package lock.
-The protocol SDK stays in `sdk/rust`; external Rust runtimes vendor it with a
-source receipt. Framework packages do not import private runtime symbol types.
+| Repository | Owns |
+| --- | --- |
+| [lekalo-adapter-sdk](https://github.com/ichinya/lekalo-adapter-sdk) | Four SDKs, generator, templates, codec corpus and SDK conformance tools |
+| [lekalo-typescript](https://github.com/ichinya/lekalo-typescript) | TypeScript compiler client, runtime distribution and runtime tests |
+| [lekalo-typescript-hono](https://github.com/ichinya/lekalo-typescript-hono) | Hono analysis, evidence, compatibility vocabulary and fixtures |
+| [lekalo-typescript-drizzle](https://github.com/ichinya/lekalo-typescript-drizzle) | Drizzle analysis and declaration-closure tooling |
+| [lekalo-typescript-zod](https://github.com/ichinya/lekalo-typescript-zod) | Zod mapping, generation, policy and fixtures |
+| [lekalo-postgres](https://github.com/ichinya/lekalo-postgres) | PostgreSQL type policy, capability matrix, DDL renderer and target extension |
 
-## Updating a snapshot
+No SDK or TypeScript runtime implementation is tracked under `sdk/` or `adapters/node-typescript` in the host. The TypeScript runtime builds its distribution from pinned external npm/Git packages. Hono receives runtime provenance explicitly; Drizzle receives the compiler API through the call context. Their modules do not import private runtime source files. These existing target integrations are not yet portable `lekalo/contract-rules/v1` rule packs; the runtime-v1 migration remains a separate acceptance gate.
 
-1. Change and test the owning package in its repository. Commit those changes.
-2. If changing FastAPI, update the Python package's framework dependency and
-   receipt, run its protocol tests, then commit that package too.
-3. Run `node scripts/sync-external-packages.mjs --sync`. The source checkouts
-   default to `../lekalo-adds`; `LEKALO_ADDS_DIR` can select another directory.
-   Only committed Git blobs are copied. Existing modified snapshots refuse sync.
-4. Run `node scripts/sync-external-packages.mjs --check` and the affected core
-   conformance suites. Commit the generated snapshots and lock together.
+Python and FastAPI consume the Rust SDK from its owner repository through an immutable Cargo Git revision. They no longer vendor SDK source.
 
-CI check mode needs no source checkouts and no network. Source and dependency
-commits must be published before the consuming core change is merged.
+## Development and integration tests
 
-## Language discovery ownership
+`external-tools.lock.json` pins integration dependencies. Run `node scripts/external-tool.mjs --provision` before compiling tests that embed external artifact fixtures. Checkouts are cached outside the host and exposed through ignored `tests/external/<name>` links. There are no package installation or lifecycle hooks in this step. The host production build does not fetch or compile those JavaScript packages.
 
-`crates/discovery` in `lekalo-go`, `lekalo-rust`, `lekalo-typescript` and
-`lekalo-python` owns the corresponding adoption rules. Core supplies these four
-libraries in `packages/lekalo-*-discovery`, pinned by the same source lock. The
-TypeScript package owns npm/pnpm recognition and dependency hints; Python owns
-its manifest catalog. Their process runtimes remain in the existing snapshots.
+For a development checkout, `LEKALO_EXTERNAL_TOOLS` may explicitly map package names to absolute local roots. This override is for testing uncommitted package changes; release and CI runs use the committed lock.
 
-Package discovery accepts bytes or parsed values. Core retains filesystem
-capabilities, depth/entry/read limits, workspace-member path validation, ordering,
-deduplication and the existing receipt schema. Conventional build/test commands
-are proposals, never executed by discovery. No new user config is introduced.
-The workspace still has two core crates; these libraries are external dependencies.
+The small SDK/framework scripts remaining in `scripts/` delegate to their owning repository. Host/schema fixtures remain in core where they test admission. Public schema snapshots in the SDK have an exact origin/digest receipt; they contain protocol data, not a copy of host implementation.
 
-Go/Rust service runtimes do not yet exist. The extracted code is real project
-recognition previously maintained by core; generation, scanning and runtime
-conformance stay in `lekalo-go#1` / `lekalo-rust#1`. Workspace detection during
-adoption is distinct from future parent/child orchestration and API contracts.
+Legacy storage commands use the external PostgreSQL provider through `LEKALO_STORAGE_PROVIDER`, encoded as a JSON Source, for example `"path:/absolute/path/lekalo-postgres"` or `{"command":["node","/absolute/path/lekalo-postgres/bin/lekalo-postgres.mjs"]}`. The default installed command is `lekalo-postgres`. Missing providers fail closed; there is no embedded DDL fallback. The provider runs in the same empty strict sandbox as an external runtime, with JSON inputs and no database authority.
 
-The owning packages have standalone tests. Core's `discovery_packages` integration
-suite imports those exact pinned regression tests, and CLI adoption tests check
-mixed-language workspace membership and read-only behavior. Source sync accepts
-an older lock when adding packages, but offline check requires every current pin.
-A new snapshot destination cannot overwrite unowned files.
+## Remaining legacy boundaries
 
-## PHP composition
-
-PHP runtime and Laravel rules own separate `lekalo.package.json` build manifests.
-`lekalo-php/build.php` can compose the runtime alone, or with explicit rules
-directories, including third-party packages. The runtime defaults to target `php`;
-the transitional core wrapper explicitly selects `php-laravel` to preserve its
-published identity, generated paths and wire contract. The core no longer owns
-the composition implementation or a second PHP module/resource list.
-
-After committing package changes, run `node scripts/sync-php-packages.mjs --sync`,
-then `php -n adapters/php-laravel/build.php`,
-`node scripts/regen-php-adapter-manifest.mjs` and
-`node scripts/update-reference-projects.mjs`. Sync reads committed Git blobs,
-preflights every input before changing the snapshot, and refuses existing vendor
-drift. Package manifests supply implementation paths; core adds the package's
-build and test tools to the snapshot. Check mode remains offline.
-
-The adapter gate runs package composition tests as well as protocol, analyzer,
-framework and process suites. Single-provider families refuse overlapping claims;
-the runner merge API refuses duplicate runners and conflicting defaults.
-These PHP authoring manifests are separate from the public adapter manifest.
-They do not implement dependency fetching, interpreter version selection,
-per-component configuration, or parent workspaces.
-
-## Scope of this migration
-
-Published wire identities and the current delivery paths remain compatible.
-OpenSpec receives only a confined read capability from core; HLV returns mapping
-outcomes that core maps to registered diagnostics. A custom runtime/rules resolver,
-component-scoped configuration, configurable requirement/trace processes, and
-parent/child coordination are tracked in #197–#201, #239 and #241. This source
-migration does not claim to implement those new interfaces.
-
-The parent-workspace design uses explicit members with independent states and
-locks. API contracts belong to the producer; consumers pin immutable public API
-bundles and compare changes with the existing `module api` machinery. Parent
-aggregation must not merge child state by overwriting one shared observed index.
-
-The existing adapter-SDK contract gate checks source snapshots.
-`ci/external-packages-workflow.yml` and the packages’ `ci/package-workflow.yml`
-are optional, inactive workflow templates; installing them requires a GitHub
-credential with workflow-write permission.
+`external-packages.lock.json` still covers seven older source snapshots: Go/Rust/TypeScript/Python discovery, Python runtime, HLV and OpenSpec. They are not the final plugin architecture. PostgreSQL-specific migration/drift policy and generic projection tables also remain in the legacy storage pipeline; the extracted renderer and type/matrix answers are external, while existing typed facades preserve callers. Replacing these remaining registrations and moving the parent/child contract graph are still tracked by the open separation issues.

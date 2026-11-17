@@ -16,7 +16,6 @@ test('snapshots read committed source, detect drift and preserve edited copies',
       ['lekalo-openspec', 'src/index.txt', 'packages/lekalo-openspec/src/index.txt'],
       ['lekalo-hlv', 'src/index.txt', 'packages/lekalo-hlv/src/index.txt'],
       ['lekalo-python', 'src/index.txt', 'adapters/python/src/index.txt'],
-      ['lekalo-typescript', 'adapters/node-typescript/src/index.txt', 'adapters/node-typescript/src/index.txt'],
       ['lekalo-go', 'crates/discovery/src/index.txt', 'packages/lekalo-go-discovery/src/index.txt'],
       ['lekalo-rust', 'crates/discovery/src/index.txt', 'packages/lekalo-rust-discovery/src/index.txt'],
       ['lekalo-typescript', 'crates/discovery/src/index.txt', 'packages/lekalo-typescript-discovery/src/index.txt'],
@@ -53,7 +52,6 @@ test('snapshots read committed source, detect drift and preserve edited copies',
     result = run('--sync'); assert.equal(result.status, 0, result.stderr);
     assert.equal(run('--check').status, 0);
     // The builder owns these untracked declaration maps, not the source lock.
-    writeFileSync(join(root, 'adapters/node-typescript/src/libs.mjs'), '// generated');
     assert.equal(run('--check').status, 0);
     const extra = join(root, 'adapters/python/src/unpinned.rs');
     writeFileSync(extra, 'untracked source');

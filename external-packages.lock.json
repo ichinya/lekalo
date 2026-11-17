@@ -66,27 +66,23 @@
     {
       "name": "lekalo-python",
       "repository": "https://github.com/ichinya/lekalo-python",
-      "commit": "41b54fd48700896c52eb4df98e2cd4282211e64d",
+      "commit": "590f2f78d61981643d3b83fef1f6f61818cdf63a",
       "files": {
         "adapters/python/Cargo.lock": {
           "source": "Cargo.lock",
-          "sha256": "sha256:02c26f5ff1a2b8f36bfc4590101619e489bfc030088f90ba427a9bc0cca3b5b3"
+          "sha256": "sha256:b6fea6a75beb4cc049b825d2167f17b23d8d4e1b8a1fa9696ba88b24cbe274f4"
         },
         "adapters/python/Cargo.toml": {
           "source": "Cargo.toml",
-          "sha256": "sha256:aea3c37956f224cd5390e0b75252b5b3c33e7fc4fa880d745c530b6f8b8a4a01"
+          "sha256": "sha256:26031b619692622f9b5536a719ba5821000cf3c9894d84f74a90d89f5c189ce8"
         },
         "adapters/python/README.md": {
           "source": "README.md",
-          "sha256": "sha256:c732fa056fdeef7bc792fa40eec68d212b1dc1e2b2474df8a69b04e800779614"
+          "sha256": "sha256:8d753dcafa4459ef34a9c5dda5f968a29059fbae4482fa1991867d082bbeaeeb"
         },
         "adapters/python/framework-source.lock.json": {
           "source": "framework-source.lock.json",
-          "sha256": "sha256:c8326290324f910c26a2e81e80f7cf1def387c9efe758200133003f60732a0e1"
-        },
-        "adapters/python/sdk-source.lock.json": {
-          "source": "sdk-source.lock.json",
-          "sha256": "sha256:3ad7273bb8ea6b752caca55825ba6fda60a3f7cb51cf26083f3e8d34fdb950fd"
+          "sha256": "sha256:d5808c493ad4fae4adbf8af4146370b46d459509b1b21d7604270f784ed76560"
         },
         "adapters/python/src/ids.rs": {
           "source": "src/ids.rs",
@@ -116,89 +112,9 @@
           "source": "tests/scan-protocol.test.mjs",
           "sha256": "sha256:20d939c62d88f618d718ac285d63c359a10de7b2e8a882e542b2155fe43b6b3c"
         },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/Cargo.lock": {
-          "source": "vendor/lekalo-adapter-sdk-rust/Cargo.lock",
-          "sha256": "sha256:0eea1b6c8b9bd4bc980ac5725d1c42dd63cace4848e8b3ad35151dc102e8b3e6"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/Cargo.toml": {
-          "source": "vendor/lekalo-adapter-sdk-rust/Cargo.toml",
-          "sha256": "sha256:edf36201eeb2e23d7ecc432843760dd3ec246f77867cea8d9fbac1bdc0b67f0d"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/compatibility.json": {
-          "source": "vendor/lekalo-adapter-sdk-rust/compatibility.json",
-          "sha256": "sha256:f1e0275feb0bf11f528d0c4030f193a4c32963ad5974526d00e777b9b31d9d21"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/generation.json": {
-          "source": "vendor/lekalo-adapter-sdk-rust/generation.json",
-          "sha256": "sha256:76d7b01586dfb44ed54b9b0dbf1cee3656b8f1b0638541cb713734a0b54eaca0"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/bin/vectors.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/bin/vectors.rs",
-          "sha256": "sha256:84ed1628300d89833f0cd243ac6c991603f9796839a3354c83d168457144894a"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/build.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/build.rs",
-          "sha256": "sha256:ddd7d343abc5ba187cc88be25c9fb735c619ce6edf8505633658fadd7619532d"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/canonical.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/canonical.rs",
-          "sha256": "sha256:8145b5b803d8dd861d6b6e829f5ac9cf7d86532eb875909d625b2fef224ea26a"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/decode.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/decode.rs",
-          "sha256": "sha256:219eadc462ea84fe5d8316698e06fb8dbbe936da69ae7dc33a5cb84390e4ba47"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/generated/capabilities.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/generated/capabilities.rs",
-          "sha256": "sha256:5b9dafbbcf4d3444d48d3729c3131335f77c327769b91561fbe6df1b66fdabed"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/generated/compatibility_tests.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/generated/compatibility_tests.rs",
-          "sha256": "sha256:cda19506f8cbfc792d3bc8b519759a8660b4ab3cdf03c4eefd837651be163d25"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/generated/diagnostics.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/generated/diagnostics.rs",
-          "sha256": "sha256:0a40695d517496ecf67c4f46ff7aed2c6c1a579c28c68cb2ff4607b3e58d96d9"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/generated/mod.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/generated/mod.rs",
-          "sha256": "sha256:c980773c6a438b2176ea43de42848c623d0c0d1ee1bb2dc349f38a2afdfe21c5"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/generated/protocol.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/generated/protocol.rs",
-          "sha256": "sha256:46ef287f8ea9fdf1a3e1447dbc15d0b56ac7828fe098856ed2418cc72ba3e08e"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/ids.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/ids.rs",
-          "sha256": "sha256:91d7727ccaafd3deae772b9c0fc8ea5d0b74be4ffa71bd221615b17c14344aac"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/json.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/json.rs",
-          "sha256": "sha256:1d5983f5da58a698ca4e85c3fc10c9b4920a375684d4ca9e39ba11792074fa32"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/lib.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/lib.rs",
-          "sha256": "sha256:35bc4ae10d7ac9be17b51f77094d8deeac0b65d0c7b459913a17eebb13cdd832"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/logger.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/logger.rs",
-          "sha256": "sha256:eb15ac77b6d20bc18908d95d8f0fd8f645d441fc3c5bab45795e493a9897ec07"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/paths.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/paths.rs",
-          "sha256": "sha256:de7ea709295278289a81c9bb449dacb85c60410ad436a44fadc0f1ca2e4b2d49"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/serve.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/serve.rs",
-          "sha256": "sha256:9d427c26c0c1341ce45a8f049f7abbd4dce9a3c951af5d1e676313638d9a5ea1"
-        },
-        "adapters/python/vendor/lekalo-adapter-sdk-rust/src/validate.rs": {
-          "source": "vendor/lekalo-adapter-sdk-rust/src/validate.rs",
-          "sha256": "sha256:96513948c422d7b7ff315a73785b040a4270a81dd4181e7ee6d217652a594bdb"
-        },
         "adapters/python/vendor/lekalo-python-fastapi/Cargo.toml": {
           "source": "vendor/lekalo-python-fastapi/Cargo.toml",
-          "sha256": "sha256:e0922f52f1731e1b502132f782960017e5e24ecc145a0d505ea14842fb9d0b70"
+          "sha256": "sha256:eccc7cc5d2df045cfe67cfd89522cf548b1ca8949cdf4d3113e070ee32d1d538"
         },
         "adapters/python/vendor/lekalo-python-fastapi/src/lib.rs": {
           "source": "vendor/lekalo-python-fastapi/src/lib.rs",
@@ -207,357 +123,6 @@
         "adapters/python/vendor/lekalo-python-fastapi/tests/provider.rs": {
           "source": "vendor/lekalo-python-fastapi/tests/provider.rs",
           "sha256": "sha256:dcd30eda3b01e29b8c0593d20eee88b0c83e7ce368482d97b404063b68424a14"
-        }
-      }
-    },
-    {
-      "name": "lekalo-typescript",
-      "repository": "https://github.com/ichinya/lekalo-typescript",
-      "commit": "b97825887f64680e383a2f47ec99179f6330a77c",
-      "files": {
-        "adapters/node-typescript/.gitignore": {
-          "source": "adapters/node-typescript/.gitignore",
-          "sha256": "sha256:4b2a7f5d5115eabd7c5f12f2bcf71a15cc2883285380660907125485ac946b8b"
-        },
-        "adapters/node-typescript/README.md": {
-          "source": "adapters/node-typescript/README.md",
-          "sha256": "sha256:411b836a335d18aa8cf4d2963925131a31d9f1e45f8be00c07effa138c2b5f18"
-        },
-        "adapters/node-typescript/THIRD_PARTY_NOTICES.md": {
-          "source": "adapters/node-typescript/THIRD_PARTY_NOTICES.md",
-          "sha256": "sha256:c1c911ddf7514ac16e3cf556f7444c7170869b928280789c031ebfe82f57e336"
-        },
-        "adapters/node-typescript/adapter-zod.mjs": {
-          "source": "adapters/node-typescript/adapter-zod.mjs",
-          "sha256": "sha256:0fe123d938213b0a00e4c0d9756d500ecc0f902660820bae1b5c0463eb46528c"
-        },
-        "adapters/node-typescript/adapter.manifest.json": {
-          "source": "adapters/node-typescript/adapter.manifest.json",
-          "sha256": "sha256:766e3826a951835fcb74a02774d45f702fa30a68b9d95a5eb14cf43f8077f1aa"
-        },
-        "adapters/node-typescript/adapter.mjs": {
-          "source": "adapters/node-typescript/adapter.mjs",
-          "sha256": "sha256:5f8e5fd8f2b8df00e5736d48bc4ba1cdb8f455337f5f23753ab40836c71b0fb2"
-        },
-        "adapters/node-typescript/authoring-compiler.mjs": {
-          "source": "adapters/node-typescript/authoring-compiler.mjs",
-          "sha256": "sha256:672e09046a8ab882e863f41be94a74b70fd0fbef543678ce16d809f362174d48"
-        },
-        "adapters/node-typescript/build.mjs": {
-          "source": "adapters/node-typescript/build.mjs",
-          "sha256": "sha256:5529b688c9ee1fbd614601af4f07fba6adec4375cf2a23eed27df8e3bfbf77f1"
-        },
-        "adapters/node-typescript/compiler-client-build.mjs": {
-          "source": "adapters/node-typescript/compiler-client-build.mjs",
-          "sha256": "sha256:e37b8acc2073f5d2b83b439d3892a63039f07ad4e0a5adc2cf001174e33edac1"
-        },
-        "adapters/node-typescript/compiler-resources.json": {
-          "source": "adapters/node-typescript/compiler-resources.json",
-          "sha256": "sha256:1f97abfee26d26d3312d76759921989817b0d1d9d65a750abfb9cfa97b4036bc"
-        },
-        "adapters/node-typescript/hono-compatibility.json": {
-          "source": "adapters/node-typescript/hono-compatibility.json",
-          "sha256": "sha256:9b9a4115ba4afb8c6f9c957d2ac181dee90ce4da8f07b7e0473220a0bcd9444f"
-        },
-        "adapters/node-typescript/main.mjs": {
-          "source": "adapters/node-typescript/main.mjs",
-          "sha256": "sha256:479362fb489e66aed877e45512959bdd4b0f99a0ebf90be51afa98f94bc7c17f"
-        },
-        "adapters/node-typescript/package-lock.json": {
-          "source": "adapters/node-typescript/package-lock.json",
-          "sha256": "sha256:c6046ae21fa02297ec29c8eeb1e581d31b7be0a94e46372ac7571836031513c2"
-        },
-        "adapters/node-typescript/package.json": {
-          "source": "adapters/node-typescript/package.json",
-          "sha256": "sha256:38f0525050645d5d8cddc871878db20571d91a9aa0b5f6259566a25f35ca2a64"
-        },
-        "adapters/node-typescript/provision-compiler.mjs": {
-          "source": "adapters/node-typescript/provision-compiler.mjs",
-          "sha256": "sha256:e37666175dc9a21b08f66c416efa77cd1acfc6364e4d82ed19b1095edaa22f0e"
-        },
-        "adapters/node-typescript/runtime-bundle.json": {
-          "source": "adapters/node-typescript/runtime-bundle.json",
-          "sha256": "sha256:05687b9c1c14add1e615d4e9e67a5659014a1e74ed6aa2102e26066e80a1d55b"
-        },
-        "adapters/node-typescript/src/ai-lint.mjs": {
-          "source": "adapters/node-typescript/src/ai-lint.mjs",
-          "sha256": "sha256:63a88160795a06b344a88c8b6f2ceda21cc9027292a4915372893b00e49d92fc"
-        },
-        "adapters/node-typescript/src/client-sdk-gen.mjs": {
-          "source": "adapters/node-typescript/src/client-sdk-gen.mjs",
-          "sha256": "sha256:cfff0ad2ad9ba2e0d7b24de3600004c04114c5352401f4f185a6d7ee7fe0a996"
-        },
-        "adapters/node-typescript/src/compiler-client.mjs": {
-          "source": "adapters/node-typescript/src/compiler-client.mjs",
-          "sha256": "sha256:a558cdd9f0f40561ac2a21144aa87d379f7ec3847e49265455a9f5f3fa988519"
-        },
-        "adapters/node-typescript/src/compiler.mjs": {
-          "source": "adapters/node-typescript/src/compiler.mjs",
-          "sha256": "sha256:937961bacc438475b9f006e1d0ddf8309e9e46830d60354fbee6863eb6d8facf"
-        },
-        "adapters/node-typescript/src/drizzle-evidence.mjs": {
-          "source": "adapters/node-typescript/src/drizzle-evidence.mjs",
-          "sha256": "sha256:6882b1e31a4ba45c246422ebe1f1f79a404006833e099db58c37ab840735bf66"
-        },
-        "adapters/node-typescript/src/generation-composite.mjs": {
-          "source": "adapters/node-typescript/src/generation-composite.mjs",
-          "sha256": "sha256:93fdad9e6804fafb271ed27e40faaff27a63c4446e27a91a0bb5200f39cefd53"
-        },
-        "adapters/node-typescript/src/hono-bindings.mjs": {
-          "source": "adapters/node-typescript/src/hono-bindings.mjs",
-          "sha256": "sha256:f71299e796a99b4f143298e95be016cc2d0da30915f6947a3780c0a273b10348"
-        },
-        "adapters/node-typescript/src/hono-context.mjs": {
-          "source": "adapters/node-typescript/src/hono-context.mjs",
-          "sha256": "sha256:28dba9211f5e444bea5788890e6f5ce19f795149c1c89cae73f5f14ddb29904d"
-        },
-        "adapters/node-typescript/src/hono-evidence.mjs": {
-          "source": "adapters/node-typescript/src/hono-evidence.mjs",
-          "sha256": "sha256:4a36d31bab711489f72fb82e15f8e6946792ab7af9eb1047f320f2dfa17326a4"
-        },
-        "adapters/node-typescript/src/hono-http.mjs": {
-          "source": "adapters/node-typescript/src/hono-http.mjs",
-          "sha256": "sha256:5cbe0e827d51dfd23e9798c05b413d5f003fe08d39d142b0b0cd5dc6185b20a3"
-        },
-        "adapters/node-typescript/src/hono-middleware.mjs": {
-          "source": "adapters/node-typescript/src/hono-middleware.mjs",
-          "sha256": "sha256:214f82fbd438118ce0a783bac1d62dbf9868e5a98a9351d5f3a82af21c871dca"
-        },
-        "adapters/node-typescript/src/hono-routes.mjs": {
-          "source": "adapters/node-typescript/src/hono-routes.mjs",
-          "sha256": "sha256:2de2bf0bc9f2659fb67f3d0c6e96555bb9da25c0c4f40abcf22942242c7425c8"
-        },
-        "adapters/node-typescript/src/hono-scanner.mjs": {
-          "source": "adapters/node-typescript/src/hono-scanner.mjs",
-          "sha256": "sha256:70644cd69671b044b955ebbb24965521c730a44b359e1da951cd00e0cff0bd23"
-        },
-        "adapters/node-typescript/src/hono-tests.mjs": {
-          "source": "adapters/node-typescript/src/hono-tests.mjs",
-          "sha256": "sha256:5a192a173439b0de1ef6ebf58bff970f87e4ef971075e8c2bfae25885a0148bb"
-        },
-        "adapters/node-typescript/src/kernel.mjs": {
-          "source": "adapters/node-typescript/src/kernel.mjs",
-          "sha256": "sha256:e3e05f172c1ef2411a343195ac4ea761847e6b4431f89488432f7f64b67f6d54"
-        },
-        "adapters/node-typescript/src/native-contract.mjs": {
-          "source": "adapters/node-typescript/src/native-contract.mjs",
-          "sha256": "sha256:ef370f66b710a026264dd3832db44cf9ec70ff94572d33d3f8dcbf484f7dcfd1"
-        },
-        "adapters/node-typescript/src/native-gate-extension.mjs": {
-          "source": "adapters/node-typescript/src/native-gate-extension.mjs",
-          "sha256": "sha256:dfbc891c9f13d7bc878d93d472cb4db8b9e1a60f49eaa9c6644f04ec0febc25f"
-        },
-        "adapters/node-typescript/src/native-plan.mjs": {
-          "source": "adapters/node-typescript/src/native-plan.mjs",
-          "sha256": "sha256:9ff33275bbb70388f0dfe470a78226a3052745777004a2b6d7dd39f6467c3384"
-        },
-        "adapters/node-typescript/src/native-policy.mjs": {
-          "source": "adapters/node-typescript/src/native-policy.mjs",
-          "sha256": "sha256:d78867526503a0926e3f129085d6652c9aab0ffafef626c911bc7fa35a3b6150"
-        },
-        "adapters/node-typescript/src/native-symbols.mjs": {
-          "source": "adapters/node-typescript/src/native-symbols.mjs",
-          "sha256": "sha256:67110cad5200d2fb3bac50a7bff3a29487d3ea8a848e9421f90db177c6e4b6e5"
-        },
-        "adapters/node-typescript/src/openapi-emit.mjs": {
-          "source": "adapters/node-typescript/src/openapi-emit.mjs",
-          "sha256": "sha256:c9ffe532c8c8a6984d9fe63c00a1997ecb821116fce14332716679b3364381bd"
-        },
-        "adapters/node-typescript/src/openapi-gen.mjs": {
-          "source": "adapters/node-typescript/src/openapi-gen.mjs",
-          "sha256": "sha256:d318f2a61630cf78b4aa16a238d3e65066fe8c84d895d6c6bfc280d9f40d8b5a"
-        },
-        "adapters/node-typescript/src/openapi-policy.mjs": {
-          "source": "adapters/node-typescript/src/openapi-policy.mjs",
-          "sha256": "sha256:e516a0f6b62323ba3d14718cb3989e87855d6190ba40c24c5fa791d00940aab4"
-        },
-        "adapters/node-typescript/src/postgres-storage-extension.mjs": {
-          "source": "adapters/node-typescript/src/postgres-storage-extension.mjs",
-          "sha256": "sha256:dc9d7cbb923b1a57c3484649907fc819a57281d4fa45da33f74b4f5284905026"
-        },
-        "adapters/node-typescript/src/scanner.mjs": {
-          "source": "adapters/node-typescript/src/scanner.mjs",
-          "sha256": "sha256:0f8ac332ba84d3ca17ae47065ef13230d032d3fa2e753a0492f7e185770b00b9"
-        },
-        "adapters/node-typescript/src/scenario-emit.mjs": {
-          "source": "adapters/node-typescript/src/scenario-emit.mjs",
-          "sha256": "sha256:5a84ca9274149d4f94a05b244d448d7e171ec508b1ff416720484b42d651cfe8"
-        },
-        "adapters/node-typescript/src/scenario-gen.mjs": {
-          "source": "adapters/node-typescript/src/scenario-gen.mjs",
-          "sha256": "sha256:35b7d1b5a0c28f999978e05d07ce1a5c9c424aa4c93537078940cdb9a2b5b44d"
-        },
-        "adapters/node-typescript/src/scenario-map.mjs": {
-          "source": "adapters/node-typescript/src/scenario-map.mjs",
-          "sha256": "sha256:67853987144dbdb374c30221527dc876b038387e2b74eb1fddd48b753a22d970"
-        },
-        "adapters/node-typescript/src/transport-extension.mjs": {
-          "source": "adapters/node-typescript/src/transport-extension.mjs",
-          "sha256": "sha256:18df251581ab5a2bf5c2ae819414219139cf15c11b5a84f8eb24dfe546e9ff40"
-        },
-        "adapters/node-typescript/src/workspace.mjs": {
-          "source": "adapters/node-typescript/src/workspace.mjs",
-          "sha256": "sha256:cb32f600c6390257f50f5061f1dc68eacff7bda857d698f4cda46847bf52a669"
-        },
-        "adapters/node-typescript/src/zod-emit.mjs": {
-          "source": "adapters/node-typescript/src/zod-emit.mjs",
-          "sha256": "sha256:f466d38bebff73f9324f52ac9f8689d2802e7052ebc20ca65bac09f4efa13df4"
-        },
-        "adapters/node-typescript/src/zod-gen.mjs": {
-          "source": "adapters/node-typescript/src/zod-gen.mjs",
-          "sha256": "sha256:d25d0a2d9e5b7d5a2e19afe95875a37fad34f046dcf79b14ed1b25a833058c02"
-        },
-        "adapters/node-typescript/src/zod-map.mjs": {
-          "source": "adapters/node-typescript/src/zod-map.mjs",
-          "sha256": "sha256:375b1a6dc6ae6f26374f000413bd92b3a79f8e5a96f1b0e2bc174b68fb00550a"
-        },
-        "adapters/node-typescript/src/zod-policy.mjs": {
-          "source": "adapters/node-typescript/src/zod-policy.mjs",
-          "sha256": "sha256:450099a1a9501fbbf5e57f7b6136d2c3019d0a9cfcb2e482dae5fee238cf6619"
-        },
-        "adapters/node-typescript/test/compiler-native.test.mjs": {
-          "source": "adapters/node-typescript/test/compiler-native.test.mjs",
-          "sha256": "sha256:c368437ea84d526715a98ff8c55efb17d8ff7637a964541cc915a7028dcd5f77"
-        },
-        "adapters/node-typescript/test/compiler-test-runtime.mjs": {
-          "source": "adapters/node-typescript/test/compiler-test-runtime.mjs",
-          "sha256": "sha256:a93d4d7b13fa459a0b24898d305a2ca48390a32d934f1c25236f1a69cb2e70be"
-        },
-        "adapters/node-typescript/test/drizzle-evidence.test.mjs": {
-          "source": "adapters/node-typescript/test/drizzle-evidence.test.mjs",
-          "sha256": "sha256:3619a90cbbe5de5ffcb6211228d82188d87674a41d334f9494bcc521e643a6ab"
-        },
-        "adapters/node-typescript/test/drizzle-helpers.mjs": {
-          "source": "adapters/node-typescript/test/drizzle-helpers.mjs",
-          "sha256": "sha256:b7d7ef19fef8785675ab575187b0364678ea07a8a6711b6b3427938f57c512e7"
-        },
-        "adapters/node-typescript/test/fixtures.test.mjs": {
-          "source": "adapters/node-typescript/test/fixtures.test.mjs",
-          "sha256": "sha256:7a840ae91e0560a6caa491a16cd980ce43f190f4c082a1d659bdd62643939c17"
-        },
-        "adapters/node-typescript/test/helpers.mjs": {
-          "source": "adapters/node-typescript/test/helpers.mjs",
-          "sha256": "sha256:5337dd262c286d28ea7ddc1840b67a12b42fa99d297b7aa20d5ec5da22c7152b"
-        },
-        "adapters/node-typescript/test/hono-evidence.test.mjs": {
-          "source": "adapters/node-typescript/test/hono-evidence.test.mjs",
-          "sha256": "sha256:3bd438f4e162aa9ec2b6bf75eb98775790c194a79e64ead63f891bf8812efc85"
-        },
-        "adapters/node-typescript/test/hono-helpers.mjs": {
-          "source": "adapters/node-typescript/test/hono-helpers.mjs",
-          "sha256": "sha256:4831ce271eb9eef11f5696934915441949c34ffe420475b31d8952bc84e493cc"
-        },
-        "adapters/node-typescript/test/hono-http.test.mjs": {
-          "source": "adapters/node-typescript/test/hono-http.test.mjs",
-          "sha256": "sha256:feab158dba89d1a3b09919b7de85e59f6cc3551dcfb051f1c7ff8bc6d0b7e183"
-        },
-        "adapters/node-typescript/test/hono-middleware.test.mjs": {
-          "source": "adapters/node-typescript/test/hono-middleware.test.mjs",
-          "sha256": "sha256:011f63fba236662ef0100a4048b8b829404be2d761113a81e315850f2d482899"
-        },
-        "adapters/node-typescript/test/hono-process.test.mjs": {
-          "source": "adapters/node-typescript/test/hono-process.test.mjs",
-          "sha256": "sha256:220bde0adf321c5bd80963d291ddf8cce1a10143df74c0f78bb9364052634ea7"
-        },
-        "adapters/node-typescript/test/hono-scanner.test.mjs": {
-          "source": "adapters/node-typescript/test/hono-scanner.test.mjs",
-          "sha256": "sha256:80cecc73792ad12524ac6133c9537ecc38d57be58433e5691a42e7f2a8389e12"
-        },
-        "adapters/node-typescript/test/kernel.test.mjs": {
-          "source": "adapters/node-typescript/test/kernel.test.mjs",
-          "sha256": "sha256:180d4c00ad7c90ececfa117fa6ab737b72641d9688c36d96ea6815d2658736b9"
-        },
-        "adapters/node-typescript/test/native-contract.test.mjs": {
-          "source": "adapters/node-typescript/test/native-contract.test.mjs",
-          "sha256": "sha256:98be4668623fe3117e90d58050658ae431b3be88e0675065140a7771b77535f3"
-        },
-        "adapters/node-typescript/test/native-extension.test.mjs": {
-          "source": "adapters/node-typescript/test/native-extension.test.mjs",
-          "sha256": "sha256:d07f4287d837d062a0b8b7a2b97aadd72b10d7fa88fb7bf31e51925b2ac8e8c1"
-        },
-        "adapters/node-typescript/test/native-plan.test.mjs": {
-          "source": "adapters/node-typescript/test/native-plan.test.mjs",
-          "sha256": "sha256:7584ea14ee30223a82951078c41cdc330498d29c7d61fcb297c3653c5516cd63"
-        },
-        "adapters/node-typescript/test/native-test-entry.mjs": {
-          "source": "adapters/node-typescript/test/native-test-entry.mjs",
-          "sha256": "sha256:ca5d242f30bc4fe89388f8108939549942796bbbfeee9eb106aecafa3f2570b7"
-        },
-        "adapters/node-typescript/test/native-typecheck.mjs": {
-          "source": "adapters/node-typescript/test/native-typecheck.mjs",
-          "sha256": "sha256:19656c29091b701e4e4b5025f704f8ede9091f9010bec195aeaac4dfd2932304"
-        },
-        "adapters/node-typescript/test/native-workspace.test.mjs": {
-          "source": "adapters/node-typescript/test/native-workspace.test.mjs",
-          "sha256": "sha256:e9eeb045b37388c0da60e053521215d91a5f1283737e0956796e8bfcd2191d7b"
-        },
-        "adapters/node-typescript/test/openapi-gen.test.mjs": {
-          "source": "adapters/node-typescript/test/openapi-gen.test.mjs",
-          "sha256": "sha256:810b4fa0777e6cc4bb7f0e98ba168e2810c98aa81bfc50e270d36fac061cc935"
-        },
-        "adapters/node-typescript/test/process.test.mjs": {
-          "source": "adapters/node-typescript/test/process.test.mjs",
-          "sha256": "sha256:bad407cb95e9a32e28e44dc3d67168c036c975ffaf50d8d83067bf9fe329c9b1"
-        },
-        "adapters/node-typescript/test/roots.test.mjs": {
-          "source": "adapters/node-typescript/test/roots.test.mjs",
-          "sha256": "sha256:86c83ee3b67adb6d9f5ba8390879785f12bc6d6e141e3a444cc0a02d39dc85d3"
-        },
-        "adapters/node-typescript/test/scanner-fixtures.test.mjs": {
-          "source": "adapters/node-typescript/test/scanner-fixtures.test.mjs",
-          "sha256": "sha256:a63cf2f42934a25a5fdf0987984e2081d4c959cbf7dfcded9711363c52c8a632"
-        },
-        "adapters/node-typescript/test/scanner-helpers.mjs": {
-          "source": "adapters/node-typescript/test/scanner-helpers.mjs",
-          "sha256": "sha256:ab39c633a969263f9eff815ca36743117b9e65f9d6bd1a34140f43ea3c7d7d90"
-        },
-        "adapters/node-typescript/test/scanner-process.test.mjs": {
-          "source": "adapters/node-typescript/test/scanner-process.test.mjs",
-          "sha256": "sha256:a9b01e5303c1e9db3bc1b4f5a1f51adc5b86aa0b84cde4a06080891266b66306"
-        },
-        "adapters/node-typescript/test/scanner-unit.test.mjs": {
-          "source": "adapters/node-typescript/test/scanner-unit.test.mjs",
-          "sha256": "sha256:756bb9b4ffaba7abcbefd3490d6f950f91cc73ac3fcd3615e441ed45becb900d"
-        },
-        "adapters/node-typescript/test/scenario-bindings.test.mjs": {
-          "source": "adapters/node-typescript/test/scenario-bindings.test.mjs",
-          "sha256": "sha256:ffaad256b853e90d33b2297fe2daa94c9b821c63e7c33e3cc4528fb5a096037a"
-        },
-        "adapters/node-typescript/test/scenario-emit.test.mjs": {
-          "source": "adapters/node-typescript/test/scenario-emit.test.mjs",
-          "sha256": "sha256:20d86ae964279aee86a73340aa2f15be8fa8469a0b96fb7814ad9685723ef2c9"
-        },
-        "adapters/node-typescript/test/scenario-extension.test.mjs": {
-          "source": "adapters/node-typescript/test/scenario-extension.test.mjs",
-          "sha256": "sha256:184c09fb9f7b15e85e74fac3c9c3328edbbe0bc48a094b15157be4a09662c8da"
-        },
-        "adapters/node-typescript/test/scenario-map.test.mjs": {
-          "source": "adapters/node-typescript/test/scenario-map.test.mjs",
-          "sha256": "sha256:1a6de76a819f84f2a2e8c4ab791c8fba717ebe7daff68f5f4676f011416a040f"
-        },
-        "adapters/node-typescript/test/transport-extension.test.mjs": {
-          "source": "adapters/node-typescript/test/transport-extension.test.mjs",
-          "sha256": "sha256:3dff598011d629d87d30f1edb62868c4edb8b66af9b156de07403c88409e153f"
-        },
-        "adapters/node-typescript/test/zod-emit.test.mjs": {
-          "source": "adapters/node-typescript/test/zod-emit.test.mjs",
-          "sha256": "sha256:d9c2a248bebbb46d6daf40e8aec74c4d1f9c298e6e0473973c21b23bfc82f224"
-        },
-        "adapters/node-typescript/test/zod-gen.test.mjs": {
-          "source": "adapters/node-typescript/test/zod-gen.test.mjs",
-          "sha256": "sha256:fcea97ec246ac48ff52c9ca3fe2c258194e880ae4805c5223237ee429c30bd17"
-        },
-        "adapters/node-typescript/test/zod-map.test.mjs": {
-          "source": "adapters/node-typescript/test/zod-map.test.mjs",
-          "sha256": "sha256:f8a00abf4dd9b8d759118753b7ca822c310e163f2f61d1441e9e06452dff341c"
-        },
-        "adapters/node-typescript/test/zod-policy.test.mjs": {
-          "source": "adapters/node-typescript/test/zod-policy.test.mjs",
-          "sha256": "sha256:85b6af61741c8efce05c5ed88c7c9bef30ba4092025615d9463b3e4c2556ede3"
-        },
-        "adapters/node-typescript/typescript-native-notices.txt": {
-          "source": "adapters/node-typescript/typescript-native-notices.txt",
-          "sha256": "sha256:f5c708b59114507b8b27b48181b6883d106bbca0c1634bbee45b5e344237b66b"
         }
       }
     },
@@ -618,7 +183,7 @@
     {
       "name": "lekalo-typescript-discovery",
       "repository": "https://github.com/ichinya/lekalo-typescript",
-      "commit": "b97825887f64680e383a2f47ec99179f6330a77c",
+      "commit": "da475980275db53eeec65cc5b6e54231e12d69e4",
       "files": {
         "packages/lekalo-typescript-discovery/Cargo.lock": {
           "source": "crates/discovery/Cargo.lock",
@@ -645,7 +210,7 @@
     {
       "name": "lekalo-python-discovery",
       "repository": "https://github.com/ichinya/lekalo-python",
-      "commit": "41b54fd48700896c52eb4df98e2cd4282211e64d",
+      "commit": "590f2f78d61981643d3b83fef1f6f61818cdf63a",
       "files": {
         "packages/lekalo-python-discovery/Cargo.lock": {
           "source": "crates/discovery/Cargo.lock",

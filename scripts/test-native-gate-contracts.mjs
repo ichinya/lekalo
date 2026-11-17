@@ -82,7 +82,7 @@ for (const vector of negativeVectors) {
 // equal the committed constant (Node side of the Node/Rust pair).
 const digestVector = read("tests/fixtures/node-native-gates/protocol/digest-vector.json");
 const { canonicalJsonText, planDigest } = await import(
-  new URL("../adapters/node-typescript/src/native-contract.mjs", import.meta.url).href
+  new URL("../tests/external/lekalo-typescript/adapters/node-typescript/src/native-contract.mjs", import.meta.url).href
 );
 const computed = planDigest(digestVector.plan);
 if (computed !== digestVector.digest) {

@@ -26,7 +26,9 @@ pub(crate) fn semantic_self_check(
 /// matrix row; an outside pin is unsupported, never clamped.
 fn check_version(attachment: &StorageEngineAttachment) -> Result<(), DiagnosticSet> {
     if attachment.engine() == super::Engine::Postgres
-        && super::postgres::version_matrix::row_for(attachment.engine_version().major()).is_none()
+        && !super::postgres::version_matrix::rows()?
+            .iter()
+            .any(|row| row.major == attachment.engine_version().major())
     {
         return Err(diagnostic::rule_invalid(
             diagnostic::VERSION_UNSUPPORTED,

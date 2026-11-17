@@ -1,7 +1,0 @@
-{
-  "logical": false,
-  "name": "capability-plain",
-  "scopeGrammar": false,
-  "capability": "scan.symbols",
-  "tokenOk": true
-}

@@ -8,7 +8,7 @@ cargo +1.97.0 build --locked --config 'profile.dev.debug=0'
 node --test tests/scan-protocol.test.mjs tests/fastapi.test.mjs
 ```
 
-Сборка самостоятельна: соседний checkout ядра не нужен. `vendor/lekalo-adapter-sdk-rust` — закреплённый протокольный SDK из ядра (`sdk-source.lock.json`), `vendor/lekalo-python-fastapi` — закреплённый пакет правил (`framework-source.lock.json`). Эти копии обновляются из исходных репозиториев, не редактируются здесь. Целевая версия Python и версия хостового Rust — разные настройки.
+Сборка самостоятельна: соседний checkout ядра не нужен. SDK берётся из `lekalo-adapter-sdk` по Git SHA, `vendor/lekalo-python-fastapi` — закреплённый пакет правил (`framework-source.lock.json`). Эти копии обновляются из исходных репозиториев, не редактируются здесь. Целевая версия Python и версия хостового Rust — разные настройки.
 
 Пока FastAPI подключается как библиотека на этапе сборки, а разрешённые providers профиля ограничены прежним протоколом. Обновление закреплённого FastAPI: после commit в его репозитории выполните `node scripts/sync-framework.mjs`, затем `node scripts/check-sources.mjs` и тесты.
 
@@ -30,3 +30,5 @@ cargo test --locked --manifest-path crates/discovery/Cargo.toml
 Ядро использует проверяемую копию в `packages/` с точным commit и SHA-256.
 Это переходный способ поставки host-side discovery, а не новый процессный
 runtime или resolver пакетов. Формат существующего adoption receipt сохраняется.
+
+The adapter SDK is supplied by an immutable Git dependency on [lekalo-adapter-sdk](https://github.com/ichinya/lekalo-adapter-sdk), recorded in Cargo.toml/Cargo.lock. There is no vendored SDK implementation in this repository.

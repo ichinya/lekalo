@@ -25,7 +25,7 @@ fn kernel_command() -> AdapterCommand {
 
 fn kernel_path() -> String {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../adapters/node-typescript/adapter.mjs")
+        .join("../../tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs")
         .display()
         .to_string()
 }

@@ -263,7 +263,7 @@ function nativeRequest(sandbox, changedFiles) {
 async function main() {
   writeDriver();
   const { validateNativePlan, recomputePlanDigest } = await import(
-    pathToFileURL(join(repo, "adapters", "node-typescript", "src", "native-contract.mjs")).href
+    pathToFileURL(join(repo, "tests", "external", "lekalo-typescript", "adapters", "node-typescript", "src", "native-contract.mjs")).href
   );
 
   // --- Leg 1: the hostile Composer decoder refusals -----------------------

@@ -733,7 +733,11 @@ mod tests {
         // A coordinate carrying path separators: the pre-fix spelling
         // nested receipt files under the evidence tree (and silently
         // wrote nothing for path: sources).
-        let candidate = candidate("receipt-adapter", b"bytes", "path:adapters/node-typescript");
+        let candidate = candidate(
+            "receipt-adapter",
+            b"bytes",
+            "path:tests/external/lekalo-typescript/adapters/node-typescript",
+        );
         let install_plan = plan(&candidate, TrustLevel::LocalDevelopment, false, None).unwrap();
         let source = std::env::temp_dir().join(format!("lekalo-ap-ev-src-{}", std::process::id()));
         std::fs::create_dir_all(&source).expect("src dir");

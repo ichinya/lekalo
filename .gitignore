@@ -31,3 +31,9 @@ sdk/go/bin/
 
 # Standalone external Rust package build output.
 /packages/**/target/
+
+# Optional development/test packages provisioned from immutable external pins.
+/sdk/
+/adapters/node-typescript/
+
+/tests/external/

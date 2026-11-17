@@ -18,6 +18,7 @@ pub mod introspection;
 pub mod laravel_input;
 pub mod migration;
 pub mod postgres;
+pub(crate) mod provider;
 pub mod rollback;
 mod validate;
 pub(crate) mod version;

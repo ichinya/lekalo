@@ -14,8 +14,7 @@ const lockPath = join(root, 'external-packages.lock.json');
 const definitions = [
   { name: 'lekalo-openspec', from: '', to: 'packages/lekalo-openspec', includes: ['Cargo.toml', 'Cargo.lock', 'README.md', 'src', 'tests'], roots: [''] },
   { name: 'lekalo-hlv', from: '', to: 'packages/lekalo-hlv', includes: ['Cargo.toml', 'Cargo.lock', 'README.md', 'src'], roots: [''] },
-  { name: 'lekalo-python', from: '', to: 'adapters/python', includes: ['Cargo.toml', 'Cargo.lock', 'README.md', 'src', 'vendor', 'sdk-source.lock.json', 'framework-source.lock.json', 'tests/scan-protocol.test.mjs', 'tests/fastapi.test.mjs'], roots: ['src', 'vendor'] },
-  { name: 'lekalo-typescript', from: 'adapters/node-typescript', to: 'adapters/node-typescript', includes: ['adapters/node-typescript'], roots: [''] },
+  { name: 'lekalo-python', from: '', to: 'adapters/python', includes: ['Cargo.toml', 'Cargo.lock', 'README.md', 'src', 'vendor', 'framework-source.lock.json', 'tests/scan-protocol.test.mjs', 'tests/fastapi.test.mjs'], roots: ['src', 'vendor'] },
   { name: 'lekalo-go-discovery', owner: 'lekalo-go', from: 'crates/discovery', to: 'packages/lekalo-go-discovery', includes: ['crates/discovery'], roots: [''] },
   { name: 'lekalo-rust-discovery', owner: 'lekalo-rust', from: 'crates/discovery', to: 'packages/lekalo-rust-discovery', includes: ['crates/discovery'], roots: [''] },
   { name: 'lekalo-typescript-discovery', owner: 'lekalo-typescript', from: 'crates/discovery', to: 'packages/lekalo-typescript-discovery', includes: ['crates/discovery'], roots: [''] },

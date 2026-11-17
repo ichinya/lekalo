@@ -279,6 +279,7 @@ checksum = "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4"
 [[package]]
 name = "lekalo-adapter-sdk-rust"
 version = "0.1.0"
+source = "git+https://github.com/ichinya/lekalo-adapter-sdk?rev=92263c8e4cac9cbfbb38bdab44da71a41d001f20#92263c8e4cac9cbfbb38bdab44da71a41d001f20"
 dependencies = [
  "sha2",
 ]

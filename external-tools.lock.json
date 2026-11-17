@@ -1,0 +1,29 @@
+{
+  "schema": "lekalo/development-tools/v1",
+  "packages": {
+    "lekalo-adapter-sdk": {
+      "repository": "https://github.com/ichinya/lekalo-adapter-sdk.git",
+      "commit": "92263c8e4cac9cbfbb38bdab44da71a41d001f20"
+    },
+    "lekalo-typescript": {
+      "repository": "https://github.com/ichinya/lekalo-typescript.git",
+      "commit": "da475980275db53eeec65cc5b6e54231e12d69e4"
+    },
+    "lekalo-typescript-hono": {
+      "repository": "https://github.com/ichinya/lekalo-typescript-hono.git",
+      "commit": "23a6af187aa04cdece7265b60f811d1cd1bd7f6f"
+    },
+    "lekalo-typescript-drizzle": {
+      "repository": "https://github.com/ichinya/lekalo-typescript-drizzle.git",
+      "commit": "9de613da191bf08fc0f6b6d7ef5a15bca57170b3"
+    },
+    "lekalo-typescript-zod": {
+      "repository": "https://github.com/ichinya/lekalo-typescript-zod.git",
+      "commit": "63271a52b5fc5962f11bc15b07449a2bca0dd0d5"
+    },
+    "lekalo-postgres": {
+      "repository": "https://github.com/ichinya/lekalo-postgres.git",
+      "commit": "c73585e0ee6c9e2193f4419be6ff0cfb8d03395a"
+    }
+  }
+}

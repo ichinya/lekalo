@@ -1005,7 +1005,7 @@ mod committed_exemplar_tests {
     /// packages stay wired to the closed wire shapes.
     #[test]
     fn the_committed_adapter_manifest_parses() {
-        let bytes = include_bytes!("../../../../adapters/node-typescript/adapter.manifest.json",);
+        let bytes = include_bytes!("../../../../tests/external/lekalo-typescript/adapters/node-typescript/adapter.manifest.json",);
         let document = super::ManifestDocument::from_bytes(bytes)
             .expect("the committed adapter manifest must parse");
         assert_eq!(document.adapter_id(), "lekalo-target-node-typescript");

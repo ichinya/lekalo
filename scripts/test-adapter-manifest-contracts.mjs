@@ -82,7 +82,7 @@ const duplicateKeys = (text) => {
 
   // The shipped exemplar is always part of the valid set.
   const exemplar = JSON.parse(
-    readFileSync(join(root, "adapters", "node-typescript", "adapter.manifest.json"), "utf8"),
+    readFileSync(join(root, "tests", "external", "lekalo-typescript", "adapters", "node-typescript", "adapter.manifest.json"), "utf8"),
   );
   check("valid:shipped-exemplar", validateSuccessor(exemplar), validateSuccessor.errors);
   const phpExemplar = JSON.parse(readFileSync(join(root, "adapters/php-laravel/adapter.manifest.json"), "utf8"));

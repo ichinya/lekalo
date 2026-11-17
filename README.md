@@ -25,7 +25,7 @@ From this repository's root, with Rust and a native linker installed:
 cargo build -p lekalo-cli --locked
 ```
 
-The binary is `target/debug/lekalo` (`lekalo.exe` on Windows). Add its absolute directory to PATH before entering a fixture. Dependency setup, Windows linker requirements and offline builds are covered in [contributing](docs/contributing.md#build-from-source).
+The binary is `target/debug/lekalo` (`lekalo.exe` on Windows). Add its absolute directory to PATH before entering a fixture. Dependency setup, Windows linker requirements and offline builds are covered in [contributing](docs/contributing.md#build-from-source). Local dev/test builds disable debug symbols and incremental caches to limit disk use; see [build settings](docs/development-builds.md) for debugging overrides and cleanup.
 
 Copy [the minimal fixture](tests/fixtures/loader/valid-zero-modules) into a disposable directory. Enter that copy's root, containing `lekalo/project.yaml`, then run:
 
@@ -43,3 +43,5 @@ Both commands exit **0**, write JSON to stdout and leave the fixture unchanged. 
 Lekalo owns application semantics. OpenSpec owns requirements, AI Factory owns workflow state, and HLV owns its validation results. [Authority](docs/authority.md) defines artifact custody; [integrations](docs/integrations.md) defines handoffs.
 
 Documentation on `main` describes this checkout. An installed release uses its tag's source and documentation; see [release snapshots](docs/releases.md#release-snapshots). A local example passing does not establish hosted CI, external delivery or production qualification.
+
+Runtime/framework implementations and the optional author SDK are maintained in their own repositories. See [external package ownership and integration setup](docs/external-packages.md). The host SDK and TypeScript source snapshots have been removed; test dependencies are pinned outside the production build.

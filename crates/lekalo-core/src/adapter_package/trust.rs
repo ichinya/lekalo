@@ -379,7 +379,7 @@ mod tests {
         let liar = candidate_with_custody(
             "lying-adapter",
             "path",
-            "path:adapters/node-typescript",
+            "path:tests/external/lekalo-typescript/adapters/node-typescript",
             false,
             Custody::Record,
         );
@@ -390,7 +390,7 @@ mod tests {
         let path_liar = candidate_with_custody(
             "path-liar",
             "path",
-            "path:adapters/node-typescript",
+            "path:tests/external/lekalo-typescript/adapters/node-typescript",
             false,
             Custody::PathExec,
         );

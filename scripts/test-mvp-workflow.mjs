@@ -35,7 +35,7 @@ try {
       save(join(root,'lekalo/authorization.yaml'),authorization);
       cli(root,['validate','--strict']);
       const profile={id:'standalone',mode:'observed',target:'node-typescript',readRoots:[{path:'package.json',kind:'file'},{path:'tsconfig.json',kind:'file'},{path:'packages',kind:'tree'}],exclusions:['packages/core/test/**','packages/web/src/main.ts','packages/web/out/**'],provenance:{origin:'declared',revision:'mvp-domain-client-1',disposition:'user-confirmed'}};
-      const scanned=cli(root,['scan','--target','node-typescript','--profile','standalone','--project','.',process.execPath,join(repo,'adapters/node-typescript/adapter.mjs'),'--lekalo-project-profile-json',JSON.stringify(profile)]);
+      const scanned=cli(root,['scan','--target','node-typescript','--profile','standalone','--project','.',process.execPath,join(repo,'tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs'),'--lekalo-project-profile-json',JSON.stringify(profile)]);
       assert.ok(scanned.symbols>=2);
       const proposals=cli(root,['bindings','propose']);
       let confirmed=0;

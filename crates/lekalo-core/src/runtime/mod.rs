@@ -732,3 +732,56 @@ pub fn init(
         .map_err(|_| error("config-write-failed"))?;
     Ok(json!({"schema":config::SCHEMA,"status":"valid","path":config::CONFIG}))
 }
+
+/// A data-only provider pinned once for one host operation. Package resolution
+/// and executable admission happen before the first exchange; subsequent calls
+/// keep the same immutable package snapshot, like describe/check in one runtime
+/// validation. A caller starts a new session for a new analysis operation.
+pub struct Session {
+    root: PathBuf,
+    command: Vec<String>,
+    package: Option<package::Package>,
+}
+impl Session {
+    /// Resolve a package or installed executable without a language registry.
+    pub fn new(root: &Path, source: &config::Source) -> Result<Self> {
+        let package = match source {
+            config::Source::Package(source) => {
+                Some(package::resolve(root, source, "runtime", false)?)
+            }
+            config::Source::Executable(_) => None,
+        };
+        let argv = match source {
+            config::Source::Package(_) => &package.as_ref().unwrap().manifest.command,
+            config::Source::Executable(command) => &command.command,
+        };
+        let (command, _) = pin_command(root, argv, package.as_ref())?;
+        Ok(Self {
+            root: root.to_path_buf(),
+            command,
+            package,
+        })
+    }
+    /// Perform a bounded exchange in an empty strict sandbox.
+    pub fn invoke(&self, operation: &str, input: Value) -> Result<Value> {
+        if !config::token(operation) {
+            return Err(error("operation-invalid"));
+        }
+        exchange(
+            &self.root,
+            &self.command,
+            self.package.as_ref(),
+            operation,
+            input,
+        )
+    }
+}
+/// Invoke a single operation with a fresh provider session.
+pub fn invoke(
+    root: &Path,
+    source: &config::Source,
+    operation: &str,
+    input: Value,
+) -> Result<Value> {
+    Session::new(root, source)?.invoke(operation, input)
+}

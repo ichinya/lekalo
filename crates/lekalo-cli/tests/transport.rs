@@ -525,7 +525,7 @@ fn generate_writes_the_transport_evidence() {
             "lock",
             "--",
             "node",
-            "adapters/node-typescript/node-adapter.mjs",
+            "tests/external/lekalo-typescript/adapters/node-typescript/node-adapter.mjs",
         ])
         .current_dir(alias_free_path(&project))
         .env_remove("LEKALO_PROJECT")
@@ -548,7 +548,7 @@ fn generate_writes_the_transport_evidence() {
             "--dry-run",
             "--",
             "node",
-            "adapters/node-typescript/node-adapter.mjs",
+            "tests/external/lekalo-typescript/adapters/node-typescript/node-adapter.mjs",
         ])
         .current_dir(alias_free_path(&project))
         .env_remove("LEKALO_PROJECT")

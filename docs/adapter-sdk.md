@@ -1,3 +1,5 @@
+> SDK implementations, generator, templates and tests now live in [lekalo-adapter-sdk](https://github.com/ichinya/lekalo-adapter-sdk). Paths beginning with `sdk/` below are relative to that repository. Core keeps the public protocol schemas and delegates integration gates through `scripts/external-tool.mjs`.
+
 # Adapter SDKs
 
 Issue #106 ships four optional, independently packaged SDKs for target
@@ -57,7 +59,7 @@ are closed Draft 2020-12 artifacts under `contracts/`.
   permits duplicate keys with last-wins semantics; constraints may be
   absent/null, while non-null values must be in `1..=1073741824`.
   Host-owned `lint_evidence` additionally carries deliberate SDK
-  token/count/digest ceilings: [the precise boundary](../sdk/spec.md#4-semantic-admission-beyond-the-schema)
+  token/count/digest ceilings: [the precise boundary](https://github.com/ichinya/lekalo-adapter-sdk/blob/main/sdk/spec.md#4-semantic-admission-beyond-the-schema)
   is stronger than production wire admission, pinned by oracle-backed
   `productionAccepts` rows, and never replaces host evidence validation.
   Refusal-token equality across different admission layers is advisory.

@@ -19,7 +19,7 @@ const node=fs.realpathSync(process.execPath);
 const hash=bytes=>'sha256:'+createHash('sha256').update(bytes).digest('hex');
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
 const nodeDigest=hash(fs.readFileSync(node));
-const adapter=join(repo,'adapters/node-typescript');
+const adapter=join(repo,'tests/external/lekalo-typescript/adapters/node-typescript');
 const require=createRequire((process.env.LEKALO_AJV_NODE_PATH ?? repo)+'/');
 assert.equal(require('ajv/package.json').version,'8.20.0');
 const Ajv=require('ajv/dist/2020').default;

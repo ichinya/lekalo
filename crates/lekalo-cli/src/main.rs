@@ -9709,16 +9709,24 @@ fn storage_profile(engine: StorageEngineArg, version: Option<String>) -> DomainR
     match engine {
         StorageEngineArg::Postgres => {
             use lekalo_core::storage_engine::postgres::version_matrix;
+            let matrix = match version_matrix::rows() {
+                Ok(rows) => rows,
+                Err(error) => return DomainResult::invalid(error),
+            };
             let capabilities = |major: u32| {
-                version_matrix::CAPABILITY_IDS
+                matrix
                     .iter()
-                    .filter_map(|id| {
-                        version_matrix::answer(major, id).map(|support| {
-                            format!("{{\"id\":\"{id}\",\"support\":\"{}\"}}", support.key())
-                        })
+                    .find(|row| row.major == major)
+                    .map(|row| {
+                        row.answers
+                            .iter()
+                            .map(|(id, support)| {
+                                format!("{{\"id\":\"{id}\",\"support\":\"{}\"}}", support.key())
+                            })
+                            .collect::<Vec<_>>()
+                            .join(",")
                     })
-                    .collect::<Vec<String>>()
-                    .join(",")
+                    .unwrap_or_default()
             };
             match version {
                 Some(pin) => {
@@ -9730,7 +9738,7 @@ fn storage_profile(engine: StorageEngineArg, version: Option<String>) -> DomainR
                             ))
                         }
                     };
-                    if version_matrix::row_for(parsed.major()).is_none() {
+                    if !matrix.iter().any(|row| row.major == parsed.major()) {
                         return DomainResult::unsupported_version(
                             lekalo_core::storage_engine::unsupported_failure("major-unpublished"),
                         );
@@ -9746,7 +9754,7 @@ fn storage_profile(engine: StorageEngineArg, version: Option<String>) -> DomainR
                     )
                 }
                 None => {
-                    let rows: Vec<String> = version_matrix::ROWS
+                    let rows: Vec<String> = matrix
                         .iter()
                         .map(|row| {
                             format!(

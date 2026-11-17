@@ -1,6 +1,0 @@
-{
-  "logical": true,
-  "name": "path-nfc-accepted",
-  "requiresNfc": true,
-  "value": "cafe/x.ts"
-}

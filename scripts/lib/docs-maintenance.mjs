@@ -116,7 +116,6 @@ export function protocolRecords() {
   // discovered protocol stays owned by the transitional unified
   // adapter README during the transition.
   const adapterSources = {
-    "node-typescript": { dirs: [join(ROOT,"adapters","node-typescript","src")], label: "adapters/node-typescript/src" },
     "php-laravel": {
       dirs: [join(ROOT,"adapters","php-laravel","vendor","lekalo-php","src"), join(ROOT,"adapters","php-laravel","vendor","lekalo-php-laravel","src")],
       label: "adapters/php-laravel/vendor",

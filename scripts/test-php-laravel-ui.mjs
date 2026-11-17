@@ -97,10 +97,10 @@ async function checkedJoin() {
       join(root, ".lekalo/cache/client-sdk/planner.json"),
     );
     const { createKernel, validateResolvedProjectProfile } = await import(
-      pathToFileURL(join(repoRoot, "adapters/node-typescript/src/kernel.mjs")).href
+      pathToFileURL(join(repoRoot, "tests/external/lekalo-typescript/adapters/node-typescript/src/kernel.mjs")).href
     );
     const { descriptor: generationComposite } = await import(
-      pathToFileURL(join(repoRoot, "adapters/node-typescript/src/generation-composite.mjs")).href
+      pathToFileURL(join(repoRoot, "tests/external/lekalo-typescript/adapters/node-typescript/src/generation-composite.mjs")).href
     );
     const profile = validateResolvedProjectProfile({
       id: "standalone",

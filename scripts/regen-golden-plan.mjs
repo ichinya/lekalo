@@ -10,7 +10,7 @@ import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
 
 const repo = path.resolve(fileURLToPath(import.meta.url), "..", "..");
-const adapterPath = path.join(repo, "adapters/node-typescript/adapter.mjs");
+const adapterPath = path.join(repo, "tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs");
 const adapter = await import(pathToFileURL(adapterPath).href);
 const kernelNs = adapter.__lekaloKernel;
 const nativeGate = adapter.__lekaloNativeGate;
@@ -21,7 +21,7 @@ const launchPolicy = adapter.__lekaloLaunchPolicy;
 if (!nativeGate || !workspace || !nativePlan || !launchPolicy) {
   process.stderr.write(
     "regen-golden-plan: the adapter bundle does not export the planner " +
-      "symbols; rebuild with `node adapters/node-typescript/build.mjs`\n",
+      "symbols; rebuild with `node tests/external/lekalo-typescript/adapters/node-typescript/build.mjs`\n",
   );
   process.exit(1);
 }

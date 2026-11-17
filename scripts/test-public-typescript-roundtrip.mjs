@@ -10,7 +10,7 @@ import {basename,dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 const repo=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 const binary=process.env.LEKALO_BIN??join(repo,'target/debug',process.platform==='win32'?'lekalo.exe':'lekalo');
-const adapter=join(repo,'adapters/node-typescript/adapter.mjs');
+const adapter=join(repo,'tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs');
 const fixtures=join(repo,'tests/fixtures/public-typescript-scan/planner');
 const require=createRequire((process.env.LEKALO_AJV_NODE_PATH??repo)+'/');
 assert.equal(require('ajv/package.json').version,'8.20.0');

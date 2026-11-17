@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {join, dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const root = join(repo, 'adapters/node-typescript');
+const root = join(repo, 'tests/external/lekalo-typescript/adapters/node-typescript');
 const binary = join(repo, 'target/debug/examples', process.platform === 'win32' ? 'typescript-native-contract.exe' : 'typescript-native-contract');
 const cli = join(repo, 'target/debug', process.platform === 'win32' ? 'lekalo.exe' : 'lekalo');
 const hash = bytes => 'sha256:' + createHash('sha256').update(bytes).digest('hex');

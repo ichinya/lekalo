@@ -1734,7 +1734,7 @@ mod tests {
     #[test]
     fn historical_scan_evidence_sequence_retains_its_original_field_positions() {
         let response = decode_response(include_bytes!(
-            "../../../../tests/fixtures/adapter-sdk/valid/r10-struct-scan-evidence-seq.json"
+            "../../../../tests/fixtures/target-protocol/r10-struct-scan-evidence-seq.json"
         ))
         .expect("the frozen 0.3.2 SDK response remains admissible");
         let entry = &response.result.unwrap().entries.unwrap()[0];
@@ -1748,11 +1748,11 @@ mod tests {
     fn historical_native_summary_sequences_retain_their_original_field_positions() {
         for bytes in [
             include_bytes!(
-                "../../../../tests/fixtures/adapter-sdk/valid/r10-native-plan-prefix-3.json"
+                "../../../../tests/fixtures/target-protocol/r10-native-plan-prefix-3.json"
             )
             .as_slice(),
             include_bytes!(
-                "../../../../tests/fixtures/adapter-sdk/valid/r10-native-plan-prefix-4.json"
+                "../../../../tests/fixtures/target-protocol/r10-native-plan-prefix-4.json"
             )
             .as_slice(),
         ] {

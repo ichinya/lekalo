@@ -1,8 +1,0 @@
-{
-  "logical": false,
-  "name": "scope-protected-recursive",
-  "scopeGrammar": true,
-  "scopeOk": true,
-  "touches": "ir",
-  "value": ".lekalo/**"
-}

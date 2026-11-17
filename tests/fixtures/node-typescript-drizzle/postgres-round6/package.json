@@ -1,7 +1,0 @@
-{
-  "name": "lekalo-drizzle-fixture-postgres-round6",
-  "private": true,
-  "dependencies": {
-    "drizzle-orm": "0.45.4"
-  }
-}
