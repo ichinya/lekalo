@@ -5358,7 +5358,10 @@ fn a_link_at_the_history_sidecar_is_refused_not_followed() {
     let root = sandbox.root.clone();
     drop(sandbox);
     assert!(!root.exists(), "the hostile fixture must be removed");
-    assert_eq!(std::fs::read(&foreign).expect("outside bytes survive"), ledger);
+    assert_eq!(
+        std::fs::read(&foreign).expect("outside bytes survive"),
+        ledger
+    );
     let _ = std::fs::remove_dir_all(&outside);
 }
 
