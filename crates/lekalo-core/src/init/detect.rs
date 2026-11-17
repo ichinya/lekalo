@@ -902,6 +902,21 @@ impl DiscoveryProviders {
     pub(crate) fn load(root: &Path) -> Result<Self, DomainResult> {
         Self::load_inner(root).map_err(|e| runtime::outcome(Err(e)))
     }
+    /// Root inference uses the nearest selected discovery services. Keep
+    /// their session and lock rooted at the declaring directory while
+    /// probing ancestors; an explicit embedding override remains authoritative.
+    pub(crate) fn load_for_ancestors(root: &Path) -> Result<Self, DomainResult> {
+        if std::env::var("LEKALO_SERVICES").is_ok() {
+            return Self::load(root);
+        }
+        for candidate in root.ancestors().take(crate::project_fs::MAX_WALK_DEPTH) {
+            let providers = Self::load(candidate)?;
+            if !providers.0.is_empty() {
+                return Ok(providers);
+            }
+        }
+        Ok(Self(Vec::new()))
+    }
     fn load_inner(root: &Path) -> runtime::Result<Self> {
         let mut providers = Vec::new();
         for provider in runtime::services::selected(root, "discovery")? {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createRequire} from 'node:module';
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,cpSync,rmSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,cpSync,rmSync,existsSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 const cli=process.env.LEKALO_BIN??resolve('target/debug/lekalo');
@@ -21,6 +21,7 @@ else if(req.operation==='discovery.inspect'){
  const path=mode==='forge'?'../outside':input.files[0].path;
  result={schema:api,manifests:[{path,detail:'zen'}],managers:[],hints:[{path,label:'zen',kind:'language',field:null,confidence:'high'}],workspaces:[],tools:[],gates:[],modules:[],names:[{path,name:'zen-example',source:'zen.project#name',priority:0}],refused:[]};
  if(mode==='version')result.schema='lekalo/discovery/v99';
+ if(mode==='workspace')result.workspaces=[{path:'.',ecosystem:'zen',members:['src/*'],confidence:'high'}];
  // No application filesystem view is granted to the provider process.
  try{readFileSync(${JSON.stringify(join(project,'.private'))});process.exit(99);}catch{}
  try{writeFileSync(${JSON.stringify(join(project,'.private'))},'changed');process.exit(99);}catch{}
@@ -32,8 +33,8 @@ process.stdout.write(JSON.stringify({protocol:req.protocol,request_id:req.reques
  writeFileSync(entry,code);writeFileSync(join(project,'.private'),'unchanged');emit(join(project,'zen.project'),{name:'zen-example'});
  const config={schema:'lekalo/runtime-config/v1',components:{},services:{'discovery/unknown':{command:[process.execPath,entry]}}};
  emit(join(project,'lekalo.yaml'),config);
- const run=args=>{const env={...process.env,LEKALO_PACKAGE_HOME:join(dir,'cache')};delete env.LEKALO_SERVICES;delete env.LEKALO_PROJECT;return spawnSync(cli,['--json',...args],{cwd:project,env,encoding:'utf8',timeout:120000});};
- const ok=args=>{const r=run(args);assert.equal(r.status,0,r.stderr||r.stdout);return JSON.parse(r.stdout);};
+ const run=(args,cwd=project)=>{const env={...process.env,LEKALO_PACKAGE_HOME:join(dir,'cache')};delete env.LEKALO_SERVICES;delete env.LEKALO_PROJECT;return spawnSync(cli,['--json',...args],{cwd,env,encoding:'utf8',timeout:120000});};
+ const ok=(args,cwd)=>{const r=run(args,cwd);assert.equal(r.status,0,r.stderr||r.stdout);return JSON.parse(r.stdout);};
  return {dir,project,entry,code,config,run,ok,save:()=>emit(join(project,'lekalo.yaml'),config)};
 }
 test('unknown discovery service is selected and locked without registering its language',t=>{
@@ -50,6 +51,22 @@ test('missing or stale service locks never silently disable configured discovery
  const f=fixture(t);let r=f.run(['init','--adopt','--project','.','--dry-run']);assert.notEqual(r.status,0);
  f.ok(['runtime','lock']);f.config.services['discovery/unknown'].command.push('changed');f.save();
  r=f.run(['init','--adopt','--project','.','--dry-run']);assert.notEqual(r.status,0);assert.match(r.stderr,/lock-stale/);
+});
+test('nested adoption resolves the locked ancestor discovery selection',t=>{
+ const f=fixture(t),nested=join(f.project,'src','nested');mkdirSync(nested,{recursive:true});
+ f.ok(['runtime','lock']);
+ const args=['init','--adopt','--dry-run'];
+ const r=f.ok(args,nested);
+ assert.equal(r.detection.basis,'manifest');assert.deepEqual(r.detection.candidates,['../..']);assert.equal(r.projectId,'zen_example');
+ assert(!existsSync(join(f.project,'lekalo')));assert(!existsSync(join(nested,'lekalo')));
+ emit(join(f.project,'zen.project'),{mode:'workspace'});
+ const workspace=f.ok(args,nested);assert.equal(workspace.detection.basis,'workspace-root');assert.deepEqual(workspace.detection.candidates,['../..']);
+ // Explicit root selection still wins over ancestor inference.
+ const explicit=f.ok([...args,'--project','.'],nested);assert.equal(explicit.detection.basis,'explicit');assert.equal(explicit.projectId,'nested');
+ // A stale ancestor selection must refuse rather than fall back to this cwd.
+ f.config.services['discovery/unknown'].command.push('changed');f.save();
+ const stale=f.run(args,nested);assert.notEqual(stale.status,0);assert.match(stale.stderr,/lock-stale/);
+ assert(!existsSync(join(nested,'lekalo')));
 });
 test('requirements providers cannot ask the host to read outside their declared root',t=>{
  const f=fixture(t);cpSync(resolve('tests/fixtures/requirements/planner'),f.project,{recursive:true});

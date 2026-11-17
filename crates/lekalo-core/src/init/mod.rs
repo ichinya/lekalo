@@ -123,7 +123,7 @@ fn resolve_root(selector: Option<&str>) -> Result<(PathBuf, RootBasis, Vec<Strin
             )],
         )
     })?;
-    let providers = detect::DiscoveryProviders::load(&cwd)?;
+    let providers = detect::DiscoveryProviders::load_for_ancestors(&cwd)?;
     let mut workspace_roots: Vec<(usize, PathBuf)> = Vec::new();
     let mut manifest_ancestor: Option<(usize, PathBuf)> = None;
     let mut current = cwd.clone();
