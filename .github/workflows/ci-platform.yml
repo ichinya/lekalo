@@ -650,7 +650,7 @@ jobs:
       - name: Run the conformance battery against the transport-configured adapter (issue #70)
         run: |
           set -euo pipefail
-          PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-transport/protocol/conformance.profile.json)
+          PROFILE_JSON=$(tr -d '[:space:]' < tests/external/lekalo-typescript/tests/fixtures/node-typescript-transport/protocol/conformance.profile.json)
           "$LEKALO_DEBUG_BIN" adapter test --profile default --report json -- node tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
       - name: Run the target adapter conformance suite against the reference adapter
         timeout-minutes: 10
