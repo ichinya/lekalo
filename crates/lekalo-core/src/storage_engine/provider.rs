@@ -21,8 +21,8 @@ pub(crate) fn call(operation: &str, input: Value) -> Result<Value, DiagnosticSet
         }),
     };
     let root = std::env::current_dir().map_err(|_| fail("provider-root"))?;
-    // One command uses one pinned provider snapshot. Re-hashing a large
-    // interpreter for every column would otherwise dominate DDL generation.
+    // One command retains one provider admission; each exchange verifies the
+    // original executable pins so concurrent upgrades cannot mix providers.
     thread_local! { static SESSION: std::cell::RefCell<Option<(String,crate::runtime::Session)>> = const { std::cell::RefCell::new(None) }; }
     let key = serde_json::to_string(&(root.to_string_lossy(), &source))
         .map_err(|_| fail("provider-config"))?;

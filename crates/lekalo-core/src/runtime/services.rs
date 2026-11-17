@@ -83,6 +83,7 @@ pub fn selected(root: &Path, role: &str) -> Result<Vec<Service>> {
                 session: Session {
                     root: root.to_path_buf(),
                     command: pin.command,
+                    files: pin.files,
                     package: pin.package,
                 },
             })
