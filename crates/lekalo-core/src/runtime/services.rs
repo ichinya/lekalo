@@ -53,15 +53,9 @@ pub fn selected(root: &Path, role: &str) -> Result<Vec<Service>> {
             })
             .collect();
     }
-    // An absent optional config is different from an unreadable/invalid one.
-    let fs = crate::project_fs::Fs::open(root).map_err(|_| error("project-unreadable"))?;
-    let bytes = fs
-        .read_file_opt("", config::CONFIG, 128 * 1024)
-        .map_err(|_| error("config-unreadable"))?;
-    let Some(bytes) = bytes else {
+    let Some(declaration) = optional_config(root)? else {
         return Ok(Vec::new());
     };
-    let declaration = config::decode(&bytes)?;
     if !declaration.services.keys().any(|id| matches(id)) {
         return Ok(Vec::new());
     }
@@ -89,6 +83,36 @@ pub fn selected(root: &Path, role: &str) -> Result<Vec<Service>> {
             })
         })
         .collect()
+}
+
+fn optional_config(root: &Path) -> Result<Option<config::Config>> {
+    use crate::project_fs::{Fs, FsErrorKind};
+    let fs = Fs::open(root).map_err(|_| error("project-unreadable"))?;
+    match fs.read_file_opt("", config::CONFIG, 128 * 1024) {
+        Ok(Some(bytes)) => config::decode(&bytes).map(Some),
+        Ok(None) | Err(FsErrorKind::NotFound) => Ok(None),
+        Err(_) => Err(error("config-unreadable")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn absent_service_config_is_optional_but_invalid_entries_refuse() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(optional_config(root.path()).unwrap().is_none());
+        let path = root.path().join(config::CONFIG);
+        std::fs::create_dir(&path).unwrap();
+        assert_eq!(
+            optional_config(root.path()).err().unwrap().detail,
+            "config-unreadable"
+        );
+        std::fs::remove_dir(&path).unwrap();
+        std::fs::write(&path, b"[invalid").unwrap();
+        assert!(optional_config(root.path()).is_err());
+    }
 }
 
 pub fn one(root: &Path, role: &str) -> Result<Service> {

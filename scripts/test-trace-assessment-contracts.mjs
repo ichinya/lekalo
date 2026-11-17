@@ -48,7 +48,10 @@ const bin = process.env.LEKALO_BIN ?? join(root, "target/debug", process.platfor
 const live = existsSync(bin);
 assert.ok(live || !process.argv.includes("--require-binary"), "built Lekalo binary required");
 const expectedExit = { valid: 0, invalid: 1, denied: 3 };
-function run(input, cwd = root, trace = "trace.json") {
+// Run the data-only provider from a fixture project. The host checkout contains
+// development junctions and is intentionally ineligible as a private LPAC root.
+const projectRoot = resolve(root, family, "greenfield");
+function run(input, cwd = projectRoot, trace = "trace.json") {
   return spawnSync(bin, ["--json", "trace", "assess", resolve(root, family, trace), "--evidence", input], { cwd, encoding: "utf8", timeout: 30000, maxBuffer: 32 * 1024 * 1024 });
 }
 const snapshot = (dir) => {
@@ -59,8 +62,8 @@ const snapshot = (dir) => {
 if (live) {
   const before = snapshot(resolve(root, family));
   for (const item of cases) {
-    const result = run(resolve(root, family, "input", `${item.id}.json`), root, item.trace);
-    assert.ifError(result.error); assert.equal(result.status, expectedExit[item.expect.status], item.id);
+    const result = run(resolve(root, family, "input", `${item.id}.json`), projectRoot, item.trace);
+    assert.ifError(result.error); assert.equal(result.status, expectedExit[item.expect.status], `${item.id}: ${result.stdout}\n${result.stderr}`);
     const stream = item.expect.status === "invalid" ? result.stderr : result.stdout;
     assert.equal(item.expect.status === "invalid" ? result.stdout : result.stderr, "", `${item.id}: wrong stream`);
     assert.deepEqual(JSON.parse(stream), read(`${family}/golden/${item.id}.json`), `${item.id}: golden drift`);

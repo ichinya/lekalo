@@ -30,9 +30,12 @@ export function externalRoot(name) {
 export function runExternal(name, script, args = process.argv.slice(2)) {
   const root = externalRoot(name);
   if (!script.startsWith('scripts/') || script.includes('..')) throw new Error('Invalid tool entry');
-  const binDir = process.env.CARGO_TARGET_DIR ? resolve(process.env.CARGO_TARGET_DIR, 'debug') : join(hostRoot,'target/debug');
+  const profile = process.env.RUNTIME_PROFILE ?? (script === 'scripts/test-node-native-tools.mjs' ? 'release' : 'debug');
+  if (!['debug','release'].includes(profile)) throw new Error('Invalid host build profile');
+  const target = process.env.CARGO_TARGET_DIR ? resolve(process.env.CARGO_TARGET_DIR) : join(hostRoot,'target');
+  const binDir = join(target,profile);
   const suffix = process.platform === 'win32' ? '.exe' : '';
-  const env = {...process.env, LEKALO_TYPESCRIPT_ROOT:externalRoot('lekalo-typescript'), LEKALO_BIN:process.env.LEKALO_BIN ?? join(binDir,'lekalo'+suffix), LEKALO_SDK_ORACLE:process.env.LEKALO_SDK_ORACLE ?? join(binDir,'adapter-sdk-oracle'+suffix)};
+  const env = {...process.env, LEKALO_TYPESCRIPT_ROOT:externalRoot('lekalo-typescript'), LEKALO_BIN:process.env.LEKALO_BIN ?? join(binDir,'lekalo'+suffix), LEKALO_SDK_ORACLE:process.env.LEKALO_SDK_ORACLE ?? join(target,'debug','adapter-sdk-oracle'+suffix)};
   if (script === 'scripts/test-adapter-sdk-vectors.mjs' && !process.env.LEKALO_SDK_ORACLE) {
     const build = spawnSync('cargo',['build','--locked','-p','lekalo-cli','--bin','adapter-sdk-oracle'],{cwd:hostRoot,stdio:'inherit'});
     if (build.status !== 0) process.exit(build.status ?? 1);

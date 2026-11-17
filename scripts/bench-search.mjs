@@ -126,6 +126,8 @@ rmSync(join(project, ".lekalo"), { recursive: true, force: true });
 // Privacy canaries and cache custody live in the CLI gate; the
 // benchmark uses the same empty offline environment.
 const offlineEnv = { PATH: process.env.PATH ?? "" };
+// Explicit local discovery executables are fixture inputs after extraction.
+if (process.env.LEKALO_SERVICES) offlineEnv.LEKALO_SERVICES = process.env.LEKALO_SERVICES;
 if (process.platform === "win32") offlineEnv.SystemRoot = process.env.SystemRoot ?? "";
 
 const runLekalo = (args, cwd = project) => {
