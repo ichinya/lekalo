@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawnSync, execFileSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 test('snapshots read committed source, detect drift and preserve edited copies', () => {
-  const scratch = mkdtempSync(join(tmpdir(), 'lekalo-package-custody-'));
+  const scratch = mkdtempSync(join(process.env.BB_THREAD_STORAGE ?? tmpdir(), 'lekalo-package-custody-'));
   try {
     const root = join(scratch, 'core'), adds = join(scratch, 'adds');
     mkdirSync(join(root, 'scripts'), { recursive: true });
@@ -17,13 +17,17 @@ test('snapshots read committed source, detect drift and preserve edited copies',
       ['lekalo-hlv', 'src/index.txt', 'packages/lekalo-hlv/src/index.txt'],
       ['lekalo-python', 'src/index.txt', 'adapters/python/src/index.txt'],
       ['lekalo-typescript', 'adapters/node-typescript/src/index.txt', 'adapters/node-typescript/src/index.txt'],
+      ['lekalo-go', 'crates/discovery/src/index.txt', 'packages/lekalo-go-discovery/src/index.txt'],
+      ['lekalo-rust', 'crates/discovery/src/index.txt', 'packages/lekalo-rust-discovery/src/index.txt'],
+      ['lekalo-typescript', 'crates/discovery/src/index.txt', 'packages/lekalo-typescript-discovery/src/index.txt'],
+      ['lekalo-python', 'crates/discovery/src/index.txt', 'packages/lekalo-python-discovery/src/index.txt'],
     ];
     for (const [name, source] of definitions) {
       const cwd = join(adds, name), path = join(cwd, source);
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, 'committed\n');
       const git = args => execFileSync('git', args, { cwd, stdio: 'pipe' });
-      git(['init', '-q']); git(['add', '.']);
+      if (!existsSync(join(cwd, '.git'))) git(['init', '-q']); git(['add', source]);
       git(['-c', 'user.name=Custody test', '-c', 'user.email=custody@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'fixture']);
       writeFileSync(path, 'uncommitted must not be supplied\n');
     }
@@ -32,6 +36,21 @@ test('snapshots read committed source, detect drift and preserve edited copies',
     });
     let result = run('--sync'); assert.equal(result.status, 0, result.stderr);
     for (const [, , destination] of definitions) assert.equal(readFileSync(join(root, destination), 'utf8'), 'committed\n');
+    assert.equal(run('--check').status, 0);
+    // Existing four-package locks can be upgraded without hiding missing
+    // packages in offline check mode or overwriting an unowned destination.
+    const receiptPath = join(root, 'external-packages.lock.json');
+    const complete = JSON.parse(readFileSync(receiptPath, 'utf8'));
+    const previous = {...complete, packages: complete.packages.slice(0, 4)};
+    writeFileSync(receiptPath, JSON.stringify(previous));
+    for (const [, , path] of definitions.slice(4)) rmSync(join(root, dirname(path).split('/').slice(0, 2).join('/')), {recursive:true});
+    assert.notEqual(run('--check').status, 0, 'incomplete lock must fail check');
+    const unowned = join(root, definitions[4][2]);
+    mkdirSync(dirname(unowned), {recursive:true}); writeFileSync(unowned, 'unowned work');
+    assert.notEqual(run('--sync').status, 0, 'new snapshot destination is protected');
+    assert.equal(readFileSync(unowned, 'utf8'), 'unowned work');
+    rmSync(unowned);
+    result = run('--sync'); assert.equal(result.status, 0, result.stderr);
     assert.equal(run('--check').status, 0);
     // The builder owns these untracked declaration maps, not the source lock.
     writeFileSync(join(root, 'adapters/node-typescript/src/libs.mjs'), '// generated');

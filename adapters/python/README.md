@@ -15,3 +15,18 @@ node --test tests/scan-protocol.test.mjs tests/fastapi.test.mjs
 Произвольный repo/ref и загрузка правил по компонентам требуют последующего resolver/provider API: [lekalo#239](https://github.com/ichinya/lekalo/issues/239), [lekalo#197](https://github.com/ichinya/lekalo/issues/197). Межпроцессные тесты с CLI ядра остаются host-conformance в основном репозитории.
 
 `ci/package-workflow.yml` — неактивный шаблон CI. Для автоматического запуска его нужно установить в `.github/workflows/` учётными данными с правом `workflow`; текущая публикация проверена локально.
+
+## Распознавание проектов для `init --adopt`
+
+`crates/discovery` владеет языковыми правилами обнаружения, перенесёнными из
+`lekalo-core/src/init/detect.rs`. Эта небольшая Rust-библиотека принимает
+байты/значения; обход каталогов, no-follow чтение, проверка путей и ограничения
+остаются в хосте. Команды build/test являются предложениями и не исполняются.
+
+```sh
+cargo test --locked --manifest-path crates/discovery/Cargo.toml
+```
+
+Ядро использует проверяемую копию в `packages/` с точным commit и SHA-256.
+Это переходный способ поставки host-side discovery, а не новый процессный
+runtime или resolver пакетов. Формат существующего adoption receipt сохраняется.

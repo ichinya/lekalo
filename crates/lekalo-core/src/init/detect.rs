@@ -57,15 +57,18 @@ pub(crate) const SKIP_DIRS: [&str; 18] = [
     ".hlv",
 ];
 
-/// Manifest file names and their closed ecosystem tokens.
-const MANIFESTS: [(&str, &str); 15] = [
-    ("package.json", "node"),
-    ("Cargo.toml", "rust"),
-    ("go.mod", "go"),
+// Package-owned language recognition. The host owns walk/read authority and
+// receipt admission; package code accepts data only and never touches the FS.
+use go::{go_module_path_bytes, go_work_members};
+use lekalo_go_discovery as go;
+use lekalo_python_discovery as python;
+use lekalo_rust_discovery as rust;
+use lekalo_typescript_discovery as node;
+use node::{node_scripts, node_workspace_members};
+use rust::{cargo_package_name_bytes, cargo_workspace_members, has_cargo_workspace};
+
+const OTHER_MANIFESTS: &[(&str, &str)] = &[
     ("composer.json", "php"),
-    ("pyproject.toml", "python"),
-    ("requirements.txt", "python"),
-    ("setup.py", "python"),
     ("Gemfile", "ruby"),
     ("pom.xml", "java"),
     ("build.gradle", "java"),
@@ -76,18 +79,28 @@ const MANIFESTS: [(&str, &str); 15] = [
     ("deno.jsonc", "deno"),
 ];
 
-/// Lockfile names and their closed package-manager tokens.
-const LOCKFILES: [(&str, &str); 9] = [
-    ("package-lock.json", "npm"),
-    ("npm-shrinkwrap.json", "npm"),
-    ("yarn.lock", "yarn"),
-    ("pnpm-lock.yaml", "pnpm"),
-    ("pnpm-workspace.yaml", "pnpm"),
-    ("bun.lockb", "bun"),
-    ("bun.lock", "bun"),
-    ("Cargo.lock", "cargo"),
-    ("composer.lock", "composer"),
-];
+fn manifests() -> impl Iterator<Item = &'static (&'static str, &'static str)> {
+    node::MANIFESTS
+        .iter()
+        .chain(rust::MANIFESTS)
+        .chain(go::MANIFESTS)
+        .chain(python::MANIFESTS)
+        .chain(OTHER_MANIFESTS)
+}
+
+fn lockfiles() -> impl Iterator<Item = &'static (&'static str, &'static str)> {
+    node::LOCKFILES
+        .iter()
+        .chain(rust::LOCKFILES)
+        .chain(&[("composer.lock", "composer")])
+}
+
+fn language_files() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> {
+    node::FILE_HINTS
+        .iter()
+        .chain(go::FILE_HINTS)
+        .chain(rust::FILE_HINTS)
+}
 
 /// Directory names recorded as source-directory evidence.
 const SOURCE_DIRS: [&str; 7] = ["src", "lib", "app", "source", "sources", "internal", "pkg"];
@@ -111,26 +124,6 @@ const OPENAPI_STEMS: [&str; 6] = [
     "swagger.json",
     "swagger.yaml",
     "swagger.yml",
-];
-
-/// `package.json` dependency label hints: (dependency, label, kind).
-const NODE_HINTS: [(&str, &str, HintKind); 16] = [
-    ("typescript", "typescript", HintKind::Language),
-    ("react", "react", HintKind::Framework),
-    ("vue", "vue", HintKind::Framework),
-    ("svelte", "svelte", HintKind::Framework),
-    ("@angular/core", "angular", HintKind::Framework),
-    ("next", "next", HintKind::Framework),
-    ("nuxt", "nuxt", HintKind::Framework),
-    ("express", "express", HintKind::Framework),
-    ("fastify", "fastify", HintKind::Framework),
-    ("@nestjs/core", "nestjs", HintKind::Framework),
-    ("vite", "vite", HintKind::Framework),
-    ("webpack", "webpack", HintKind::Framework),
-    ("jest", "jest", HintKind::Framework),
-    ("vitest", "vitest", HintKind::Framework),
-    ("@playwright/test", "playwright", HintKind::Framework),
-    ("cypress", "cypress", HintKind::Framework),
 ];
 
 /// Whether one hint is a language or a framework.
@@ -396,7 +389,7 @@ pub(crate) enum WorkspaceKind {
 
 /// Whether `dir` declares a workspace root, and of which ecosystem.
 pub(crate) fn workspace_marker(dir: &Path) -> Option<WorkspaceKind> {
-    let package = dir.join("package.json");
+    let package = dir.join(node::MODULE_MANIFEST);
     if package.is_file() {
         if let Some(value) = parse_json(&package) {
             if node_workspace_members(&value).is_some() {
@@ -404,17 +397,17 @@ pub(crate) fn workspace_marker(dir: &Path) -> Option<WorkspaceKind> {
             }
         }
     }
-    if dir.join("pnpm-workspace.yaml").is_file() {
-        if let Some(members) = pnpm_workspace_members(&dir.join("pnpm-workspace.yaml")) {
+    if dir.join(node::WORKSPACE_MANIFEST).is_file() {
+        if let Some(members) = pnpm_workspace_members(&dir.join(node::WORKSPACE_MANIFEST)) {
             if !members.is_empty() {
                 return Some(WorkspaceKind::Node);
             }
         }
     }
-    if dir.join("go.work").is_file() {
+    if dir.join(go::WORKSPACE_MANIFEST).is_file() {
         return Some(WorkspaceKind::Go);
     }
-    let cargo = dir.join("Cargo.toml");
+    let cargo = dir.join(rust::MODULE_MANIFEST);
     if cargo.is_file() {
         if let Some(bytes) = read_bounded(&cargo) {
             if has_cargo_workspace(&bytes) {
@@ -430,25 +423,7 @@ pub(crate) fn workspace_marker(dir: &Path) -> Option<WorkspaceKind> {
 
 /// Whether any closed ecosystem manifest exists directly in `dir`.
 pub(crate) fn any_manifest(dir: &Path) -> bool {
-    MANIFESTS.iter().any(|(name, _)| dir.join(name).is_file())
-}
-
-/// The `workspaces` member globs of one parsed `package.json`.
-fn node_workspace_members(value: &Value) -> Option<Vec<String>> {
-    let field = value.get("workspaces")?;
-    let items = match field {
-        Value::Array(items) => items.as_slice(),
-        Value::Object(map) => map.get("packages")?.as_array()?.as_slice(),
-        _ => return None,
-    };
-    Some(
-        items
-            .iter()
-            .filter_map(Value::as_str)
-            .filter(|glob| !glob.is_empty())
-            .map(str::to_owned)
-            .collect(),
-    )
+    manifests().any(|(name, _)| dir.join(name).is_file())
 }
 
 /// The `packages` member globs of one `pnpm-workspace.yaml`.
@@ -465,7 +440,7 @@ fn pnpm_workspace_members_bytes(bytes: &[u8]) -> Option<Vec<String>> {
         crate::loader::frontends::Parsed::Root(node) => node,
         crate::loader::frontends::Parsed::Empty => return Some(Vec::new()),
     };
-    let packages = root.get("packages")?.as_seq()?;
+    let packages = root.get(node::WORKSPACE_MEMBERS_FIELD)?.as_seq()?;
     Some(
         packages
             .iter()
@@ -474,124 +449,10 @@ fn pnpm_workspace_members_bytes(bytes: &[u8]) -> Option<Vec<String>> {
     )
 }
 
-/// Whether Cargo.toml bytes declare a `[workspace]` section.
-fn has_cargo_workspace(bytes: &[u8]) -> bool {
-    std::str::from_utf8(bytes)
-        .map(|text| {
-            text.lines().any(|line| {
-                let line = line.trim();
-                line == "[workspace]" || line.starts_with("[workspace.")
-            })
-        })
-        .unwrap_or(false)
-}
-
-/// The `use (...)` member directories of one `go.work`.
-fn go_work_members(bytes: &[u8]) -> Vec<String> {
-    let Ok(text) = std::str::from_utf8(bytes) else {
-        return Vec::new();
-    };
-    let mut members = Vec::new();
-    let mut inside = false;
-    for line in text.lines() {
-        let line = line.split("//").next().unwrap_or("").trim();
-        if line == "use (" {
-            inside = true;
-            continue;
-        }
-        if inside && line == ")" {
-            break;
-        }
-        if inside {
-            if let Some(member) = line.strip_prefix("./") {
-                members.push(member.to_owned());
-            } else if !line.is_empty() {
-                members.push(line.to_owned());
-            }
-            if members.len() >= MAX_PER_COLLECTION {
-                break;
-            }
-        }
-    }
-    members
-}
-
-/// The `[workspace] members` of one Cargo.toml (line-scan evidence).
-fn cargo_workspace_members(bytes: &[u8]) -> Vec<String> {
-    let Ok(text) = std::str::from_utf8(bytes) else {
-        return Vec::new();
-    };
-    let mut members = Vec::new();
-    let mut inside = false;
-    for line in text.lines() {
-        let line = line.split('#').next().unwrap_or("").trim();
-        if !inside {
-            inside = line == "members = [" || line.starts_with("members = [");
-            let inline = line.trim_start_matches("members = [").trim_end_matches(']');
-            if inside {
-                for part in inline.split(',') {
-                    push_member(&mut members, part);
-                }
-                if line.ends_with(']') {
-                    break;
-                }
-                continue;
-            }
-            continue;
-        }
-        if line.starts_with(']') || line.ends_with(']') {
-            push_member(&mut members, line.trim_end_matches(']'));
-            break;
-        }
-        push_member(&mut members, line);
-        if members.len() >= MAX_PER_COLLECTION {
-            break;
-        }
-    }
-    members
-}
-
-/// Push one quoted member entry if it is non-empty.
-fn push_member(members: &mut Vec<String>, raw: &str) {
-    let raw = raw
-        .trim()
-        .trim_end_matches(',')
-        .trim()
-        .trim_matches('"')
-        .trim_matches('\'');
-    if !raw.is_empty() && members.len() < MAX_PER_COLLECTION {
-        members.push(raw.to_owned());
-    }
-}
-
 /// The `[package] name` of one Cargo.toml (line-scan evidence).
 pub(crate) fn cargo_package_name(path: &Path) -> Option<String> {
     let bytes = read_bounded(path)?;
     cargo_package_name_bytes(&bytes)
-}
-
-fn cargo_package_name_bytes(bytes: &[u8]) -> Option<String> {
-    let text = std::str::from_utf8(bytes).ok()?;
-    let mut inside = false;
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') {
-            inside = trimmed == "[package]";
-            continue;
-        }
-        if inside {
-            if let Some(rest) = trimmed.strip_prefix("name") {
-                let rest = rest.trim_start();
-                if let Some(rest) = rest.strip_prefix('=') {
-                    let value = rest.trim().trim_matches('"');
-                    if !value.is_empty() {
-                        return Some(value.to_owned());
-                    }
-                }
-            }
-        }
-    }
-    None
 }
 
 /// The npm/composer package name of one JSON manifest.
@@ -603,26 +464,6 @@ pub(crate) fn json_name(path: &Path) -> Option<String> {
 pub(crate) fn go_module_path(path: &Path) -> Option<String> {
     let bytes = read_bounded(path)?;
     go_module_path_bytes(&bytes)
-}
-
-fn go_module_path_bytes(bytes: &[u8]) -> Option<String> {
-    let text = std::str::from_utf8(bytes).ok()?;
-    for line in text.lines() {
-        let line = line.trim();
-        if let Some(rest) = line.strip_prefix("module ") {
-            return Some(rest.trim().to_owned());
-        }
-    }
-    None
-}
-
-/// The declared script names of one parsed `package.json`.
-fn node_scripts(value: &Value) -> Vec<String> {
-    value
-        .get("scripts")
-        .and_then(Value::as_object)
-        .map(|scripts| scripts.keys().cloned().collect())
-        .unwrap_or_default()
 }
 
 /// Run the full closed detection pass over one adopted root.
@@ -696,7 +537,7 @@ pub(crate) fn detect(
             .file_name()
             .map(|name| name.to_string_lossy().into_owned());
         let Some(name) = name else { continue };
-        if let Some((_, ecosystem)) = MANIFESTS.iter().find(|(stem, _)| *stem == name) {
+        if let Some((_, ecosystem)) = manifests().find(|(stem, _)| *stem == name) {
             if detection.manifests.len() < MAX_PER_COLLECTION {
                 detection.manifests.push(Evidence {
                     path: entry.path.clone(),
@@ -704,7 +545,7 @@ pub(crate) fn detect(
                 });
             }
         }
-        if let Some((_, manager)) = LOCKFILES.iter().find(|(stem, _)| *stem == name) {
+        if let Some((_, manager)) = lockfiles().find(|(stem, _)| *stem == name) {
             if detection.package_managers.len() < MAX_PER_COLLECTION {
                 detection.package_managers.push(Evidence {
                     path: entry.path.clone(),
@@ -712,7 +553,7 @@ pub(crate) fn detect(
                 });
             }
         }
-        if name == "package.json" {
+        if name == node::MODULE_MANIFEST {
             if let Some(value) = walk.json(&entry.path) {
                 scan_node_manifest(&entry.path, &value, &mut detection);
                 if node_manifests.len() < MAX_PER_COLLECTION {
@@ -731,39 +572,19 @@ pub(crate) fn detect(
         if name == "artisan" {
             artisan_paths.insert(entry.path.clone());
         }
-        if name == "tsconfig.json" && detection.languages.len() < MAX_PER_COLLECTION {
+        for (_, label, confidence) in language_files().filter(|(file, _, _)| *file == name) {
             push_hint(
                 &mut detection.languages,
                 Hint {
-                    label: "typescript".to_owned(),
-                    kind: HintKind::Language.as_str(),
+                    label: (*label).to_owned(),
+                    kind: "language",
                     path: entry.path.clone(),
                     field: None,
-                    confidence: Confidence::Medium,
-                },
-            );
-        }
-        if name == "go.mod" {
-            push_hint(
-                &mut detection.languages,
-                Hint {
-                    label: "go".to_owned(),
-                    kind: HintKind::Language.as_str(),
-                    path: entry.path.clone(),
-                    field: None,
-                    confidence: Confidence::High,
-                },
-            );
-        }
-        if name == "Cargo.toml" {
-            push_hint(
-                &mut detection.languages,
-                Hint {
-                    label: "rust".to_owned(),
-                    kind: HintKind::Language.as_str(),
-                    path: entry.path.clone(),
-                    field: None,
-                    confidence: Confidence::High,
+                    confidence: if *confidence == "high" {
+                        Confidence::High
+                    } else {
+                        Confidence::Medium
+                    },
                 },
             );
         }
@@ -813,12 +634,12 @@ pub(crate) fn detect(
         }
         let (ecosystem, members) = match kind {
             WorkspaceKind::Node => {
-                let manifest = child_path(&path, "package.json");
+                let manifest = child_path(&path, node::MODULE_MANIFEST);
                 let members = walk
                     .json(&manifest)
                     .and_then(|value| node_workspace_members(&value))
                     .or_else(|| {
-                        walk.read(&child_path(&path, "pnpm-workspace.yaml"))
+                        walk.read(&child_path(&path, node::WORKSPACE_MANIFEST))
                             .and_then(|bytes| pnpm_workspace_members_bytes(&bytes))
                     })
                     .unwrap_or_default();
@@ -826,14 +647,14 @@ pub(crate) fn detect(
             }
             WorkspaceKind::Go => (
                 "go",
-                walk.read(&child_path(&path, "go.work"))
-                    .map(|bytes| go_work_members(&bytes))
+                walk.read(&child_path(&path, go::WORKSPACE_MANIFEST))
+                    .map(|bytes| go_work_members(&bytes, MAX_PER_COLLECTION))
                     .unwrap_or_default(),
             ),
             WorkspaceKind::Rust => (
                 "rust",
-                walk.read(&child_path(&path, "Cargo.toml"))
-                    .map(|bytes| cargo_workspace_members(&bytes))
+                walk.read(&child_path(&path, rust::MODULE_MANIFEST))
+                    .map(|bytes| cargo_workspace_members(&bytes, MAX_PER_COLLECTION))
                     .unwrap_or_default(),
             ),
             WorkspaceKind::Gradle => ("gradle", Vec::new()),
@@ -851,7 +672,7 @@ pub(crate) fn detect(
         if entry.is_dir {
             continue;
         }
-        if matches!(entry.path.as_str(), "lerna.json" | "turbo.json" | "nx.json") {
+        if node::MONOREPO_TOOLS.contains(&entry.path.as_str()) {
             detection.monorepo_tools.push(Evidence {
                 path: entry.path.clone(),
                 detail: "monorepo-tooling".to_owned(),
@@ -918,11 +739,11 @@ pub(crate) fn detect(
         .package_managers
         .iter()
         .map(|evidence| evidence.detail.as_str())
-        .find(|manager| matches!(*manager, "npm" | "yarn" | "pnpm" | "bun"))
+        .find(|manager| node::MANAGERS.contains(manager))
         .unwrap_or("npm")
         .to_owned();
     for (path, value) in &node_manifests {
-        let runner = if *path == "package.json" {
+        let runner = if *path == node::MODULE_MANIFEST {
             node_manager.as_str()
         } else {
             "npm"
@@ -938,7 +759,7 @@ pub(crate) fn detect(
                 });
             }
         }
-        if *path == "package.json" {
+        if *path == node::MODULE_MANIFEST {
             break;
         }
     }
@@ -959,21 +780,19 @@ pub(crate) fn detect(
         }
     }
     for manifest in &detection.manifests {
-        let commands = match manifest.path.rsplit('/').next() {
-            Some("go.mod") => Some([("build", "go build ./..."), ("test", "go test ./...")]),
-            Some("Cargo.toml") => Some([("build", "cargo build"), ("test", "cargo test")]),
-            _ => None,
-        };
-        if let Some(commands) = commands {
-            for (gate, command) in commands {
-                detection.gates.push(GateProposal {
-                    gate,
-                    command: command.to_owned(),
-                    source: "derived",
-                    evidence: manifest.path.clone(),
-                    confidence: Confidence::Medium,
-                });
-            }
+        let name = manifest.path.rsplit('/').next().unwrap_or("");
+        for (_, gate, command) in go::GATES
+            .iter()
+            .chain(rust::GATES)
+            .filter(|(file, _, _)| *file == name)
+        {
+            detection.gates.push(GateProposal {
+                gate,
+                command: (*command).to_owned(),
+                source: "derived",
+                evidence: manifest.path.clone(),
+                confidence: Confidence::Medium,
+            });
         }
     }
 
@@ -1063,22 +882,22 @@ fn child_path(directory: &str, name: &str) -> String {
 /// new directory or manifest outside the scoped walk.
 fn workspace_marker_in(walk: &Walk, directory: &str) -> Option<WorkspaceKind> {
     if walk
-        .json(&child_path(directory, "package.json"))
+        .json(&child_path(directory, node::MODULE_MANIFEST))
         .as_ref()
         .and_then(node_workspace_members)
         .is_some()
         || walk
-            .read(&child_path(directory, "pnpm-workspace.yaml"))
+            .read(&child_path(directory, node::WORKSPACE_MANIFEST))
             .and_then(|bytes| pnpm_workspace_members_bytes(&bytes))
             .is_some_and(|members| !members.is_empty())
     {
         return Some(WorkspaceKind::Node);
     }
-    if walk.has_file(&child_path(directory, "go.work")) {
+    if walk.has_file(&child_path(directory, go::WORKSPACE_MANIFEST)) {
         return Some(WorkspaceKind::Go);
     }
     if walk
-        .read(&child_path(directory, "Cargo.toml"))
+        .read(&child_path(directory, rust::MODULE_MANIFEST))
         .is_some_and(|bytes| has_cargo_workspace(&bytes))
     {
         return Some(WorkspaceKind::Rust);
@@ -1148,30 +967,31 @@ fn expand_member_glob(walk: &Walk, workspace: &WorkspaceRoot, glob: &str) -> Vec
             continue;
         }
         let Some(manifest) = [
-            "package.json",
+            node::MODULE_MANIFEST,
             "composer.json",
-            "go.mod",
-            "Cargo.toml",
-            "pyproject.toml",
+            go::MODULE_MANIFEST,
+            rust::MODULE_MANIFEST,
+            python::MODULE_MANIFEST,
         ]
         .into_iter()
         .map(|name| child_path(&entry.path, name))
         .find(|path| walk.has_file(path)) else {
             continue;
         };
-        let name = if manifest.ends_with("package.json") || manifest.ends_with("composer.json") {
-            walk.json(&manifest)
-                .and_then(|value| value.get("name").and_then(Value::as_str).map(str::to_owned))
-        } else if manifest.ends_with("Cargo.toml") {
-            walk.read(&manifest)
-                .and_then(|bytes| cargo_package_name_bytes(&bytes))
-        } else if manifest.ends_with("go.mod") {
-            walk.read(&manifest)
-                .and_then(|bytes| go_module_path_bytes(&bytes))
-                .map(|module| module.rsplit('/').next().unwrap_or(&module).to_owned())
-        } else {
-            None
-        };
+        let name =
+            if manifest.ends_with(node::MODULE_MANIFEST) || manifest.ends_with("composer.json") {
+                walk.json(&manifest)
+                    .and_then(|value| value.get("name").and_then(Value::as_str).map(str::to_owned))
+            } else if manifest.ends_with(rust::MODULE_MANIFEST) {
+                walk.read(&manifest)
+                    .and_then(|bytes| cargo_package_name_bytes(&bytes))
+            } else if manifest.ends_with(go::MODULE_MANIFEST) {
+                walk.read(&manifest)
+                    .and_then(|bytes| go_module_path_bytes(&bytes))
+                    .map(|module| module.rsplit('/').next().unwrap_or(&module).to_owned())
+            } else {
+                None
+            };
         modules.push(ObservedModule {
             name: name.unwrap_or_else(|| relative.to_owned()),
             path: entry.path.clone(),
@@ -1196,26 +1016,17 @@ fn gate_name(script: &str) -> Option<&'static str> {
 
 /// Apply the closed node dependency hint table to one manifest.
 fn scan_node_manifest(path: &str, value: &Value, detection: &mut Detection) {
-    for field in ["dependencies", "devDependencies", "peerDependencies"] {
-        let Some(map) = value.get(field).and_then(Value::as_object) else {
-            continue;
-        };
-        for (dependency, _) in map {
-            if let Some((_, label, kind)) =
-                NODE_HINTS.iter().find(|(name, _, _)| name == dependency)
-            {
-                push_hint(
-                    &mut detection.languages,
-                    Hint {
-                        label: (*label).to_owned(),
-                        kind: kind.as_str(),
-                        path: path.to_owned(),
-                        field: Some(field.to_owned()),
-                        confidence: Confidence::High,
-                    },
-                );
-            }
-        }
+    for (label, kind, field) in node::dependency_hints(value) {
+        push_hint(
+            &mut detection.languages,
+            Hint {
+                label: label.to_owned(),
+                kind,
+                path: path.to_owned(),
+                field: Some(field.to_owned()),
+                confidence: Confidence::High,
+            },
+        );
     }
 }
 

@@ -66,7 +66,7 @@
     {
       "name": "lekalo-python",
       "repository": "https://github.com/ichinya/lekalo-python",
-      "commit": "ae68b2eef0ecafb7339cb06a6e438fb39213cd19",
+      "commit": "41b54fd48700896c52eb4df98e2cd4282211e64d",
       "files": {
         "adapters/python/Cargo.lock": {
           "source": "Cargo.lock",
@@ -78,7 +78,7 @@
         },
         "adapters/python/README.md": {
           "source": "README.md",
-          "sha256": "sha256:d3682c3963930d430ab86bcf0071ca53163bef066bfbd1e7e6d61dca67996fae"
+          "sha256": "sha256:c732fa056fdeef7bc792fa40eec68d212b1dc1e2b2474df8a69b04e800779614"
         },
         "adapters/python/framework-source.lock.json": {
           "source": "framework-source.lock.json",
@@ -213,7 +213,7 @@
     {
       "name": "lekalo-typescript",
       "repository": "https://github.com/ichinya/lekalo-typescript",
-      "commit": "874ca001b00a568c284e9a97d4b5b394e23b4b5a",
+      "commit": "b97825887f64680e383a2f47ec99179f6330a77c",
       "files": {
         "adapters/node-typescript/.gitignore": {
           "source": "adapters/node-typescript/.gitignore",
@@ -558,6 +558,110 @@
         "adapters/node-typescript/typescript-native-notices.txt": {
           "source": "adapters/node-typescript/typescript-native-notices.txt",
           "sha256": "sha256:f5c708b59114507b8b27b48181b6883d106bbca0c1634bbee45b5e344237b66b"
+        }
+      }
+    },
+    {
+      "name": "lekalo-go-discovery",
+      "repository": "https://github.com/ichinya/lekalo-go",
+      "commit": "9598f9a2aa82ab32bcae8e5340e2b57e1b1895fc",
+      "files": {
+        "packages/lekalo-go-discovery/Cargo.lock": {
+          "source": "crates/discovery/Cargo.lock",
+          "sha256": "sha256:30b3bb2d62e7236d260b4c14307636540adcbb183b02c9cd3567a34fa97ddf87"
+        },
+        "packages/lekalo-go-discovery/Cargo.toml": {
+          "source": "crates/discovery/Cargo.toml",
+          "sha256": "sha256:9b21d852f21c36414dbb32ab3aa4c2f5784eaca4a10ec824aea2b43044f9a4d2"
+        },
+        "packages/lekalo-go-discovery/README.md": {
+          "source": "crates/discovery/README.md",
+          "sha256": "sha256:2581c727e94adbc0eda357629df98ec1ec9696e1237dc494d28ebda0e8fcb0ce"
+        },
+        "packages/lekalo-go-discovery/src/lib.rs": {
+          "source": "crates/discovery/src/lib.rs",
+          "sha256": "sha256:dbe6043bada4c5636943d46316f292b7d6a3fc2054ee7c6420e8c9b4efdb26ee"
+        },
+        "packages/lekalo-go-discovery/tests/discovery.rs": {
+          "source": "crates/discovery/tests/discovery.rs",
+          "sha256": "sha256:31fe22625fe46cbb8566e403dcde25cf72a46e9a83c3d8ce83d32aef099a769e"
+        }
+      }
+    },
+    {
+      "name": "lekalo-rust-discovery",
+      "repository": "https://github.com/ichinya/lekalo-rust",
+      "commit": "691e07c85695d70cc2e919fdaf5b621ec9d877b4",
+      "files": {
+        "packages/lekalo-rust-discovery/Cargo.lock": {
+          "source": "crates/discovery/Cargo.lock",
+          "sha256": "sha256:aeae6b7e0653eb53d23813e36500861c55001d80cd23a5779074c030d0bd1a15"
+        },
+        "packages/lekalo-rust-discovery/Cargo.toml": {
+          "source": "crates/discovery/Cargo.toml",
+          "sha256": "sha256:bda880c3e1dd2d80607109afa8b8277e720d945f036009bdaed9510b5dfeb5c6"
+        },
+        "packages/lekalo-rust-discovery/README.md": {
+          "source": "crates/discovery/README.md",
+          "sha256": "sha256:4fb6c31fc8eced937a3d478e54cca41f9867ba1b30fdcf0e12303f473e7f07dd"
+        },
+        "packages/lekalo-rust-discovery/src/lib.rs": {
+          "source": "crates/discovery/src/lib.rs",
+          "sha256": "sha256:a8a48c655e985688579eaa6618527bd30b5ee8be1f5f52dfe8d859ba5c315396"
+        },
+        "packages/lekalo-rust-discovery/tests/discovery.rs": {
+          "source": "crates/discovery/tests/discovery.rs",
+          "sha256": "sha256:f0e04caa6896516bee45d99930878c3405d9bafd101f95b014aba74b4f4ad0d2"
+        }
+      }
+    },
+    {
+      "name": "lekalo-typescript-discovery",
+      "repository": "https://github.com/ichinya/lekalo-typescript",
+      "commit": "b97825887f64680e383a2f47ec99179f6330a77c",
+      "files": {
+        "packages/lekalo-typescript-discovery/Cargo.lock": {
+          "source": "crates/discovery/Cargo.lock",
+          "sha256": "sha256:96101e4f6fec6b21cfa2db09efd2a362ced9a00ee3a436c57a0ae66b0344ec38"
+        },
+        "packages/lekalo-typescript-discovery/Cargo.toml": {
+          "source": "crates/discovery/Cargo.toml",
+          "sha256": "sha256:8212d089597ba5c5b12341e74831f11d1ab6339cae48ce8ddfa1a4ff11d22182"
+        },
+        "packages/lekalo-typescript-discovery/README.md": {
+          "source": "crates/discovery/README.md",
+          "sha256": "sha256:de460632833c558821c2734381b5fb602d1df577c735d07acf7f0c86181658d1"
+        },
+        "packages/lekalo-typescript-discovery/src/lib.rs": {
+          "source": "crates/discovery/src/lib.rs",
+          "sha256": "sha256:75245838397d4ab89981600181103980931c99e6cfaea3e0ef08c1403ab8e045"
+        },
+        "packages/lekalo-typescript-discovery/tests/discovery.rs": {
+          "source": "crates/discovery/tests/discovery.rs",
+          "sha256": "sha256:6b7c6b14a6eb57951c468508efce6a71dd485985b5b554cbcebf4b848c5bb4ea"
+        }
+      }
+    },
+    {
+      "name": "lekalo-python-discovery",
+      "repository": "https://github.com/ichinya/lekalo-python",
+      "commit": "41b54fd48700896c52eb4df98e2cd4282211e64d",
+      "files": {
+        "packages/lekalo-python-discovery/Cargo.lock": {
+          "source": "crates/discovery/Cargo.lock",
+          "sha256": "sha256:939989898848c60ec6ea43085c087da535669ecef659b9c142fe09b9a91148c1"
+        },
+        "packages/lekalo-python-discovery/Cargo.toml": {
+          "source": "crates/discovery/Cargo.toml",
+          "sha256": "sha256:ecf4ec01c319bd0eb47f8f9a0e140485294a62db9db7a972f4ce6fc55a81c3b2"
+        },
+        "packages/lekalo-python-discovery/README.md": {
+          "source": "crates/discovery/README.md",
+          "sha256": "sha256:813c45993010553cce617a43f68ad6368c5fd80962607cc505b9f99b74c75cc5"
+        },
+        "packages/lekalo-python-discovery/src/lib.rs": {
+          "source": "crates/discovery/src/lib.rs",
+          "sha256": "sha256:c6d66c3f12f15c2540262b8de854360c385f5b9843ffc9716b5f6abf8e7ee83d"
         }
       }
     }

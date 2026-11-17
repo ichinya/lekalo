@@ -11,6 +11,8 @@ the model, generic trace/requirements reports, and public contract comparison.
 | `ichinya/lekalo-python` | Python language scanning and process entry | `adapters/python` |
 | `ichinya/lekalo-python-fastapi` | FastAPI registration analysis | pinned dependency of `lekalo-python` |
 | `ichinya/lekalo-typescript` | TypeScript runtime, compiler client, generators and existing extensions | `adapters/node-typescript` |
+| `ichinya/lekalo-go` | Go module/workspace discovery and conventional gate proposals | `packages/lekalo-go-discovery` |
+| `ichinya/lekalo-rust` | Cargo package/workspace discovery and conventional gate proposals | `packages/lekalo-rust-discovery` |
 | `ichinya/lekalo-openspec` | OpenSpec parsing, catalog projection and conflict semantics | `packages/lekalo-openspec` |
 | `ichinya/lekalo-hlv` | HLV revision mapping policy | `packages/lekalo-hlv` |
 
@@ -33,6 +35,31 @@ source receipt. Framework packages do not import private runtime symbol types.
 
 CI check mode needs no source checkouts and no network. Source and dependency
 commits must be published before the consuming core change is merged.
+
+## Language discovery ownership
+
+`crates/discovery` in `lekalo-go`, `lekalo-rust`, `lekalo-typescript` and
+`lekalo-python` owns the corresponding adoption rules. Core supplies these four
+libraries in `packages/lekalo-*-discovery`, pinned by the same source lock. The
+TypeScript package owns npm/pnpm recognition and dependency hints; Python owns
+its manifest catalog. Their process runtimes remain in the existing snapshots.
+
+Package discovery accepts bytes or parsed values. Core retains filesystem
+capabilities, depth/entry/read limits, workspace-member path validation, ordering,
+deduplication and the existing receipt schema. Conventional build/test commands
+are proposals, never executed by discovery. No new user config is introduced.
+The workspace still has two core crates; these libraries are external dependencies.
+
+Go/Rust service runtimes do not yet exist. The extracted code is real project
+recognition previously maintained by core; generation, scanning and runtime
+conformance stay in `lekalo-go#1` / `lekalo-rust#1`. Workspace detection during
+adoption is distinct from future parent/child orchestration and API contracts.
+
+The owning packages have standalone tests. Core's `discovery_packages` integration
+suite imports those exact pinned regression tests, and CLI adoption tests check
+mixed-language workspace membership and read-only behavior. Source sync accepts
+an older lock when adding packages, but offline check requires every current pin.
+A new snapshot destination cannot overwrite unowned files.
 
 ## PHP composition
 
