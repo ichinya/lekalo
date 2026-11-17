@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { serviceBinaries } from './lib/external-services.mjs';
 import { prepare, verify } from './ci-contracts-cli.mjs';
 
 const sourceSha = 'a'.repeat(40);
@@ -14,7 +15,10 @@ function fixture(t) {
   const binary = join(root, 'built-cli');
   const directory = join(root, 'artifact');
   writeFileSync(binary, 'fixture executable bytes');
-  const options = { sourceSha, platform: 'linux', arch: 'x64' };
+  const services = join(root, 'services');
+  mkdirSync(services);
+  for (const name of serviceBinaries) writeFileSync(join(services, name), 'fixture service bytes');
+  const options = { services, sourceSha, platform: 'linux', arch: 'x64' };
   return { root, binary, directory, options,
     prepare: () => prepare({ binary, destination: directory, ...options }),
     verify: overrides => verify({ directory, ...options, ...overrides }),
@@ -53,7 +57,7 @@ test('tampered binary or truncated download cannot pass digest verification', t 
 
 test('manifest cannot select paths, platforms, versions or invalid sizes and hashes', t => {
   const changes = [
-    m => { m.binary = '../built-cli'; }, m => { m.schemaVersion = 2; },
+    m => { m.binary = '../built-cli'; }, m => { m.schemaVersion = 3; },
     m => { m.platform = 'win32'; }, m => { m.arch = 'arm64'; },
     m => { m.bytes = 0; }, m => { m.bytes = '24'; }, m => { m.sha256 = 'bad'; },
   ];
@@ -101,6 +105,7 @@ test('stripped Linux executable retains behavior and hashes the copy without cha
   const source = join(f.root, 'main.c');
   writeFileSync(source, '#include <stdio.h>\nint main(void) { puts("contracts CLI fixture"); return 0; }\n');
   execFileSync('cc', ['-g', source, '-o', f.binary]);
+  for (const name of serviceBinaries) writeFileSync(join(f.options.services, name), readFileSync(f.binary));
   const original = readFileSync(f.binary);
   const expected = execFileSync(f.binary, [], { encoding: 'utf8' });
   const manifest = prepare({ binary: f.binary, destination: f.directory, ...f.options, stripSymbols: true });
@@ -153,4 +158,15 @@ test('CLI refuses a workflow SHA different from the actual checkout before using
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Checkout SHA differs from GITHUB_SHA/);
   assert.equal(existsSync(f.directory), false);
+});
+
+for (const kind of ['missing', 'tampered', 'extra-manifest-entry']) test(`service artifact ${kind} fails before execution`, t => {
+  const f = fixture(t); f.prepare();
+  const path = join(f.directory, 'external-services/debug', serviceBinaries[0]);
+  chmodSync(join(f.directory, 'lekalo'), 0o644);
+  if (kind === 'missing') unlinkSync(path);
+  else if (kind === 'tampered') writeFileSync(path, 'tampered');
+  else f.mutate(m => { m.services['foreign-service'] = m.services[serviceBinaries[0]]; });
+  assert.throws(() => f.verify(), /ENOENT|service/);
+  if (process.platform !== 'win32') assert.equal(statSync(join(f.directory, 'lekalo')).mode & 0o777, 0o644);
 });

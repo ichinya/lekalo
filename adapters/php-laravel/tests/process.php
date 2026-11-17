@@ -134,6 +134,9 @@ check($probe['exit'] === 0, 'version probe exits cleanly');
 $metadata = json_decode(trim($probe['stdout']), true);
 check(($metadata['adapter'] ?? '') === ADAPTER_ID && isset($metadata['php']), 'version probe shape');
 
+$sourceProbe = shell_exec(escapeshellarg(PHP_BINARY) . ' -n ' . escapeshellarg(dirname(__DIR__) . '/main.php') . ' --version-json');
+check(json_decode((string) $sourceProbe, true) === $metadata, 'source entry preserves the artifact identity');
+
 // --- packaging determinism --------------------------------------------------
 
 $build = dirname(__DIR__) . '/build.php';

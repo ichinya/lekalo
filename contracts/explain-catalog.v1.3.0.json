@@ -27513,6 +27513,180 @@
       "title": "PHP routes map failure"
     },
     {
+      "category": "adapter",
+      "checks": "The rule checks runtime protocol compatibility, immutable package pins, execution confinement and portable rule results.",
+      "code": "LEK-RUNTIME-001",
+      "docsLinks": [
+        {
+          "url": "https://dev.lekalo/docs/0.8.0/external-runtimes.md",
+          "version": "0.8.0"
+        }
+      ],
+      "examples": [
+        {
+          "after": "# Review the runtime and rules changes, then refresh the pins.\nlekalo runtime lock --project .\nlekalo runtime check --project .",
+          "before": "lekalo runtime check --project ."
+        }
+      ],
+      "executableRecipeId": null,
+      "fixOptions": [
+        {
+          "class": "manual-only",
+          "description": "Inspect the diagnostic detail, correct the selected runtime or rules, and regenerate the lock only after reviewing the changed inputs."
+        },
+        {
+          "class": "manual-only",
+          "description": "Correct failing facts or the implementation to satisfy the selected contract, then run runtime check again."
+        }
+      ],
+      "rationale": "It matters because a runtime must supply compatible facts and pass the selected contracts before the host can accept its result.",
+      "relatedCodes": [
+        "LEK-RUNTIME-002",
+        "LEK-RUNTIME-003"
+      ],
+      "rootCauses": [
+        "the runtime does not support the selected rules API or required capabilities",
+        "the configuration, lock, executable or package files changed after locking",
+        "the runtime failed, exceeded its process budget or returned an invalid envelope",
+        "runtime facts do not satisfy a selected portable rule"
+      ],
+      "ruleId": "runtime.refused",
+      "severityProfile": {
+        "allowedStatuses": [
+          "invalid"
+        ],
+        "blocking": true,
+        "defaultSeverity": "error",
+        "severities": [
+          "error"
+        ],
+        "waiverPolicy": "Not waivable: runtime compatibility, custody and contract validation must succeed."
+      },
+      "targetNotes": [
+        {
+          "note": "The host applies the same protocol and contract checks to every external language runtime.",
+          "scope": "general"
+        }
+      ],
+      "title": "External runtime or portable rules refused"
+    },
+    {
+      "category": "adapter",
+      "checks": "The rule checks runtime protocol compatibility, immutable package pins, execution confinement and portable rule results.",
+      "code": "LEK-RUNTIME-002",
+      "docsLinks": [
+        {
+          "url": "https://dev.lekalo/docs/0.8.0/external-runtimes.md",
+          "version": "0.8.0"
+        }
+      ],
+      "examples": [
+        {
+          "after": "# Review the runtime and rules changes, then refresh the pins.\nlekalo runtime lock --project .\nlekalo runtime check --project .",
+          "before": "lekalo runtime check --project ."
+        }
+      ],
+      "executableRecipeId": null,
+      "fixOptions": [
+        {
+          "class": "manual-only",
+          "description": "Inspect the diagnostic detail, correct the selected runtime or rules, and regenerate the lock only after reviewing the changed inputs."
+        },
+        {
+          "class": "manual-only",
+          "description": "Correct failing facts or the implementation to satisfy the selected contract, then run runtime check again."
+        }
+      ],
+      "rationale": "It matters because a runtime must supply compatible facts and pass the selected contracts before the host can accept its result.",
+      "relatedCodes": [
+        "LEK-RUNTIME-001",
+        "LEK-RUNTIME-003"
+      ],
+      "rootCauses": [
+        "the runtime does not support the selected rules API or required capabilities",
+        "the configuration, lock, executable or package files changed after locking",
+        "the runtime failed, exceeded its process budget or returned an invalid envelope",
+        "runtime facts do not satisfy a selected portable rule"
+      ],
+      "ruleId": "runtime.incompatible",
+      "severityProfile": {
+        "allowedStatuses": [
+          "unsupported-version"
+        ],
+        "blocking": false,
+        "defaultSeverity": "error",
+        "severities": [
+          "error"
+        ],
+        "waiverPolicy": "Not waivable: runtime compatibility, custody and contract validation must succeed."
+      },
+      "targetNotes": [
+        {
+          "note": "The host applies the same protocol and contract checks to every external language runtime.",
+          "scope": "general"
+        }
+      ],
+      "title": "External runtime or portable rules refused"
+    },
+    {
+      "category": "adapter",
+      "checks": "The rule checks runtime protocol compatibility, immutable package pins, execution confinement and portable rule results.",
+      "code": "LEK-RUNTIME-003",
+      "docsLinks": [
+        {
+          "url": "https://dev.lekalo/docs/0.8.0/external-runtimes.md",
+          "version": "0.8.0"
+        }
+      ],
+      "examples": [
+        {
+          "after": "# Review the runtime and rules changes, then refresh the pins.\nlekalo runtime lock --project .\nlekalo runtime check --project .",
+          "before": "lekalo runtime check --project ."
+        }
+      ],
+      "executableRecipeId": null,
+      "fixOptions": [
+        {
+          "class": "manual-only",
+          "description": "Inspect the diagnostic detail, correct the selected runtime or rules, and regenerate the lock only after reviewing the changed inputs."
+        },
+        {
+          "class": "manual-only",
+          "description": "Correct failing facts or the implementation to satisfy the selected contract, then run runtime check again."
+        }
+      ],
+      "rationale": "It matters because a runtime must supply compatible facts and pass the selected contracts before the host can accept its result.",
+      "relatedCodes": [
+        "LEK-RUNTIME-001",
+        "LEK-RUNTIME-002"
+      ],
+      "rootCauses": [
+        "the runtime does not support the selected rules API or required capabilities",
+        "the configuration, lock, executable or package files changed after locking",
+        "the runtime failed, exceeded its process budget or returned an invalid envelope",
+        "runtime facts do not satisfy a selected portable rule"
+      ],
+      "ruleId": "runtime.rule-failed",
+      "severityProfile": {
+        "allowedStatuses": [
+          "invalid"
+        ],
+        "blocking": true,
+        "defaultSeverity": "error",
+        "severities": [
+          "error"
+        ],
+        "waiverPolicy": "Not waivable: runtime compatibility, custody and contract validation must succeed."
+      },
+      "targetNotes": [
+        {
+          "note": "The host applies the same protocol and contract checks to every external language runtime.",
+          "scope": "general"
+        }
+      ],
+      "title": "External runtime or portable rules refused"
+    },
+    {
       "category": "semantic",
       "checks": "The rule validates scenario declarations and admits their bounded execution as native gates.",
       "code": "LEK-SCN-001",
@@ -41222,7 +41396,7 @@
     }
   ],
   "identity": "dev.lekalo.explain-catalog@0.8.0",
-  "registryDigest": "sha256:dd1521bedf1c9abb7d480e8e81fb3b8537b3243d5014143137f84c8c22174315",
+  "registryDigest": "sha256:cf9bfdab301154ce52c8eedc38e950ef37647f33d281889c9e2cdaa4f023bd3d",
   "registryIdentity": "dev.lekalo.diagnostic-registry@0.8.0",
   "schemaVersion": "lekalo/explain-catalog/v0.8.0"
 }

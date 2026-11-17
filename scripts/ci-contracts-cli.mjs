@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { serviceBinaries, serviceEnvironment } from './lib/external-services.mjs';
 
 const binaryName = 'lekalo';
 const manifestName = 'contracts-cli.json';
@@ -20,7 +21,7 @@ function plainFile(path) {
 
 // This artifact belongs only to the Linux/x64 Contracts producer and consumers.
 // SDK oracle and fresh-target builds must not use it.
-export function prepare({ binary, destination, sourceSha, stripSymbols = false, platform = process.platform, arch = process.arch }) {
+export function prepare({ binary, services, destination, sourceSha, stripSymbols = false, platform = process.platform, arch = process.arch }) {
   requireSourceSha(sourceSha);
   if (platform !== 'linux' || arch !== 'x64') throw Error('Contracts CLI requires linux/x64');
   const bytes = plainFile(binary);
@@ -34,7 +35,19 @@ export function prepare({ binary, destination, sourceSha, stripSymbols = false, 
   // A failed strip aborts preparation before a usable manifest is written.
   if (stripSymbols) execFileSync('strip', ['--strip-unneeded', packagedBinary], { stdio: 'pipe' });
   const packagedBytes = plainFile(packagedBinary);
-  const manifest = { schemaVersion: 1, sourceSha, binary: binaryName, sha256: digest(packagedBytes), bytes: packagedBytes.length, platform, arch };
+  const serviceRecords = {};
+  const serviceDestination = join(destination, 'external-services/debug');
+  mkdirSync(serviceDestination, { recursive: true });
+  for (const name of serviceBinaries) {
+    const source = plainFile(join(services, name));
+    if (!source.length) throw Error(`Empty service: ${name}`);
+    const output = join(serviceDestination, name);
+    writeFileSync(output, source, { flag: 'wx', mode: 0o755 });
+    if (stripSymbols) execFileSync('strip', ['--strip-unneeded', output], { stdio: 'pipe' });
+    const bytes = plainFile(output);
+    serviceRecords[name] = { sha256: digest(bytes), bytes: bytes.length };
+  }
+  const manifest = { schemaVersion: 2, sourceSha, binary: binaryName, sha256: digest(packagedBytes), bytes: packagedBytes.length, platform, arch, services: serviceRecords };
   writeFileSync(join(destination, manifestName), `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx' });
   return manifest;
 }
@@ -44,7 +57,7 @@ export function verify({ directory, sourceSha, platform = process.platform, arch
   const info = lstatSync(directory);
   if (!info.isDirectory() || info.isSymbolicLink()) throw Error('Expected a plain artifact directory');
   const manifest = JSON.parse(plainFile(join(directory, manifestName)).toString('utf8'));
-  if (!manifest || manifest.schemaVersion !== 1 || manifest.binary !== binaryName
+  if (!manifest || manifest.schemaVersion !== 2 || manifest.binary !== binaryName
       || manifest.sourceSha !== sourceSha || manifest.platform !== 'linux' || manifest.arch !== 'x64'
       || platform !== manifest.platform || arch !== manifest.arch
       || !Number.isSafeInteger(manifest.bytes) || manifest.bytes <= 0
@@ -54,9 +67,17 @@ export function verify({ directory, sourceSha, platform = process.platform, arch
   const binary = join(directory, binaryName);
   const bytes = plainFile(binary);
   if (bytes.length !== manifest.bytes || digest(bytes) !== manifest.sha256) throw Error('Contracts CLI digest or size mismatch');
+  if (JSON.stringify(Object.keys(manifest.services ?? {}).sort()) !== JSON.stringify(serviceBinaries)) throw Error('Contracts service manifest mismatch');
+  const services = serviceBinaries.map(name => {
+    const path = join(directory, 'external-services/debug', name);
+    const bytes = plainFile(path), record = manifest.services[name];
+    if (!bytes.length || bytes.length !== record?.bytes || digest(bytes) !== record?.sha256) throw Error(`Contracts service digest or size mismatch: ${name}`);
+    return path;
+  });
   // Actions artifact downloads normalize permissions. Restore execution only
   // after validating provenance and content, before any contract probe runs.
   chmodSync(binary, 0o755);
+  for (const path of services) chmodSync(path, 0o755);
   return manifest;
 }
 
@@ -71,8 +92,9 @@ function main() {
   if (process.env.GITHUB_SHA && process.env.GITHUB_SHA !== sourceSha) throw Error('Checkout SHA differs from GITHUB_SHA');
   const directory = resolve(location);
   const manifest = mode === 'prepare'
-    ? prepare({ binary: resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', binaryName), destination: directory, sourceSha, stripSymbols })
+    ? prepare({ binary: resolve(process.env.CARGO_TARGET_DIR || 'target', 'debug', binaryName), services: resolve('target/external-services/debug'), destination: directory, sourceSha, stripSymbols })
     : verify({ directory, sourceSha });
+  if (mode === 'verify' && process.env.GITHUB_ENV) appendFileSync(process.env.GITHUB_ENV, `LEKALO_SERVICES=${serviceEnvironment(directory)}\n`);
   console.log(`Contracts CLI ${mode}: ${manifest.sourceSha} sha256:${manifest.sha256}`);
 }
 

@@ -70,11 +70,12 @@ pub fn value(bytes: &[u8]) -> Result<Value> {
                 Scalar::Null => Value::Null,
                 Scalar::Bool(v) => Value::Bool(v),
                 Scalar::Str(v) => Value::String(v),
-                Scalar::Int(v) => Value::Number(
-                    i64::try_from(v)
+                Scalar::Int(v) => Value::Number(match i64::try_from(v) {
+                    Ok(v) => v.into(),
+                    Err(_) => u64::try_from(v)
                         .map_err(|_| error("document-number"))?
                         .into(),
-                ),
+                }),
                 Scalar::Float(v) => Value::Number(
                     serde_json::Number::from_f64(v).ok_or_else(|| error("document-number"))?,
                 ),

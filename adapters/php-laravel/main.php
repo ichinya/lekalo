@@ -12,6 +12,9 @@
 
 declare(strict_types=1);
 
+define('ADAPTER_ID', 'lekalo-target-php-laravel');
+define('TARGET_TOKEN', 'php-laravel');
+
 require __DIR__ . '/vendor/lekalo-php/src/provider.php';
 require __DIR__ . '/vendor/lekalo-php/src/analyzer.php';
 require __DIR__ . '/vendor/lekalo-php/src/strict-profile.php';

@@ -219,8 +219,36 @@ fn schema(value: &Value) -> Result<jsonschema::Validator> {
                     value.as_str() == Some("https://json-schema.org/draft/2020-12/schema")
                 } else if key == "$id" {
                     false
-                } else {
+                } else if matches!(
+                    key.as_str(),
+                    "properties"
+                        | "patternProperties"
+                        | "$defs"
+                        | "definitions"
+                        | "dependentSchemas"
+                ) {
+                    value.as_object().is_some_and(|map| map.values().all(admit))
+                } else if matches!(key.as_str(), "allOf" | "anyOf" | "oneOf" | "prefixItems") {
+                    value
+                        .as_array()
+                        .is_some_and(|items| items.iter().all(admit))
+                } else if matches!(
+                    key.as_str(),
+                    "not"
+                        | "if"
+                        | "then"
+                        | "else"
+                        | "items"
+                        | "contains"
+                        | "additionalProperties"
+                        | "unevaluatedProperties"
+                        | "unevaluatedItems"
+                        | "propertyNames"
+                        | "contentSchema"
+                ) {
                     admit(value)
+                } else {
+                    true
                 }
             }),
             Value::Array(items) => items.iter().all(admit),
@@ -520,6 +548,12 @@ pub fn lock(root: &Path, offline: bool) -> Result<Lock> {
 
 fn write_lock(root: &Path, lock: &Lock) -> Result<()> {
     use std::io::Write;
+    // Never publish a lock that check_lock cannot read. Preserve an existing
+    // usable lock when a composition exceeds the shared document budget.
+    let bytes = serde_json::to_vec_pretty(lock).map_err(|_| error("lock-write-failed"))?;
+    if bytes.len() > LOCK_LIMIT {
+        return Err(error("lock-limit"));
+    }
     let path = root.join(config::LOCK);
     if std::fs::symlink_metadata(&path).is_ok_and(|m| !m.is_file() || m.file_type().is_symlink()) {
         return Err(error("lock-path-invalid"));
@@ -527,7 +561,7 @@ fn write_lock(root: &Path, lock: &Lock) -> Result<()> {
     let mut temporary =
         tempfile::NamedTempFile::new_in(root).map_err(|_| error("lock-write-failed"))?;
     temporary
-        .write_all(&serde_json::to_vec_pretty(lock).unwrap())
+        .write_all(&bytes)
         .map_err(|_| error("lock-write-failed"))?;
     temporary
         .persist(path)
@@ -535,14 +569,15 @@ fn write_lock(root: &Path, lock: &Lock) -> Result<()> {
     Ok(())
 }
 
+const LOCK_LIMIT: usize = 8 * 1024 * 1024;
+
 pub fn check_lock(root: &Path) -> Result<Lock> {
     let config = load(root)?;
     if config.components.is_empty() && config.services.is_empty() {
         return Err(error("components-empty"));
     }
-    let lock: Lock =
-        serde_json::from_value(config::value(&read(root, config::LOCK, 1024 * 1024)?)?)
-            .map_err(|_| error("lock-invalid"))?;
+    let lock: Lock = serde_json::from_value(config::value(&read(root, config::LOCK, LOCK_LIMIT)?)?)
+        .map_err(|_| error("lock-invalid"))?;
     if lock.schema != "lekalo/runtime-lock/v1"
         || lock.config_digest != config_digest(&config)
         || !lock.components.keys().eq(config.components.keys())
@@ -842,4 +877,73 @@ pub fn invoke(
     input: Value,
 ) -> Result<Value> {
     Session::new(root, source)?.invoke(operation, input)
+}
+
+#[cfg(test)]
+mod review_regressions {
+    use super::*;
+
+    #[test]
+    fn schema_keywords_in_property_names_and_literals_are_data() {
+        let validator = schema(&json!({"type":"object", "properties": {
+            "$ref": {"type":"string"}, "$id": {"const":{"$ref":"https://example.invalid"}},
+            "$schema": {"enum":[{"$id":"literal"}]}
+        }}))
+        .unwrap();
+        assert!(validator.is_valid(&json!({"$ref":"value", "$id":{"$ref":"https://example.invalid"}, "$schema":{"$id":"literal"}})));
+        assert!(!validator.is_valid(&json!({"$ref": 3})));
+        assert!(
+            schema(&json!({"$defs":{"str":{"type":"string"}},"$ref":"#/$defs/str"}))
+                .unwrap()
+                .is_valid(&json!("value"))
+        );
+        for value in [
+            json!({"properties":{"x":{"$ref":"file:///etc/passwd"}}}),
+            json!({"allOf":[{"$id":"https://example.invalid"}]}),
+            json!({"const":{"$ref":"https://example.invalid"},"$ref":"#/const"}),
+        ] {
+            assert!(schema(&value).is_err());
+        }
+    }
+
+    #[test]
+    fn unsigned_json_numbers_survive_strict_frontend() {
+        for value in [
+            i64::MIN.to_string(),
+            i64::MAX.to_string(),
+            "9223372036854775808".into(),
+            u64::MAX.to_string(),
+        ] {
+            let document = format!("{{\"value\":{value}}}");
+            assert_eq!(
+                config::value(document.as_bytes()).unwrap(),
+                serde_json::from_str::<Value>(&document).unwrap()
+            );
+        }
+        assert!(config::value(b"{\"value\":18446744073709551616}").is_err());
+    }
+
+    #[test]
+    fn lock_budget_roundtrips_large_locks_and_preserves_previous_on_overflow() {
+        let root = tempfile::tempdir().unwrap();
+        let mut lock = Lock {
+            schema: "lekalo/runtime-lock/v1".into(),
+            config_digest: "x".repeat(2 * 1024 * 1024),
+            components: BTreeMap::new(),
+            services: BTreeMap::new(),
+        };
+        write_lock(root.path(), &lock).unwrap();
+        let bytes = read(root.path(), config::LOCK, LOCK_LIMIT).unwrap();
+        let decoded: Lock = serde_json::from_value(config::value(&bytes).unwrap()).unwrap();
+        assert_eq!(decoded.config_digest, lock.config_digest);
+        lock.config_digest = "x".repeat(LOCK_LIMIT);
+        assert_eq!(
+            write_lock(root.path(), &lock).unwrap_err().detail,
+            "lock-limit"
+        );
+        assert_eq!(
+            std::fs::read(root.path().join(config::LOCK)).unwrap(),
+            bytes
+        );
+    }
 }
