@@ -796,7 +796,11 @@ impl Sandbox {
         let filename = program
             .file_name()
             .ok_or_else(|| refusal("sandbox-program"))?;
-        let destination = self.runtime.join(filename);
+        let destination = if program.starts_with(&self.runtime) {
+            program.clone()
+        } else {
+            self.runtime.join(filename)
+        };
         let same_program = program == destination
             || std::fs::canonicalize(&program)
                 .ok()
@@ -851,7 +855,7 @@ impl Sandbox {
                     .as_ref()
                     .zip(std::fs::canonicalize(self.owned.path().join("node_modules")).ok())
                     .is_some_and(|(script, root)| script.starts_with(root));
-            if script.is_file() && !in_project && !in_assets {
+            if script.is_file() && !in_project && !in_assets && !script.starts_with(&self.runtime) {
                 let script_name = script
                     .file_name()
                     .ok_or_else(|| refusal("sandbox-runtime"))?;
@@ -879,6 +883,72 @@ impl Sandbox {
         }
         Ok(transport::AdapterCommand {
             program: destination,
+            args,
+        })
+    }
+
+    /// Stage the declared, digest-verified closure of an external runtime.
+    /// The package is read-only code/data, separate from the empty project.
+    pub(super) fn external_package(
+        &self,
+        command: &transport::AdapterCommand,
+        root: &Path,
+        files: &std::collections::BTreeMap<String, String>,
+    ) -> Result<transport::AdapterCommand, TargetFailure> {
+        if files.is_empty() || files.len() > 257 {
+            return Err(refusal("package-files"));
+        }
+        let destination = self.runtime.join("package");
+        let fs = Fs::open(root).map_err(|_| refusal("package-root"))?;
+        let mut total = 0;
+        for (path, digest) in files {
+            if !crate::runtime::config::relative(path) || path.split('/').any(|part| part == ".") {
+                return Err(refusal("package-path"));
+            }
+            let relative = Path::new(path);
+            let name = relative
+                .file_name()
+                .and_then(|s| s.to_str())
+                .ok_or_else(|| refusal("package-path"))?;
+            let parent = relative.parent().unwrap_or_else(|| Path::new(""));
+            let bytes = fs
+                .read_file_opt(&parent.to_string_lossy(), name, 32 * 1024 * 1024)
+                .map_err(|_| refusal("package-file"))?
+                .ok_or_else(|| refusal("package-file"))?;
+            total += bytes.len();
+            if total > 128 * 1024 * 1024
+                || format!("sha256:{}", plan::sha256_hex(&bytes)) != *digest
+            {
+                return Err(refusal("package-digest"));
+            }
+            let target = destination.join(relative);
+            std::fs::create_dir_all(target.parent().unwrap())
+                .map_err(|_| refusal("package-stage"))?;
+            std::fs::write(&target, bytes).map_err(|_| refusal("package-stage"))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(target, std::fs::Permissions::from_mode(0o555))
+                    .map_err(|_| refusal("package-stage"))?;
+            }
+        }
+        let rewrite = |path: &Path| -> Result<std::path::PathBuf, TargetFailure> {
+            match path.strip_prefix(root) {
+                Ok(relative)
+                    if files.contains_key(&relative.to_string_lossy().replace('\\', "/")) =>
+                {
+                    Ok(destination.join(relative))
+                }
+                Ok(_) => Err(refusal("package-entry")),
+                Err(_) => Ok(path.to_path_buf()),
+            }
+        };
+        let mut args = command.args.clone();
+        if let Some(first) = args.first_mut() {
+            *first = rewrite(Path::new(first))?.to_string_lossy().into_owned();
+        }
+        Ok(transport::AdapterCommand {
+            program: rewrite(&command.program)?,
             args,
         })
     }

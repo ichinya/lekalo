@@ -1220,3 +1220,29 @@ fn transport_failure(error: transport::TransportFailure) -> TargetFailure {
         }
     }
 }
+
+/// Run a data-only external runtime in the same empty, read-only sandbox used
+/// by target discovery. All project/rules inputs travel in the bounded request;
+/// the runtime gets no ambient project filesystem or environment authority.
+pub fn runtime_exchange(
+    command: &transport::AdapterCommand,
+    request: &[u8],
+    root: &std::path::Path,
+    limits: &transport::TransportLimits,
+    package: Option<(
+        &std::path::Path,
+        &std::collections::BTreeMap<String, String>,
+    )>,
+) -> Result<transport::TransportSuccess, TargetFailure> {
+    let sandbox =
+        confinement::Sandbox::new(root, &[], &[], false, confinement::SandboxPolicy::strict())?;
+    let staged;
+    let command = if let Some((root, files)) = package {
+        staged = sandbox.external_package(command, root, files)?;
+        &staged
+    } else {
+        command
+    };
+    // This protocol never opts into a language-specific legacy bundle by header.
+    sandbox.run_inner(command, request, limits, false, None, &[])
+}

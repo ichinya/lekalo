@@ -9,6 +9,7 @@ Status: **Implemented** within the profiles described in [feature status](docs/r
 | Task | Guide |
 | --- | --- |
 | Install a ready CLI for Windows, Linux or macOS | [Download, verify and install](docs/releases.md) |
+| Configure an external runtime and independent rules | [External runtimes](docs/external-runtimes.md) |
 | Create a project | [Minimal project](docs/project-layout.md#minimal-project) |
 | Add Lekalo to existing code | [Choose an adoption path](docs/adoption.md) |
 | Follow Laravel/Vue or TypeScript examples | [Tutorials](docs/README.md#tutorials) |

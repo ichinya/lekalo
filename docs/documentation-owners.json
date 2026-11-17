@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "1.3.0",
-  "cliSourceDigest": "sha256:2e7d3a60664d3fe6e2847c1b3470c56e7ff55fce80b952d093c785e50568211b",
+  "cliSourceDigest": "sha256:ae4bf2cee227b1f85d0eaec409ad95092a58c90c039a3118086c6664af4cfb06",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1382,7 +1382,7 @@
       "kind": "command",
       "command": "init",
       "usage": "lekalo init [OPTIONS]",
-      "helpDigest": "sha256:83b0126343606be4d187d0b38ef7a5510ed7f54e0c73a625996f1b5c75a7fd11",
+      "helpDigest": "sha256:7c7727c69935bedcae8c6d1e890b30a40b5a039dac8f7de8233e349210956a89",
       "summary": "Bootstrap a new greenfield Lekalo project in the invocation directory (issue #97), or adopt an existing repository with `--adopt` (issue #38)",
       "leaf": true,
       "owner": "docs/bootstrap.md",
@@ -2321,6 +2321,50 @@
       "summary": "Validate the attachment and gate every requirement reference: stale, missing, or conflicted references deny the gate",
       "leaf": true,
       "owner": "docs/requirements.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:runtime",
+      "kind": "command",
+      "command": "runtime",
+      "usage": "lekalo runtime [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:086407147579e9e627275b11be9dff05e77759ed4cc60f218f67a9e4442364cf",
+      "summary": "Configure external runtimes and portable contract rules",
+      "leaf": false,
+      "owner": "docs/external-runtimes.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:runtime check",
+      "kind": "command",
+      "command": "runtime check",
+      "usage": "lekalo runtime check [OPTIONS]",
+      "helpDigest": "sha256:da6b46d9c8951c6dcece578215bed5844d776d7b548742c940dd8db6564a23a3",
+      "summary": "Check source contracts with the locked runtime and rules, offline",
+      "leaf": true,
+      "owner": "docs/external-runtimes.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:runtime init",
+      "kind": "command",
+      "command": "runtime init",
+      "usage": "lekalo runtime init [OPTIONS]",
+      "helpDigest": "sha256:57d448a1d6c731ac152251ed89f44a41b7326120343b13111cb02144970cb66e",
+      "summary": "Create lekalo.yaml without executing or installing packages",
+      "leaf": true,
+      "owner": "docs/external-runtimes.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:runtime lock",
+      "kind": "command",
+      "command": "runtime lock",
+      "usage": "lekalo runtime lock [OPTIONS]",
+      "helpDigest": "sha256:3d70a86f6594e0f58bf3383e05992f99a60f8e82d5b066a2664032822f9ca8df",
+      "summary": "Resolve sources, negotiate APIs, and pin the selected composition",
+      "leaf": true,
+      "owner": "docs/external-runtimes.md",
       "status": "implemented"
     },
     {
@@ -3598,7 +3642,7 @@
       "id": "contract:contracts/diagnostic-registry.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/diagnostic-registry.v0.8.0.json",
-      "sourceDigest": "sha256:dd1521bedf1c9abb7d480e8e81fb3b8537b3243d5014143137f84c8c22174315",
+      "sourceDigest": "sha256:cf9bfdab301154ce52c8eedc38e950ef37647f33d281889c9e2cdaa4f023bd3d",
       "owner": "docs/diagnostics.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3780,6 +3824,15 @@
       "source": "contracts/extended-effects.schema.v0.8.0.json",
       "sourceDigest": "sha256:bb8d1b634a3b571c5cf9b28c8d9acad55a6d84077f5168320bbbf79fa69253b6",
       "owner": "docs/extended-effects.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/external-runtime.schema.v1.json",
+      "kind": "contract",
+      "source": "contracts/external-runtime.schema.v1.json",
+      "sourceDigest": "sha256:8cf8cf1fe5f60b8a1fa74901676751d1595363d973220690b79fa887d8ce8565",
+      "owner": "docs/external-runtimes.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

@@ -42,6 +42,7 @@ mod metrics_export;
 mod native_execution;
 mod native_verify;
 mod ownership;
+mod runtime_config;
 use native_execution::NativeCommands;
 mod module_api;
 mod pilot_battery;
@@ -187,6 +188,11 @@ struct ContextBudgetArgs {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Configure external runtimes and portable contract rules.
+    Runtime {
+        #[command(subcommand)]
+        command: runtime_config::Command,
+    },
     /// Read-only incremental validation and drift checks on source saves.
     Watch {
         #[command(flatten)]
@@ -673,6 +679,15 @@ enum Commands {
     /// directory (issue #97), or adopt an existing repository with
     /// `--adopt` (issue #38).
     Init {
+        /// Configure an external runtime package or exec:PROGRAM in lekalo.yaml.
+        #[arg(long, conflicts_with_all = ["adopt", "target", "profile", "dry_run", "project_id", "module", "frontend", "editor_hints"])]
+        runtime: Option<String>,
+        /// Independently selected external contract-rules packages.
+        #[arg(long, requires = "runtime")]
+        rules: Vec<String>,
+        /// Source folder owned by the configured runtime.
+        #[arg(long, default_value = ".", requires = "runtime")]
+        component_path: String,
         /// Adopt the existing repository at the adoption root.
         #[arg(long)]
         adopt: bool,
@@ -2606,6 +2621,7 @@ fn runtime() -> u8 {
 
     let result = match Cli::try_parse() {
         Ok(cli) => match cli.command {
+            Commands::Runtime { command } => return runtime_config::run(command, json_requested),
             Commands::Watch { args } => {
                 return match watch::run(args, json_requested, cli.no_cache) {
                     Ok(code) => code,
@@ -2642,6 +2658,30 @@ fn runtime() -> u8 {
                 report_format,
                 ci_policy,
             } => {
+                let project = project.or_else(|| std::env::var("LEKALO_PROJECT").ok());
+                if runtime_config::configured(project.as_deref()) {
+                    if module.is_some()
+                        || module_api.is_some()
+                        || module_api_lock.is_some()
+                        || report_file.is_some()
+                        || report_format.is_some()
+                        || ci_policy.is_some()
+                    {
+                        return emit(DomainResult::usage_error(), json_requested);
+                    }
+                    if std::fs::symlink_metadata(
+                        std::path::Path::new(project.as_deref().unwrap_or("."))
+                            .join("lekalo/project.yaml"),
+                    )
+                    .is_ok()
+                    {
+                        let model = run_validate(project.clone(), None, strict, cli.no_cache);
+                        if model.status() != lekalo_core::result::Status::Valid {
+                            return emit(model, json_requested);
+                        }
+                    }
+                    return runtime_config::check(project.as_deref(), json_requested);
+                }
                 let request = crate::report_output::ReportRequest {
                     file: report_file,
                     format: report_format,
@@ -2929,6 +2969,9 @@ fn runtime() -> u8 {
             Commands::Classification { command } => run_classification(command),
             Commands::Dataflow { command } => run_dataflow(command),
             Commands::Init {
+                runtime,
+                rules,
+                component_path,
                 adopt,
                 discovery_scope,
                 target,
@@ -2939,18 +2982,31 @@ fn runtime() -> u8 {
                 editor_hints,
                 project,
                 dry_run,
-            } => run_init(
-                adopt,
-                discovery_scope,
-                target,
-                profile,
-                project_id,
-                module,
-                frontend,
-                editor_hints,
-                project,
-                dry_run,
-            ),
+            } => {
+                if let Some(runtime) = runtime {
+                    return runtime_config::run(
+                        runtime_config::Command::Init {
+                            runtime: Some(runtime),
+                            rules,
+                            path: component_path,
+                            project: project.unwrap_or_else(|| ".".into()).into(),
+                        },
+                        json_requested,
+                    );
+                }
+                run_init(
+                    adopt,
+                    discovery_scope,
+                    target,
+                    profile,
+                    project_id,
+                    module,
+                    frontend,
+                    editor_hints,
+                    project,
+                    dry_run,
+                )
+            }
             Commands::Module { command } => run_module(*command),
             Commands::Observe { command } => run_observe(*command),
             Commands::Privacy { command } => {
