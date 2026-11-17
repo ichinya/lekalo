@@ -18,11 +18,6 @@
       "origin": "synthetic"
     },
     {
-      "family": "adapter-sdk",
-      "origin": "synthetic",
-      "note": "Issue #106: authored wire-vector corpus for the four adapter SDK codecs (valid/invalid envelopes, semantic builder parity, canonicalization, security grammar, lifecycle recipes, upgrade matrix). No private source, no executed application behavior, no workstation paths."
-    },
-    {
       "family": "adapter-security",
       "origin": "synthetic"
     },
@@ -287,22 +282,6 @@
       "family": "node-native-tools",
       "origin": "synthetic",
       "note": "Authored npm domain/client workspace, exact public tool lock and actual production native verify acceptance. No private consumer input."
-    },
-    {
-      "family": "node-typescript-drizzle",
-      "origin": "synthetic"
-    },
-    {
-      "family": "node-typescript-kernel",
-      "origin": "synthetic"
-    },
-    {
-      "family": "node-typescript-scanner",
-      "origin": "synthetic"
-    },
-    {
-      "family": "node-typescript-transport",
-      "origin": "synthetic"
     },
     {
       "family": "observed",

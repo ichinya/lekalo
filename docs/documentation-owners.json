@@ -3759,7 +3759,7 @@
       "id": "contract:contracts/explain-catalog.v1.3.0.json",
       "kind": "contract",
       "source": "contracts/explain-catalog.v1.3.0.json",
-      "sourceDigest": "sha256:17ad9bef23115694874cdc12a9dfc30ab180b216b286a0709ecc05a83488502c",
+      "sourceDigest": "sha256:ea951228547fbc4b233c04308f9599c2caedaea0eb37f9f74728c7b6421e1c06",
       "owner": "docs/explain.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

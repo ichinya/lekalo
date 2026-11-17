@@ -7,7 +7,7 @@
     },
     "lekalo-typescript": {
       "repository": "https://github.com/ichinya/lekalo-typescript.git",
-      "commit": "7aada588ab91fc0273acdc5ed45c03e8f123ab6a"
+      "commit": "29eb20bcda5bf699dd317a7ddb68fd7a4a907301"
     },
     "lekalo-typescript-hono": {
       "repository": "https://github.com/ichinya/lekalo-typescript-hono.git",
