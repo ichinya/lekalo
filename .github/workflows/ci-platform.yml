@@ -189,7 +189,7 @@ jobs:
         name: Provision the vendored compiler bundle custody (issue #44)
         run: |
           set -euo pipefail
-          npm ci --prefix tests/external/lekalo-typescript/adapters/node-typescript --ignore-scripts --no-audit --no-fund
+          npm ci --prefix "$LEKALO_TYPESCRIPT_ROOT/adapters/node-typescript" --ignore-scripts --no-audit --no-fund
           node tests/external/lekalo-typescript/adapters/node-typescript/provision-compiler.mjs
           node tests/external/lekalo-typescript/adapters/node-typescript/build.mjs --check
       - &ci-setup-46
