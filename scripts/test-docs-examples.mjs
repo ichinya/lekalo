@@ -149,13 +149,13 @@ function inventory(base, logicalBase=relative(ROOT,base).replaceAll("\\","/")) {
   walk(base);
   return result;
 }
-const INPUTS=["scripts","adapters","contracts","tests/fixtures","docs","README.md","Cargo.toml","Cargo.lock","crates",".gitattributes"];
+const INPUTS=["scripts","adapters","external-tools.lock.json","tests/external/lekalo-typescript","contracts","tests/fixtures","docs","README.md","Cargo.toml","Cargo.lock","crates",".gitattributes"];
 const sourceBefore = INPUTS.map(path=>statSync(safePath(path)).isDirectory()?inventory(safePath(path)):sha(readFileSync(safePath(path))));
 const root=realpathSync.native(mkdtempSync(join(tmpdir(),"lekalo-docs-105-")));
 const owned = path => assert.ok(resolve(path).startsWith(root+sep),"temporary path escapes owned replay root");
 function copy(from,to) {
   owned(to);
-  cpSync(from,to,{recursive:true,filter:path=>admitSource(relative(ROOT,path).replaceAll("\\","/"))});
+  cpSync(realpathSync(from),to,{recursive:true,filter:path=>admitSource(relative(ROOT,path).replaceAll("\\","/"))});
 }
 const temp=join(root,"tmp"); mkdirSync(temp);
 const childEnv={...fixtureGitEnv(),TMPDIR:temp,TEMP:temp,TMP:temp};

@@ -12,7 +12,7 @@ import {fileURLToPath} from 'node:url';
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const binary = process.env.LEKALO_BIN ?? join(repo, 'target', 'debug', process.platform === 'win32' ? 'lekalo.exe' : 'lekalo');
 assert.ok(existsSync(binary), 'build the checkout CLI first');
-const adapter = join(repo, 'adapters', 'node-typescript', 'adapter.mjs');
+const adapter = join(repo, 'tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs');
 const tempParent = realpathSync(tmpdir());
 const work = mkdtempSync(join(tempParent, 'lekalo-public-scan-'));
 const sha = bytes => 'sha256:' + createHash('sha256').update(bytes).digest('hex');

@@ -107,9 +107,9 @@ try {
   assert(!existsSync(join(stage,".lekalo")),"read-only signature joins must not create runtime state");
   // A predecessor adapter remains incompatible; schema support must never
   // relabel its native profile as successor generation acceptance.
-  mkdirSync(join(stage,"tests/external/lekalo-typescript/adapters/node-typescript"),{recursive:true});
-  cpSync(join(root,"tests/fixtures/orchestration/project/tests/external/lekalo-typescript/adapters/node-typescript/node-adapter.mjs"),join(stage,"tests/external/lekalo-typescript/adapters/node-typescript/node-adapter.mjs"));
-  const supplied=["--","node","tests/external/lekalo-typescript/adapters/node-typescript/node-adapter.mjs"];
+  mkdirSync(join(stage,"adapters/node-typescript"),{recursive:true});
+  cpSync(join(root,"tests/fixtures/orchestration/project/adapters/node-typescript/node-adapter.mjs"),join(stage,"adapters/node-typescript/node-adapter.mjs"));
+  const supplied=["--","node","adapters/node-typescript/node-adapter.mjs"];
   run(["lock",...supplied],5,"versioning.adapter-incompatible");
   assert(!existsSync(join(stage,".lekalo/cache/client-sdk")),"an incompatible adapter does not derive SDK evidence");
   assert(!existsSync(join(stage,"src/generated")),"an incompatible adapter must not write source");

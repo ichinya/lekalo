@@ -224,7 +224,8 @@ export function adapterCases(env,update) {
   for(const [target,runtime,path,bindings] of [
     ['node-typescript',process.execPath,'src/events.ts',[['src/events.ts#Task','planner.task','entity'],['src/events.ts#focus','planner.focus_task','command'],['src/events.ts#edit','planner.edit_task_cmd','command']]],
     ['php-laravel','php','app/events.php',[['app/events.php#Task','planner.task','entity'],['app/events.php#Commands.focus','planner.focus_task','command'],['app/events.php#Commands.edit','planner.edit_task_cmd','command']]]]) {
-    const adapter=join(root,'adapters',target,target==='node-typescript'?'test/native-test-entry.mjs':'adapter.php'),bytes=readFileSync(join(env.project,path));
+    const adapterHome=join(root,target==='node-typescript'?'tests/external/lekalo-typescript/adapters/node-typescript':'adapters/php-laravel');
+    const adapter=join(adapterHome,target==='node-typescript'?'test/native-test-entry.mjs':'adapter.php'),bytes=readFileSync(join(env.project,path));
     const request={protocol:'lekalo.target/v1',protocol_version:'0.6.4',request_id:'req-'+'7'.repeat(64),operation:'lint',project_root:'.',target,limits:{max_output_bytes:8388608,timeout_ms:600000},lint_request:{scope:['planner'],pins:env.pins,bindings:bindings.map(([nativeId,symbol,kind])=>({path,nativeId,symbol,kind,fingerprint:digest(bytes)})),files:[path]}};
     assert.ok(protocol(request),JSON.stringify(protocol.errors));assert.equal(frozen(request),false);
     const call=r=>spawnSync(runtime,[adapter],{cwd:env.project,input:canonical(r),encoding:'utf8',timeout:60000,maxBuffer:16*1024*1024});
@@ -245,9 +246,9 @@ export function adapterCases(env,update) {
     // A same-spelled API without recognized receiver/registration is not a hook.
     const original=bytes.toString('utf8'),negative=target==='node-typescript'?original.replace("bus.on('saved',", "// bus.on('saved',"):original.replace('Task::observe(TaskObserver::class);','// Task::observe(TaskObserver::class);');
     writeFileSync(join(env.project,path),negative);const negRequest=clone(request);negRequest.lint_request.bindings.forEach(b=>b.fingerprint=digest(negative));const nc=call(negRequest);assert.equal(nc.status,0,nc.stderr);assert.ok(!JSON.parse(nc.stdout).result.lint_evidence.records.some(r=>r.kind==='effect'));writeFileSync(join(env.project,path),bytes);
-    const install=raw(env.project,['adapter','install','path:'+join(root,'adapters',target),'--dry-run']);assert.equal(install.child.status,0,JSON.stringify(install.envelope));
+    const install=raw(env.project,['adapter','install','path:'+adapterHome,'--dry-run']);assert.equal(install.child.status,0,JSON.stringify(install.envelope));
     const plan=install.envelope.plan?.planId??install.envelope.planId??install.envelope.plan?.id;assert.ok(plan,JSON.stringify(install.envelope));
-    const applied=raw(env.project,['adapter','install','path:'+join(root,'adapters',target),'--confirm',plan]);assert.equal(applied.child.status,0,JSON.stringify(applied.envelope));
+    const applied=raw(env.project,['adapter','install','path:'+adapterHome,'--confirm',plan]);assert.equal(applied.child.status,0,JSON.stringify(applied.envelope));
     const scan=run(env.project,[...env.args,'--scan-target',target,'--source-file',path]);assert.ok(scan.report.coverage.some(c=>c.target===target));assert.equal(scan.report.summary.verifiedEffects,0);
     const observed={schemaVersion:'lekalo/observed-scan/v0.2.16',adapter:{id:'lekalo-target-'+target,version:target==='node-typescript'?'0.4.0':'0.2.0',digest:null},project:'planner',revision:digest(bytes),symbols:bindings.map(([nativeId,symbol,kind])=>({id:symbol,kind,stableKey:nativeId,location:{path,line:1},fingerprint:digest(bytes),mappingConfidence:'high',evidence:{}})),endpoints:[],schemas:[]};
     const updated=raw(env.project,['observe','update','--scan',env.file('observed-scan.json',observed)]);assert.equal(updated.child.status,0,JSON.stringify(updated.envelope));

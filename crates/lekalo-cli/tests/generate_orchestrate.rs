@@ -17,10 +17,7 @@ const VERIFY_GOLDEN: &str =
     include_str!("../../../tests/fixtures/orchestration/verify.full.product-1.3.0.golden.json");
 
 /// The committed reference adapter vector, spawned without a shell.
-const ADAPTER_ARGS: &[&str] = &[
-    "node",
-    "tests/external/lekalo-typescript/adapters/node-typescript/node-adapter.mjs",
-];
+const ADAPTER_ARGS: &[&str] = &["node", "adapters/node-typescript/node-adapter.mjs"];
 
 fn workspace_path(relative: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -331,8 +328,7 @@ fn a_tampered_adapter_is_an_integrity_denial() {
             )),
             4
         );
-        let adapter_path =
-            root.join("tests/external/lekalo-typescript/adapters/node-typescript/node-adapter.mjs");
+        let adapter_path = root.join("adapters/node-typescript/node-adapter.mjs");
         let original = std::fs::read_to_string(&adapter_path).expect("read adapter");
         std::fs::write(&adapter_path, original.replace("planner.ts", "planner2.ts"))
             .expect("tamper adapter");
@@ -499,7 +495,7 @@ fn project_fingerprint(root: &Path) -> Vec<(String, Vec<u8>)> {
 /// Copy the hermetic fake adapter into the project copy so the lock can
 /// pin it exactly like the reference implementation.
 fn with_fake_adapter(root: &Path) {
-    let home = root.join("tests/external/lekalo-typescript/adapters/node-typescript");
+    let home = root.join("adapters/node-typescript");
     std::fs::create_dir_all(&home).expect("adapter home");
     std::fs::copy(
         workspace_path("tests/fixtures/target-protocol/fake-adapter.mjs"),
@@ -518,7 +514,7 @@ fn fake_lekalo_with(root: &Path, head: &[&str], extra: &[&str]) -> Output {
     args.push("--");
     args.extend_from_slice(&[
         "node",
-        "tests/external/lekalo-typescript/adapters/node-typescript/fake-adapter.mjs",
+        "adapters/node-typescript/fake-adapter.mjs",
         "--lekalo-adapter-variant",
         "fluent",
         "--lekalo-write-root",
@@ -537,7 +533,7 @@ fn fake_lekalo_in(root: &Path, head: &[&str], fault: Option<&str>) -> Output {
     args.push("--");
     args.extend_from_slice(&[
         "node",
-        "tests/external/lekalo-typescript/adapters/node-typescript/fake-adapter.mjs",
+        "adapters/node-typescript/fake-adapter.mjs",
         "--lekalo-adapter-variant",
         "fluent",
         "--lekalo-write-root",
@@ -722,7 +718,7 @@ const ZOD_E2E_PROFILE: &str = concat!(
 /// Copy the committed generation artifact into the project copy so the
 /// lock can pin it exactly like the reference implementation.
 fn with_zod_adapter(root: &Path) {
-    let home = root.join("tests/external/lekalo-typescript/adapters/node-typescript");
+    let home = root.join("adapters/node-typescript");
     std::fs::create_dir_all(&home).expect("adapter home");
     std::fs::copy(
         workspace_path("tests/external/lekalo-typescript/adapters/node-typescript/adapter-zod.mjs"),
@@ -737,7 +733,7 @@ fn zod_lekalo_in(root: &Path, head: &[&str]) -> Output {
     args.push("--");
     args.extend_from_slice(&[
         "node",
-        "tests/external/lekalo-typescript/adapters/node-typescript/adapter-zod.mjs",
+        "adapters/node-typescript/adapter-zod.mjs",
         "--lekalo-project-profile-json",
         ZOD_E2E_PROFILE,
     ]);

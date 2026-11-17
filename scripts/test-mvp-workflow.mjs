@@ -3,7 +3,10 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {join} from 'node:path';
-import {repo,binary,catalog,cli,prepare,verify,save,hash,bytes,inventory,cleanup} from './test-node-native-tools.mjs';
+import {pathToFileURL} from 'node:url';
+import {externalRoot,hostRoot as repo} from './external-tool.mjs';
+process.env.LEKALO_BIN ??= join(repo,'target/debug',process.platform==='win32'?'lekalo.exe':'lekalo');
+const {binary,catalog,cli,prepare,verify,save,hash,bytes,inventory,cleanup} = await import(pathToFileURL(join(externalRoot('lekalo-typescript'),'scripts/test-node-native-tools.mjs')).href);
 
 const fixture=join(repo,'tests/fixtures/public-typescript-scan');
 const scope={schemaVersion:'lekalo/discovery-scope/v0.9.0',identity:'dev.lekalo.discovery-scope@0.9.0',includes:['.'],excludes:['packages/web/out'],gitIgnore:'respect'};
