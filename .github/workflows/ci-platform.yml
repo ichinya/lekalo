@@ -44,6 +44,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-platform-build-debug
+      - name: Build pinned external services
+        run: node scripts/external-tool.mjs --build-services
       - name: "Build runtime executables"
         run: |
           cargo build -p lekalo-cli --bin lekalo --locked
@@ -86,6 +88,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-platform-build-release
+      - name: Build pinned external services
+        run: node scripts/external-tool.mjs --build-services
       - name: "Build runtime executables"
         run: |
           cargo build --release -p lekalo-cli --bin lekalo --locked
@@ -830,11 +834,11 @@ jobs:
         timeout-minutes: 15
         run: |
           set -euo pipefail
-          cargo test --manifest-path adapters/python/Cargo.toml --locked
-          cargo build --manifest-path adapters/python/Cargo.toml --locked
-          node --test adapters/python/tests/scan-protocol.test.mjs adapters/python/tests/observed-host.test.mjs
+          cargo test --manifest-path tests/external/lekalo-python/Cargo.toml --locked
+          cargo build --manifest-path tests/external/lekalo-python/Cargo.toml --locked
+          node --test tests/external/lekalo-python/tests/scan-protocol.test.mjs tests/python-observed-host.test.mjs
           node scripts/test-public-python-scan.mjs
-          node --test adapters/python/tests/fastapi.test.mjs
+          node --test tests/external/lekalo-python/tests/fastapi.test.mjs
           node scripts/gen-http-scan-protocol.mjs --check
           node scripts/test-public-fastapi-scan.mjs --validate-contracts
       - *ci-setup-104
@@ -1075,6 +1079,8 @@ jobs:
       - *ci-setup-46
       - *ci-setup-35
       - *ci-setup-36
+      - name: Build pinned external services
+        run: node scripts/external-tool.mjs --build-services
       - run: cargo build --workspace --locked
       - name: Qualify confined Unix execution and denied host paths
         if: runner.os != 'Windows'
@@ -1125,6 +1131,8 @@ jobs:
       - *ci-setup-46
       - *ci-setup-35
       - *ci-setup-36
+      - name: Build pinned external services
+        run: node scripts/external-tool.mjs --build-services
       - run: cargo build --workspace --locked
       - name: Run CLI and Windows process fixtures independently
         run: node scripts/ci-rust-tests.mjs --lane=process
