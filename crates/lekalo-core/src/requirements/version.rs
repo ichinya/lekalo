@@ -40,22 +40,22 @@ pub const MAX_REFERENCES: usize = 4096;
 
 /// The maximum number of capabilities one provider may carry (fatal beyond
 /// it).
-pub const MAX_CAPABILITIES: usize = lekalo_openspec::limits::MAX_CAPABILITIES;
+pub const MAX_CAPABILITIES: usize = 256;
 
 /// The maximum distinct requirement ids encountered in one provider and
 /// the aggregate catalog, coverage or conflict rows across all providers.
-pub const MAX_REQUIREMENTS: usize = lekalo_openspec::limits::MAX_REQUIREMENTS;
+pub const MAX_REQUIREMENTS: usize = 10000;
 
 /// The maximum number of active change directories one provider may apply
 /// (fatal beyond it); the archive subtree is not read.
-pub const MAX_CHANGES: usize = lekalo_openspec::limits::MAX_CHANGES;
+pub const MAX_CHANGES: usize = 256;
 
 /// The maximum requirement title length in Unicode scalars.
-pub const MAX_TITLE_CHARS: usize = lekalo_openspec::limits::MAX_TITLE_CHARS;
+pub const MAX_TITLE_CHARS: usize = 128;
 
 /// The maximum size in bytes of one spec or delta document accepted for
 /// reading (fatal beyond it).
-pub const MAX_SPEC_BYTES: usize = lekalo_openspec::limits::MAX_SPEC_BYTES;
+pub const MAX_SPEC_BYTES: usize = 1048576;
 
 /// The maximum size in bytes of one attachment document accepted for
 /// validation (fatal beyond it).

@@ -123,17 +123,16 @@ fn resolve_root(selector: Option<&str>) -> Result<(PathBuf, RootBasis, Vec<Strin
             )],
         )
     })?;
+    let providers = detect::DiscoveryProviders::load(&cwd)?;
     let mut workspace_roots: Vec<(usize, PathBuf)> = Vec::new();
     let mut manifest_ancestor: Option<(usize, PathBuf)> = None;
     let mut current = cwd.clone();
     for level in 0..crate::project_fs::MAX_WALK_DEPTH {
-        match detect::workspace_marker(&current) {
-            Some(_) => workspace_roots.push((level, current.clone())),
-            None => {
-                if manifest_ancestor.is_none() && detect::any_manifest(&current) {
-                    manifest_ancestor = Some((level, current.clone()));
-                }
-            }
+        let (workspace, manifest) = detect::probe(&current, &providers)?;
+        if workspace {
+            workspace_roots.push((level, current.clone()));
+        } else if manifest_ancestor.is_none() && manifest {
+            manifest_ancestor = Some((level, current.clone()));
         }
         match current.parent() {
             Some(parent) if parent != current => current = parent.to_path_buf(),
@@ -232,13 +231,6 @@ pub fn valid_project_id(id: &str) -> bool {
 
 /// One root-manifest project-id candidate: file name, name reader,
 /// provenance source, and confidence.
-type NameCandidate = (
-    &'static str,
-    fn(&Path) -> Option<String>,
-    &'static str,
-    Confidence,
-);
-
 /// Derive the adopted project id: explicit flag, then root manifest
 /// names, then the root directory name. Every derivation is recorded.
 fn derive_project_id(
@@ -259,47 +251,21 @@ fn derive_project_id(
             _ => Err("invalid-project-id"),
         };
     }
-    let manifest = |name: &str| root.join(name);
-    fn go_segment(path: &Path) -> Option<String> {
-        detect::go_module_path(path)
-            .map(|module| module.rsplit('/').next().unwrap_or(&module).to_owned())
-    }
-    let candidates: [NameCandidate; 4] = [
-        (
-            "package.json",
-            detect::json_name,
-            "package.json#name",
-            Confidence::High,
-        ),
-        (
-            "composer.json",
-            detect::json_name,
-            "composer.json#name",
-            Confidence::High,
-        ),
-        (
-            "Cargo.toml",
-            detect::cargo_package_name,
-            "Cargo.toml#package.name",
-            Confidence::High,
-        ),
-        ("go.mod", go_segment, "go.mod#module", Confidence::High),
-    ];
-    for (name, reader, source, confidence) in candidates {
-        if !detection.manifests.iter().any(|entry| entry.path == name) {
+    let mut candidates = detection.name_candidates.clone();
+    candidates.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+    for (_, path, raw, source) in candidates {
+        if path.contains('/') {
             continue;
         }
-        if let Some(raw) = reader(&manifest(name)) {
-            if let Some(id) = sanitize_id(&raw) {
-                return Ok(ProjectId {
-                    id,
-                    provenance: ProjectIdProvenance {
-                        source: source.to_owned(),
-                        original: Some(raw),
-                        confidence,
-                    },
-                });
-            }
+        if let Some(id) = sanitize_id(&raw) {
+            return Ok(ProjectId {
+                id,
+                provenance: ProjectIdProvenance {
+                    source,
+                    original: Some(raw),
+                    confidence: Confidence::High,
+                },
+            });
         }
     }
     let directory = root

@@ -9,10 +9,10 @@ import { fileURLToPath } from "node:url";
 // CI builds the host workspace before running the Python adapter gates.
 const suffix = process.platform === "win32" ? ".exe" : "";
 const host = process.env.LEKALO_BIN
-  ?? fileURLToPath(new URL(`../../../target/debug/lekalo${suffix}`, import.meta.url));
+  ?? fileURLToPath(new URL(`../target/debug/lekalo${suffix}`, import.meta.url));
 const adapter = process.env.LEKALO_PYTHON_ADAPTER_BIN
-  ?? fileURLToPath(new URL(`../target/debug/lekalo-target-python${suffix}`, import.meta.url));
-const fixtures = new URL("../../../tests/fixtures/", import.meta.url);
+  ?? fileURLToPath(new URL(`./external/lekalo-python/target/debug/lekalo-target-python${suffix}`, import.meta.url));
+const fixtures = new URL("./fixtures/", import.meta.url);
 const profile = readFileSync(new URL("python-scan/standalone/profile.compact.json", fixtures), "utf8").trim();
 const temporaryParent = realpathSync(tmpdir());
 const scratch = mkdtempSync(join(temporaryParent, "lekalo-python-observed-host-"));

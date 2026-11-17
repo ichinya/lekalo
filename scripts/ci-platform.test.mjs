@@ -19,6 +19,8 @@ test('Mago lint cleanup only renames the intentionally discarded platform field'
  assert.throws(()=>checkPlatform({caller:changed}),/Unrelated job mago-real changed/);
 });
 const mutations=[
+ ['missing external service build',s=>s.replace('      - name: Build pinned external services\n        run: node scripts/external-tool.mjs --build-services\n','')],
+ ['conditional external service build',s=>s.replace('      - name: Build pinned external services\n','      - name: Build pinned external services\n        if: false\n')],
  ['Rust barrier',s=>s.replace('  rust:\n','  rust:\n    needs: build-debug\n')],
  ['process Rust barrier',s=>s.replace('  rust-process:\n','  rust-process:\n    needs: build-debug\n')],
  ['optional process Rust',s=>s.replace('  rust-process:\n','  rust-process:\n    if: false\n')],

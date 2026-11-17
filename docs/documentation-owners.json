@@ -3831,8 +3831,17 @@
       "id": "contract:contracts/external-runtime.schema.v1.json",
       "kind": "contract",
       "source": "contracts/external-runtime.schema.v1.json",
-      "sourceDigest": "sha256:8cf8cf1fe5f60b8a1fa74901676751d1595363d973220690b79fa887d8ce8565",
+      "sourceDigest": "sha256:840af4676bfcd2ddcb68602223885fe847600b3aff125a2dd1be98ff7f7cd891",
       "owner": "docs/external-runtimes.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/external-services.schema.v1.json",
+      "kind": "contract",
+      "source": "contracts/external-services.schema.v1.json",
+      "sourceDigest": "sha256:8d505da92c41a7ddf391b09a9fe6342010fa3bfb1258a67f69192b5266519b26",
+      "owner": "docs/external-services.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

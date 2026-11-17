@@ -2,10 +2,11 @@
 // Development/test tools live in their own repositories. No source snapshots
 // are written into the host repository or compiled into its production binary.
 import {execFileSync, spawnSync} from 'node:child_process';
-import {appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync} from 'node:fs';
+import {appendFileSync, copyFileSync, chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {serviceSpecs, serviceEnvironment} from './lib/external-services.mjs';
 export const hostRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export function externalRoot(name) {
   const lock = JSON.parse(readFileSync(join(hostRoot, 'external-tools.lock.json'), 'utf8'));
@@ -52,6 +53,7 @@ export function provision() {
     symlinkSync(target,link,process.platform === 'win32' ? 'junction' : 'dir');
   }
   if (process.env.GITHUB_ENV) {
+    appendFileSync(process.env.GITHUB_ENV,`LEKALO_SERVICES=${serviceEnvironment(join(hostRoot,'target'))}\n`);
     const provider=JSON.stringify('path:'+externalRoot('lekalo-postgres'));
     appendFileSync(process.env.GITHUB_ENV,`LEKALO_STORAGE_PROVIDER=${provider}\nLEKALO_TYPESCRIPT_ROOT=${externalRoot('lekalo-typescript')}\n`);
   }
@@ -59,6 +61,23 @@ export function provision() {
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv[2] === '--provision') provision();
+  else if (process.argv[2] === '--build-services') buildServices();
   else if (process.argv.length === 3) console.log(externalRoot(process.argv[2]));
   else runExternal(process.argv[2],process.argv[3],process.argv.slice(4));
+}
+
+export function buildServices() {
+  for (const spec of Object.values(serviceSpecs)) {
+    if (!/^[a-z][a-z0-9-]*$/.test(spec.binary) || spec.manifest.split('/').some(p=>!p||p==='..'||p.includes('\\'))) throw new Error('Invalid service build specification');
+    const root=externalRoot(spec.package);
+    const result=spawnSync('cargo',['build','--locked','--manifest-path',join(root,spec.manifest),'--bin',spec.binary],{cwd:root,env:{...process.env,CARGO_TARGET_DIR:join(hostRoot,'target/external-service-build'),CARGO_PROFILE_DEV_DEBUG:'0',CARGO_INCREMENTAL:'0'},stdio:'inherit'});
+    if (result.status!==0) throw new Error(`Service build failed: ${spec.package}`);
+    // Cargo hardlinks its build artifacts; install a separate regular file for
+    // the host's no-hardlink executable admission before pinning it.
+    const suffix=process.platform==='win32'?'.exe':'';
+    const destination=join(hostRoot,'target/external-services/debug',spec.binary+suffix);
+    mkdirSync(dirname(destination),{recursive:true});
+    copyFileSync(join(hostRoot,'target/external-service-build/debug',spec.binary+suffix),destination);
+    chmodSync(destination,0o755);
+  }
 }

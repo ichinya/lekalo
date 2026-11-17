@@ -1,4 +1,4 @@
-name: External source custody
+name: Legacy PHP source custody
 on:
   push:
     branches: [main]
@@ -15,6 +15,4 @@ jobs:
         with:
           node-version: 24.x
           package-manager-cache: false
-      - run: node scripts/sync-external-packages.mjs --check
       - run: node scripts/sync-php-packages.mjs --check
-      - run: node --test scripts/test-external-packages.mjs

@@ -593,12 +593,6 @@ version = "1.3.0"
 dependencies = [
  "ignore",
  "jsonschema",
- "lekalo-go-discovery",
- "lekalo-hlv",
- "lekalo-openspec",
- "lekalo-python-discovery",
- "lekalo-rust-discovery",
- "lekalo-typescript-discovery",
  "libc",
  "rusqlite",
  "rustix",
@@ -610,36 +604,6 @@ dependencies = [
  "tempfile",
  "unicode-normalization",
  "windows-sys",
-]
-
-[[package]]
-name = "lekalo-go-discovery"
-version = "0.1.0"
-
-[[package]]
-name = "lekalo-hlv"
-version = "0.1.0"
-
-[[package]]
-name = "lekalo-openspec"
-version = "0.1.0"
-dependencies = [
- "sha2",
-]
-
-[[package]]
-name = "lekalo-python-discovery"
-version = "0.1.0"
-
-[[package]]
-name = "lekalo-rust-discovery"
-version = "0.1.0"
-
-[[package]]
-name = "lekalo-typescript-discovery"
-version = "0.1.0"
-dependencies = [
- "serde_json",
 ]
 
 [[package]]

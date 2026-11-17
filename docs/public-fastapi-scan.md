@@ -102,7 +102,7 @@ generation, factories and executing Python remain outside this provider.
 ## Acceptance
 
 ```text
-node --test adapters/python/tests/fastapi.test.mjs
+node --test tests/external/lekalo-python/tests/fastapi.test.mjs
 node scripts/gen-http-scan-protocol.mjs --check
 node scripts/test-public-fastapi-scan.mjs
 ```

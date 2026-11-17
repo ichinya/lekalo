@@ -9,8 +9,8 @@ const digest=s=>createHash('sha256').update(s).digest('hex');
 const expr=s=>'${{ '+s+' }}';
 const consumers=['cli-core','node-typescript','php-laravel','python','sdk','docs','mcp','native-execution'];
 // Preserve the historical gate inventory while changing only package locations.
-const externalize = text => text.replaceAll('adapters/node-typescript','tests/external/lekalo-typescript/adapters/node-typescript').replaceAll('tests/fixtures/node-typescript-scanner/','tests/external/lekalo-typescript/tests/fixtures/node-typescript-scanner/').replaceAll('working-directory: sdk/','working-directory: tests/external/lekalo-adapter-sdk/sdk/');
-const originalLocations = text => text.replaceAll('tests/external/lekalo-typescript/','').replaceAll('tests/external/lekalo-adapter-sdk/','').replaceAll('      - name: Provision pinned external integration packages\n        run: node scripts/external-tool.mjs --provision\n','');
+const externalize = text => text.replaceAll('adapters/python/','tests/external/lekalo-python/').replaceAll('tests/external/lekalo-python/tests/observed-host.test.mjs','tests/python-observed-host.test.mjs').replaceAll('adapters/node-typescript','tests/external/lekalo-typescript/adapters/node-typescript').replaceAll('tests/fixtures/node-typescript-scanner/','tests/external/lekalo-typescript/tests/fixtures/node-typescript-scanner/').replaceAll('working-directory: sdk/','working-directory: tests/external/lekalo-adapter-sdk/sdk/');
+const originalLocations = text => text.replaceAll('tests/external/lekalo-python/', 'adapters/python/').replaceAll('tests/python-observed-host.test.mjs','adapters/python/tests/observed-host.test.mjs').replaceAll('tests/external/lekalo-typescript/','').replaceAll('tests/external/lekalo-adapter-sdk/','').replaceAll('      - name: Provision pinned external integration packages\n        run: node scripts/external-tool.mjs --provision\n','');
 export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=read('.github/workflows/ci-platform.yml'),inventory=JSON.parse(read('.github/ci/platform-gates.json'))}={}){
  const parent=jobs(caller),graph=jobs(callee),call=parent.platform;
  assert.equal(call?.uses,'./.github/workflows/ci-platform.yml');
@@ -31,6 +31,15 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   assert(job.steps.some(s=>s.uses==='actions/setup-node@v7'));
   assert(!job.steps.some(s=>s.raw.includes('continue-on-error')),`${job.id}: optional step`);
  }
+ for(const owner of ['build-debug','build-release','rust','rust-process']) {
+  const steps=graph[owner].steps;
+  const provision=steps.findIndex(s=>s.run==='node scripts/external-tool.mjs --provision');
+  const builds=steps.filter(s=>s.run==='node scripts/external-tool.mjs --build-services');
+  assert.equal(builds.length,1,`${owner}: exactly one pinned service build`);
+  const build=steps.indexOf(builds[0]),consume=steps.findIndex(s=>s.run?.includes('cargo build'));
+  assert(provision<build&&build<consume&&!builds[0].condition,`${owner}: services before host consumers`);
+ }
+ for(const owner of consumers) assert(!graph[owner].steps.some(s=>s.run?.includes('--build-services')),`${owner}: services must use the verified artifact`);
  for(const profile of ['debug','release']){
   const p=graph['build-'+profile];assert.deepEqual(p.needs,[]);
   assert.equal(p.env.RUNTIME_PROFILE,profile);assert.equal(p.env.RUNTIME_IMAGE,expr('inputs.os'));

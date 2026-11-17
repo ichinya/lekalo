@@ -57,16 +57,7 @@ pub(crate) const SKIP_DIRS: [&str; 18] = [
     ".hlv",
 ];
 
-// Package-owned language recognition. The host owns walk/read authority and
-// receipt admission; package code accepts data only and never touches the FS.
-use go::{go_module_path_bytes, go_work_members};
-use lekalo_go_discovery as go;
-use lekalo_python_discovery as python;
-use lekalo_rust_discovery as rust;
-use lekalo_typescript_discovery as node;
-use node::{node_scripts, node_workspace_members};
-use rust::{cargo_package_name_bytes, cargo_workspace_members, has_cargo_workspace};
-
+// Legacy technologies not yet migrated to discovery services.
 const OTHER_MANIFESTS: &[(&str, &str)] = &[
     ("composer.json", "php"),
     ("Gemfile", "ruby"),
@@ -78,29 +69,6 @@ const OTHER_MANIFESTS: &[(&str, &str)] = &[
     ("deno.json", "deno"),
     ("deno.jsonc", "deno"),
 ];
-
-fn manifests() -> impl Iterator<Item = &'static (&'static str, &'static str)> {
-    node::MANIFESTS
-        .iter()
-        .chain(rust::MANIFESTS)
-        .chain(go::MANIFESTS)
-        .chain(python::MANIFESTS)
-        .chain(OTHER_MANIFESTS)
-}
-
-fn lockfiles() -> impl Iterator<Item = &'static (&'static str, &'static str)> {
-    node::LOCKFILES
-        .iter()
-        .chain(rust::LOCKFILES)
-        .chain(&[("composer.lock", "composer")])
-}
-
-fn language_files() -> impl Iterator<Item = &'static (&'static str, &'static str, &'static str)> {
-    node::FILE_HINTS
-        .iter()
-        .chain(go::FILE_HINTS)
-        .chain(rust::FILE_HINTS)
-}
 
 /// Directory names recorded as source-directory evidence.
 const SOURCE_DIRS: [&str; 7] = ["src", "lib", "app", "source", "sources", "internal", "pkg"];
@@ -366,104 +334,31 @@ fn is_reparse(metadata: &std::fs::Metadata) -> bool {
     }
 }
 
-/// Read a bounded file; `None` on absence, oversize, or read failure.
-fn read_bounded(path: &Path) -> Option<Vec<u8>> {
-    let fs = Fs::open(path.parent()?).ok()?;
-    fs.read_file_opt("", path.file_name()?.to_str()?, MAX_MANIFEST_BYTES as usize)
-        .ok()?
-}
-
-/// Parse a bounded JSON manifest.
-fn parse_json(path: &Path) -> Option<Value> {
-    let bytes = read_bounded(path)?;
-    serde_json::from_slice(&bytes).ok()
-}
-
-/// The closed workspace-root kinds detection recognizes.
-pub(crate) enum WorkspaceKind {
-    Node,
-    Go,
-    Rust,
-    Gradle,
-}
-
-/// Whether `dir` declares a workspace root, and of which ecosystem.
-pub(crate) fn workspace_marker(dir: &Path) -> Option<WorkspaceKind> {
-    let package = dir.join(node::MODULE_MANIFEST);
-    if package.is_file() {
-        if let Some(value) = parse_json(&package) {
-            if node_workspace_members(&value).is_some() {
-                return Some(WorkspaceKind::Node);
-            }
-        }
-    }
-    if dir.join(node::WORKSPACE_MANIFEST).is_file() {
-        if let Some(members) = pnpm_workspace_members(&dir.join(node::WORKSPACE_MANIFEST)) {
-            if !members.is_empty() {
-                return Some(WorkspaceKind::Node);
-            }
-        }
-    }
-    if dir.join(go::WORKSPACE_MANIFEST).is_file() {
-        return Some(WorkspaceKind::Go);
-    }
-    let cargo = dir.join(rust::MODULE_MANIFEST);
-    if cargo.is_file() {
-        if let Some(bytes) = read_bounded(&cargo) {
-            if has_cargo_workspace(&bytes) {
-                return Some(WorkspaceKind::Rust);
-            }
-        }
-    }
-    if dir.join("settings.gradle").is_file() || dir.join("settings.gradle.kts").is_file() {
-        return Some(WorkspaceKind::Gradle);
-    }
-    None
-}
-
-/// Whether any closed ecosystem manifest exists directly in `dir`.
-pub(crate) fn any_manifest(dir: &Path) -> bool {
-    manifests().any(|(name, _)| dir.join(name).is_file())
-}
-
-/// The `packages` member globs of one `pnpm-workspace.yaml`.
-fn pnpm_workspace_members(path: &Path) -> Option<Vec<String>> {
-    let bytes = read_bounded(path)?;
-    pnpm_workspace_members_bytes(&bytes)
-}
-
-fn pnpm_workspace_members_bytes(bytes: &[u8]) -> Option<Vec<String>> {
-    let text = std::str::from_utf8(bytes).ok()?;
-    let index = crate::loader::source::LineIndex::new(text);
-    let parsed = crate::loader::frontends::parse_document(text, &index).ok()?;
-    let root = match parsed {
-        crate::loader::frontends::Parsed::Root(node) => node,
-        crate::loader::frontends::Parsed::Empty => return Some(Vec::new()),
-    };
-    let packages = root.get(node::WORKSPACE_MEMBERS_FIELD)?.as_seq()?;
-    Some(
-        packages
+/// Root selection uses the same external discovery API as adoption.
+pub(crate) fn probe(
+    dir: &Path,
+    providers: &DiscoveryProviders,
+) -> Result<(bool, bool), DomainResult> {
+    let fs = Fs::open(dir).map_err(|_| scope::failure("structure.root-unreadable", None))?;
+    let names: Vec<String> = providers
+        .filenames()
+        .into_iter()
+        .filter(|name| matches!(fs.entry_type("", name), Ok(EntryType::File)))
+        .collect();
+    let data = providers.inspect(&names, |path| {
+        fs.read_file_opt("", path, MAX_MANIFEST_BYTES as usize)
+            .ok()
+            .flatten()
+    })?;
+    let workspace = !data.workspaces.is_empty()
+        || ["settings.gradle", "settings.gradle.kts"]
             .iter()
-            .filter_map(|item| item.as_str().map(str::to_owned))
-            .collect(),
-    )
-}
-
-/// The `[package] name` of one Cargo.toml (line-scan evidence).
-pub(crate) fn cargo_package_name(path: &Path) -> Option<String> {
-    let bytes = read_bounded(path)?;
-    cargo_package_name_bytes(&bytes)
-}
-
-/// The npm/composer package name of one JSON manifest.
-pub(crate) fn json_name(path: &Path) -> Option<String> {
-    parse_json(path)?.get("name")?.as_str().map(str::to_owned)
-}
-
-/// The `module` path of one go.mod.
-pub(crate) fn go_module_path(path: &Path) -> Option<String> {
-    let bytes = read_bounded(path)?;
-    go_module_path_bytes(&bytes)
+            .any(|name| matches!(fs.entry_type("", name), Ok(EntryType::File)));
+    let manifest = !data.manifests.is_empty()
+        || OTHER_MANIFESTS
+            .iter()
+            .any(|(name, _)| matches!(fs.entry_type("", name), Ok(EntryType::File)));
+    Ok((workspace, manifest))
 }
 
 /// Run the full closed detection pass over one adopted root.
@@ -477,6 +372,15 @@ pub(crate) fn detect(
 ) -> Result<Detection, DomainResult> {
     let mut detection = Detection::default();
     let walk = Walk::run(root, input)?;
+    let providers = DiscoveryProviders::load(root)?;
+    let data = providers.inspect(&walk.files.iter().cloned().collect::<Vec<_>>(), |path| {
+        walk.read(path)
+    })?;
+    for path in &data.refused {
+        walk.read_failures.borrow_mut().push(path.clone());
+    }
+    let module_evidence = data.modules.clone();
+    data.apply(&mut detection);
 
     // Layouts: externally owned homes at the adopted root.
     for (kind, name, evidence) in [
@@ -511,7 +415,6 @@ pub(crate) fn detect(
         });
     }
 
-    let mut node_manifests: Vec<(String, Value)> = Vec::new();
     let mut composer_manifests: Vec<(String, Value)> = Vec::new();
     let mut artisan_paths = BTreeSet::new();
 
@@ -537,7 +440,7 @@ pub(crate) fn detect(
             .file_name()
             .map(|name| name.to_string_lossy().into_owned());
         let Some(name) = name else { continue };
-        if let Some((_, ecosystem)) = manifests().find(|(stem, _)| *stem == name) {
+        if let Some((_, ecosystem)) = OTHER_MANIFESTS.iter().find(|(stem, _)| *stem == name) {
             if detection.manifests.len() < MAX_PER_COLLECTION {
                 detection.manifests.push(Evidence {
                     path: entry.path.clone(),
@@ -545,25 +448,23 @@ pub(crate) fn detect(
                 });
             }
         }
-        if let Some((_, manager)) = lockfiles().find(|(stem, _)| *stem == name) {
-            if detection.package_managers.len() < MAX_PER_COLLECTION {
-                detection.package_managers.push(Evidence {
-                    path: entry.path.clone(),
-                    detail: (*manager).to_owned(),
-                });
-            }
-        }
-        if name == node::MODULE_MANIFEST {
-            if let Some(value) = walk.json(&entry.path) {
-                scan_node_manifest(&entry.path, &value, &mut detection);
-                if node_manifests.len() < MAX_PER_COLLECTION {
-                    node_manifests.push((entry.path.clone(), value));
-                }
-            }
+        if name == "composer.lock" && detection.package_managers.len() < MAX_PER_COLLECTION {
+            detection.package_managers.push(Evidence {
+                path: entry.path.clone(),
+                detail: "composer".into(),
+            });
         }
         if name == "composer.json" {
             if let Some(value) = walk.json(&entry.path) {
                 scan_composer_manifest(&entry.path, &value, &mut detection);
+                if let Some(name) = value["name"].as_str() {
+                    detection.name_candidates.push((
+                        20,
+                        entry.path.clone(),
+                        name.into(),
+                        "composer.json#name".into(),
+                    ));
+                }
                 if composer_manifests.len() < MAX_PER_COLLECTION {
                     composer_manifests.push((entry.path.clone(), value));
                 }
@@ -571,22 +472,6 @@ pub(crate) fn detect(
         }
         if name == "artisan" {
             artisan_paths.insert(entry.path.clone());
-        }
-        for (_, label, confidence) in language_files().filter(|(file, _, _)| *file == name) {
-            push_hint(
-                &mut detection.languages,
-                Hint {
-                    label: (*label).to_owned(),
-                    kind: "language",
-                    path: entry.path.clone(),
-                    field: None,
-                    confidence: if *confidence == "high" {
-                        Confidence::High
-                    } else {
-                        Confidence::Medium
-                    },
-                },
-            );
         }
         if name == "Gemfile" {
             push_hint(
@@ -614,95 +499,43 @@ pub(crate) fn detect(
         }
     }
 
-    // Workspace roots at the adopted root itself, then anywhere inside
-    // the walked tree, plus their members.
-    let mut marked: Vec<(String, WorkspaceKind)> = Vec::new();
-    if let Some(kind) = workspace_marker_in(&walk, ".") {
-        marked.push((".".to_owned(), kind));
-    }
-    for entry in &walk.entries {
-        if !entry.is_dir {
-            continue;
-        }
-        if let Some(kind) = workspace_marker_in(&walk, &entry.path) {
-            marked.push((entry.path.clone(), kind));
-        }
-    }
-    for (path, kind) in marked {
-        if detection.workspace_roots.len() >= MAX_PER_COLLECTION {
-            break;
-        }
-        let (ecosystem, members) = match kind {
-            WorkspaceKind::Node => {
-                let manifest = child_path(&path, node::MODULE_MANIFEST);
-                let members = walk
-                    .json(&manifest)
-                    .and_then(|value| node_workspace_members(&value))
-                    .or_else(|| {
-                        walk.read(&child_path(&path, node::WORKSPACE_MANIFEST))
-                            .and_then(|bytes| pnpm_workspace_members_bytes(&bytes))
-                    })
-                    .unwrap_or_default();
-                ("node", members)
-            }
-            WorkspaceKind::Go => (
-                "go",
-                walk.read(&child_path(&path, go::WORKSPACE_MANIFEST))
-                    .map(|bytes| go_work_members(&bytes, MAX_PER_COLLECTION))
-                    .unwrap_or_default(),
-            ),
-            WorkspaceKind::Rust => (
-                "rust",
-                walk.read(&child_path(&path, rust::MODULE_MANIFEST))
-                    .map(|bytes| cargo_workspace_members(&bytes, MAX_PER_COLLECTION))
-                    .unwrap_or_default(),
-            ),
-            WorkspaceKind::Gradle => ("gradle", Vec::new()),
-        };
-        detection.workspace_roots.push(WorkspaceRoot {
-            path,
-            ecosystem,
-            members,
-            confidence: Confidence::High,
-        });
-    }
-
-    // Monorepo tooling evidence without workspace semantics.
-    for entry in &walk.entries {
-        if entry.is_dir {
-            continue;
-        }
-        if node::MONOREPO_TOOLS.contains(&entry.path.as_str()) {
-            detection.monorepo_tools.push(Evidence {
-                path: entry.path.clone(),
-                detail: "monorepo-tooling".to_owned(),
+    for directory in std::iter::once(".").chain(
+        walk.entries
+            .iter()
+            .filter(|e| e.is_dir)
+            .map(|e| e.path.as_str()),
+    ) {
+        if ["settings.gradle", "settings.gradle.kts"]
+            .iter()
+            .any(|name| walk.has_file(&child_path(directory, name)))
+        {
+            detection.workspace_roots.push(WorkspaceRoot {
+                path: directory.into(),
+                ecosystem: "gradle".into(),
+                members: Vec::new(),
+                confidence: Confidence::High,
             });
         }
     }
-
     // Observed modules: workspace members carrying a manifest.
     for workspace in &detection.workspace_roots {
         for glob in &workspace.members {
-            for module in expand_member_glob(&walk, workspace, glob) {
+            for module in expand_member_glob(&walk, workspace, glob, &module_evidence) {
                 push_module(&mut detection.modules, module);
             }
         }
     }
     if detection.modules.is_empty() {
-        for (path, value) in &node_manifests {
-            if path.split('/').count() == 1 || detection.workspace_roots.is_empty() {
-                if let Some(name) = value.get("name").and_then(Value::as_str) {
+        for module in &module_evidence {
+            if module.standalone && (module.path == "." || detection.workspace_roots.is_empty()) {
+                if let Some(name) = &module.name {
                     push_module(
                         &mut detection.modules,
                         ObservedModule {
-                            name: name.to_owned(),
-                            path: path
-                                .rsplit_once('/')
-                                .map(|(directory, _)| directory)
-                                .unwrap_or(".")
-                                .to_owned(),
+                            name: name.clone(),
+                            path: module.path.clone(),
                             mode: "observed",
-                            evidence: vec![path.clone()],
+                            evidence: vec![module.manifest.clone()],
                             confidence: Confidence::High,
                         },
                     );
@@ -713,7 +546,6 @@ pub(crate) fn detect(
             }
         }
     }
-
     // Native gates: package.json scripts verbatim; ecosystem conventions.
     if input.is_some() {
         for (path, value) in &composer_manifests {
@@ -735,34 +567,6 @@ pub(crate) fn detect(
             }
         }
     }
-    let node_manager = detection
-        .package_managers
-        .iter()
-        .map(|evidence| evidence.detail.as_str())
-        .find(|manager| node::MANAGERS.contains(manager))
-        .unwrap_or("npm")
-        .to_owned();
-    for (path, value) in &node_manifests {
-        let runner = if *path == node::MODULE_MANIFEST {
-            node_manager.as_str()
-        } else {
-            "npm"
-        };
-        for script in node_scripts(value) {
-            if let Some(gate) = gate_name(&script) {
-                detection.gates.push(GateProposal {
-                    gate,
-                    command: format!("{runner} run {script}"),
-                    source: "workflow",
-                    evidence: format!("{path}#scripts.{script}"),
-                    confidence: Confidence::High,
-                });
-            }
-        }
-        if *path == node::MODULE_MANIFEST {
-            break;
-        }
-    }
     for (path, _) in &composer_manifests {
         let directory = path
             .rsplit_once('/')
@@ -779,23 +583,6 @@ pub(crate) fn detect(
             });
         }
     }
-    for manifest in &detection.manifests {
-        let name = manifest.path.rsplit('/').next().unwrap_or("");
-        for (_, gate, command) in go::GATES
-            .iter()
-            .chain(rust::GATES)
-            .filter(|(file, _, _)| *file == name)
-        {
-            detection.gates.push(GateProposal {
-                gate,
-                command: (*command).to_owned(),
-                source: "derived",
-                evidence: manifest.path.clone(),
-                confidence: Confidence::Medium,
-            });
-        }
-    }
-
     // Installed target adapters: a bounded PATH lookup, never an execution.
     let installed = installed_adapters(root, &walk);
     let mut probed: Vec<String> = installed.clone();
@@ -864,6 +651,20 @@ pub(crate) fn detect(
     {
         detection.scope.limited("collection-limit");
     }
+    if [
+        detection.package_managers.len(),
+        detection.workspace_roots.len(),
+        detection.monorepo_tools.len(),
+    ]
+    .iter()
+    .any(|n| *n >= MAX_PER_COLLECTION)
+    {
+        detection.scope.limited("collection-limit");
+    }
+    detection.manifests.truncate(MAX_PER_COLLECTION);
+    detection.package_managers.truncate(MAX_PER_COLLECTION);
+    detection.workspace_roots.truncate(MAX_PER_COLLECTION);
+    detection.monorepo_tools.truncate(MAX_PER_COLLECTION);
     detection.gates.truncate(MAX_PER_COLLECTION);
     detection.scope = detection.scope.finish();
     Ok(detection)
@@ -875,40 +676,6 @@ fn child_path(directory: &str, name: &str) -> String {
     } else {
         format!("{directory}/{name}")
     }
-}
-
-/// Workspace detection uses only admitted catalog entries, including for
-/// roots nested below another workspace. No membership glob can open a
-/// new directory or manifest outside the scoped walk.
-fn workspace_marker_in(walk: &Walk, directory: &str) -> Option<WorkspaceKind> {
-    if walk
-        .json(&child_path(directory, node::MODULE_MANIFEST))
-        .as_ref()
-        .and_then(node_workspace_members)
-        .is_some()
-        || walk
-            .read(&child_path(directory, node::WORKSPACE_MANIFEST))
-            .and_then(|bytes| pnpm_workspace_members_bytes(&bytes))
-            .is_some_and(|members| !members.is_empty())
-    {
-        return Some(WorkspaceKind::Node);
-    }
-    if walk.has_file(&child_path(directory, go::WORKSPACE_MANIFEST)) {
-        return Some(WorkspaceKind::Go);
-    }
-    if walk
-        .read(&child_path(directory, rust::MODULE_MANIFEST))
-        .is_some_and(|bytes| has_cargo_workspace(&bytes))
-    {
-        return Some(WorkspaceKind::Rust);
-    }
-    if ["settings.gradle", "settings.gradle.kts"]
-        .iter()
-        .any(|name| walk.has_file(&child_path(directory, name)))
-    {
-        return Some(WorkspaceKind::Gradle);
-    }
-    None
 }
 
 /// Insert one hint, keeping collections bounded and duplicate-free.
@@ -937,7 +704,12 @@ fn push_module(modules: &mut Vec<ObservedModule>, module: ObservedModule) {
 ///
 /// Only the closed `a/b/*` shape (literal segments plus one trailing or
 /// interior `*` level) is expanded, against on-disk directory entries.
-fn expand_member_glob(walk: &Walk, workspace: &WorkspaceRoot, glob: &str) -> Vec<ObservedModule> {
+fn expand_member_glob(
+    walk: &Walk,
+    workspace: &WorkspaceRoot,
+    glob: &str,
+    evidence: &[ModuleEvidence],
+) -> Vec<ObservedModule> {
     let segments: Vec<&str> = glob.split('/').collect();
     if segments.is_empty()
         || segments.len() > 3
@@ -966,32 +738,23 @@ fn expand_member_glob(walk: &Walk, workspace: &WorkspaceRoot, glob: &str) -> Vec
         {
             continue;
         }
-        let Some(manifest) = [
-            node::MODULE_MANIFEST,
-            "composer.json",
-            go::MODULE_MANIFEST,
-            rust::MODULE_MANIFEST,
-            python::MODULE_MANIFEST,
-        ]
-        .into_iter()
-        .map(|name| child_path(&entry.path, name))
-        .find(|path| walk.has_file(path)) else {
+        let selected = evidence
+            .iter()
+            .filter(|m| m.path == entry.path)
+            .min_by_key(|m| m.priority);
+        let composer = child_path(&entry.path, "composer.json");
+        let (manifest, name) = if let Some(selected) =
+            selected.filter(|s| s.priority < 20 || !walk.has_file(&composer))
+        {
+            (selected.manifest.clone(), selected.name.clone())
+        } else if walk.has_file(&composer) {
+            let name = walk
+                .json(&composer)
+                .and_then(|v| v["name"].as_str().map(str::to_owned));
+            (composer, name)
+        } else {
             continue;
         };
-        let name =
-            if manifest.ends_with(node::MODULE_MANIFEST) || manifest.ends_with("composer.json") {
-                walk.json(&manifest)
-                    .and_then(|value| value.get("name").and_then(Value::as_str).map(str::to_owned))
-            } else if manifest.ends_with(rust::MODULE_MANIFEST) {
-                walk.read(&manifest)
-                    .and_then(|bytes| cargo_package_name_bytes(&bytes))
-            } else if manifest.ends_with(go::MODULE_MANIFEST) {
-                walk.read(&manifest)
-                    .and_then(|bytes| go_module_path_bytes(&bytes))
-                    .map(|module| module.rsplit('/').next().unwrap_or(&module).to_owned())
-            } else {
-                None
-            };
         modules.push(ObservedModule {
             name: name.unwrap_or_else(|| relative.to_owned()),
             path: entry.path.clone(),
@@ -1011,22 +774,6 @@ fn gate_name(script: &str) -> Option<&'static str> {
         "lint" => Some("lint"),
         "check" | "ci" => Some("check"),
         _ => None,
-    }
-}
-
-/// Apply the closed node dependency hint table to one manifest.
-fn scan_node_manifest(path: &str, value: &Value, detection: &mut Detection) {
-    for (label, kind, field) in node::dependency_hints(value) {
-        push_hint(
-            &mut detection.languages,
-            Hint {
-                label: label.to_owned(),
-                kind,
-                path: path.to_owned(),
-                field: Some(field.to_owned()),
-                confidence: Confidence::High,
-            },
-        );
     }
 }
 
@@ -1138,4 +885,314 @@ pub fn valid_target_id(target: &str) -> bool {
                 || character == '_'
                 || character == '-'
         })
+}
+
+use crate::runtime::{self, services::Service};
+use serde::Deserialize;
+use serde_json::json;
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DiscoveryDescriptor {
+    schema: String,
+    files: Vec<String>,
+    reads: Vec<String>,
+}
+pub(crate) struct DiscoveryProviders(Vec<(Service, DiscoveryDescriptor)>);
+impl DiscoveryProviders {
+    pub(crate) fn load(root: &Path) -> Result<Self, DomainResult> {
+        Self::load_inner(root).map_err(|e| runtime::outcome(Err(e)))
+    }
+    fn load_inner(root: &Path) -> runtime::Result<Self> {
+        let mut providers = Vec::new();
+        for provider in runtime::services::selected(root, "discovery")? {
+            let descriptor: DiscoveryDescriptor = serde_json::from_value(provider.invoke(
+                "discovery.describe",
+                json!({"schema":"lekalo/discovery/v1"}),
+            )?)
+            .map_err(|_| runtime::error("discovery-descriptor"))?;
+            if descriptor.schema != "lekalo/discovery/v1"
+                || descriptor.files.len() > 64
+                || descriptor.reads.len() > 64
+                || descriptor.files.iter().any(|p| {
+                    p.contains('/') || scope::protected(p) || scope::path_violation(p).is_some()
+                })
+                || descriptor
+                    .reads
+                    .iter()
+                    .any(|p| !descriptor.files.contains(p))
+            {
+                return Err(runtime::error("discovery-descriptor"));
+            }
+            providers.push((provider, descriptor));
+        }
+        Ok(Self(providers))
+    }
+    fn filenames(&self) -> BTreeSet<String> {
+        self.0.iter().flat_map(|(_, d)| d.files.clone()).collect()
+    }
+    fn inspect(
+        &self,
+        paths: &[String],
+        read: impl Fn(&str) -> Option<Vec<u8>>,
+    ) -> Result<DiscoveryData, DomainResult> {
+        self.inspect_inner(paths, read)
+            .map_err(|e| runtime::outcome(Err(e)))
+    }
+    fn inspect_inner(
+        &self,
+        paths: &[String],
+        read: impl Fn(&str) -> Option<Vec<u8>>,
+    ) -> runtime::Result<DiscoveryData> {
+        let mut combined = DiscoveryData::default();
+        for (provider, descriptor) in &self.0 {
+            let selected: Vec<_> = paths
+                .iter()
+                .filter(|p| {
+                    p.rsplit('/')
+                        .next()
+                        .is_some_and(|n| descriptor.files.iter().any(|f| f == n))
+                })
+                .collect();
+            if selected.is_empty() {
+                continue;
+            }
+            let mut total = 0;
+            let mut files = Vec::new();
+            for path in &selected {
+                let bytes = if descriptor
+                    .reads
+                    .iter()
+                    .any(|p| Some(p.as_str()) == path.rsplit('/').next())
+                {
+                    read(path)
+                } else {
+                    None
+                };
+                total += bytes.as_ref().map_or(0, |b| b.len());
+                if total > 4 * 1024 * 1024 {
+                    return Err(runtime::error("discovery-read-limit"));
+                }
+                let parsed = bytes
+                    .as_deref()
+                    .and_then(|b| runtime::config::value(b).ok());
+                files.push(json!({"path":path,"content":bytes.and_then(|b|String::from_utf8(b).ok()),"value":parsed}));
+            }
+            let data: DiscoveryData = serde_json::from_value(provider.invoke(
+                "discovery.inspect",
+                json!({"schema":"lekalo/discovery/v1","files":files}),
+            )?)
+            .map_err(|_| runtime::error("discovery-response"))?;
+            if !data.admitted(&selected) {
+                return Err(runtime::error("discovery-response"));
+            }
+            combined.extend(data);
+            if combined.count() > MAX_DETECTION_ENTRIES {
+                return Err(runtime::error("discovery-response-limit"));
+            }
+        }
+        Ok(combined)
+    }
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ModuleEvidence {
+    path: String,
+    manifest: String,
+    name: Option<String>,
+    standalone: bool,
+    priority: u8,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NameEvidence {
+    path: String,
+    name: String,
+    source: String,
+    priority: u8,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PathEvidence {
+    path: String,
+    detail: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HintEvidence {
+    label: String,
+    kind: String,
+    path: String,
+    field: Option<String>,
+    confidence: Confidence,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkspaceEvidence {
+    path: String,
+    ecosystem: String,
+    members: Vec<String>,
+    confidence: Confidence,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GateEvidence {
+    gate: String,
+    command: String,
+    source: String,
+    evidence: String,
+    confidence: Confidence,
+}
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DiscoveryData {
+    schema: String,
+    manifests: Vec<PathEvidence>,
+    managers: Vec<PathEvidence>,
+    hints: Vec<HintEvidence>,
+    workspaces: Vec<WorkspaceEvidence>,
+    tools: Vec<PathEvidence>,
+    gates: Vec<GateEvidence>,
+    modules: Vec<ModuleEvidence>,
+    names: Vec<NameEvidence>,
+    refused: Vec<String>,
+}
+impl DiscoveryData {
+    fn count(&self) -> usize {
+        self.manifests.len()
+            + self.managers.len()
+            + self.hints.len()
+            + self.workspaces.len()
+            + self.tools.len()
+            + self.gates.len()
+            + self.modules.len()
+            + self.names.len()
+            + self.refused.len()
+    }
+    fn admitted(&self, files: &[&String]) -> bool {
+        let present = |p: &str| files.iter().any(|f| f.as_str() == p);
+        let directory = |p: &str| {
+            (p == "." || scope::path_violation(p).is_none())
+                && files
+                    .iter()
+                    .any(|f| f.rsplit_once('/').map(|(d, _)| d).unwrap_or(".") == p)
+        };
+        let text = |s: &str| !s.is_empty() && s.len() <= 256 && !s.chars().any(char::is_control);
+        self.schema == "lekalo/discovery/v1"
+            && [
+                self.manifests.len(),
+                self.managers.len(),
+                self.hints.len(),
+                self.workspaces.len(),
+                self.tools.len(),
+                self.gates.len(),
+                self.modules.len(),
+                self.names.len(),
+                self.refused.len(),
+            ]
+            .iter()
+            .all(|n| *n <= MAX_DETECTION_ENTRIES)
+            && self
+                .manifests
+                .iter()
+                .chain(&self.managers)
+                .chain(&self.tools)
+                .all(|r| present(&r.path) && runtime::config::token(&r.detail))
+            && self.hints.iter().all(|r| {
+                present(&r.path)
+                    && runtime::config::token(&r.label)
+                    && matches!(r.kind.as_str(), "language" | "framework")
+                    && r.field.as_ref().is_none_or(|s| text(s))
+            })
+            && self.workspaces.iter().all(|r| {
+                directory(&r.path)
+                    && runtime::config::token(&r.ecosystem)
+                    && r.members.len() <= 64
+                    && r.members.iter().all(|m| text(m))
+            })
+            && self.gates.iter().all(|r| {
+                present(r.evidence.split('#').next().unwrap_or_default())
+                    && matches!(r.gate.as_str(), "build" | "test" | "lint" | "check")
+                    && matches!(r.source.as_str(), "derived" | "workflow")
+                    && text(&r.command)
+                    && r.evidence.len() <= 768
+            })
+            && self.modules.iter().all(|r| {
+                directory(&r.path)
+                    && present(&r.manifest)
+                    && r.manifest.rsplit_once('/').map(|(d, _)| d).unwrap_or(".") == r.path
+                    && r.name.as_ref().is_none_or(|s| text(s))
+            })
+            && self
+                .names
+                .iter()
+                .all(|r| present(&r.path) && text(&r.name) && text(&r.source))
+            && self.refused.iter().all(|p| present(p))
+    }
+    fn extend(&mut self, other: Self) {
+        self.manifests.extend(other.manifests);
+        self.managers.extend(other.managers);
+        self.hints.extend(other.hints);
+        self.workspaces.extend(other.workspaces);
+        self.tools.extend(other.tools);
+        self.gates.extend(other.gates);
+        self.modules.extend(other.modules);
+        self.names.extend(other.names);
+        self.refused.extend(other.refused);
+    }
+    fn apply(self, d: &mut Detection) {
+        d.manifests
+            .extend(self.manifests.into_iter().map(|r| Evidence {
+                path: r.path,
+                detail: r.detail,
+            }));
+        d.package_managers
+            .extend(self.managers.into_iter().map(|r| Evidence {
+                path: r.path,
+                detail: r.detail,
+            }));
+        d.monorepo_tools
+            .extend(self.tools.into_iter().map(|r| Evidence {
+                path: r.path,
+                detail: r.detail,
+            }));
+        for r in self.hints {
+            push_hint(
+                &mut d.languages,
+                Hint {
+                    label: r.label,
+                    kind: if r.kind == "language" {
+                        "language"
+                    } else {
+                        "framework"
+                    },
+                    path: r.path,
+                    field: r.field,
+                    confidence: r.confidence,
+                },
+            );
+        }
+        d.workspace_roots
+            .extend(self.workspaces.into_iter().map(|r| WorkspaceRoot {
+                path: r.path,
+                ecosystem: r.ecosystem,
+                members: r.members,
+                confidence: r.confidence,
+            }));
+        d.gates.extend(self.gates.into_iter().map(|r| GateProposal {
+            gate: gate_name(&r.gate).unwrap(),
+            command: r.command,
+            source: if r.source == "workflow" {
+                "workflow"
+            } else {
+                "derived"
+            },
+            evidence: r.evidence,
+            confidence: r.confidence,
+        }));
+        d.name_candidates.extend(
+            self.names
+                .into_iter()
+                .map(|r| (r.priority, r.path, r.name, r.source)),
+        );
+    }
 }

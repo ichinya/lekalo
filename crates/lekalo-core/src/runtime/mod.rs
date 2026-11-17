@@ -1,6 +1,7 @@
 //! External runtimes and portable contract rules. No language registry.
 pub mod config;
 mod package;
+pub mod services;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -150,6 +151,8 @@ pub struct Lock {
     pub schema: String,
     pub config_digest: String,
     pub components: BTreeMap<String, ComponentPin>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub services: BTreeMap<String, RuntimePin>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -373,7 +376,7 @@ fn exchange(
     Ok(response.result)
 }
 
-fn describe(
+fn describe_service(
     root: &Path,
     command: &[String],
     package: Option<&package::Package>,
@@ -394,12 +397,40 @@ fn describe(
                         .len()
                         != values.len()
             })
-        || !d.rules_api.iter().any(|s| s == RULES_API)
-        || !d.operations.iter().any(|s| s == "check")
     {
         return Err(Error::version("runtime-api"));
     }
     Ok(d)
+}
+
+fn describe(
+    root: &Path,
+    command: &[String],
+    package: Option<&package::Package>,
+) -> Result<Description> {
+    let d = describe_service(root, command, package)?;
+    if !d.rules_api.iter().any(|s| s == RULES_API) || !d.operations.iter().any(|s| s == "check") {
+        return Err(Error::version("runtime-api"));
+    }
+    Ok(d)
+}
+fn service_pin(root: &Path, source: &config::Source) -> Result<RuntimePin> {
+    let session = Session::new(root, source)?;
+    let (command, files) = pin_command(root, &session.command, session.package.as_ref())?;
+    let description = describe_service(root, &command, session.package.as_ref())?;
+    if session.package.as_ref().is_some_and(|p| {
+        p.manifest.id != description.id || p.manifest.version != description.version
+    }) {
+        return Err(error("runtime-identity-mismatch"));
+    }
+    let pin = RuntimePin {
+        command,
+        files,
+        description,
+        package: session.package,
+    };
+    verify_runtime(&pin)?;
+    Ok(pin)
 }
 
 pub fn load(root: &Path) -> Result<config::Config> {
@@ -419,7 +450,7 @@ fn compatible(runtime: &Description, package: &package::Package) -> Result<Rules
 
 pub fn lock(root: &Path, offline: bool) -> Result<Lock> {
     let config = load(root)?;
-    if config.components.is_empty() {
+    if config.components.is_empty() && config.services.is_empty() {
         return Err(error("components-empty"));
     }
     if offline {
@@ -472,10 +503,16 @@ pub fn lock(root: &Path, offline: bool) -> Result<Lock> {
             },
         );
     }
+    let services = config
+        .services
+        .iter()
+        .map(|(id, source)| Ok((id.clone(), service_pin(root, source)?)))
+        .collect::<Result<_>>()?;
     let lock = Lock {
         schema: "lekalo/runtime-lock/v1".into(),
         config_digest: config_digest(&config),
         components,
+        services,
     };
     write_lock(root, &lock)?;
     Ok(lock)
@@ -500,7 +537,7 @@ fn write_lock(root: &Path, lock: &Lock) -> Result<()> {
 
 pub fn check_lock(root: &Path) -> Result<Lock> {
     let config = load(root)?;
-    if config.components.is_empty() {
+    if config.components.is_empty() && config.services.is_empty() {
         return Err(error("components-empty"));
     }
     let lock: Lock =
@@ -509,8 +546,28 @@ pub fn check_lock(root: &Path) -> Result<Lock> {
     if lock.schema != "lekalo/runtime-lock/v1"
         || lock.config_digest != config_digest(&config)
         || !lock.components.keys().eq(config.components.keys())
+        || !lock.services.keys().eq(config.services.keys())
     {
         return Err(error("lock-stale"));
+    }
+    for (id, pin) in &lock.services {
+        verify_runtime(pin)?;
+        let (command, files) = match &config.services[id] {
+            config::Source::Executable(e) if pin.package.is_none() => {
+                pin_command(root, &e.command, None)?
+            }
+            config::Source::Package(source) => {
+                let p = pin.package.as_ref().ok_or_else(|| error("lock-stale"))?;
+                if *source != p.source || p.manifest.kind != "runtime" {
+                    return Err(error("lock-stale"));
+                }
+                pin_command(root, &p.manifest.command, Some(p))?
+            }
+            _ => return Err(error("lock-stale")),
+        };
+        if command != pin.command || files != pin.files {
+            return Err(error("runtime-changed"));
+        }
     }
     for (id, pin) in &lock.components {
         verify_runtime(&pin.runtime)?;
@@ -720,6 +777,7 @@ pub fn init(
     let config = config::Config {
         schema: config::SCHEMA.into(),
         components,
+        services: BTreeMap::new(),
     };
     let bytes = serde_json::to_vec_pretty(&config).unwrap();
     config::decode(&bytes)?;

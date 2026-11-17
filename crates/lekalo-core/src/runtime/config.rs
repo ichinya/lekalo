@@ -14,6 +14,9 @@ pub const SCHEMA: &str = "lekalo/runtime-config/v1";
 pub struct Config {
     pub schema: String,
     pub components: BTreeMap<String, Component>,
+    /// Named external services, e.g. discovery/custom, requirements, trace.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub services: BTreeMap<String, Source>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -109,6 +112,12 @@ pub fn decode(bytes: &[u8]) -> Result<Config> {
     if config.components.len() > 64 {
         return Err(error("component-limit"));
     }
+    if config.services.len() > 32 || config.services.keys().any(|s| !token(s)) {
+        return Err(error("services-invalid"));
+    }
+    for source in config.services.values() {
+        validate_source(source)?;
+    }
     let mut paths = Vec::new();
     for (id, component) in &config.components {
         if !token(id)
@@ -132,21 +141,25 @@ pub fn decode(bytes: &[u8]) -> Result<Config> {
             return Err(error("component-overlap"));
         }
         paths.push(path);
-        match &component.runtime {
-            Source::Package(s) if s.is_empty() || s.len() > 2048 => {
-                return Err(error("source-invalid"))
-            }
-            Source::Executable(e)
-                if e.command.is_empty()
-                    || e.command.len() > 16
-                    || e.command
-                        .iter()
-                        .any(|a| a.is_empty() || a.len() > 4096 || a.contains('\0')) =>
-            {
-                return Err(error("command-invalid"))
-            }
-            _ => (),
-        }
+        validate_source(&component.runtime)?;
     }
     Ok(config)
+}
+
+fn validate_source(source: &Source) -> Result<()> {
+    match source {
+        Source::Package(s) if s.is_empty() || s.len() > 2048 || s.chars().any(char::is_control) => {
+            Err(error("source-invalid"))
+        }
+        Source::Executable(e)
+            if e.command.is_empty()
+                || e.command.len() > 16
+                || e.command
+                    .iter()
+                    .any(|a| a.is_empty() || a.len() > 4096 || a.contains('\0')) =>
+        {
+            Err(error("command-invalid"))
+        }
+        _ => Ok(()),
+    }
 }

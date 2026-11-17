@@ -7,7 +7,7 @@
     },
     "lekalo-typescript": {
       "repository": "https://github.com/ichinya/lekalo-typescript.git",
-      "commit": "da475980275db53eeec65cc5b6e54231e12d69e4"
+      "commit": "7aada588ab91fc0273acdc5ed45c03e8f123ab6a"
     },
     "lekalo-typescript-hono": {
       "repository": "https://github.com/ichinya/lekalo-typescript-hono.git",
@@ -24,6 +24,58 @@
     "lekalo-postgres": {
       "repository": "https://github.com/ichinya/lekalo-postgres.git",
       "commit": "c73585e0ee6c9e2193f4419be6ff0cfb8d03395a"
+    },
+    "lekalo-go": {
+      "repository": "https://github.com/ichinya/lekalo-go.git",
+      "commit": "bc44fbce44f40943f23f2214b2c6bc9dac7abdb7"
+    },
+    "lekalo-rust": {
+      "repository": "https://github.com/ichinya/lekalo-rust.git",
+      "commit": "ae3bf01bbd68d4fa7d6af9cf6064b1dd211e465a"
+    },
+    "lekalo-python": {
+      "repository": "https://github.com/ichinya/lekalo-python.git",
+      "commit": "2338913098ed7fb5a3185a7417830d7e2f996d8f"
+    },
+    "lekalo-hlv": {
+      "repository": "https://github.com/ichinya/lekalo-hlv.git",
+      "commit": "4ab08fdbe80b2ac8fffe9ddc65393587d1b9c88f"
+    },
+    "lekalo-openspec": {
+      "repository": "https://github.com/ichinya/lekalo-openspec.git",
+      "commit": "b5fe8a3999caa28f761d94c64d77bbe793be7620"
+    }
+  },
+  "services": {
+    "discovery/go": {
+      "package": "lekalo-go",
+      "manifest": "crates/discovery/Cargo.toml",
+      "binary": "lekalo-go-discovery"
+    },
+    "discovery/rust": {
+      "package": "lekalo-rust",
+      "manifest": "crates/discovery/Cargo.toml",
+      "binary": "lekalo-rust-discovery"
+    },
+    "discovery/typescript": {
+      "package": "lekalo-typescript",
+      "manifest": "crates/discovery/Cargo.toml",
+      "binary": "lekalo-typescript-discovery"
+    },
+    "discovery/python": {
+      "package": "lekalo-python",
+      "manifest": "crates/discovery/Cargo.toml",
+      "binary": "lekalo-python-discovery"
+    },
+    "requirements": {
+      "package": "lekalo-openspec",
+      "manifest": "Cargo.toml",
+      "binary": "lekalo-openspec"
+    },
+    "trace": {
+      "package": "lekalo-hlv",
+      "manifest": "Cargo.toml",
+      "binary": "lekalo-hlv"
     }
   }
 }

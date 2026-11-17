@@ -1,0 +1,791 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/external-services.schema.v1.json",
+  "title": "External discovery, requirements and trace services v1",
+  "$defs": {
+    "pathEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._/@-]+$"
+        }
+      },
+      "required": [
+        "path",
+        "detail"
+      ]
+    },
+    "hint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._/@-]+$"
+        },
+        "kind": {
+          "enum": [
+            "language",
+            "framework"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "field": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        }
+      },
+      "required": [
+        "label",
+        "kind",
+        "path",
+        "field",
+        "confidence"
+      ]
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "ecosystem": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._/@-]+$"
+        },
+        "members": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "ecosystem",
+        "members",
+        "confidence"
+      ]
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gate": {
+          "enum": [
+            "build",
+            "test",
+            "lint",
+            "check"
+          ]
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source": {
+          "enum": [
+            "derived",
+            "workflow"
+          ]
+        },
+        "evidence": {
+          "type": "string",
+          "maxLength": 768
+        },
+        "confidence": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        }
+      },
+      "required": [
+        "gate",
+        "command",
+        "source",
+        "evidence",
+        "confidence"
+      ]
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "manifest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        },
+        "standalone": {
+          "type": "boolean"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        }
+      },
+      "required": [
+        "path",
+        "manifest",
+        "name",
+        "standalone",
+        "priority"
+      ]
+    },
+    "name": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        }
+      },
+      "required": [
+        "path",
+        "name",
+        "source",
+        "priority"
+      ]
+    },
+    "discoveryDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "lekalo/discovery/v1"
+        },
+        "files": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "reads": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "files",
+        "reads"
+      ]
+    },
+    "discoveryInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "lekalo/discovery/v1"
+        },
+        "files": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "content": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "value": {}
+            },
+            "required": [
+              "path",
+              "content",
+              "value"
+            ]
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "files"
+      ]
+    },
+    "discoveryResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "lekalo/discovery/v1"
+        },
+        "manifests": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/pathEvidence"
+          }
+        },
+        "managers": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/pathEvidence"
+          }
+        },
+        "hints": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/hint"
+          }
+        },
+        "workspaces": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/workspace"
+          }
+        },
+        "tools": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/pathEvidence"
+          }
+        },
+        "gates": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/gate"
+          }
+        },
+        "modules": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/module"
+          }
+        },
+        "names": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/name"
+          }
+        },
+        "refused": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "manifests",
+        "managers",
+        "hints",
+        "workspaces",
+        "tools",
+        "gates",
+        "modules",
+        "names",
+        "refused"
+      ]
+    },
+    "requirementsInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "lekalo/requirements-provider/v1"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._/@-]+$"
+        },
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "reads": {
+          "type": "object",
+          "maxProperties": 4096
+        }
+      },
+      "required": [
+        "schema",
+        "source",
+        "root",
+        "reads"
+      ]
+    },
+    "readRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "file",
+            "entries"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "kind",
+        "path"
+      ]
+    },
+    "catalogEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._/@-]+$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "origin": {
+          "enum": [
+            "accepted",
+            "change"
+          ]
+        },
+        "change": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 256
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      },
+      "required": [
+        "id",
+        "digest",
+        "origin",
+        "change",
+        "path"
+      ]
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "capability": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._/@-]+$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._/@-]+$"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._/@-]+$"
+        }
+      },
+      "required": [
+        "capability",
+        "id",
+        "detail"
+      ]
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._/@-]+$"
+        },
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "status": {
+          "const": "ok"
+        },
+        "entries": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/catalogEntry"
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/conflict"
+          }
+        },
+        "renames": {
+          "type": "object",
+          "maxProperties": 10000,
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._/@-]+$"
+          }
+        },
+        "removals": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._/@-]+$"
+          }
+        }
+      },
+      "required": [
+        "source",
+        "root",
+        "status",
+        "entries",
+        "conflicts",
+        "renames",
+        "removals"
+      ]
+    },
+    "requirementsResponse": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema": {
+              "const": "lekalo/requirements-provider/v1"
+            },
+            "state": {
+              "const": "read"
+            },
+            "requests": {
+              "type": "array",
+              "maxItems": 256,
+              "items": {
+                "$ref": "#/$defs/readRequest"
+              }
+            }
+          },
+          "required": [
+            "schema",
+            "state",
+            "requests"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema": {
+              "const": "lekalo/requirements-provider/v1"
+            },
+            "state": {
+              "const": "complete"
+            },
+            "snapshot": {
+              "$ref": "#/$defs/snapshot"
+            }
+          },
+          "required": [
+            "schema",
+            "state",
+            "snapshot"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema": {
+              "const": "lekalo/requirements-provider/v1"
+            },
+            "state": {
+              "const": "absent"
+            }
+          },
+          "required": [
+            "schema",
+            "state"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schema": {
+              "const": "lekalo/requirements-provider/v1"
+            },
+            "state": {
+              "const": "invalid"
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._/@-]+$"
+            }
+          },
+          "required": [
+            "schema",
+            "state",
+            "detail"
+          ]
+        }
+      ]
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "required": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._/@-]+$"
+          }
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "aliases": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "system": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._/@-]+$"
+              },
+              "revision": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "system",
+              "revision"
+            ]
+          }
+        }
+      },
+      "required": [
+        "id",
+        "required",
+        "revision",
+        "aliases"
+      ]
+    },
+    "rawMappingResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "state": {
+          "enum": [
+            "valid",
+            "not-applicable",
+            "missing",
+            "conflicting",
+            "stale",
+            "unsupported"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "state"
+      ]
+    },
+    "traceInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "lekalo/trace-mappings/v1"
+        },
+        "mappings": {
+          "type": "array",
+          "maxItems": 8192,
+          "items": {
+            "$ref": "#/$defs/mapping"
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "mappings"
+      ]
+    },
+    "RawTraceResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "lekalo/trace-mappings/v1"
+        },
+        "results": {
+          "type": "array",
+          "maxItems": 8192,
+          "items": {
+            "$ref": "#/$defs/rawMappingResult"
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "results"
+      ]
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/discoveryDescriptor"
+    },
+    {
+      "$ref": "#/$defs/discoveryResult"
+    },
+    {
+      "$ref": "#/$defs/requirementsResponse"
+    },
+    {
+      "$ref": "#/$defs/RawTraceResult"
+    }
+  ]
+}

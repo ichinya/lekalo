@@ -10,7 +10,8 @@ test('external tooling checks out pinned bytes, reuses clean caches and refuses 
   const root = mkdtempSync(join(process.env.BB_THREAD_STORAGE ?? tmpdir(), 'lekalo-external-tool-'));
   try {
     const source = join(root, 'source'), host = join(root, 'host'), cache = join(root, 'cache');
-    mkdirSync(source); mkdirSync(join(host, 'scripts'), {recursive: true});
+    mkdirSync(source); mkdirSync(join(host, 'scripts/lib'), {recursive: true});
+    copyFileSync(fileURLToPath(new URL('./lib/external-services.mjs', import.meta.url)), join(host,'scripts/lib/external-services.mjs'));
     const git = args => execFileSync('git', args, {cwd: source, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']}).trim();
     git(['init']);
     writeFileSync(join(source, 'payload.txt'), 'pinned bytes\n');
@@ -19,7 +20,7 @@ test('external tooling checks out pinned bytes, reuses clean caches and refuses 
     const commit = git(['rev-parse', 'HEAD']);
     const script = join(host, 'scripts/external-tool.mjs');
     copyFileSync(fileURLToPath(new URL('./external-tool.mjs', import.meta.url)), script);
-    writeFileSync(join(host, 'external-tools.lock.json'), JSON.stringify({packages: {fixture: {repository: source, commit}}}));
+    writeFileSync(join(host, 'external-tools.lock.json'), JSON.stringify({services:{},packages: {fixture: {repository: source, commit}}}));
     const run = (name = 'fixture', override = '{}') => spawnSync(process.execPath, [script, name], {
       encoding: 'utf8', env: {...process.env, LEKALO_EXTERNAL_TOOL_CACHE: cache, LEKALO_EXTERNAL_TOOLS: override},
     });

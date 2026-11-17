@@ -316,7 +316,7 @@ impl RequirementsAttachment {
             .collect();
         let mut snapshots = Vec::new();
         for provider in &self.providers {
-            match provider::load_snapshot(&fs, provider) {
+            match provider::load_snapshot(root, &fs, provider) {
                 provider::Loaded::Resolved(snapshot) => snapshots.push(snapshot),
                 provider::Loaded::Absent => {
                     if referenced.contains(provider.source.as_str()) {
@@ -329,7 +329,7 @@ impl RequirementsAttachment {
                 }
                 provider::Loaded::Invalid(detail) => {
                     return Err(DomainResult::invalid(diagnostic::provider_invalid(
-                        detail,
+                        &detail,
                         Some(&provider.source),
                     )));
                 }
@@ -476,10 +476,34 @@ pub(crate) fn is_source_id(text: &str) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
 }
 
-// Compatibility vocabulary of the published requirements wire.
-#[cfg(test)]
-use lekalo_openspec::ids::is_change_id;
-pub(crate) use lekalo_openspec::ids::{is_requirement_id, requirement_id, title_slug};
+// Admission grammar of the existing public requirements wire.
+/// Whether `text` is a legal requirement id:
+/// `<capability>.REQ-<slug>` with kebab-case capability and slug parts
+/// (`planner.REQ-focus-task`).
+pub(crate) fn is_requirement_id(text: &str) -> bool {
+    let Some((capability, slug)) = text.split_once(".REQ-") else {
+        return false;
+    };
+    let ok_part = |bytes: &[u8]| {
+        !bytes.is_empty()
+            && bytes
+                .iter()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+    };
+    text.len() <= 128
+        && capability.len() <= 63
+        && slug.len() <= 64
+        && capability
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && slug
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && ok_part(capability.as_bytes())
+        && ok_part(slug.as_bytes())
+}
 
 #[cfg(test)]
 mod tests {
@@ -520,25 +544,5 @@ mod tests {
         assert!(!is_requirement_id("planner"));
         assert!(!is_requirement_id(".REQ-a"));
         assert!(!is_requirement_id("planner.REQ-focus_task"));
-    }
-
-    #[test]
-    fn title_slugs_are_deterministic_kebab() {
-        assert_eq!(title_slug("Focus task").as_deref(), Some("focus-task"));
-        assert_eq!(
-            title_slug("  Archive  &  restore -- tasks! ").as_deref(),
-            Some("archive-restore-tasks")
-        );
-        assert_eq!(title_slug("!!!"), None);
-        assert_eq!(title_slug(&"x".repeat(200)), None);
-    }
-
-    #[test]
-    fn change_ids_are_bound() {
-        assert!(is_change_id("2026-09-01-add-focus"));
-        assert!(is_change_id("archive"));
-        assert!(!is_change_id("/absolute"));
-        assert!(!is_change_id(""));
-        assert!(!is_change_id("UPPER"));
     }
 }

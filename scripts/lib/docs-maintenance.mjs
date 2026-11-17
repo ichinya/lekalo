@@ -86,6 +86,7 @@ const families = {
   "mcp-capabilities":"mcp", "mcp-server-config":"mcp", "mcp-resource":"mcp", "mcp-graph-query":"mcp", "mcp-tool-inspect-input":"mcp", "mcp-tool-inspect-output":"mcp", "mcp-tool-impact-input":"mcp", "mcp-tool-impact-output":"mcp", "mcp-tool-context-input":"mcp", "mcp-tool-context-output":"mcp", "mcp-tool-graph-input":"mcp", "mcp-tool-graph-output":"mcp", "mcp-tool-validate-input":"mcp", "mcp-tool-validate-output":"mcp", "mcp-tool-target-status-input":"mcp", "mcp-tool-target-status-output":"mcp", "mcp-tool-trace-export-input":"mcp", "mcp-tool-trace-export-output":"mcp",
 };
 families["external-runtime"]="external-runtimes";
+families["external-services"]="external-services";
 families["discovery-scope"]="adopt";
 families["compiler-runtime"]="typescript-native-runtime";
 families["discovery-scope-receipt"]="adopt";

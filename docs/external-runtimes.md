@@ -20,7 +20,7 @@ The coordinates above are placeholders for repositories you control, not
 published example packages. `init` only creates `lekalo.yaml`; `runtime lock`
 fetches declared packages and executes their confined `describe` operation.
 An existing config is never overwritten. `lekalo runtime init` creates an empty
-configuration to edit; lock/check refuse it until a component is declared.
+configuration to edit; lock/check refuse it until a component or service is declared.
 
 ```yaml
 schema: lekalo/runtime-config/v1
@@ -64,6 +64,8 @@ runs first; failure cannot be masked by runtime results. Model-specific module,
 module-API and CI-report flags currently refuse this combined mode. Other legacy
 commands retain their existing target protocol. `runtime check --component ID`
 selects one component, after checking integrity of the whole composition.
+
+Named [external services](external-services.md) use the same resolver and lock for discovery, requirements and trace mapping, independently of component runtimes and rules.
 
 ## Package contract
 
