@@ -23,6 +23,14 @@ function replaceByRename(source,destination) {
   }
  }
 }
+function replaceContents(project,destination,contents) {
+ // This oracle compares one settled edit with the later clean command.
+ // Truncate/write can expose an unintended empty document to the watcher
+ // before the callback can consume its event. Publish each intended state
+ // atomically, including deliberately invalid source and lock documents.
+ const temporary=join(project,'.watch-edit.tmp');
+ writeFileSync(temporary,contents);replaceByRename(temporary,destination);
+}
 function inventory(dir,prefix='') {
  return readdirSync(dir,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name)).filter(entry=>entry.name!=='.git').flatMap(entry=>{
   assert(entry.isFile()||entry.isDirectory());const path=prefix+entry.name;
@@ -118,21 +126,21 @@ export async function multiStageEquivalence({root,binary}) {
    const generated=join(project,'.lekalo/generated/probe.ts');
    const lock=readFileSync(join(project,'lekalo.lock'));
    const edits=scenario==='semantic-and-format'?[
-    ()=>writeFileSync(source,original.replace('version: 1','version: 2')),
-    ()=>writeFileSync(source,readFileSync(source,'utf8')+'\n'),
-    ()=>{const temp=source+'.tmp';writeFileSync(temp,readFileSync(source,'utf8').replace('version: 2','version: 3'));replaceByRename(temp,source);},
+    ()=>replaceContents(project,source,original.replace('version: 1','version: 2')),
+    ()=>replaceContents(project,source,readFileSync(source,'utf8')+'\n'),
+    ()=>replaceContents(project,source,readFileSync(source,'utf8').replace('version: 2','version: 3')),
    ]:scenario==='semantic-membership'?[
-    ()=>writeFileSync(source,original+'  - id: planner.extra\n    kind: scalar\n    version: 1\n    base: string\n'),
-    ()=>writeFileSync(source,original),
-    ()=>writeFileSync(source,original.replaceAll('planner.title','planner.newtitle')),
+    ()=>replaceContents(project,source,original+'  - id: planner.extra\n    kind: scalar\n    version: 1\n    base: string\n'),
+    ()=>replaceContents(project,source,original),
+    ()=>replaceContents(project,source,original.replaceAll('planner.title','planner.newtitle')),
    ]:scenario==='parse-recovery'?[
-    ()=>writeFileSync(source,'schema_version: [\n'),
-    ()=>writeFileSync(source,original.replace('version: 1','version: 4')),
+    ()=>replaceContents(project,source,'schema_version: [\n'),
+    ()=>replaceContents(project,source,original.replace('version: 1','version: 4')),
    ]:[
     ()=>{mkdirSync(join(project,'.lekalo/generated'),{recursive:true});writeFileSync(generated,'// synthetic orphan\n');},
     ()=>unlinkSync(generated),
-    ()=>writeFileSync(join(project,'lekalo.lock'),'invalid lock\n'),
-    ()=>writeFileSync(join(project,'lekalo.lock'),lock),
+    ()=>replaceContents(project,join(project,'lekalo.lock'),'invalid lock\n'),
+    ()=>replaceContents(project,join(project,'lekalo.lock'),lock),
    ];
    const flags=scenario==='generated-and-lock'?['--generate-check']:['--validate','--impact','--generate-check'];
    settled+=await trace({binary,project,env,flags,edits,check:(event,previous)=>{
