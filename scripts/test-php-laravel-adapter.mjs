@@ -55,6 +55,7 @@ for (const suite of [
   "vendor/lekalo-php/tests/protocol.php",
   "tests/process.php",
   "vendor/lekalo-php/tests/analyzer.php",
+  "vendor/lekalo-php/tests/composition.php",
   "vendor/lekalo-php-laravel/tests/laravel.php",
 ]) {
   const script = join(adapterRoot, suite);
@@ -85,6 +86,11 @@ if (vendorCheck.status !== 0) {
   fail("vendor-digests", (vendorCheck.stderr || vendorCheck.stdout || "").slice(0, 400));
 }
 process.stdout.write(`${(vendorCheck.stdout || "").trim()}\n`);
+const syncTests = spawnSync(process.execPath, ["--test", join(root, "scripts", "test-php-packages-sync.mjs")], {
+  cwd: root, encoding: "utf8", timeout: 120_000,
+});
+if (syncTests.status !== 0) fail("vendor-sync-regression", (syncTests.stderr || syncTests.stdout || "").slice(0, 1000));
+process.stdout.write(`${JSON.stringify({ ok: true, gate: "php-packages-sync-regression" })}\n`);
 
 // 2. Packaging: the committed artifact is exactly the deterministic
 // rebuild output, with a matching reported digest.

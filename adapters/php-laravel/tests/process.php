@@ -9,6 +9,10 @@
 
 declare(strict_types=1);
 
+// Explicit legacy composition; the language runtime itself defaults to PHP.
+define('ADAPTER_ID', 'lekalo-target-php-laravel');
+define('TARGET_TOKEN', 'php-laravel');
+
 require __DIR__ . '/../vendor/lekalo-php/src/analyzer.php';
 require __DIR__ . '/../vendor/lekalo-php/src/strict-profile.php';
 require __DIR__ . '/../vendor/lekalo-php/src/kernel.php';

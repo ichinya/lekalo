@@ -1,0 +1,19 @@
+{
+  "schema": "lekalo/php-package/v1",
+  "id": "lekalo-php-laravel",
+  "version": "0.1.0",
+  "kind": "rules",
+  "provider_api": "lekalo/provider/v0.1.0",
+  "modules": [
+    "src/scenario-emit.php",
+    "src/route-emit.php",
+    "src/native-policy.php",
+    "src/native-plan.php",
+    "src/laravel-migrations.php",
+    "src/laravel-lint.php",
+    "src/laravel-provider.php"
+  ],
+  "resources": {
+    "NATIVE_GATES_POLICY_BUNDLED": "composer-gates-policy.json"
+  }
+}

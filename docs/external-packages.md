@@ -34,6 +34,30 @@ source receipt. Framework packages do not import private runtime symbol types.
 CI check mode needs no source checkouts and no network. Source and dependency
 commits must be published before the consuming core change is merged.
 
+## PHP composition
+
+PHP runtime and Laravel rules own separate `lekalo.package.json` build manifests.
+`lekalo-php/build.php` can compose the runtime alone, or with explicit rules
+directories, including third-party packages. The runtime defaults to target `php`;
+the transitional core wrapper explicitly selects `php-laravel` to preserve its
+published identity, generated paths and wire contract. The core no longer owns
+the composition implementation or a second PHP module/resource list.
+
+After committing package changes, run `node scripts/sync-php-packages.mjs --sync`,
+then `php -n adapters/php-laravel/build.php`,
+`node scripts/regen-php-adapter-manifest.mjs` and
+`node scripts/update-reference-projects.mjs`. Sync reads committed Git blobs,
+preflights every input before changing the snapshot, and refuses existing vendor
+drift. Package manifests supply implementation paths; core adds the package's
+build and test tools to the snapshot. Check mode remains offline.
+
+The adapter gate runs package composition tests as well as protocol, analyzer,
+framework and process suites. Single-provider families refuse overlapping claims;
+the runner merge API refuses duplicate runners and conflicting defaults.
+These PHP authoring manifests are separate from the public adapter manifest.
+They do not implement dependency fetching, interpreter version selection,
+per-component configuration, or parent workspaces.
+
 ## Scope of this migration
 
 Published wire identities and the current delivery paths remain compatible.

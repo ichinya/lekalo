@@ -23,7 +23,7 @@ const PHP_ROUTES_EVIDENCE_SCHEMA_VERSION = 'lekalo/php-routes-evidence/v0.4.0';
 const PHP_ROUTES_EVIDENCE_IDENTITY = 'dev.lekalo.php-routes-evidence@0.4.0';
 
 /** The generated routes root (managed custody). */
-const PHP_ROUTES_GENERATED_ROOT = '.lekalo/generated/php-laravel/routes';
+const PHP_ROUTES_GENERATED_ROOT = '.lekalo/generated/' . TARGET_TOKEN . '/routes';
 
 /** The observed-route evidence the checked join consumes. */
 const PHP_ROUTES_EVIDENCE_PATH = '.lekalo/import/observed/routes-evidence.json';

@@ -22,7 +22,7 @@ const PHP_OPERATIONS_EVIDENCE_SCHEMA_VERSION = 'lekalo/php-operations-evidence/v
 const PHP_OPERATIONS_EVIDENCE_IDENTITY = 'dev.lekalo.php-operations-evidence@0.4.0';
 
 /** The generated operations root (managed custody). */
-const PHP_OPERATIONS_GENERATED_ROOT = '.lekalo/generated/php-laravel/operations';
+const PHP_OPERATIONS_GENERATED_ROOT = '.lekalo/generated/' . TARGET_TOKEN . '/operations';
 
 /** The user-owned scaffold home of operations generation (closed). */
 const PHP_OPERATIONS_SCAFFOLD_ROOT = 'app/lekalo-operations';

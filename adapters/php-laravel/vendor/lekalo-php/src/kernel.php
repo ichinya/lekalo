@@ -56,13 +56,13 @@ const VERSION = '0.3.2';
 /** The closed supported-version set: exact membership, never ranges. */
 const SUPPORTED_VERSIONS = ['0.3.2','0.6.4'];
 /** The adapter identity token. */
-const ADAPTER_ID = 'lekalo-target-php-laravel';
+if (!defined('ADAPTER_ID')) { define('ADAPTER_ID', 'lekalo-target-php'); }
 /**
  * The adapter identity token.
  */
 const ADAPTER_VERSION = '0.9.0';
 /** The adapter target token (the wire `target` of generate/bind). */
-const TARGET_TOKEN = 'php-laravel';
+if (!defined('TARGET_TOKEN')) { define('TARGET_TOKEN', 'php'); }
 /** The default profile token; the strict profile rides the analysis seam. */
 const PROFILE_TOKEN = 'default';
 const STRICT_PROFILE_TOKEN = 'strict';
@@ -103,7 +103,7 @@ const DECLARED_CAPABILITIES = [
 /**
  * The generated scenario-test write scope (issue #56).
  */
-const SCENARIO_WRITE_SCOPES = ['src/generated/php-laravel/scenario-tests/**'];
+const SCENARIO_WRITE_SCOPES = ['src/generated/' . TARGET_TOKEN . '/scenario-tests/**'];
 
 /**
  * The user-owned scaffold scope (issue #56, plan S3): `scaffolded`
@@ -2712,7 +2712,7 @@ function kernel_artifact(array $request): array
     );
     $body = "return [\n    'kernel' => '%s',\n];\n";
     $text = $header . sprintf($body, ADAPTER_ID);
-    $path = sprintf('.lekalo/generated/php-laravel/%s/kernel.php', $target);
+    $path = sprintf('.lekalo/generated/' . TARGET_TOKEN . '/%s/kernel.php', $target);
     return [
         'path' => $path,
         'bytes' => $text,
@@ -2804,24 +2804,24 @@ function describe_capabilities(?Analyzer $analyzer = null): array
             // operations root, and the consumer scaffold home are read
             // back for the drift, custody, and checked-join gates.
             'lekalo/operations/**',
-            '.lekalo/generated/php-laravel/operations/**',
+            '.lekalo/generated/' . TARGET_TOKEN . '/operations/**',
             'app/lekalo-operations/**',
             // Issue #60: the routes input home and the managed routes
             // root are read back for the drift and checked-join gates;
             // the staged transport and OpenAPI evidence rides the
             // explicit transport/OpenAPI evidence scopes.
             'lekalo/routes/**',
-            '.lekalo/generated/php-laravel/routes/**',
+            '.lekalo/generated/' . TARGET_TOKEN . '/routes/**',
             // Managed types and the scaffold home are read back for the
             // drift and checked-custody gates: write authority only
             // reveals a staged output's shape, so reading the bytes an
             // exchange verifies requires these explicit scopes (issue
             // #58).
-            '.lekalo/generated/php-laravel/types/**',
+            '.lekalo/generated/' . TARGET_TOKEN . '/types/**',
             'app/lekalo-types/**',
         ],
         'write_scopes' => array_merge(
-            ['.lekalo/generated/php-laravel/**'],
+            ['.lekalo/generated/' . TARGET_TOKEN . '/**'],
             SCENARIO_WRITE_SCOPES,
             [PHP_SCAFFOLD_SCOPE],
             [PHP_TYPES_SCAFFOLD_ROOT . '/**'],
@@ -3770,7 +3770,7 @@ function apply_writes(array $writes, array $files): void
                 break;
             }
         }
-        if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope
+        if (!scope_covers('.lekalo/generated/' . TARGET_TOKEN . '/**', $path) && !$inScenarioScope
             && !scope_covers(PHP_SCAFFOLD_SCOPE, $path)
             && !scope_covers(types_scaffold_scope(), $path)
             && !scope_covers(operations_scaffold_scope(), $path)) {
@@ -3835,7 +3835,7 @@ function delete_write(string $path): void
             break;
         }
     }
-    if (!scope_covers('.lekalo/generated/php-laravel/**', $path) && !$inScenarioScope) {
+    if (!scope_covers('.lekalo/generated/' . TARGET_TOKEN . '/**', $path) && !$inScenarioScope) {
         throw new RequestRefusal('write-denied');
     }
     if (is_file($path)) {

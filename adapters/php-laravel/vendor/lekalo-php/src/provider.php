@@ -12,12 +12,9 @@
  * is `provider-version-conflict`, and a duplicate registration is
  * `provider-duplicate` — never a silent capability downgrade.
  *
- * Stage M1 (issue #241): the Laravel provider is compiled into the
- * unified artifact (build.php PROVIDER_MODULES), so the shipped
- * behavior is byte-compatible with the pre-seam adapter. The registry
- * is wire-invisible in M1 (no response envelope changes); the packages
- * become independently shippable in M2, and framework-pack discovery
- * (lekalo#197) replaces the compiled-in registration afterwards.
+ * Package-owned composition bundles provider modules declared by each
+ * rules manifest. Single-provider families refuse overlapping claims;
+ * scenario runners compose through their dedicated merging API.
  */
 
 const PROVIDER_API_SCHEMA_VERSION = 'lekalo/provider/v0.1.0';
@@ -108,6 +105,12 @@ function lekalo_provider_register(array $provider): void
     if (count($registry) >= PROVIDER_REGISTRY_LIMIT) {
         throw new RequestRefusal('provider-registry-limit');
     }
+    foreach ($registry as $registered) {
+        $overlap = array_intersect(array_keys($registered['capabilities']), array_keys($provider['capabilities']));
+        if (array_diff($overlap, ['scenario.runners']) !== []) {
+            throw new RequestRefusal('provider-capability-conflict');
+        }
+    }
     $registry[$provider['id']] = $provider;
     ksort($registry, SORT_STRING);
 }
@@ -128,7 +131,7 @@ function lekalo_providers(): array
 }
 
 /**
- * The first id-sorted provider declaring the family, or null when no
+ * The unique provider declaring the family, or null when no
  * registered provider does. The non-throwing probe: language code that
  * merely conditions framework semantics on a provider's presence (the
  * ai-lint Eloquent islands) resolves here and degrades honestly when
@@ -139,16 +142,22 @@ function lekalo_provider_capability(string $family): ?array
     if (!in_array($family, PROVIDER_FAMILIES, true)) {
         return null;
     }
+    $capability = null;
     foreach (lekalo_provider_registry() as $id => $provider) {
         if (array_key_exists($family, $provider['capabilities'])) {
-            return [
+            if ($capability !== null) {
+                // Composable families must use the merging API; a generic
+                // single-provider call must never select by lexical id.
+                throw new RequestRefusal('provider-capability-conflict');
+            }
+            $capability = [
                 'provider' => $id,
                 'version' => $provider['version'],
                 'state' => $provider['capabilities'][$family],
             ];
         }
     }
-    return null;
+    return $capability;
 }
 
 /**
@@ -176,14 +185,10 @@ function lekalo_provider_call(string $family, array $arguments = []): mixed
  * The merged scenario-runner declarations of every provider that
  * declares `scenario.runners`, id-sorted, with duplicate runner ids
  * refused: two providers may not silently shadow one runner. The
- * merged table is computed once per process.
+ * merged table reflects the current registry, including late registration.
  */
 function lekalo_provider_scenario_runner_table(): ?array
 {
-    static $table = false;
-    if ($table !== false) {
-        return $table;
-    }
     $table = null;
     $runners = [];
     foreach (lekalo_provider_registry() as $provider) {
@@ -205,6 +210,9 @@ function lekalo_provider_scenario_runner_table(): ?array
                 throw new RequestRefusal('provider-runner-conflict');
             }
             $runners[$runnerId] = $entry;
+        }
+        if ($table['default'] !== null && isset($declaration['default']) && $table['default'] !== $declaration['default']) {
+            throw new RequestRefusal('provider-runner-conflict');
         }
         if ($table['default'] === null && is_string($declaration['default'] ?? null)) {
             $table['default'] = $declaration['default'];
@@ -234,15 +242,11 @@ function lekalo_provider_default_scenario_runner(): ?string
 /**
  * The lint framework facts of the registered lint provider (or null):
  * the resolved model base-class FQN the provider classifies as its
- * persisted-model base. Cached per process; one provider lookup, never
- * per class declaration in the lint walk.
+ * persisted-model base. Resolved from the current registry so later registration cannot leave
+ * cached absent facts behind.
  */
 function lekalo_provider_lint_facts(): ?array
 {
-    static $facts = false;
-    if ($facts !== false) {
-        return $facts;
-    }
     $facts = null;
     if (lekalo_provider_capability('lint.framework-semantics') !== null) {
         $declared = lekalo_provider_call('lint.framework-semantics');

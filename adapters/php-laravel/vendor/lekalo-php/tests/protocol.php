@@ -11,6 +11,10 @@
 
 declare(strict_types=1);
 
+// These fixtures qualify the published Laravel composition.
+define('ADAPTER_ID', 'lekalo-target-php-laravel');
+define('TARGET_TOKEN', 'php-laravel');
+
 require __DIR__ . '/../src/analyzer.php';
 require __DIR__ . '/../src/strict-profile.php';
 require __DIR__ . '/../src/kernel.php';

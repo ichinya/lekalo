@@ -27,7 +27,7 @@ const PHP_TYPES_EVIDENCE_IDENTITY = 'dev.lekalo.php-types-evidence@0.4.0';
 const PHP_TYPES_IR_IDENTITY = 'dev.lekalo.ir@0.2.16';
 
 /** The generated types root (managed custody) and its read/doc input home. */
-const PHP_TYPES_GENERATED_ROOT = '.lekalo/generated/php-laravel/types';
+const PHP_TYPES_GENERATED_ROOT = '.lekalo/generated/' . TARGET_TOKEN . '/types';
 const PHP_TYPES_INPUT_HOME = 'lekalo/types';
 
 /**

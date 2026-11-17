@@ -33,7 +33,7 @@ const PHP_SCENARIO_IDENTITY = 'dev.lekalo.scenario-ir@0.2.16';
 const PHP_IR_IDENTITY = 'dev.lekalo.ir@0.2.16';
 
 /** The generated scenario-test home under the generated root. */
-const PHP_SCENARIO_TESTS_DIR = 'src/generated/php-laravel/scenario-tests';
+const PHP_SCENARIO_TESTS_DIR = 'src/generated/' . TARGET_TOKEN . '/scenario-tests';
 
 /**
  * The adapter-owned PHP port declaration path (issue #56).

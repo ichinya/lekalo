@@ -15,6 +15,10 @@
 
 declare(strict_types=1);
 
+// These fixtures qualify the published Laravel composition.
+define('ADAPTER_ID', 'lekalo-target-php-laravel');
+define('TARGET_TOKEN', 'php-laravel');
+
 $lekaloPhpSrc = getenv('LEKALO_PHP_SRC') ?: dirname(__DIR__, 2) . '/lekalo-php/src';
 foreach (['provider.php', 'analyzer.php', 'strict-profile.php', 'kernel.php'] as $module) {
     if (!is_file($lekaloPhpSrc . '/' . $module)) {
@@ -230,6 +234,29 @@ try {
 }
 check($refusedShrunk, 'a shrinking ledger refused');
 check($refusedRewrite, 'a rewritten published entry refused');
+
+// The package manifest supplies the complete framework composition without
+// core checkout knowledge. The legacy wire target is an explicit selection.
+require dirname($lekaloPhpSrc) . '/build-lib.php';
+$bundle = lekalo_build_compose(dirname($lekaloPhpSrc), [dirname(__DIR__)], ADAPTER_ID, TARGET_TOKEN);
+$artifact = $laravelSuiteRoot . '/composed.php';
+try {
+    lekalo_build_publish($bundle, $artifact, false);
+    check(lekalo_build_publish($bundle, $artifact, true)['ok'], 'framework composition reproducible');
+    check(array_column($bundle['packages'], 'id') === ['lekalo-php', 'lekalo-php-laravel'], 'runtime and framework receipts');
+    $child = proc_open([PHP_BINARY, '-n', $artifact],
+        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    if (!is_resource($child)) { throw new RuntimeException('composition-test-spawn'); }
+    fwrite($pipes[0], json_encode(['protocol' => PROTOCOL_TOKEN, 'protocol_version' => VERSION,
+        'operation' => 'describe', 'request_id' => 'req-' . str_repeat('b', 64), 'project_root' => '.']));
+    fclose($pipes[0]);
+    $response = stream_get_contents($pipes[1]); $error = stream_get_contents($pipes[2]);
+    fclose($pipes[1]); fclose($pipes[2]);
+    check(proc_close($child) === 0 && $error === '', 'composed framework process runs');
+    $decoded = json_decode($response, true);
+    check(($decoded['evidence']['adapter']['id'] ?? '') === ADAPTER_ID, 'explicit legacy identity preserved');
+    check(($decoded['capabilities']['targets'] ?? []) === ['php-laravel'], 'explicit legacy target preserved');
+} finally { if (is_file($artifact)) { unlink($artifact); } }
 
 fwrite(STDOUT, json_encode([
     'suite' => 'php-laravel-framework',

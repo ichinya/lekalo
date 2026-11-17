@@ -97,6 +97,8 @@ function runDriver(sandbox, operation, requestFile, expectSpawnless = true, extr
 function writeDriver() {
   const source = `<?php
 declare(strict_types=1);
+define('ADAPTER_ID', 'lekalo-target-php-laravel');
+define('TARGET_TOKEN', 'php-laravel');
 $repo = ${JSON.stringify(repo)};
 require $repo . '/adapters/php-laravel/vendor/lekalo-php/src/analyzer.php';
 require $repo . '/adapters/php-laravel/vendor/lekalo-php/src/strict-profile.php';
