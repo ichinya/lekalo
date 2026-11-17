@@ -343,7 +343,11 @@ fn verify_runtime(pin: &RuntimePin) -> Result<()> {
     if let Some(package) = &pin.package {
         package::verify(package)?;
     }
-    for (path, hash) in &pin.files {
+    verify_executables(&pin.files)
+}
+
+fn verify_executables(files: &BTreeMap<String, String>) -> Result<()> {
+    for (path, hash) in files {
         if executable_digest(Path::new(path))? != *hash {
             return Err(error("runtime-changed"));
         }
@@ -828,11 +832,12 @@ pub fn init(
 
 /// A data-only provider pinned once for one host operation. Package resolution
 /// and executable admission happen before the first exchange; subsequent calls
-/// keep the same immutable package snapshot, like describe/check in one runtime
-/// validation. A caller starts a new session for a new analysis operation.
+/// verify the same admitted executable and package bytes. A caller starts a new
+/// session for a new analysis operation.
 pub struct Session {
     root: PathBuf,
     command: Vec<String>,
+    files: BTreeMap<String, String>,
     package: Option<package::Package>,
 }
 impl Session {
@@ -848,10 +853,11 @@ impl Session {
             config::Source::Package(_) => &package.as_ref().unwrap().manifest.command,
             config::Source::Executable(command) => &command.command,
         };
-        let (command, _) = pin_command(root, argv, package.as_ref())?;
+        let (command, files) = pin_command(root, argv, package.as_ref())?;
         Ok(Self {
             root: root.to_path_buf(),
             command,
+            files,
             package,
         })
     }
@@ -860,13 +866,17 @@ impl Session {
         if !config::token(operation) {
             return Err(error("operation-invalid"));
         }
-        exchange(
+        verify_executables(&self.files)?;
+        let result = exchange(
             &self.root,
             &self.command,
             self.package.as_ref(),
             operation,
             input,
-        )
+        )?;
+        // Do not accept a response across a concurrent provider replacement.
+        verify_executables(&self.files)?;
+        Ok(result)
     }
 }
 /// Invoke a single operation with a fresh provider session.
@@ -882,6 +892,29 @@ pub fn invoke(
 #[cfg(test)]
 mod review_regressions {
     use super::*;
+
+    #[test]
+    fn provider_session_refuses_replaced_program_or_entry_before_execution() {
+        for changed in ["provider", "entry"] {
+            let root = tempfile::tempdir().unwrap();
+            for name in ["provider", "entry"] {
+                std::fs::write(root.path().join(name), b"admitted bytes").unwrap();
+            }
+            let source = config::Source::Executable(config::Executable {
+                command: vec![
+                    root.path().join("provider").to_string_lossy().into_owned(),
+                    "entry".into(),
+                ],
+            });
+            let session = Session::new(root.path(), &source).unwrap();
+            verify_executables(&session.files).unwrap();
+            std::fs::write(root.path().join(changed), b"replacement bytes").unwrap();
+            assert_eq!(
+                session.invoke("describe", json!({})).unwrap_err().detail,
+                "runtime-changed"
+            );
+        }
+    }
 
     #[test]
     fn schema_keywords_in_property_names_and_literals_are_data() {

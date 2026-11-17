@@ -50,7 +50,7 @@ try {
  assert.equal(successorResult.pins.versions.core,product,'successor producing-core metadata follows the product');
  save('tests/fixtures/watch/golden/successor-result.json',JSON.stringify(stable(successorResult),null,2)+'\n');
  const orch=fixture('orchestration','tests/fixtures/orchestration/project');
- const adapter=['--','node','tests/external/lekalo-typescript/adapters/node-typescript/node-adapter.mjs'];
+ const adapter=['--','node','adapters/node-typescript/node-adapter.mjs'];
  json(orch,['lock',...adapter]);
  for(const [name,args] of [
   ['generate.dry-run',['generate','--target','node-typescript','--dry-run']],
