@@ -1082,6 +1082,8 @@ jobs:
       - name: Build pinned external services
         run: node scripts/external-tool.mjs --build-services
       - run: cargo build --workspace --locked
+      - name: Build the core qualification test executable before its deadline
+        run: cargo test -p lekalo-core --lib --no-run --locked
       - name: Qualify confined Unix execution and denied host paths
         if: runner.os != 'Windows'
         timeout-minutes: 3
