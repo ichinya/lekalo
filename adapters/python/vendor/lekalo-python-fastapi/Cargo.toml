@@ -1,0 +1,15 @@
+[package]
+name = "lekalo-python-fastapi"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.97"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ichinya/lekalo-python-fastapi"
+publish = false
+
+[dependencies]
+lekalo-adapter-sdk-rust = { path = "../lekalo-adapter-sdk-rust" }
+ruff_python_ast = "=0.0.22"
+ruff_python_parser = "=0.0.22"
+ruff_source_file = "=0.0.22"
+ruff_text_size = "=0.0.22"

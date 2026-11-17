@@ -3,6 +3,7 @@ members = [
     "crates/lekalo-cli",
     "crates/lekalo-core",
 ]
+exclude = ["packages/lekalo-openspec", "packages/lekalo-hlv"]
 resolver = "2"
 
 [workspace.package]

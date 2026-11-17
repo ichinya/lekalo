@@ -5,11 +5,12 @@ edition = "2021"
 rust-version = "1.97"
 license = "MIT OR Apache-2.0"
 description = "Observed Python symbol scanner for the lekalo.target/v1 process protocol (issue #146). Read-only static analysis: no Python execution, no imports, no network."
-repository = "https://github.com/ichinya/lekalo"
+repository = "https://github.com/ichinya/lekalo-python"
 publish = false
 
 [dependencies]
-lekalo-adapter-sdk-rust = { path = "../../sdk/rust" }
+lekalo-python-fastapi = { version = "=0.1.0", path = "vendor/lekalo-python-fastapi" }
+lekalo-adapter-sdk-rust = { path = "vendor/lekalo-adapter-sdk-rust" }
 # Ruff's AST, parser and source-coordinate types form one release set.
 ruff_python_ast = "=0.0.22"
 ruff_python_parser = "=0.0.22"
@@ -22,3 +23,4 @@ name = "lekalo-target-python"
 path = "src/main.rs"
 
 [workspace]
+exclude = ["vendor/lekalo-adapter-sdk-rust"]

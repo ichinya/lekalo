@@ -284,10 +284,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "lekalo-python-fastapi"
+version = "0.1.0"
+dependencies = [
+ "lekalo-adapter-sdk-rust",
+ "ruff_python_ast",
+ "ruff_python_parser",
+ "ruff_source_file",
+ "ruff_text_size",
+]
+
+[[package]]
 name = "lekalo-target-python"
 version = "0.1.0"
 dependencies = [
  "lekalo-adapter-sdk-rust",
+ "lekalo-python-fastapi",
  "ruff_python_ast",
  "ruff_python_parser",
  "ruff_source_file",

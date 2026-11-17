@@ -229,19 +229,16 @@ pub fn assess(trace: &TraceManifest, bytes: &[u8]) -> Result<AssessmentReport, D
                             .collect()
                     })
                     .unwrap_or_default();
-                if aliases.len() != 1 {
-                    finding(
-                        &mut findings,
-                        if aliases.len() > 1 {
-                            diagnostic::CONFLICT
-                        } else {
-                            diagnostic::MISSING
-                        },
-                        &chain.id,
-                        role,
-                    );
-                } else if aliases[0].revision.as_deref() != Some(input.source_revision.as_str()) {
-                    finding(&mut findings, diagnostic::STALE, &chain.id, role);
+                if let Err(failure) = lekalo_hlv::assess_mapping(
+                    aliases.iter().map(|alias| alias.revision.as_deref()),
+                    &input.source_revision,
+                ) {
+                    let code = match failure {
+                        lekalo_hlv::MappingFailure::Missing => diagnostic::MISSING,
+                        lekalo_hlv::MappingFailure::Conflicting => diagnostic::CONFLICT,
+                        lekalo_hlv::MappingFailure::Stale => diagnostic::STALE,
+                    };
+                    finding(&mut findings, code, &chain.id, role);
                 }
             }
         }

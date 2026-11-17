@@ -8,7 +8,7 @@
 //! adapter never executes Python, never imports the studied package,
 //! never writes, and never opens the network.
 
-mod fastapi;
+use lekalo_python_fastapi as fastapi;
 mod ids;
 mod profile;
 mod scan;

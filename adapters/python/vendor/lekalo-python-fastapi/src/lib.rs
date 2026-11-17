@@ -1,13 +1,29 @@
 //! Bounded, opt-in static FastAPI registration evidence. No Python evaluation.
 //! The interpreter resolves only imports, names, constants and documented route
 //! calls. Unknown flow/escapes taint objects instead of inventing runtime facts.
-use crate::{ids, symbols::Sym};
+
 use lekalo_adapter_sdk::json::{canonical, strict_parse, Value};
 use ruff_python_ast::visitor::source_order::{walk_expr, walk_stmt, SourceOrderVisitor};
 use ruff_python_ast::{Expr, Operator, PySourceType, Stmt};
 use ruff_source_file::LineIndex;
 use ruff_text_size::Ranged;
 use std::collections::{BTreeMap, BTreeSet};
+
+/// Language-owned facts needed by the framework registration interpreter.
+/// No dependency on the Python runtime's private symbol model.
+#[derive(Clone)]
+pub struct Symbol {
+    pub native: String,
+    pub qualified_name: String,
+    pub line: u64,
+    pub declaration_only: bool,
+}
+fn signature(parts: Value) -> String {
+    format!(
+        "sha256:{}",
+        lekalo_adapter_sdk::ids::sha256_hex(&canonical(&parts))
+    )
+}
 
 pub const REVISION: &str = "fastapi-static-v1";
 const METHODS: [&str; 8] = [
@@ -21,7 +37,7 @@ pub struct Source {
     pub module: String,
     pub text: String,
     pub digest: String,
-    pub symbols: Vec<Sym>,
+    pub symbols: Vec<Symbol>,
 }
 #[derive(Clone, Debug)]
 enum Atom {
@@ -318,7 +334,7 @@ pub fn apply(sources: &[Source], entries: &mut [Value], policy: &str) -> Outcome
         set(entry, "kind", Value::Str("endpoint".into()));
         if let Some(evidence) = get_mut(entry, "evidence") {
             let base = evidence.get("signature").cloned().unwrap_or(Value::Null);
-            let signature = ids::signature(Value::Array(vec![
+            let signature = signature(Value::Array(vec![
                 Value::Str(REVISION.into()),
                 base,
                 Value::Array(routes.clone()),

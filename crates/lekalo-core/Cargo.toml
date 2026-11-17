@@ -9,6 +9,8 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+lekalo-openspec = { version = "=0.1.0", path = "../../packages/lekalo-openspec" }
+lekalo-hlv = { version = "=0.1.0", path = "../../packages/lekalo-hlv" }
 ignore.workspace = true
 serde.workspace = true
 serde_json.workspace = true

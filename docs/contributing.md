@@ -238,6 +238,10 @@ Do not run the writer with an old binary. Prose-only edits need no regeneration.
 
 ## Dependencies and generated files
 
+Runtime and integration source ownership and snapshot updates are documented in
+[External implementation ownership](external-packages.md). Edit the owning
+package repository, then update the pinned dependency; do not edit snapshot files.
+
 Provision dependencies before gates. The root `package-lock.json` pins Ajv for checks needing only that package:
 
 ```sh

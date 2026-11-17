@@ -162,7 +162,16 @@ pub fn run(profile: &Profile, version: &str) -> Result<Scan, &'static str> {
                 module,
                 text,
                 digest: digest.clone(),
-                symbols: scan.symbols.clone(),
+                symbols: scan
+                    .symbols
+                    .iter()
+                    .map(|symbol| crate::fastapi::Symbol {
+                        native: symbol.native.clone(),
+                        qualified_name: symbol.qualified_name.clone(),
+                        line: symbol.line,
+                        declaration_only: symbol.declaration_only,
+                    })
+                    .collect(),
             });
         }
         let overflow = scan

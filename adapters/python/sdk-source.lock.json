@@ -1,0 +1,28 @@
+{
+  "repository": "https://github.com/ichinya/lekalo",
+  "commit": "c79e0b64a07f6a94bb7e048afb9b1cab92ae473c",
+  "source": "sdk/rust",
+  "files": {
+    "Cargo.lock": "sha256:0eea1b6c8b9bd4bc980ac5725d1c42dd63cace4848e8b3ad35151dc102e8b3e6",
+    "Cargo.toml": "sha256:edf36201eeb2e23d7ecc432843760dd3ec246f77867cea8d9fbac1bdc0b67f0d",
+    "compatibility.json": "sha256:f1e0275feb0bf11f528d0c4030f193a4c32963ad5974526d00e777b9b31d9d21",
+    "generation.json": "sha256:76d7b01586dfb44ed54b9b0dbf1cee3656b8f1b0638541cb713734a0b54eaca0",
+    "src/bin/vectors.rs": "sha256:84ed1628300d89833f0cd243ac6c991603f9796839a3354c83d168457144894a",
+    "src/build.rs": "sha256:ddd7d343abc5ba187cc88be25c9fb735c619ce6edf8505633658fadd7619532d",
+    "src/canonical.rs": "sha256:8145b5b803d8dd861d6b6e829f5ac9cf7d86532eb875909d625b2fef224ea26a",
+    "src/decode.rs": "sha256:219eadc462ea84fe5d8316698e06fb8dbbe936da69ae7dc33a5cb84390e4ba47",
+    "src/generated/capabilities.rs": "sha256:5b9dafbbcf4d3444d48d3729c3131335f77c327769b91561fbe6df1b66fdabed",
+    "src/generated/compatibility_tests.rs": "sha256:cda19506f8cbfc792d3bc8b519759a8660b4ab3cdf03c4eefd837651be163d25",
+    "src/generated/diagnostics.rs": "sha256:0a40695d517496ecf67c4f46ff7aed2c6c1a579c28c68cb2ff4607b3e58d96d9",
+    "src/generated/mod.rs": "sha256:c980773c6a438b2176ea43de42848c623d0c0d1ee1bb2dc349f38a2afdfe21c5",
+    "src/generated/protocol.rs": "sha256:46ef287f8ea9fdf1a3e1447dbc15d0b56ac7828fe098856ed2418cc72ba3e08e",
+    "src/ids.rs": "sha256:91d7727ccaafd3deae772b9c0fc8ea5d0b74be4ffa71bd221615b17c14344aac",
+    "src/json.rs": "sha256:1d5983f5da58a698ca4e85c3fc10c9b4920a375684d4ca9e39ba11792074fa32",
+    "src/lib.rs": "sha256:35bc4ae10d7ac9be17b51f77094d8deeac0b65d0c7b459913a17eebb13cdd832",
+    "src/logger.rs": "sha256:eb15ac77b6d20bc18908d95d8f0fd8f645d441fc3c5bab45795e493a9897ec07",
+    "src/paths.rs": "sha256:de7ea709295278289a81c9bb449dacb85c60410ad436a44fadc0f1ca2e4b2d49",
+    "src/serve.rs": "sha256:9d427c26c0c1341ce45a8f049f7abbd4dce9a3c951af5d1e676313638d9a5ea1",
+    "src/validate.rs": "sha256:96513948c422d7b7ff315a73785b040a4270a81dd4181e7ee6d217652a594bdb"
+  },
+  "destination": "vendor/lekalo-adapter-sdk-rust"
+}
