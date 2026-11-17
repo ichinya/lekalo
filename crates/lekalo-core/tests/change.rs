@@ -35,6 +35,14 @@ struct Sandbox {
     root: PathBuf,
 }
 
+impl Drop for Sandbox {
+    fn drop(&mut self) {
+        // Hostile sidecar links must not survive into later integration
+        // binaries that qualify the crate tree for provider confinement.
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
 impl Sandbox {
     fn new(tag: &str) -> Self {
         Self::from_fixture(tag, FIXTURE)
@@ -5347,6 +5355,10 @@ fn a_link_at_the_history_sidecar_is_refused_not_followed() {
         matches!(&error, ChangeError::HistoryInvalid { detail: "read", .. }),
         "got {error:?}"
     );
+    let root = sandbox.root.clone();
+    drop(sandbox);
+    assert!(!root.exists(), "the hostile fixture must be removed");
+    assert_eq!(std::fs::read(&foreign).expect("outside bytes survive"), ledger);
     let _ = std::fs::remove_dir_all(&outside);
 }
 
