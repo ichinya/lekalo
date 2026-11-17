@@ -104,6 +104,8 @@ jobs:
         with:
           # The AI Workspace hook gate checks historical contract commits.
           fetch-depth: 0
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
@@ -246,6 +248,8 @@ jobs:
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -255,7 +259,7 @@ jobs:
       # its generated modules pin their layout with #[rustfmt::skip], so
       # formatting can never fight the generator's byte --check.
       - name: Rustfmt (adapter SDK workspace)
-        working-directory: sdk/rust
+        working-directory: tests/external/lekalo-adapter-sdk/sdk/rust
         run: cargo fmt --all -- --check
 
   clippy:
@@ -267,6 +271,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -274,7 +280,7 @@ jobs:
         if: runner.environment == 'github-hosted'
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Clippy (adapter SDK workspace)
-        working-directory: sdk/rust
+        working-directory: tests/external/lekalo-adapter-sdk/sdk/rust
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   msrv:
@@ -286,6 +292,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: dtolnay/rust-toolchain@1.89.0
         with:
           components: clippy
@@ -371,6 +379,8 @@ jobs:
           --health-interval=10s --health-timeout=5s --health-retries=20
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         if: runner.environment == 'github-hosted'
