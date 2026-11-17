@@ -325,6 +325,11 @@ fn workspace_and_dependency_metadata_preserve_the_two_crate_boundary() {
             // Issue #102 adds the audited JSON Schema validator for embedded
             // frozen run-history source admission.
             "jsonschema",
+            // Issue #241 supplies the external integration implementations as
+            // pinned compatibility packages. They are dependencies, not new
+            // workspace members; core retains only the host capability seams.
+            "lekalo-hlv",
+            "lekalo-openspec",
             // Issue #20 adds the audited SQLite backend (bundled
             // amalgamation, exact-pinned, MIT, MSRV-compatible) behind the
             // cache storage seam.
