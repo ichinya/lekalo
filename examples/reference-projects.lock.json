@@ -58,7 +58,7 @@
     "tests/fixtures/pilot/brownfield-mysql/tsconfig.runtime.json": "sha256:992446a90f4a1210bcc60e61e440e9351fcf2ab11e9808c71c959fda371bc05b"
   },
   "adapters": {
-    "tests/external/lekalo-typescript/adapters/node-typescript/adapter.manifest.json": "sha256:5a0926775e76c28aed9803ce64cdc250175d803c12134c7402c1ee0736ccedbe",
+    "tests/external/lekalo-typescript/adapters/node-typescript/adapter.manifest.json": "sha256:4457da21df1c4474beee78b1fa9dac275d297c30f091188bd165c73dc351157c",
     "adapters/php-laravel/adapter.manifest.json": "sha256:dbe0c3f15bef3ca1e7196175ac52399191bf8660ee9f21e7fdb7b9d105544c4e"
   }
 }
