@@ -66,7 +66,7 @@ capabilities:{adapter,protocol_versions:['0.3.2','1.3.0'],operations:['describe'
   writeFileSync(join(artifacts, 'forged.mjs'), forged);
   const run = (mode, entry, expected) => {
     const result = spawnSync(binary, [mode, process.execPath, entry], {cwd: work, encoding: 'utf8', timeout: 20000, windowsHide: true, maxBuffer: 1024 * 1024});
-    assert.equal(result.status, 0, `${mode}: ${result.stdout}\n${result.stderr}`);
+    assert.equal(result.status, 0, `${mode}: ${result.error?.message ?? result.signal ?? 'nonzero exit'}\n${result.stdout}\n${result.stderr}`);
     const receipt = JSON.parse(result.stdout); assert.equal(receipt.outcome, expected, JSON.stringify(receipt));
     assert.ok(receipt.elapsed_ms < 12000, 'peer cleanup must finish within the host deadline'); return receipt;
   };

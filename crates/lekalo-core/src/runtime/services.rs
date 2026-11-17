@@ -95,6 +95,14 @@ fn optional_config(root: &Path) -> Result<Option<config::Config>> {
     }
 }
 
+pub fn one(root: &Path, role: &str) -> Result<Service> {
+    let mut services = selected(root, role)?;
+    if services.len() != 1 {
+        return Err(error("service-selection-required"));
+    }
+    Ok(services.remove(0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -113,12 +121,4 @@ mod tests {
         std::fs::write(&path, b"[invalid").unwrap();
         assert!(optional_config(root.path()).is_err());
     }
-}
-
-pub fn one(root: &Path, role: &str) -> Result<Service> {
-    let mut services = selected(root, role)?;
-    if services.len() != 1 {
-        return Err(error("service-selection-required"));
-    }
-    Ok(services.remove(0))
 }
