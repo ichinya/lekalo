@@ -19,7 +19,9 @@ export function externalRoot(name) {
   const git = args => execFileSync('git', ['-c', `core.hooksPath=${join(cache,'.disabled-hooks')}`, ...args], {encoding:'utf8', stdio:['ignore','pipe','pipe']}).trim();
   if (!existsSync(join(root, '.git'))) {
     mkdirSync(dirname(root), {recursive:true});
-    git(['clone','--no-checkout','--',pin.repository,root]);
+    // Artifact and source locks hash repository bytes on every host. Persist
+    // this on the clone so Windows user settings cannot rewrite LF as CRLF.
+    git(['clone','--no-checkout','--config','core.autocrlf=false','--config','core.eol=lf','--',pin.repository,root]);
     git(['-C',root,'checkout','--detach',pin.commit]);
   }
   if (git(['-C',root,'rev-parse','HEAD']) !== pin.commit || git(['-C',root,'status','--porcelain','--untracked-files=no'])) throw new Error(`Tool cache is not the pinned clean checkout: ${name}`);
