@@ -20,6 +20,8 @@ test('Mago lint cleanup only renames the intentionally discarded platform field'
 });
 const mutations=[
  ['missing external service build',s=>s.replace('      - name: Build pinned external services\n        run: node scripts/external-tool.mjs --build-services\n','')],
+ ['missing qualification prebuild',s=>s.replace('      - name: Build the core qualification test executable before its deadline\n        run: cargo test -p lekalo-core --lib --no-run --locked\n','')],
+ ['conditional qualification prebuild',s=>s.replace('      - name: Build the core qualification test executable before its deadline\n','      - name: Build the core qualification test executable before its deadline\n        if: false\n')],
  ['conditional external service build',s=>s.replace('      - name: Build pinned external services\n','      - name: Build pinned external services\n        if: false\n')],
  ['Rust barrier',s=>s.replace('  rust:\n','  rust:\n    needs: build-debug\n')],
  ['process Rust barrier',s=>s.replace('  rust-process:\n','  rust-process:\n    needs: build-debug\n')],

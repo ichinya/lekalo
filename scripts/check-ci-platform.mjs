@@ -67,6 +67,10 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   assert(!runs[0].condition,`${owner}: conditional Rust lane`);
  }
  assert(!graph['rust-process'].steps.some(s=>s.run?.includes('cargo test')), 'Qualification must stay in core Rust lane');
+ const coreSteps=graph.rust.steps;
+ const prebuild=coreSteps.findIndex(s=>s.run==='cargo test -p lekalo-core --lib --no-run --locked');
+ const qualification=coreSteps.findIndex(s=>s.run?.includes('--lib unix_confined_'));
+ assert(prebuild>=0&&prebuild<qualification&&!coreSteps[prebuild].condition,'Compile core tests before the bounded execution gate');
  for(const owner of consumers){
   const j=graph[owner],profile=owner==='native-execution'?'release':'debug';
   // Apply the same handoff guard as live contract gates, using a unique marker.
