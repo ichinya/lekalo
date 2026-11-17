@@ -21,3 +21,5 @@ CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo t
 ```
 
 Official reference: [Cargo profiles](https://doc.rust-lang.org/cargo/reference/profiles.html).
+
+Runtime integrity acceptance checks that the tested CLI stays byte-for-byte unchanged. Do not rebuild that executable concurrently with the test. For a direct Node acceptance run during other builds, set `LEKALO_BIN` to a separately copied, immutable executable. The check compares SHA-256 digests so a mismatch produces bounded diagnostics.
