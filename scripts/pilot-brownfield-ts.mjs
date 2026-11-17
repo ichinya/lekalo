@@ -28,7 +28,7 @@
  * deleted with it unless `--keep` is passed.
  */
 import { spawnSync } from "node:child_process";
-import {configureAuthoringCompiler} from '../adapters/node-typescript/authoring-compiler.mjs';
+import {configureAuthoringCompiler} from '../tests/external/lekalo-typescript/adapters/node-typescript/authoring-compiler.mjs';
 import { createHash } from "node:crypto";
 import {
   cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync,
@@ -40,7 +40,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const adapterPath = join(repoRoot, "adapters", "node-typescript", "adapter.mjs");
+const adapterPath = join(repoRoot, "tests", "external", "lekalo-typescript", "adapters", "node-typescript", "adapter.mjs");
 
 // ---------------------------------------------------------------------------
 // argument parsing

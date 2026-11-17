@@ -2282,7 +2282,7 @@ fn create_join_and_fks(
     projection: &DerivedProjection,
     join: &crate::storage_projection::derivation::DerivedJoin,
 ) -> Result<Vec<String>, DiagnosticSet> {
-    let mut statements = vec![super::postgres::ddl::create_join_table(join)];
+    let mut statements = vec![super::postgres::ddl::create_join_table(join)?];
     for (index, action) in [
         (0usize, join.on_owner_delete()),
         (1usize, join.on_target_delete()),

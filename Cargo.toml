@@ -33,3 +33,22 @@ features = ["fs"]
 [workspace.dependencies.windows-sys]
 version = "0.61"
 features = ["Win32_Foundation", "Win32_Storage_FileSystem"]
+
+# Keep local builds aligned with CI on disk-limited development hosts.
+# Debug assertions and overflow checks remain enabled (the dev/test defaults).
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.test]
+debug = 0
+incremental = false
+
+# External process custody hashes executable bytes on each exchange. Keep the
+# hash implementation fast in development without disabling any pin checks,
+# debug assertions, or overflow checks in the host.
+[profile.dev.package.sha2]
+opt-level = 3
+
+[profile.test.package.sha2]
+opt-level = 3

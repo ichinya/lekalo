@@ -2,9 +2,10 @@
 //! byte-equivalence against the published loader path, module locality,
 //! and the read-only status projection.
 //!
-//! Every temporary project lives under the crate's `target/` tree with a
-//! cwd-relative selector, so no Windows 8.3 alias spelling can enter the
-//! selection grammar.
+//! Temporary projects use cwd-relative selectors, so no Windows 8.3 alias
+//! spelling can enter the selection grammar. The link-denial case runs in
+//! a disposable child cwd: its hostile link must never contaminate the
+//! crate tree inspected by concurrently running provider confinement tests.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -288,6 +289,29 @@ fn status_reports_missing_then_ok_then_state_survives_clear() {
 
 #[test]
 fn a_symlinked_cache_home_denies_commands_fail_closed() {
+    const CHILD: &str = "LEKALO_CACHE_LINK_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let cwd = tempfile::tempdir().expect("isolated cache test cwd");
+        let output = std::process::Command::new(std::env::current_exe().expect("test executable"))
+            .args([
+                "--exact",
+                "cache::tests::a_symlinked_cache_home_denies_commands_fail_closed",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .current_dir(cwd.path())
+            .output()
+            .expect("run isolated link-denial case");
+        assert!(
+            output.status.success(),
+            "isolated cache test failed: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        cwd.close().expect("remove hostile cache fixture");
+        return;
+    }
     let root = temp_case("deny");
     copy_dir(&fixture(THREE_MODULES), &root);
     std::fs::create_dir_all(root.join(".lekalo/cache")).expect("home");

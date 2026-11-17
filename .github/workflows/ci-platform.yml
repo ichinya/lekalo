@@ -34,6 +34,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -42,6 +44,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-platform-build-debug
+      - name: Build pinned external services
+        run: node scripts/external-tool.mjs --build-services
       - name: "Build runtime executables"
         run: |
           cargo build -p lekalo-cli --bin lekalo --locked
@@ -74,6 +78,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -82,6 +88,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-platform-build-release
+      - name: Build pinned external services
+        run: node scripts/external-tool.mjs --build-services
       - name: "Build runtime executables"
         run: |
           cargo build --release -p lekalo-cli --bin lekalo --locked
@@ -113,6 +121,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -179,9 +189,9 @@ jobs:
         name: Provision the vendored compiler bundle custody (issue #44)
         run: |
           set -euo pipefail
-          npm ci --prefix adapters/node-typescript --ignore-scripts --no-audit --no-fund
-          node adapters/node-typescript/provision-compiler.mjs
-          node adapters/node-typescript/build.mjs --check
+          npm ci --prefix "$LEKALO_TYPESCRIPT_ROOT/adapters/node-typescript" --ignore-scripts --no-audit --no-fund
+          node tests/external/lekalo-typescript/adapters/node-typescript/provision-compiler.mjs
+          node tests/external/lekalo-typescript/adapters/node-typescript/build.mjs --check
       - &ci-setup-46
         name: Provision the planner fixture vendor tree per the committed lock (issues #52/#56)
         # Explicit setup, before both maintained-native and later adapter gates.
@@ -536,6 +546,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -609,8 +621,8 @@ jobs:
       - name: Verify the generation artifact against the conformance battery (issue #45)
         run: |
           set -euo pipefail
-          PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-scanner/protocol/generation.profile.json)
-          "$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node adapters/node-typescript/adapter-zod.mjs --lekalo-project-profile-json "$PROFILE_JSON"
+          PROFILE_JSON=$(tr -d '[:space:]' < tests/external/lekalo-typescript/tests/fixtures/node-typescript-scanner/protocol/generation.profile.json)
+          "$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node tests/external/lekalo-typescript/adapters/node-typescript/adapter-zod.mjs --lekalo-project-profile-json "$PROFILE_JSON"
       - name: Run the native gate suite (issue #48)
         run: node scripts/test-node-native-gates.mjs
       - name: Run the transport generator gate (issue #70)
@@ -628,18 +640,18 @@ jobs:
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-native-gate-contracts.mjs
       - name: Run the applicable conformance battery against the kernel adapter (bare)
-        run: '"$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs'
+        run: '"$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs'
       - name: Run the conformance battery against the configured scanner adapter (issue #44)
         run: |
           set -euo pipefail
-          PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-scanner/protocol/conformance.profile.json)
-          "$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
-          "$LEKALO_DEBUG_BIN" adapter test --profile strict --report junit -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON" || test $? -eq 4
+          PROFILE_JSON=$(tr -d '[:space:]' < tests/external/lekalo-typescript/tests/fixtures/node-typescript-scanner/protocol/conformance.profile.json)
+          "$LEKALO_DEBUG_BIN" adapter test --profile default --report junit -- node tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
+          "$LEKALO_DEBUG_BIN" adapter test --profile strict --report junit -- node tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON" || test $? -eq 4
       - name: Run the conformance battery against the transport-configured adapter (issue #70)
         run: |
           set -euo pipefail
-          PROFILE_JSON=$(tr -d '[:space:]' < tests/fixtures/node-typescript-transport/protocol/conformance.profile.json)
-          "$LEKALO_DEBUG_BIN" adapter test --profile default --report json -- node adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
+          PROFILE_JSON=$(tr -d '[:space:]' < tests/external/lekalo-typescript/tests/fixtures/node-typescript-transport/protocol/conformance.profile.json)
+          "$LEKALO_DEBUG_BIN" adapter test --profile default --report json -- node tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs --lekalo-project-profile-json "$PROFILE_JSON"
       - name: Run the target adapter conformance suite against the reference adapter
         timeout-minutes: 10
         run: '"$LEKALO_DEBUG_BIN" adapter test --profile strict --report junit --timeout-ms 60000 node tests/fixtures/target-protocol/fake-adapter.mjs --lekalo-adapter-variant fluent'
@@ -660,6 +672,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -789,6 +803,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -818,11 +834,11 @@ jobs:
         timeout-minutes: 15
         run: |
           set -euo pipefail
-          cargo test --manifest-path adapters/python/Cargo.toml --locked
-          cargo build --manifest-path adapters/python/Cargo.toml --locked
-          node --test adapters/python/tests/scan-protocol.test.mjs adapters/python/tests/observed-host.test.mjs
+          cargo test --manifest-path tests/external/lekalo-python/Cargo.toml --locked
+          cargo build --manifest-path tests/external/lekalo-python/Cargo.toml --locked
+          node --test tests/external/lekalo-python/tests/scan-protocol.test.mjs tests/python-observed-host.test.mjs
           node scripts/test-public-python-scan.mjs
-          node --test adapters/python/tests/fastapi.test.mjs
+          node --test tests/external/lekalo-python/tests/fastapi.test.mjs
           node scripts/gen-http-scan-protocol.mjs --check
           node scripts/test-public-fastapi-scan.mjs --validate-contracts
       - *ci-setup-104
@@ -842,6 +858,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -900,7 +918,7 @@ jobs:
         # The Go SDK ships its own smoke suite beside the vectors runner
         # so `go test ./...` exercises the runtime directly.
         run: go test ./...
-        working-directory: sdk/go
+        working-directory: tests/external/lekalo-adapter-sdk/sdk/go
       - name: Run the adapter-SDK conformance and package gates (issue #106)
         # The host binary was built above in this job, so the confined
         # strict battery, the feature-limited examples, and the packed
@@ -927,6 +945,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -985,6 +1005,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -1036,6 +1058,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -1055,7 +1079,11 @@ jobs:
       - *ci-setup-46
       - *ci-setup-35
       - *ci-setup-36
+      - name: Build pinned external services
+        run: node scripts/external-tool.mjs --build-services
       - run: cargo build --workspace --locked
+      - name: Build the core qualification test executable before its deadline
+        run: cargo test -p lekalo-core --lib --no-run --locked
       - name: Qualify confined Unix execution and denied host paths
         if: runner.os != 'Windows'
         timeout-minutes: 3
@@ -1084,6 +1112,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -1103,6 +1133,8 @@ jobs:
       - *ci-setup-46
       - *ci-setup-35
       - *ci-setup-36
+      - name: Build pinned external services
+        run: node scripts/external-tool.mjs --build-services
       - run: cargo build --workspace --locked
       - name: Run CLI and Windows process fixtures independently
         run: node scripts/ci-rust-tests.mjs --lane=process
@@ -1123,6 +1155,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x

@@ -13,12 +13,16 @@ test('Mago lint cleanup only renames the intentionally discarded platform field'
  assert.equal(job.split('read -r _PLATFORM ARCHIVE WANT_SHA <<EOF').length,2);
  const original=job.replace('read -r _PLATFORM ARCHIVE WANT_SHA <<EOF','read -r PLATFORM ARCHIVE WANT_SHA <<EOF');
  // Preserve the source job byte for byte apart from this one identifier.
- assert.equal(createHash('sha256').update(original).digest('hex'),'630abb445f2609326c70acf4cad07a922055e3619c1cb0bc40c1afdad4d843c7');
+ assert.equal(createHash('sha256').update(original).digest('hex'),'eed16f0f22e02f413b340a551dcb3b7899ca59bf593b6c685eb94ccb66627b8a');
  const changed=caller.replace('read -r _PLATFORM ARCHIVE WANT_SHA <<EOF','read -r _PLATFORM WANT_SHA ARCHIVE <<EOF');
  assert.notEqual(changed,caller);
  assert.throws(()=>checkPlatform({caller:changed}),/Unrelated job mago-real changed/);
 });
 const mutations=[
+ ['missing external service build',s=>s.replace('      - name: Build pinned external services\n        run: node scripts/external-tool.mjs --build-services\n','')],
+ ['missing qualification prebuild',s=>s.replace('      - name: Build the core qualification test executable before its deadline\n        run: cargo test -p lekalo-core --lib --no-run --locked\n','')],
+ ['conditional qualification prebuild',s=>s.replace('      - name: Build the core qualification test executable before its deadline\n','      - name: Build the core qualification test executable before its deadline\n        if: false\n')],
+ ['conditional external service build',s=>s.replace('      - name: Build pinned external services\n','      - name: Build pinned external services\n        if: false\n')],
  ['Rust barrier',s=>s.replace('  rust:\n','  rust:\n    needs: build-debug\n')],
  ['process Rust barrier',s=>s.replace('  rust-process:\n','  rust-process:\n    needs: build-debug\n')],
  ['optional process Rust',s=>s.replace('  rust-process:\n','  rust-process:\n    if: false\n')],

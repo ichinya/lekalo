@@ -519,6 +519,62 @@ fn adopt_detects_the_go_module() {
         .any(|gate| gate["command"] == "go test ./..." && gate["source"] == "derived"));
 }
 
+/// A Cargo workspace can contain modules from all four external discovery
+/// packages. The host still owns scope, path validation and read-only adoption.
+#[test]
+fn external_language_discovery_keeps_mixed_workspace_members_confined() {
+    let temp = tempfile::tempdir().expect("temp");
+    let root = temp.path().join("project");
+    fs::create_dir_all(&root).unwrap();
+    let files = [
+        ("Cargo.toml", "[package]\nname = \"workspace_service\"\n[workspace]\nmembers = [\"components/*\", \"../outside\"]\n"),
+        ("components/api/go.mod", "module example.com/team/api\n"),
+        ("components/native/Cargo.toml", "[package]\nname = \"native_service\"\n"),
+        ("components/web/package.json", r#"{"name":"web","dependencies":{"react":"1"},"devDependencies":{"typescript":"1"},"scripts":{"test":"touch executed"}}"#),
+        ("components/worker/pyproject.toml", "[project]\nname = 'worker'\n"),
+        ("components/worker/setup.py", "raise RuntimeError('must never execute')\n"),
+    ];
+    for (path, text) in files {
+        let path = root.join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    }
+    fs::create_dir_all(temp.path().join("outside")).unwrap();
+    fs::write(
+        temp.path().join("outside/Cargo.toml"),
+        "[package]\nname = \"outside_marker\"\n",
+    )
+    .unwrap();
+    let before = snapshot(&root, false);
+    let output = lekalo_in(&root, &["--json", "init", "--adopt", "--dry-run"]);
+    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
+    let envelope = stdout_json(&output);
+    assert_eq!(envelope["projectId"], "workspace_service");
+    let detection = &envelope["detection"];
+    let modules = detection["modules"].as_array().unwrap();
+    let names: Vec<_> = modules
+        .iter()
+        .map(|module| module["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["api", "native_service", "web", "components/worker"]);
+    assert!(detection["manifests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["path"] == "components/worker/setup.py" && entry["detail"] == "python"));
+    assert!(detection["languages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|hint| hint["label"] == "react" && hint["kind"] == "framework"));
+    assert!(!stdout_text(&output).contains("outside_marker"));
+    assert_eq!(
+        snapshot(&root, false),
+        before,
+        "discovery cannot execute scripts or write files"
+    );
+}
+
 /// The empty repository: adoption falls back to the invocation directory,
 /// derives the id from the directory name, and the skeleton validates.
 #[test]

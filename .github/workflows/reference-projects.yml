@@ -20,6 +20,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
+      - run: node scripts/external-tool.mjs --provision
       - run: node scripts/test-reference-projects.mjs --static
   http-postgres:
     runs-on: ubuntu-latest
@@ -31,6 +32,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
+      - run: node scripts/external-tool.mjs --provision
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'

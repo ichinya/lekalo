@@ -20,7 +20,7 @@ const lock = {
   revision: JSON.parse(readFileSync(join(root, 'examples/planner-shared/scenarios.json'), 'utf8')).revision,
   source: 'Synthetic public reference projects; model derived from the public issue-60 routes corpus. Historical test fixtures remain independent regression inputs.',
   files: Object.fromEntries(paths.sort().map((path) => [path, sha(path)])),
-  adapters: Object.fromEntries(['adapters/node-typescript/adapter.manifest.json', 'adapters/php-laravel/adapter.manifest.json'].map((path) => [path, sha(path)])),
+  adapters: Object.fromEntries(['tests/external/lekalo-typescript/adapters/node-typescript/adapter.manifest.json', 'adapters/php-laravel/adapter.manifest.json'].map((path) => [path, sha(path)])),
 };
 writeFileSync(join(root, 'examples/reference-projects.lock.json'), `${JSON.stringify(lock, null, 2)}\n`);
 console.log(`Updated reference lock: ${paths.length} files, 2 exact adapter manifests`);

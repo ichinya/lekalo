@@ -1,89 +1,31 @@
-//! The PostgreSQL capability snapshot (issue #69): the #24 seam feed.
-//!
-//! [`build`] assembles the embedded engine answers into the exact
-//! [`CapabilitySnapshot`] `transaction_concurrency::map_capabilities`
-//! consumes: the closed transaction/isolation/lock/concurrency
-//! answers with their documented bounds (`snapshot` isolation and
-//! `lock.range` answer `partial` honestly — PostgreSQL implements
-//! snapshot isolation through `REPEATABLE READ`, and there are no
-//! key-range locks below `SERIALIZABLE`), plus the owner-published
-//! version-matrix rows and the `postgres-sql` component provides.
-//! Strict mapping blocks unsupported, unknown, and unapproved
-//! partial support — the "planner guarantees checked on PostgreSQL"
-//! acceptance criterion.
-
-use crate::storage_projection::StorageProjectionAttachment;
-use crate::transaction_concurrency::{CapabilitySnapshot, SnapshotSupport};
-
-use super::super::StorageEngineAttachment;
+//! Capability answers belong to the external provider. A failed exchange
+//! returns an empty snapshot, whose answers are Unknown and block strict mapping.
+use super::super::{provider, StorageEngineAttachment};
 use super::version_matrix;
-
-/// The engine-local concurrency answers, byte-sorted by capability id.
-pub const CONCURRENCY_ANSWERS: &[(&str, SnapshotSupport)] = &[
-    ("concurrency.compare_and_set", SnapshotSupport::Full),
-    ("concurrency.etag_if_match", SnapshotSupport::Partial),
-    ("external.compensation", SnapshotSupport::Unsupported),
-    ("idempotency.durable_key", SnapshotSupport::Partial),
-    ("idempotency.replay", SnapshotSupport::Partial),
-    ("invariant.unique_concurrent", SnapshotSupport::Full),
-    ("isolation.none", SnapshotSupport::Full),
-    ("isolation.read_committed", SnapshotSupport::Full),
-    ("isolation.repeatable_read", SnapshotSupport::Full),
-    ("isolation.serializable", SnapshotSupport::Full),
-    ("isolation.snapshot", SnapshotSupport::Partial),
-    ("lock.exclusive", SnapshotSupport::Full),
-    ("lock.key", SnapshotSupport::Full),
-    ("lock.range", SnapshotSupport::Partial),
-    ("lock.shared", SnapshotSupport::Full),
-    ("transaction.atomic_group", SnapshotSupport::Full),
-    ("transaction.rollback", SnapshotSupport::Full),
-];
-
-/// The version-independent truths the `postgres-sql` engine answers
-/// on the storage axis. These are engine-profile-local answers, NOT a
-/// mirror of the embedded component registry: the `postgres-sql`
-/// component declares only the coarse storage.migrations / pooling /
-/// sql / transactions set, while the engine snapshot specializes with
-/// the finer-grained facts (explain, introspection, jsonb,
-/// partial_index, rls, sequences) the engine layer owns. Reconciling
-/// the two registries is coordinator-owned follow-up work; until then
-/// the snapshot's answers stay self-contained here.
-pub const COMPONENT_PROVIDES: &[(&str, SnapshotSupport)] = &[
-    ("storage.explain", SnapshotSupport::Full),
-    ("storage.introspection", SnapshotSupport::Full),
-    ("storage.jsonb", SnapshotSupport::Full),
-    ("storage.migrations", SnapshotSupport::Full),
-    ("storage.partial_index", SnapshotSupport::Full),
-    ("storage.pooling", SnapshotSupport::Full),
-    ("storage.rls", SnapshotSupport::Full),
-    ("storage.sequences", SnapshotSupport::Full),
-    ("storage.sql", SnapshotSupport::Full),
-    ("storage.transactions", SnapshotSupport::Full),
-];
-
-/// Build the capability snapshot for one engine profile bound to its
-/// storage-projection attachment. The engine version must resolve to
-/// one published matrix row (the caller has validated the profile, so
-/// an unpublished major is a caller fault answered `Unknown`, which
-/// strict mapping always blocks — unknown is never yes).
+use crate::storage_projection::StorageProjectionAttachment;
+use crate::transaction_concurrency::CapabilitySnapshot;
+#[cfg(test)]
+use crate::transaction_concurrency::SnapshotSupport;
+/// Build the external provider's capability projection.
 pub fn build(
     profile: &StorageEngineAttachment,
     _projection: &StorageProjectionAttachment,
 ) -> CapabilitySnapshot {
-    let major = profile.engine_version().major();
-    let entries = CONCURRENCY_ANSWERS
-        .iter()
-        .copied()
-        .chain(COMPONENT_PROVIDES.iter().copied())
-        .chain(
-            version_matrix::CAPABILITY_IDS
-                .iter()
-                .filter_map(|id| version_matrix::answer(major, id).map(|support| (*id, support))),
-        )
-        .map(|(id, support)| (id.to_owned(), support));
+    let entries = (|| {
+        let value = provider::call("storage.matrix", serde_json::json!({}))?;
+        let mut entries = version_matrix::answers(&value["concurrency"])?;
+        entries.extend(version_matrix::answers(&value["provides"])?);
+        if let Some(row) = value["rows"].as_array().and_then(|rows| {
+            rows.iter()
+                .find(|r| r["major"].as_u64() == Some(u64::from(profile.engine_version().major())))
+        }) {
+            entries.extend(version_matrix::answers(&row["answers"])?);
+        }
+        Ok::<_, crate::diagnostics::DiagnosticSet>(entries)
+    })()
+    .unwrap_or_default();
     CapabilitySnapshot::new(entries)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,13 +158,14 @@ mod tests {
         // A caller-assembled snapshot without the matrix rows answers
         // unknown for the engine capabilities, and unknown is never
         // yes under the strict profile.
-        let snapshot = CapabilitySnapshot::new(
-            CONCURRENCY_ANSWERS
-                .iter()
-                .copied()
-                .chain(COMPONENT_PROVIDES.iter().copied())
-                .map(|(id, support)| (id.to_owned(), support)),
-        );
+        let value = super::super::super::provider::call("storage.matrix", serde_json::json!({}))
+            .expect("provider");
+        let entries = version_matrix::answers(&value["concurrency"])
+            .expect("answers")
+            .into_iter()
+            .chain(version_matrix::answers(&value["provides"]).expect("answers"));
+        let snapshot = CapabilitySnapshot::new(entries);
+
         assert_eq!(
             snapshot.support_of("storage.postgres.temporal_constraint"),
             SnapshotSupport::Unknown

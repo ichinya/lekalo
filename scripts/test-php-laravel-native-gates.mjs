@@ -67,7 +67,7 @@ function findPhp() {
 }
 
 const php = findPhp();
-const policy = JSON.parse(readFileSync(join(adapterRoot, "composer-gates-policy.json"), "utf8"));
+const policy = JSON.parse(readFileSync(join(adapterRoot, "vendor", "lekalo-php-laravel", "composer-gates-policy.json"), "utf8"));
 
 /**
  * The in-process driver: loads the repo source modules, runs one
@@ -97,12 +97,16 @@ function runDriver(sandbox, operation, requestFile, expectSpawnless = true, extr
 function writeDriver() {
   const source = `<?php
 declare(strict_types=1);
+define('ADAPTER_ID', 'lekalo-target-php-laravel');
+define('TARGET_TOKEN', 'php-laravel');
 $repo = ${JSON.stringify(repo)};
-require $repo . '/adapters/php-laravel/src/analyzer.php';
-require $repo . '/adapters/php-laravel/src/strict-profile.php';
-require $repo . '/adapters/php-laravel/src/kernel.php';
-require $repo . '/adapters/php-laravel/src/native-policy.php';
-require $repo . '/adapters/php-laravel/src/native-plan.php';
+require $repo . '/adapters/php-laravel/vendor/lekalo-php/src/analyzer.php';
+require $repo . '/adapters/php-laravel/vendor/lekalo-php/src/strict-profile.php';
+require $repo . '/adapters/php-laravel/vendor/lekalo-php/src/kernel.php';
+require $repo . '/adapters/php-laravel/vendor/lekalo-php/src/provider.php';
+require $repo . '/adapters/php-laravel/vendor/lekalo-php-laravel/src/native-policy.php';
+require $repo . '/adapters/php-laravel/vendor/lekalo-php-laravel/src/native-plan.php';
+require $repo . '/adapters/php-laravel/vendor/lekalo-php-laravel/src/laravel-provider.php';
 $operation = $argv[1];
 $sandbox = $argv[2];
 chdir($sandbox);
@@ -259,7 +263,7 @@ function nativeRequest(sandbox, changedFiles) {
 async function main() {
   writeDriver();
   const { validateNativePlan, recomputePlanDigest } = await import(
-    pathToFileURL(join(repo, "adapters", "node-typescript", "src", "native-contract.mjs")).href
+    pathToFileURL(join(repo, "tests", "external", "lekalo-typescript", "adapters", "node-typescript", "src", "native-contract.mjs")).href
   );
 
   // --- Leg 1: the hostile Composer decoder refusals -----------------------
@@ -369,7 +373,7 @@ async function main() {
   step("wrong policy custody and an absent selection document refuse before any planning");
 
   // The confirmation-level refusals (drift + argv mismatch).
-  const policyProbePath = join(adapterRoot, "composer-gates-policy.json");
+  const policyProbePath = join(adapterRoot, "vendor", "lekalo-php-laravel", "composer-gates-policy.json");
   const probes = runDriver(makeSandbox(), "policy-probes", policyProbePath);
   if (!probes.ok) fail("policy-probes", probes.failures);
   step("confirmation custody drift and argv mismatch are verified, never copied");
@@ -389,7 +393,7 @@ async function main() {
   step("an empty selection answers a blocked plan with no claimed coverage");
 
   // --- Leg 6: the explicit release-full fallback --------------------------
-  const full = runDriver(sandbox, "fallback", join(adapterRoot, "composer-gates-policy.json"), false, requestPath);
+  const full = runDriver(sandbox, "fallback", join(adapterRoot, "vendor", "lekalo-php-laravel", "composer-gates-policy.json"), false, requestPath);
   // The fallback driver needs the request for custody digests only.
   if (!full.ok) fail("fallback-refused", full.reason);
   const fullGateIds = full.plan.commands.map((command) => command.gate_id);

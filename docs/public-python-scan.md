@@ -19,20 +19,26 @@ It is a separate Cargo workspace, so a root workspace build does not build it.
 Provision locked dependencies once while network access is available:
 
 ```sh
+node scripts/external-tool.mjs --provision
 cargo fetch --locked
-cargo fetch --manifest-path adapters/python/Cargo.toml --locked
+cargo fetch --manifest-path tests/external/lekalo-python/Cargo.toml --locked
 ```
+
+For automatic language discovery in adoption, also build/select the pinned
+[external services](external-services.md#development-and-ci). The standalone
+scanner lives in [lekalo-python](https://github.com/ichinya/lekalo-python); the
+`tests/external` location is an ignored integration link.
 
 After provisioning, both builds and the example can run offline:
 
 ```sh
 cargo build -p lekalo-cli --locked --offline
-cargo build --manifest-path adapters/python/Cargo.toml --locked --offline
+cargo build --manifest-path tests/external/lekalo-python/Cargo.toml --locked --offline
 node scripts/test-public-python-scan.mjs
 ```
 
 The binaries are `target/debug/lekalo` and
-`adapters/python/target/debug/lekalo-target-python` (`.exe` on Windows).
+`tests/external/lekalo-python/target/debug/lekalo-target-python` (`.exe` on Windows).
 Use their absolute paths; do not substitute an older installed release.
 The gate accepts `LEKALO_BIN` and `LEKALO_PYTHON_ADAPTER_BIN` overrides for
 explicitly built binaries. It performs no provisioning or source generation.
@@ -60,14 +66,14 @@ the absolute adapter path:
 
 ```powershell
 $pythonScanProfile = Get-Content -LiteralPath profile.json -Raw | ConvertFrom-Json | ConvertTo-Json -Depth 20 -Compress
-lekalo scan --target python --profile standalone --project . -- C:/path/to/lekalo/adapters/python/target/debug/lekalo-target-python.exe --lekalo-project-profile-json $pythonScanProfile
+lekalo scan --target python --profile standalone --project . -- C:/path/to/lekalo/tests/external/lekalo-python/target/debug/lekalo-target-python.exe --lekalo-project-profile-json $pythonScanProfile
 ```
 
 In a POSIX shell:
 
 ```sh
 python_scan_profile=$(node -e 'process.stdout.write(JSON.stringify(JSON.parse(require("node:fs").readFileSync("profile.json", "utf8"))))')
-lekalo scan --target python --profile standalone --project . -- /path/to/lekalo/adapters/python/target/debug/lekalo-target-python --lekalo-project-profile-json "$python_scan_profile"
+lekalo scan --target python --profile standalone --project . -- /path/to/lekalo/tests/external/lekalo-python/target/debug/lekalo-target-python --lekalo-project-profile-json "$python_scan_profile"
 ```
 
 The profile grants only `pyproject.toml` and `src/**`. It is a trusted launch

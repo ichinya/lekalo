@@ -14,7 +14,7 @@ use serde::Serialize;
 use super::diagnostic;
 use super::provider::{Origin, ProviderStatus, Snapshot};
 use super::version;
-use super::{canonical_value_bytes, requirement_id, sha256_hex, RequirementsAttachment};
+use super::{canonical_value_bytes, sha256_hex, RequirementsAttachment};
 use crate::diagnostics::DiagnosticSet;
 use crate::ir::Compilation;
 
@@ -207,11 +207,7 @@ pub(crate) fn build(
                 .push(entry.id.as_str());
         }
         for row in &snapshot.conflicts {
-            let slug = super::title_slug(&row.title).unwrap_or_default();
-            conflict_ids.insert((
-                snapshot.source.clone(),
-                requirement_id(&row.capability, &slug),
-            ));
+            conflict_ids.insert((snapshot.source.clone(), row.id.clone()));
         }
     }
 
@@ -401,13 +397,7 @@ pub(crate) fn build(
             conflict_rows.push(ConflictRow {
                 source: snapshot.source.clone(),
                 capability: row.capability.clone(),
-                subject_id: sha256_hex(
-                    requirement_id(
-                        &row.capability,
-                        &super::title_slug(&row.title).expect("validated title"),
-                    )
-                    .as_bytes(),
-                ),
+                subject_id: sha256_hex(row.id.as_bytes()),
                 detail: row.detail.to_owned(),
             });
         }

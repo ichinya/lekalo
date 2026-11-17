@@ -28,6 +28,29 @@ outside those read grants.
   minor bump: the closed v0.3.2 wire shapes are unchanged, and every
   new behavior degrades to the #54 no-claims posture when no analyzer
   receipt is staged.
+- **0.9.0 (lekalo-php#1, issue #241 stage 4):** the provider seam —
+  the versioned provider API `dev.lekalo.provider@0.1.0`
+  (`lekalo/provider/v0.1.0`) between the language kernel and the
+  framework package. The migration emitter, the Illuminate route
+  emitter, the Laratesto runner registry and scenario emitter, the
+  Composer/artisan native gate modules, and the Eloquent lint facts
+  move behind registered capability families
+  (`src/laravel-migrations.php`, `src/laravel-lint.php`,
+  `src/laravel-provider.php`); the kernel resolves families through
+  `lekalo_provider_require` and never names Laravel. A
+  backward-compatible minor bump: the wire shapes and every emitted
+  byte are unchanged (the golden digests differ only through the
+  producer version in headers and sidecars), and with no provider
+  registered the framework families refuse with the stable
+  `provider-missing` code instead of silently degrading. Since M2 the
+  source lives in the external repositories (`lekalo-php`,
+  `lekalo-php-laravel`); this directory vendors their pinned releases
+  and builds the same unified artifact from those bytes. The runtime
+  floor drops to PHP 8.0: the adapter works on every current version
+  8.0-8.6 (verified by the CI `php-versions` matrix and the packages'
+  docker `version-matrix.sh` scripts), the 8.1+ `array_is_list` rides
+  a guarded kernel polyfill, and the emitted type code keeps its own
+  8.2+ target.
 
 ## Component composition (issue #54 architecture)
 
@@ -128,8 +151,10 @@ packaged PHP build is self-contained under the ro-bound `/usr`), the
 suite runs for real; where the exchange crashes before an envelope,
 the Rust suite skips with an explicit machine-readable reason printed
 to stderr — visible evidence of what was not proved, never a silent
-pass. The PHP unit suites (`tests/protocol.php`, `tests/process.php`,
-`tests/analyzer.php`) and the packaging gate run everywhere PHP runs,
+pass. The PHP unit suites (the vendored packages' `protocol.php` and
+`analyzer.php`, the framework suite `laravel.php`, and this
+artifact's `tests/process.php`) and the packaging gate run everywhere
+PHP runs,
 independent of confinement.
 
 ## The analysis seam (issue #55)
@@ -180,6 +205,43 @@ relation/route/container links are received as provenance-carrying
 relation rows in the receipt but the Model graph is never mutated by
 them, and fix **apply** is out of scope for a later issue.
 
+## The provider seam (lekalo-php#1, issue #241 stage 4)
+
+The language kernel and the framework knowledge are separated by a
+versioned in-process provider API, `dev.lekalo.provider@0.1.0` (wire
+discriminator `lekalo/provider/v0.1.0`, `src/provider.php`). One
+registered provider descriptor declares:
+
+| Member | Meaning |
+| --- | --- |
+| `id`, `version`, `api` | The package identity, its version, and the provider API version it speaks — anything but `lekalo/provider/v0.1.0` refuses as `provider-version-conflict` at registration. |
+| `capabilities` | The closed capability matrix over the family vocabulary: `migrations.emit`, `routes.emit`, `scenario.runners`, `scenario.emit`, `native.gates`, `lint.framework-semantics` — each `full` or `partial`; an undeclared family is `provider-missing` when required. |
+| `hooks` | One callable per declared capability: loader hooks for the module families, the runner table for `scenario.runners`, the framework lint facts for `lint.framework-semantics`. |
+
+The Laravel package (`vendor/lekalo-php-laravel/src/laravel-provider.php`)
+declares all six families and owns the migration emitter and the lint
+facts; the kernel resolves every framework family through
+`lekalo_provider_require`/`lekalo_provider_call` and names no
+framework. With no provider registered the framework families refuse
+with the stable `provider-missing` code, the lint walk carries no
+model classification, and the language-only surface (types,
+operations, the generic route map) keeps working — the honest
+language-only outcome, never a silent downgrade.
+
+In this transitional build the provider is compiled into the unified
+artifact: `build.php` appends the provider modules after the native
+gate modules, the registration runs at parse time, and the loader
+hooks stay inert through their `function_exists` guards. Since stage
+4 M2 the source of both halves lives in the external repositories
+`lekalo-php` (language) and `lekalo-php-laravel` (framework), and this
+directory carries only the transitional build: the vendored pinned
+releases under `vendor/` (`php-packages.lock.json` pins every file by
+sha256 and the upstream commit; `scripts/sync-php-packages.mjs` syncs
+from the package checkouts and `--check` verifies the committed bytes
+offline), the generated `adapter.php`, its manifest, and the process
+suite of the unified artifact. Framework-pack discovery (lekalo#197)
+replaces the compiled-in registration afterwards.
+
 ## Build and verification
 
 `adapter.php` is GENERATED by `build.php` (fixed-order concatenation of
@@ -188,10 +250,11 @@ environment lookups, so repeated builds are byte-identical):
 
 ```sh
 php adapters/php-laravel/build.php --check   # verify committed bytes
-node scripts/test-php-laravel-adapter.mjs    # suites + packaging + conformance
-php adapters/php-laravel/tests/protocol.php  # 88 decoder/contract checks
-php adapters/php-laravel/tests/process.php   # 40 process-level checks
-php adapters/php-laravel/tests/analyzer.php  # 44 analyzer/strict-profile checks
+node scripts/test-php-laravel-adapter.mjs    # suites + vendor digests + packaging + conformance
+node scripts/sync-php-packages.mjs --check    # vendored bytes match php-packages.lock.json
+# 143 protocol checks and 61 analyzer checks ride the vendored lekalo-php
+# package; 36 framework checks ride the vendored lekalo-php-laravel
+# package; the 45 process checks stay beside the unified artifact.
 node scripts/test-mago-integration.mjs --fake  # required fake gate (no Mago)
 node scripts/test-mago-integration.mjs --real  # real gate (LEKALO_MAGO or PATH; visible skip when absent)
 cargo test -p lekalo-core --test php_laravel_kernel

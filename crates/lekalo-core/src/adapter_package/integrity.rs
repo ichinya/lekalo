@@ -370,20 +370,22 @@ mod committed_exemplar_tests {
         ));
         std::fs::create_dir_all(&root).expect("mkdir");
         let manifest_source =
-            include_bytes!("../../../../adapters/node-typescript/adapter.manifest.json");
+            include_bytes!("../../../../tests/external/lekalo-typescript/adapters/node-typescript/adapter.manifest.json");
         let document = crate::adapter_package::ManifestDocument::from_bytes(manifest_source)
             .expect("committed manifest parses");
         // Copy the committed payload into the temp package root.
-        let payload = include_bytes!("../../../../adapters/node-typescript/adapter.mjs");
+        let payload = include_bytes!(
+            "../../../../tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs"
+        );
         std::fs::write(root.join("adapter.mjs"), payload).expect("payload");
         std::fs::write(
             root.join("runtime-bundle.json"),
-            include_bytes!("../../../../adapters/node-typescript/runtime-bundle.json"),
+            include_bytes!("../../../../tests/external/lekalo-typescript/adapters/node-typescript/runtime-bundle.json"),
         )
         .unwrap();
         std::fs::write(
             root.join("typescript-native-notices.txt"),
-            include_bytes!("../../../../adapters/node-typescript/typescript-native-notices.txt"),
+            include_bytes!("../../../../tests/external/lekalo-typescript/adapters/node-typescript/typescript-native-notices.txt"),
         )
         .unwrap();
         std::fs::write(root.join(MANIFEST_FILE), manifest_source).expect("manifest");

@@ -10726,6 +10726,74 @@
       "lifecycle": "active"
     },
     {
+      "id": "runtime.incompatible",
+      "code": "LEK-RUNTIME-002",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "unsupported-version"
+      ],
+      "message_id": "runtime.incompatible",
+      "default_message": "The runtime and rules do not share the required API and capabilities.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "runtime.refused",
+      "code": "LEK-RUNTIME-001",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "runtime.refused",
+      "default_message": "The external runtime composition could not be verified.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "detail",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
+      "id": "runtime.rule-failed",
+      "code": "LEK-RUNTIME-003",
+      "category": "adapter",
+      "default_severity": "error",
+      "allowed_statuses": [
+        "invalid"
+      ],
+      "message_id": "runtime.rule-failed",
+      "default_message": "Runtime evidence does not satisfy a selected contract rule.",
+      "location_requirement": "none",
+      "data_fields": [
+        {
+          "name": "component",
+          "type": "token"
+        },
+        {
+          "name": "package",
+          "type": "token"
+        },
+        {
+          "name": "rule",
+          "type": "token"
+        }
+      ],
+      "allowed_fix_ids": [],
+      "lifecycle": "active"
+    },
+    {
       "id": "scenario.assertion-failed",
       "code": "LEK-SCN-001",
       "category": "semantic",

@@ -6,6 +6,7 @@ import {createHash} from 'node:crypto';
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,readdirSync,symlinkSync,unlinkSync,statSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {serviceBinaries} from './lib/external-services.mjs';
 import {prepare,verify} from './ci-runtime-artifacts.mjs';
 const hash=b=>createHash('sha256').update(b).digest('hex');
 function fixture(t,platform='linux',profile='debug'){
@@ -14,6 +15,8 @@ function fixture(t,platform='linux',profile='debug'){
  const c={sourceSha:'a'.repeat(40),runId:'1234',attempt:'1',platform,arch:platform==='darwin'?'arm64':'x64',image:{linux:'ubuntu-26.04',win32:'windows-latest',darwin:'macos-latest'}[platform],imageOS:{linux:'ubuntu26',win32:'win25',darwin:'macos26'}[platform],profile};
  const source=join(root,'source'),directory=join(root,'artifact'),destination=join(root,'target'),suffix=platform==='win32'?'.exe':'';
  mkdirSync(join(source,profile,'examples'),{recursive:true});mkdirSync(destination);
+ mkdirSync(join(source,'external-services/debug'),{recursive:true});
+ for(const name of serviceBinaries)writeFileSync(join(source,'external-services/debug',name+suffix),'fixture-service-'+name);
  writeFileSync(join(source,profile,'lekalo'+suffix),'fixture-cli');
  if(profile==='debug')writeFileSync(join(source,'debug/examples/typescript-native-contract'+suffix),'fixture-example');
  const r=prepare({source,destination:directory,...c});
@@ -24,7 +27,7 @@ for(const platform of ['linux','win32','darwin'])for(const profile of ['debug','
  const f=fixture(t,platform,profile);f.verify();
  assert.equal(readFileSync(join(f.destination,profile,'lekalo'+f.suffix),'utf8'),'fixture-cli');
  if(platform===process.platform&&process.platform!=='win32')assert.equal(statSync(join(f.destination,profile,'lekalo')).mode&0o777,0o755);
- assert.deepEqual(readdirSync(f.destination),[profile]);
+ assert.deepEqual(readdirSync(f.destination).sort(),[profile,'external-services'].sort());
  assert.throws(f.verify,/existing executable/);
 });
 for(const key of ['sourceSha','runId','attempt','platform','arch','image','imageOS','profile'])test(`rejects mismatched ${key} before installing`,t=>{

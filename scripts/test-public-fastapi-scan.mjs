@@ -13,7 +13,7 @@ const contractMode = process.argv.includes('--validate-contracts');
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const suffix = process.platform === 'win32' ? '.exe' : '';
 const binary = process.env.LEKALO_BIN ?? join(repo, `target/debug/lekalo${suffix}`);
-const adapter = process.env.LEKALO_PYTHON_ADAPTER_BIN ?? join(repo, `adapters/python/target/debug/lekalo-target-python${suffix}`);
+const adapter = process.env.LEKALO_PYTHON_ADAPTER_BIN ?? join(repo, `tests/external/lekalo-python/target/debug/lekalo-target-python${suffix}`);
 const parent = realpathSync(tmpdir());
 const root = mkdtempSync(join(parent, 'lekalo-public-fastapi-'));
 const policy = { schema: 'lekalo/framework-policy', version: 1, providers: [{ id: 'fastapi', state: 'enabled' }] };

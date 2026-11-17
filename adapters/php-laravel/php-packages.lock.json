@@ -1,0 +1,53 @@
+{
+  "formatVersion": 1,
+  "packages": [
+    {
+      "name": "lekalo-php",
+      "repo": "https://github.com/ichinya/lekalo-php",
+      "commit": "1db0497e95be86863ac8218d380561061416d8a1",
+      "files": {
+        "build-lib.php": "sha256:90fd3a7a9dcd99f8349066526ea7f135cd84b9cbcc38888225ba2191f5e49939",
+        "build.php": "sha256:853362cd94fd18574d2ed9c6677da3e160d42d88b8e7e8f893fab90571991ca6",
+        "lekalo.package.json": "sha256:89e198dede1fa57e40063031eea33af42ef41d45b0df2744a5ddfa665b29f403",
+        "mago-toolchain.lock.json": "sha256:4b51e68a2d4eb3bcb25f6a9a5fb6e6451771f9468ca60b3a36d2f5aaa0cc490d",
+        "src/ai-lint.php": "sha256:a3d4a376777da71192cc678558f1ee62e00e846f0023773fcb38ccf187a1c5d7",
+        "src/analyzer.php": "sha256:8dfad2a14eeeb5f65792b1a6de00ff7ccc4ffdd14b50af18b7d43c6a0deac7ee",
+        "src/kernel.php": "sha256:17e99abd07f211c02c8a03e1074f4f7c3d33913e20c01e0c21b8ce73a9b663fe",
+        "src/operation-bindings.php": "sha256:f2f10cc501288530aae0de94af6be632a5843b295e1b1e8b30c89272200a31f9",
+        "src/operation-emit.php": "sha256:9d65a82580a4a7db4e3fc8a14542ae414d29e8d4b65d40ea206b223456a8bebf",
+        "src/operation-map.php": "sha256:3fdc04778d7ccb4a5768629e620c59b411c1df6208989f697ad2398f419f8352",
+        "src/operation-policy.php": "sha256:1ddcda654ccc1136b845413f2663968cedd5127c6054a3ec35d7ada627f2713f",
+        "src/provider.php": "sha256:5f1238931e411ab8fe1365250ecc3d2a5b9d1246a07bb657672a723e8b244758",
+        "src/route-map.php": "sha256:891373d649975e7ee376e8f297b08124768f1d138f85fde809a35b36389930d5",
+        "src/route-policy.php": "sha256:3267a41e78e829b19a1b7cbd01ebcaa0bb2d68d0c7ca4fc4cef27c70f47502c2",
+        "src/scenario-map.php": "sha256:8d5c86c8598d29a0dce978c377a812589aa6004ad8023d361363b4727867048a",
+        "src/strict-profile.php": "sha256:8334bc169aad3c04eac798bec5437801157f2a486fc2c443d51ad26e1e3abe5f",
+        "src/type-bindings.php": "sha256:0c0e5113d188a3f79c455f1c43f9955d1ed6b4cf62d87f83f3b849401c357f05",
+        "src/type-codec.php": "sha256:be3f44aee64d0610b0107bc9effba8721cf564af25c0b252f52202641d74e99a",
+        "src/type-emit.php": "sha256:06300519ef139da2b3374e0745b68cca321a3da450c123806acd73eefb733828",
+        "src/type-map.php": "sha256:161af40fb5b4065ad848f279d87ac7289c8feb23f72855b90ed1543a1c4c2a26",
+        "src/type-policy.php": "sha256:4d753ec1d9fdf337998a6c48f3cb81652be9065d917d3e8281fa441ea581b499",
+        "tests/analyzer.php": "sha256:5a5e19b1cfeb1cc0bfa65a879643186f9b0bf9cccac54fd353d961d61e58c9d3",
+        "tests/composition.php": "sha256:c7e496ac8cb77aadbe616644b385dd10b142c5a0bf23e899ee667beac224a5a7",
+        "tests/protocol.php": "sha256:52c8971713dc9020d443b820312db9d8d2209428adc3e4059e91d90811e82053"
+      }
+    },
+    {
+      "name": "lekalo-php-laravel",
+      "repo": "https://github.com/ichinya/lekalo-php-laravel",
+      "commit": "b2187770e4079bf8a5f2f7cd0d81ed258d66f823",
+      "files": {
+        "composer-gates-policy.json": "sha256:af3d21a5a53b05a42bef111ed190bc60ad3086e3f1472b1b4d78d7d810ed5732",
+        "lekalo.package.json": "sha256:9dc5b592fef7ac6104d66dad52c0ccc32971b30ceaa01e11277a7c8d66b21013",
+        "src/laravel-lint.php": "sha256:be38febffa8d0df2ecc6c06a7a80895572ba030d345bf3d01564eb1703ddddea",
+        "src/laravel-migrations.php": "sha256:93521901376eb2fd2ed8656aa5a1e9be53e4a04e555a073362f9a28832ec71b3",
+        "src/laravel-provider.php": "sha256:1b6bcb2cb4c0c49f25938f24b1a99769c00b91870cb6d3c57e4b7ca38d85b9c8",
+        "src/native-plan.php": "sha256:13c0d2bcbc370e8dd7cb9719986931a29c619f30473be2bdbc2c6310ef103f95",
+        "src/native-policy.php": "sha256:020e7c9e7256047f48ee89338907a3e4e42c0537d5b7b8f74d777ddd14be905c",
+        "src/route-emit.php": "sha256:4cc3314608eca1ea2e680e6b8d0f50719c315980ecf064ed36f8c37dce542680",
+        "src/scenario-emit.php": "sha256:1c6d418819e5d73f3f9d6f1b9f47b530dc15c1dd2fc2fceff53c0f532efbbd1f",
+        "tests/laravel.php": "sha256:14edf86a1b5743a1b132ecd43c7c968db8d154daedccd3ddbb47c6585524dfdf"
+      }
+    }
+  ]
+}

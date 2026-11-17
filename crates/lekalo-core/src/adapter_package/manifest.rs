@@ -1005,7 +1005,7 @@ mod committed_exemplar_tests {
     /// packages stay wired to the closed wire shapes.
     #[test]
     fn the_committed_adapter_manifest_parses() {
-        let bytes = include_bytes!("../../../../adapters/node-typescript/adapter.manifest.json",);
+        let bytes = include_bytes!("../../../../tests/external/lekalo-typescript/adapters/node-typescript/adapter.manifest.json",);
         let document = super::ManifestDocument::from_bytes(bytes)
             .expect("the committed adapter manifest must parse");
         assert_eq!(document.adapter_id(), "lekalo-target-node-typescript");
@@ -1015,7 +1015,7 @@ mod committed_exemplar_tests {
         // digest independently verified by test-adapter-manifest-golden.
         assert_eq!(
             document.package_digest().as_str(),
-            "sha256:8eb97f31caf28777d911af8b9f1d754cefa3d15dfc2e90b3097e02fc87f9e81b"
+            "sha256:781c998fd29f9efdab3e7443ff3d564a30fc07ab178f174268029fa2ee53019e"
         );
     }
 
@@ -1025,15 +1025,17 @@ mod committed_exemplar_tests {
         let document = super::ManifestDocument::from_bytes(bytes)
             .expect("the committed PHP adapter manifest must parse");
         assert_eq!(document.adapter_id(), "lekalo-target-php-laravel");
-        // M8 publishes finite cache-evidence scopes under adapter 0.8.0;
-        // the wire protocol remains independently pinned at 0.6.4.
-        assert_eq!(document.adapter_version().as_str(), "0.8.0");
-        // The runtime is the closed php spelling with the 8.3 floor of
-        // the issue's requirements, checked against the raw canonical
-        // bytes (the wire struct keeps the runtime block opaque).
+        // Stage 4 (issue #241): the provider seam lands under adapter
+        // 0.9.0; the wire protocol remains independently pinned at
+        // 0.6.4.
+        assert_eq!(document.adapter_version().as_str(), "0.9.0");
+        // The runtime is the closed php spelling with the 8.0 floor
+        // (lekalo-php#1: all current PHP versions 8.0-8.6), checked
+        // against the raw canonical bytes (the wire struct keeps the
+        // runtime block opaque).
         let value: serde_json::Value = serde_json::from_slice(bytes).expect("manifest is JSON");
         assert_eq!(value["executable"]["runtime"]["kind"], "php");
-        assert_eq!(value["executable"]["runtime"]["minVersion"], "8.3.0");
+        assert_eq!(value["executable"]["runtime"]["minVersion"], "8.0.0");
         // The permission posture is the strict shipped default.
         assert_eq!(
             value["permissions"]["network"]["mode"],

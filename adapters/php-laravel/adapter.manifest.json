@@ -4,7 +4,7 @@
   "adapter": {
     "id": "lekalo-target-php-laravel",
     "name": "PHP/Laravel target adapter",
-    "version": "0.8.0"
+    "version": "0.9.0"
   },
   "publisher": {
     "id": "lekalo",
@@ -107,7 +107,7 @@
   "executable": {
     "runtime": {
       "kind": "php",
-      "minVersion": "8.3.0"
+      "minVersion": "8.0.0"
     },
     "entry": "adapter.php",
     "argvPreview": [
@@ -120,12 +120,12 @@
     "any"
   ],
   "integrity": {
-    "packageDigest": "sha256:f983d6826f978582026f391fd138aae351ee84c36cabbbd0658c433dd692e85c",
+    "packageDigest": "sha256:60e55dfb3462f435be5c1dd60ab85c0414e97dd3c518b4a21e239241533a35a9",
     "files": [
       {
         "path": "adapter.php",
-        "digest": "sha256:1d14f915544631f5d967217c70769bdea6041221ca524052819bee50d0e41287",
-        "bytes": 661862
+        "digest": "sha256:65874646d21760b587df3469d52d76086d03a4ded4dd2bbda85a8397c8110ea1",
+        "bytes": 681846
       }
     ],
     "signaturePolicy": "unsigned",

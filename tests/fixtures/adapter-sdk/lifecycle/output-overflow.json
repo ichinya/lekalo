@@ -1,5 +1,0 @@
-{
-  "adapterMode": "oversize",
-  "case": "output-overflow",
-  "expectedTerminal": "output-limit"
-}

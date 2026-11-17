@@ -16,7 +16,7 @@ below — no vendor tree, no provisioning, no execution.
   (`laravel`, `legacy-suite`), and the mandatory cross-module gate
   `application-boot`.
 
-Custody: `adapters/php-laravel/composer-gates-policy.json` pins the
+Custody: `adapters/php-laravel/vendor/lekalo-php-laravel/composer-gates-policy.json` (the vendored pinned package file; the bytes also ride the unified artifact verbatim) pins the
 manifest digest and every script-entry digest of this fixture; any edit
 here refuses planning with `manifest-digest-drift` until the policy is
 re-pinned. That is the point — the policy is confirmation data, the

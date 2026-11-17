@@ -1,71 +1,16 @@
-//! The published PostgreSQL type table (issue #69): the exact
-//! rendering of one domain value type under one profile's policies.
-//!
-//! The table extends the #65 namespace table with the 0.4.0 domain
-//! arms and the policy gates: JSON defaults to `jsonb` with the
-//! textual type as explicit opt-in, arrays render natively, as JSON,
-//! or refuse explicitly, and the timezone-naive timestamp renders
-//! only where the profile declares it allowed. Nothing is invented:
-//! a rendering the profile does not declare refuses with a registered
-//! diagnostic instead of guessing.
-
+//! Legacy type API delegates to the installed provider.
+use super::super::{provider, Policies};
+#[cfg(test)]
+use super::super::{ArrayPolicy, JsonPolicy};
 use crate::diagnostics::DiagnosticSet;
 use crate::storage_projection::entity::DomainType;
-
-use super::super::diagnostic::{self, RENDER_UNSUPPORTED};
-use super::super::{ArrayPolicy, JsonPolicy, Policies};
-
-/// Render one domain value type under the declared policies.
+/// Render one declared type through the external provider.
 pub fn map_type(field_type: &DomainType, policies: &Policies) -> Result<String, DiagnosticSet> {
-    let rendered = match field_type {
-        DomainType::Boolean => "boolean".to_owned(),
-        DomainType::Integer => "bigint".to_owned(),
-        DomainType::Decimal { precision, scale } => format!("numeric({precision},{scale})"),
-        DomainType::String { length } => format!("varchar({length})"),
-        DomainType::Text => "text".to_owned(),
-        DomainType::Uuid => "uuid".to_owned(),
-        DomainType::Date => "date".to_owned(),
-        DomainType::Timestamp => {
-            // The v1 schema pins `time.instant` to the timezoned type;
-            // the timezone-naive type is gateable policy surface that
-            // no v1 domain type names.
-            "timestamptz".to_owned()
-        }
-        DomainType::Binary => "bytea".to_owned(),
-        DomainType::Json => match policies.json() {
-            JsonPolicy::Jsonb => "jsonb".to_owned(),
-            JsonPolicy::Json => "json".to_owned(),
-        },
-        DomainType::Enum { .. } => match policies.enum_policy() {
-            // The bounded member CHECK over a varchar is the rendered
-            // answer; the member list rides the derived column.
-            crate::storage_engine::EnumPolicy::Check => "varchar(64)".to_owned(),
-            // The 0.4.0 renderer creates no native enum types; the
-            // declared policy refuses explicitly instead of silently
-            // yielding a varchar.
-            crate::storage_engine::EnumPolicy::NativeEnum => {
-                return Err(diagnostic::rule_invalid(
-                    RENDER_UNSUPPORTED,
-                    "native-enum",
-                    None,
-                ));
-            }
-        },
-        DomainType::Array { element, .. } => match policies.array() {
-            ArrayPolicy::Native => format!("{}[]", map_type(element, policies)?),
-            ArrayPolicy::Json => "jsonb".to_owned(),
-            ArrayPolicy::Unsupported => {
-                return Err(diagnostic::rule_invalid(
-                    RENDER_UNSUPPORTED,
-                    "array-unsupported",
-                    None,
-                ));
-            }
-        },
-    };
-    Ok(rendered)
+    provider::text(
+        "storage.type",
+        serde_json::json!({"type":provider::domain_type(field_type),"policies":provider::policies(policies)}),
+    )
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -52,6 +52,11 @@ const adapterPath = join(repoRoot, "adapters", "php-laravel", "adapter.php");
 const corpusIr = join(repoRoot, "tests", "fixtures", "adapter-conformance", "inputs", "ir-minimal.json");
 const fixtures = join(repoRoot, "tests", "fixtures", "php-laravel", "types");
 const php = process.env.LEKALO_PHP ?? "php";
+// Version-bump regeneration mode: commits the per-version golden
+// digest file for the current adapter version when it does not exist
+// yet (the emitted bytes differ from the predecessor only through the
+// producer version in headers and sidecars).
+const regenGoldens = process.argv.includes("--regen-goldens");
 const sha256 = (bytes) => "sha256:" + createHash("sha256").update(bytes).digest("hex");
 
 let passed = 0;
@@ -198,11 +203,29 @@ step("managed generation matches the committed golden digests", () => {
   materialize(goldenRoot, "inputs/planner.types.json", corpusIr);
   const { dry, apply } = generate(goldenRoot, "lekalo/types/planner.types.json", "managed-a");
   const adapterVersion = readJson(join(repoRoot, "adapters/php-laravel/adapter.manifest.json")).adapter.version;
-  assert.ok(["0.2.0", "0.8.0"].includes(adapterVersion), "explicit PHP type golden admission");
+  assert.ok(["0.2.0", "0.8.0", "0.9.0"].includes(adapterVersion), "explicit PHP type golden admission");
   const predecessor = readJson(join(fixtures, "goldens", "digests.json"));
-  const golden = adapterVersion === "0.8.0"
-    ? readJson(join(fixtures, "goldens", "digests.product-0.8.0.json"))
-    : predecessor;
+  const goldenPath = adapterVersion === "0.2.0"
+    ? join(fixtures, "goldens", "digests.json")
+    : join(fixtures, "goldens", `digests.product-${adapterVersion}.json`);
+  let golden;
+  if (regenGoldens && adapterVersion !== "0.2.0" && !existsSync(goldenPath)) {
+    const files = {};
+    for (const relative of Object.keys(predecessor.files)) {
+      const path = join(goldenRoot, TYPES, relative);
+      assert.ok(existsSync(path), `missing emitted file ${relative}`);
+      files[relative] = sha256(readFileSync(path));
+    }
+    const reference = readJson(join(fixtures, "goldens", "digests.product-0.8.0.json"));
+    writeFileSync(goldenPath, JSON.stringify({
+      schemaVersion: reference.schemaVersion,
+      irDigest: reference.irDigest,
+      files,
+    }, null, 4) + "\n");
+    golden = { files };
+  } else {
+    golden = readJson(goldenPath);
+  }
   assert.deepEqual(Object.keys(golden.files), Object.keys(predecessor.files));
   assert.equal(dry.writes.length, Object.keys(golden.files).length);
   assert.ok(apply.writes.length >= dry.writes.length - 0);
@@ -210,11 +233,12 @@ step("managed generation matches the committed golden digests", () => {
     const path = join(goldenRoot, TYPES, relative);
     assert.ok(existsSync(path), `missing emitted file ${relative}`);
     assert.equal(sha256(readFileSync(path)), digest, `golden drift on ${relative}`);
-    // The M8 successor changes only the producer version in headers/sidecars.
-    // Keep the original byte contract independently pinned as well.
+    // The version successor changes only the producer version in
+    // headers/sidecars. Keep the original byte contract independently
+    // pinned as well.
     const previousBytes = readFileSync(path, "utf8")
-      .replaceAll("php-laravel@0.8.0", "php-laravel@0.2.0")
-      .replaceAll('"version":"0.8.0"', '"version":"0.2.0"');
+      .replaceAll(`php-laravel@${adapterVersion}`, "php-laravel@0.2.0")
+      .replaceAll(`"version":"${adapterVersion}"`, '"version":"0.2.0"');
     assert.equal(sha256(previousBytes), predecessor.files[relative], `predecessor drift on ${relative}`);
   }
   // The binding refused inputs stay refused: a stale digest is an error.

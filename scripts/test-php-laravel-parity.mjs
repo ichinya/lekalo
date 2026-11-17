@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
-const nodeAdapterPath = join(repoRoot, "adapters", "node-typescript", "adapter.mjs");
+const nodeAdapterPath = join(repoRoot, "tests", "external", "lekalo-typescript", "adapters", "node-typescript", "adapter.mjs");
 const phpAdapterPath = join(repoRoot, "adapters", "php-laravel", "adapter.php");
 const nodeFixture = join(repoRoot, "tests", "fixtures", "orchestration", "project");
 const phpFixture = join(repoRoot, "tests", "fixtures", "php-laravel", "planner");

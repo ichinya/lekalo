@@ -8,6 +8,9 @@ const read=p=>readFileSync(join(root,p),'utf8').replaceAll('\r\n','\n');
 const digest=s=>createHash('sha256').update(s).digest('hex');
 const expr=s=>'${{ '+s+' }}';
 const consumers=['cli-core','node-typescript','php-laravel','python','sdk','docs','mcp','native-execution'];
+// Preserve the historical gate inventory while changing only package locations.
+const externalize = text => text.replaceAll('adapters/python/','tests/external/lekalo-python/').replaceAll('tests/external/lekalo-python/tests/observed-host.test.mjs','tests/python-observed-host.test.mjs').replaceAll('adapters/node-typescript','tests/external/lekalo-typescript/adapters/node-typescript').replaceAll('tests/fixtures/node-typescript-scanner/','tests/external/lekalo-typescript/tests/fixtures/node-typescript-scanner/').replaceAll('tests/fixtures/node-typescript-transport/','tests/external/lekalo-typescript/tests/fixtures/node-typescript-transport/').replaceAll('npm ci --prefix tests/external/lekalo-typescript/adapters/node-typescript', 'npm ci --prefix "$LEKALO_TYPESCRIPT_ROOT/adapters/node-typescript"').replaceAll('working-directory: sdk/','working-directory: tests/external/lekalo-adapter-sdk/sdk/');
+const originalLocations = text => text.replaceAll('tests/external/lekalo-python/', 'adapters/python/').replaceAll('tests/python-observed-host.test.mjs','adapters/python/tests/observed-host.test.mjs').replaceAll('tests/external/lekalo-typescript/','').replaceAll('tests/external/lekalo-adapter-sdk/','').replaceAll('      - name: Provision pinned external integration packages\n        run: node scripts/external-tool.mjs --provision\n','');
 export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=read('.github/workflows/ci-platform.yml'),inventory=JSON.parse(read('.github/ci/platform-gates.json'))}={}){
  const parent=jobs(caller),graph=jobs(callee),call=parent.platform;
  assert.equal(call?.uses,'./.github/workflows/ci-platform.yml');
@@ -28,6 +31,15 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   assert(job.steps.some(s=>s.uses==='actions/setup-node@v7'));
   assert(!job.steps.some(s=>s.raw.includes('continue-on-error')),`${job.id}: optional step`);
  }
+ for(const owner of ['build-debug','build-release','rust','rust-process']) {
+  const steps=graph[owner].steps;
+  const provision=steps.findIndex(s=>s.run==='node scripts/external-tool.mjs --provision');
+  const builds=steps.filter(s=>s.run==='node scripts/external-tool.mjs --build-services');
+  assert.equal(builds.length,1,`${owner}: exactly one pinned service build`);
+  const build=steps.indexOf(builds[0]),consume=steps.findIndex(s=>s.run?.includes('cargo build'));
+  assert(provision<build&&build<consume&&!builds[0].condition,`${owner}: services before host consumers`);
+ }
+ for(const owner of consumers) assert(!graph[owner].steps.some(s=>s.run?.includes('--build-services')),`${owner}: services must use the verified artifact`);
  for(const profile of ['debug','release']){
   const p=graph['build-'+profile];assert.deepEqual(p.needs,[]);
   assert.equal(p.env.RUNTIME_PROFILE,profile);assert.equal(p.env.RUNTIME_IMAGE,expr('inputs.os'));
@@ -55,6 +67,10 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   assert(!runs[0].condition,`${owner}: conditional Rust lane`);
  }
  assert(!graph['rust-process'].steps.some(s=>s.run?.includes('cargo test')), 'Qualification must stay in core Rust lane');
+ const coreSteps=graph.rust.steps;
+ const prebuild=coreSteps.findIndex(s=>s.run==='cargo test -p lekalo-core --lib --no-run --locked');
+ const qualification=coreSteps.findIndex(s=>s.run?.includes('--lib unix_confined_'));
+ assert(prebuild>=0&&prebuild<qualification&&!coreSteps[prebuild].condition,'Compile core tests before the bounded execution gate');
  for(const owner of consumers){
   const j=graph[owner],profile=owner==='native-execution'?'release':'debug';
   // Apply the same handoff guard as live contract gates, using a unique marker.
@@ -67,11 +83,12 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   for(const s of j.steps)if(s.run?.includes('cargo build')||s.run?.includes('cargo test'))assert(['sdk','python'].includes(owner)||s.condition?.includes('failure()'),`Hidden Cargo in ${owner}`);
   if(['sdk','python'].includes(owner))assert(j.steps.some(s=>s.uses==='Swatinem/rust-cache@v2'&&field(s.raw,'cache-targets',10)==='false'),'A cache must not overwrite verified host binaries');
  }
+ for(const [name,job] of Object.entries(graph)) assert(job.steps.some(s=>s.run==='node scripts/external-tool.mjs --provision'),`${name}: external integrations are not provisioned`);
  const seen=new Set();assert.equal(inventory.gates.length,91);
  const commands=new Map();
  for(const [owner,indices] of Object.entries(inventory.prerequisites))for(const index of indices){
   const s=inventory.setup.find(s=>s.index===index);assert(s,`Unknown setup ${index}`);
-  const expected=s.raw.replaceAll(expr('matrix.os'),expr('inputs.os'));
+  const expected=externalize(s.raw.replaceAll(expr('matrix.os'),expr('inputs.os')));
   const position=graph[owner].steps.findIndex(s=>s.raw===expected);
   assert(position>=0,`${owner}: missing or altered prerequisite ${s.name??s.uses}`);
   const gates=inventory.gates.filter(g=>g.owner===owner).map(g=>graph[owner].steps.findIndex(s=>s.name===g.name));
@@ -84,7 +101,7 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
  assert.equal(new Set(caches).size,caches.length,'Cargo cache keys overlap between lanes');
  for(const gate of inventory.gates){
   assert(!seen.has(gate.id),'Duplicate inventory entry');seen.add(gate.id);
-  let expected=gate.raw.replaceAll(expr('matrix.os'),expr('inputs.os'));
+  let expected=externalize(gate.raw.replaceAll(expr('matrix.os'),expr('inputs.os')));
   if(gate.id==='build-test-075')expected=expected.replace('          cargo build -p lekalo-core --example typescript-native-contract --locked\n','');
   if(gate.id==='native-execution-10')expected=expected.replace('          cargo build --release -p lekalo-cli --locked\n','');
   if(gate.id==='native-execution-13')expected=expected.replace('name: native-acceptance-'+expr('inputs.os'),'name: native-acceptance-'+expr('inputs.os')+'-'+expr('github.run_attempt'));
@@ -101,7 +118,7 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   }
  }
  for(const [command,count] of commands)assert.equal(Object.values(graph).flatMap(j=>j.steps).filter(s=>s.run===command).length,count,'Unexpected repeated gate command');
- for(const [id,hash] of Object.entries(inventory.unchangedJobs))assert.equal(digest(parent[id]?.raw??''),hash,`Unrelated job ${id} changed`);
+ for(const [id,hash] of Object.entries(inventory.unchangedJobs))assert.equal(digest(originalLocations(parent[id]?.raw??'')),hash,`Unrelated job ${id} changed`);
  assert.deepEqual(Object.keys(parent).sort(),['platform',...Object.keys(inventory.unchangedJobs)].sort());
  assert.equal(digest(caller.slice(0,caller.indexOf('\njobs:'))),inventory.callerPreambleSha256,'Event/env/permission policy changed');
  assert.equal(digest(read('.github/workflows/release.yml')),inventory.releaseSha256,'Release policy changed');

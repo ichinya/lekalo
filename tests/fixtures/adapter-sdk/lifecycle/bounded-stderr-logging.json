@@ -1,5 +1,0 @@
-{
-  "adapterMode": "stderr-verbose",
-  "case": "bounded-stderr-logging",
-  "expectedTerminal": "ok"
-}

@@ -77,6 +77,10 @@ jobs:
         if: runner.environment == 'github-hosted'
         with:
           shared-key: contracts-rust
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
+      - name: Build pinned external services
+        run: node scripts/external-tool.mjs --build-services
       - name: Build the checkout CLI for live contract probes
         run: cargo build --workspace --locked
       # Protocol semantic vectors belong to core-lib in Build and test on all
@@ -104,6 +108,8 @@ jobs:
         with:
           # The AI Workspace hook gate checks historical contract commits.
           fetch-depth: 0
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
@@ -246,6 +252,8 @@ jobs:
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -255,7 +263,7 @@ jobs:
       # its generated modules pin their layout with #[rustfmt::skip], so
       # formatting can never fight the generator's byte --check.
       - name: Rustfmt (adapter SDK workspace)
-        working-directory: sdk/rust
+        working-directory: tests/external/lekalo-adapter-sdk/sdk/rust
         run: cargo fmt --all -- --check
 
   clippy:
@@ -267,6 +275,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -274,7 +284,7 @@ jobs:
         if: runner.environment == 'github-hosted'
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Clippy (adapter SDK workspace)
-        working-directory: sdk/rust
+        working-directory: tests/external/lekalo-adapter-sdk/sdk/rust
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   msrv:
@@ -286,6 +296,8 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: dtolnay/rust-toolchain@1.89.0
         with:
           components: clippy
@@ -371,6 +383,8 @@ jobs:
           --health-interval=10s --health-timeout=5s --health-retries=20
     steps:
       - uses: actions/checkout@v7
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         if: runner.environment == 'github-hosted'
@@ -429,7 +443,7 @@ jobs:
       - name: Install the pinned Mago toolchain (checksum-verified, outside the checkout)
         run: |
           set -euo pipefail
-          LOCK=adapters/php-laravel/mago-toolchain.lock.json
+          LOCK=adapters/php-laravel/vendor/lekalo-php/mago-toolchain.lock.json
           PIN_VERSION=$(node -p "require('./$LOCK').tool.version")
           test "$PIN_VERSION" = "1.0.0"
           # Resolve THIS runner's platform entry from the lock — the
@@ -473,6 +487,38 @@ jobs:
         # ran. A missing tool fails this leg, never a silent skip.
         run: node scripts/test-php-laravel-type-roundtrip.mjs --require-mago
 
+  php-versions:
+    name: PHP version matrix (lekalo-php#1, all current versions)
+    # The vendored language and framework suites, the unified
+    # artifact's describe handshake, and the deterministic rebuild all
+    # run on every current PHP version (8.6 rides its RC until GA).
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.0', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: none
+          extensions: none
+      - name: Vendored language and framework suites
+        run: |
+          set -euo pipefail
+          php -n adapters/php-laravel/vendor/lekalo-php/tests/protocol.php
+          php -n adapters/php-laravel/vendor/lekalo-php/tests/analyzer.php
+          php -n adapters/php-laravel/vendor/lekalo-php-laravel/tests/laravel.php
+      - name: The unified artifact answers describe on this version
+        run: |
+          set -euo pipefail
+          printf '%s' '{"protocol":"lekalo.target/v1","protocol_version":"0.6.4","operation":"describe","request_id":"req-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","project_root":"."}' \
+            | php -n adapters/php-laravel/adapter.php | grep -q '"version":"0.9.0"'
+      - name: The deterministic rebuild is byte-identical on this version
+        run: php -n adapters/php-laravel/build.php --check
+
   worklog-changelog-pilot:
     name: Worklog-changelog pilot binary gates (issue #51)
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
@@ -489,6 +535,10 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.3"
+      - name: Provision pinned external integration packages
+        run: node scripts/external-tool.mjs --provision
+      - name: Build pinned external services
+        run: node scripts/external-tool.mjs --build-services
       - name: Build the locked CLI and provision the exact schema validator
         run: |
           set -euo pipefail

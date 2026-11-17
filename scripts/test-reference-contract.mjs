@@ -28,7 +28,7 @@ try {
     call(process.execPath, [join(root, 'scripts/materialize-reference-project.mjs'), target, output], root);
     const source = target === 'node' ? 'src/server.mjs' : 'src/planner.php';
     const bytes = readFileSync(join(output, source));
-    const manifest = JSON.parse(readFileSync(join(root, `adapters/${target === 'node' ? 'node-typescript' : 'php-laravel'}/adapter.manifest.json`), 'utf8'));
+    const manifest = JSON.parse(readFileSync(join(root, `${target === 'node' ? 'tests/external/lekalo-typescript/adapters/node-typescript' : 'adapters/php-laravel'}/adapter.manifest.json`), 'utf8'));
     const declaration = {
       schemaVersion: 'lekalo/contracted-declaration/v0.4.0',
       adapter: { id: manifest.adapter.id, version: manifest.adapter.version, digest: null },

@@ -971,6 +971,26 @@ const families = {
     docs: "docs/observed-mode.md",
     waiver: "Not applicable: freshness is recorded as data.",
   },
+  "runtime": {
+    title: "External runtime or portable rules refused",
+    kind: "checks runtime protocol compatibility, immutable package pins, execution confinement and portable rule results",
+    matters: "a runtime must supply compatible facts and pass the selected contracts before the host can accept its result",
+    causes: [
+      "the runtime does not support the selected rules API or required capabilities",
+      "the configuration, lock, executable or package files changed after locking",
+      "the runtime failed, exceeded its process budget or returned an invalid envelope",
+      "runtime facts do not satisfy a selected portable rule",
+    ],
+    fixes: [
+      { class: "manual-only", recipeId: null, description: "Inspect the diagnostic detail, correct the selected runtime or rules, and regenerate the lock only after reviewing the changed inputs." },
+      { class: "manual-only", recipeId: null, description: "Correct failing facts or the implementation to satisfy the selected contract, then run runtime check again." },
+    ],
+    before: "lekalo runtime check --project .",
+    after: "# Review the runtime and rules changes, then refresh the pins.\nlekalo runtime lock --project .\nlekalo runtime check --project .",
+    targets: "The host applies the same protocol and contract checks to every external language runtime.",
+    docs: "docs/external-runtimes.md",
+    waiver: "Not waivable: runtime compatibility, custody and contract validation must succeed.",
+  },
   "ownership": {
     title: "Implementation ownership handoff refused",
     kind: "admits scoped implementation handoffs, pins their consumed inputs, requires executed behavioral evidence, and preserves artifact custody during publication and restoration",

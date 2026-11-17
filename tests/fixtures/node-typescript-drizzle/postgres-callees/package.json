@@ -1,7 +1,0 @@
-{
-  "name": "lekalo-drizzle-fixture-postgres-callees",
-  "private": true,
-  "dependencies": {
-    "drizzle-orm": "0.45.4"
-  }
-}

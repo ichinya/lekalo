@@ -97,9 +97,12 @@ const lekaloBinary = join(
   process.platform === "win32" ? "lekalo.exe" : "lekalo",
 );
 const lekalo = (args) =>
-  spawnSync(lekaloBinary, args, {
+  spawnSync(lekaloBinary, args.map(arg => arg.startsWith('tests/fixtures/') ? join(root,arg) : arg), {
     encoding: "utf8",
-    cwd: root,
+    // The repository root contains development package junctions, which the
+    // Windows private-project boundary correctly refuses. These data-only
+    // cases operate on the migration fixture project instead.
+    cwd: join(root, "tests/fixtures/laravel-migrations"),
   });
 
 const FX = "tests/fixtures/laravel-migrations/inputs";

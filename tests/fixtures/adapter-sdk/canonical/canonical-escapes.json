@@ -1,7 +1,0 @@
-{
-  "canonical": "{\"t\":\"tab\\t and \\\"quote\\\" and é\"}",
-  "name": "canonical-escapes",
-  "value": {
-    "t": "tab\t and \"quote\" and é"
-  }
-}

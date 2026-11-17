@@ -38,6 +38,7 @@ pub fn assess(trace: &TraceManifest, bytes: &[u8]) -> Result<AssessmentReport, D
         .iter()
         .map(|r| (r.id.clone(), r.clone()))
         .collect();
+    let external_mappings = mapping_results(&input, &nodes, &receipts)?;
     let mut findings = Vec::new();
     let current = manifest.source_revision == input.source_revision
         && manifest.model_ref == input.model_ref
@@ -207,41 +208,18 @@ pub fn assess(trace: &TraceManifest, bytes: &[u8]) -> Result<AssessmentReport, D
         if !current {
             finding(&mut findings, diagnostic::STALE, &chain.id, "manifest-pins");
         }
-        let needs_hlv_mapping = input
-            .required_providers
-            .contains(&crate::trace::ExternalSystem::Hlv)
-            || chain
-                .evidence_refs
-                .iter()
-                .filter_map(|id| receipts.get(id))
-                .any(|r| r.provider == crate::trace::ExternalSystem::Hlv);
-        if needs_hlv_mapping {
-            for (role, key) in [
-                ("external-test-mapping", chain.test.as_ref()),
-                ("external-gate-mapping", chain.gate.as_ref()),
-            ] {
-                let aliases: Vec<_> = key
-                    .and_then(|id| nodes.get(id.as_str()))
-                    .map(|node| {
-                        node.external_refs
-                            .iter()
-                            .filter(|r| r.system == crate::trace::ExternalSystem::Hlv)
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                if aliases.len() != 1 {
-                    finding(
-                        &mut findings,
-                        if aliases.len() > 1 {
-                            diagnostic::CONFLICT
-                        } else {
-                            diagnostic::MISSING
-                        },
-                        &chain.id,
-                        role,
-                    );
-                } else if aliases[0].revision.as_deref() != Some(input.source_revision.as_str()) {
-                    finding(&mut findings, diagnostic::STALE, &chain.id, role);
+        for role in ["external-test-mapping", "external-gate-mapping"] {
+            let key = format!("{}/{}", chain.id, role);
+            if let Some(state) = external_mappings.get(&key) {
+                let code = match state.as_str() {
+                    "valid" | "not-applicable" => None,
+                    "missing" => Some(diagnostic::MISSING),
+                    "conflicting" => Some(diagnostic::CONFLICT),
+                    "stale" => Some(diagnostic::STALE),
+                    _ => Some(diagnostic::PROVIDER),
+                };
+                if let Some(code) = code {
+                    finding(&mut findings, code, &chain.id, role);
                 }
             }
         }
@@ -591,4 +569,88 @@ impl AssessmentReport {
             DomainResult::receipt(json, human)
         }
     }
+}
+
+/// External mapping policy sees only explicitly supplied aliases/revisions.
+/// Generic relation, custody and completeness checks remain in the host.
+fn mapping_results(
+    input: &EvidenceDocument,
+    nodes: &BTreeMap<&str, &Node>,
+    receipts: &BTreeMap<String, Evidence>,
+) -> Result<BTreeMap<String, String>, DiagnosticSet> {
+    use serde::Deserialize;
+    use serde_json::json;
+    let mut rows = Vec::new();
+    for chain in &input.chains {
+        let mut required: BTreeSet<_> = input
+            .required_providers
+            .iter()
+            .map(|p| p.as_str())
+            .collect();
+        for id in &chain.evidence_refs {
+            if let Some(receipt) = receipts.get(id) {
+                required.insert(receipt.provider.as_str());
+            }
+        }
+        if required.is_empty() {
+            continue;
+        }
+        for (role, key) in [
+            ("external-test-mapping", chain.test.as_ref()),
+            ("external-gate-mapping", chain.gate.as_ref()),
+        ] {
+            let aliases = key
+                .and_then(|id| nodes.get(id.as_str()))
+                .map(|node| {
+                    node.external_refs
+                        .iter()
+                        .map(|r| json!({"system":r.system.as_str(),"revision":r.revision}))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            rows.push(json!({"id":format!("{}/{}",chain.id,role),"required":required,"revision":input.source_revision,"aliases":aliases}));
+        }
+    }
+    if rows.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let root = std::env::current_dir().map_err(|_| diagnostic::invalid("provider-root"))?;
+    let provider = crate::runtime::services::one(&root, "trace")
+        .map_err(|error| diagnostic::invalid(&format!("provider-unavailable-{}", error.detail)))?;
+    let response = provider
+        .invoke(
+            "trace.mappings",
+            json!({"schema":"lekalo/trace-mappings/v1","mappings":rows}),
+        )
+        .map_err(|error| diagnostic::invalid(&format!("provider-execution-{}", error.detail)))?;
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Row {
+        id: String,
+        state: String,
+    }
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Response {
+        schema: String,
+        results: Vec<Row>,
+    }
+    let response: Response =
+        serde_json::from_value(response).map_err(|_| diagnostic::invalid("provider-response"))?;
+    if response.schema != "lekalo/trace-mappings/v1" || response.results.len() != rows.len() {
+        return Err(diagnostic::invalid("provider-response"));
+    }
+    let mut result = BTreeMap::new();
+    for row in response.results {
+        if !rows.iter().any(|r| r["id"] == row.id)
+            || !matches!(
+                row.state.as_str(),
+                "valid" | "missing" | "conflicting" | "stale" | "not-applicable" | "unsupported"
+            )
+            || result.insert(row.id, row.state).is_some()
+        {
+            return Err(diagnostic::invalid("provider-response"));
+        }
+    }
+    Ok(result)
 }

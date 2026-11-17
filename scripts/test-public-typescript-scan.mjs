@@ -12,7 +12,7 @@ import {fileURLToPath} from 'node:url';
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const binary = process.env.LEKALO_BIN ?? join(repo, 'target', 'debug', process.platform === 'win32' ? 'lekalo.exe' : 'lekalo');
 assert.ok(existsSync(binary), 'build the checkout CLI first');
-const adapter = join(repo, 'adapters', 'node-typescript', 'adapter.mjs');
+const adapter = join(repo, 'tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs');
 const tempParent = realpathSync(tmpdir());
 const work = mkdtempSync(join(tempParent, 'lekalo-public-scan-'));
 const sha = bytes => 'sha256:' + createHash('sha256').update(bytes).digest('hex');
@@ -38,7 +38,7 @@ for (const mutation of [
 function faultPackage(root, profile, mode, path) {
   const dir = join(work, `fault-${basename(root)}-${mode}`);
   mkdirSync(dir);
-  const manifest = JSON.parse(readFileSync(join(repo, 'adapters/node-typescript/adapter.manifest.json'), 'utf8'));
+  const manifest = JSON.parse(readFileSync(join(repo, 'tests/external/lekalo-typescript/adapters/node-typescript/adapter.manifest.json'), 'utf8'));
   // Fault lanes exercise the frozen custody seam independently of the
   // new native-inventory producer. Positive lanes use the full manifest.
   manifest.compatibility.protocolVersions = ['0.3.2','0.9.0'];
@@ -136,7 +136,7 @@ try {
       const request={protocol:'lekalo.target/v1',protocol_version:'0.9.0',operation:'scan',request_id:'req-'+'0'.repeat(64),project_root:'.',target:'node-typescript',profile:'standalone'};
       // A source-only host explicitly injects the pinned native API for this
       // predecessor projection check. Positive public scans use core above.
-      const r=spawnSync(process.execPath,[join(repo,'adapters/node-typescript/test/native-test-entry.mjs'),'--lekalo-project-profile-json',JSON.stringify(profile)],{cwd:root,input:JSON.stringify(request),encoding:'utf8',timeout:120000,maxBuffer:16e6});
+      const r=spawnSync(process.execPath,[join(repo,'tests/external/lekalo-typescript/adapters/node-typescript/test/native-test-entry.mjs'),'--lekalo-project-profile-json',JSON.stringify(profile)],{cwd:root,input:JSON.stringify(request),encoding:'utf8',timeout:120000,maxBuffer:16e6});
       assert.equal(r.status,0);const result=JSON.parse(r.stdout);assert.equal(result.status,'error');assert.equal(result.error.partial,true);
     }
     refused(() => scan({...profile, id: 'wrong-profile'}, {expected: 3, reason: 'adapter.manifest-mismatch'}));

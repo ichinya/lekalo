@@ -44,7 +44,7 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const adapterPath = join(repoRoot, "adapters", "php-laravel", "adapter.php");
 const corpusIr = join(repoRoot, "tests", "fixtures", "adapter-conformance", "inputs", "ir-minimal.json");
 const fixtures = join(repoRoot, "tests", "fixtures", "php-laravel", "types");
-const srcDir = join(repoRoot, "adapters", "php-laravel", "src");
+const srcDir = join(repoRoot, "adapters", "php-laravel", "vendor", "lekalo-php", "src");
 const php = process.env.LEKALO_PHP ?? "php";
 const sha256 = (bytes) => "sha256:" + createHash("sha256").update(bytes).digest("hex");
 
@@ -219,7 +219,7 @@ step("edge corpus: every executed wire vector holds", () => {
 // Stage 3: the Mago lane.
 // ---------------------------------------------------------------------
 function findMago() {
-  const lock = JSON.parse(readFileSync(join(repoRoot, "adapters", "php-laravel", "mago-toolchain.lock.json"), "utf8"));
+  const lock = JSON.parse(readFileSync(join(repoRoot, "adapters", "php-laravel", "vendor", "lekalo-php", "mago-toolchain.lock.json"), "utf8"));
   const candidates = (process.env.LEKALO_MAGO ?? "mago").split(";").filter(Boolean);
   for (const candidate of candidates) {
     const probe = spawnSync(candidate, ["--version"], { encoding: "utf8", timeout: 30_000 });

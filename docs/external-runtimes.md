@@ -1,0 +1,201 @@
+# External runtimes and portable rules
+
+Status: **Implemented** opt-in component contract checks for issue #241.
+Owner: runtime protocol maintainers.
+
+A runtime is an external process. A rules package is an independent contract
+artifact. The component configuration selects both; core does not resolve a
+language name, framework name or built-in target profile on this path. Adding
+an unknown runtime does not require rebuilding Lekalo.
+
+## Configure and run
+
+```sh
+lekalo init --runtime gh/example/lekalo-zen --rules gh/example/service-contracts --component-path src
+lekalo runtime lock
+lekalo runtime check
+```
+
+The coordinates above are placeholders for repositories you control, not
+published example packages. `init` only creates `lekalo.yaml`; `runtime lock`
+fetches declared packages and executes their confined `describe` operation.
+An existing config is never overwritten. `lekalo runtime init` creates an empty
+configuration to edit; lock/check refuse it until a component or service is declared.
+
+```yaml
+schema: lekalo/runtime-config/v1
+components:
+  api:
+    path: api/src
+    runtime: gh/example/lekalo-zen#v1.0.0
+    rules:
+      - gh/example/http-contracts#v1.0.0
+  web:
+    path: web/src
+    runtime:
+      command: [lekalo-custom-runtime]
+    rules:
+      - "path:../http-contracts"
+```
+
+Coordinates are strings: `gh/OWNER/REPO[#REF]`, `git+https://HOST/REPO.git[#REF]`,
+`git+file:///ABSOLUTE/REPO[#REF]`, or `path:DIRECTORY`. A command is an argv array,
+never shell text. `--runtime exec:PROGRAM` is the one-program shorthand.
+Git references are pinned to a commit; uncommitted worktree files are ignored.
+`8.0` as a Git ref is a package author's choice, not a PHP-version parser in core.
+
+Component paths are project-relative and must not overlap or escape the root.
+The current scanner sends bounded UTF-8 files below each component, with
+relative paths and SHA-256 digests. Use source directories rather than dependency
+or build directories. Dot entries are excluded. Symbolic links, binary files,
+excess depth, entry count, file size or total size cause refusal.
+
+`lekalo.runtime.lock` pins the configuration, package contents, runtime executable,
+entry script, description and selected rules. Packages live outside the project,
+under `LEKALO_PACKAGE_HOME` or the user's cache. `runtime check`, `validate`, and
+`runtime lock --offline` never fetch or update packages. Edited executable/package
+bytes, stale configuration or missing cache entries require explicit re-locking.
+The current lock includes machine-local executable/cache paths; moving it to a
+new machine requires `runtime lock` there. Portable lock restoration is pending.
+
+`lekalo validate --strict` runs component checks when the selected root has
+`lekalo.yaml`. If `lekalo/project.yaml` also exists, its existing Model validation
+runs first; failure cannot be masked by runtime results. Model-specific module,
+module-API and CI-report flags currently refuse this combined mode. Other legacy
+commands retain their existing target protocol. `runtime check --component ID`
+selects one component, after checking integrity of the whole composition.
+
+Named [external services](external-services.md) use the same resolver and lock for discovery, requirements and trace mapping, independently of component runtimes and rules.
+
+## Package contract
+
+Each Git/local package root contains `lekalo.package.json`:
+
+```json
+{
+  "schema": "lekalo/package/v1",
+  "id": "example-runtime",
+  "version": "1.0.0",
+  "kind": "runtime",
+  "files": ["main.mjs", "lib/parser.mjs"],
+  "command": ["node", "main.mjs"]
+}
+```
+
+For a rules package use `kind: "rules"`, omit `command`, set `rules: "rules.json"`,
+and list `rules.json` in `files`. Package versions are semver. Runtime identity
+and version in its handshake must match the manifest. Declared files are read
+without following links, hashed and copied into the external cache. Git admission
+reads committed blobs and does not check out or execute package build hooks.
+
+Runtime package files are staged together in a private, read-only runtime tree,
+so relative imports and data files work without granting access to the original
+repository. A native executable can itself be a declared file. An interpreter
+must be installed locally; its first argument can be the declared script entry.
+A directly configured command supports an installed executable and an optional
+first-argument entry script; use a package for additional code/data resources.
+There is no automatic package-manager install, compilation or interpreter install.
+
+## Process protocol
+
+The schema is [external-runtime.schema.v1.json](../contracts/external-runtime.schema.v1.json).
+Each process receives one JSON object on stdin and must write exactly one JSON
+object on stdout before exiting zero. Stderr is not evidence. The host owns
+bounded input/output, deadlines, an empty project view and OS confinement; there
+is no fallback to an unconfined launch. Rules and source content arrive as data.
+
+```json
+{
+  "protocol": "lekalo/runtime/v1",
+  "request_id": "sha256:<host-generated-digest>",
+  "operation": "describe",
+  "input": {}
+}
+```
+
+The response echoes `protocol` and `request_id` exactly and sets `result`:
+
+```json
+{
+  "id": "example-runtime",
+  "version": "1.0.0",
+  "rules_api": ["lekalo/contract-rules/v1"],
+  "capabilities": ["http.routes/v1"],
+  "operations": ["check"]
+}
+```
+
+For `operation: "check"`, `input` contains `component`, `files` and `rules`.
+Each file has `path`, `digest`, `content`; each rules entry has `id`, `version`,
+`digest` and the decoded `rules` document. A successful result has
+`state: "complete"` and `facts: {"package-id": {"check-id": <JSON value>}}`.
+Every selected package/check must be present exactly once. Missing, extra,
+partial or malformed output fails; it is never interpreted as a pass. The
+runtime description and source snapshot are checked for changes during a run.
+
+## Portable contract rules
+
+```json
+{
+  "schema": "lekalo/contract-rules/v1",
+  "requires": ["http.routes/v1"],
+  "checks": [{
+    "id": "health-route",
+    "schema": {
+      "type": "object",
+      "required": ["routes"],
+      "properties": {
+        "routes": {
+          "type": "array",
+          "contains": {
+            "type": "object",
+            "required": ["method", "path"],
+            "properties": {
+              "method": {"const": "GET"},
+              "path": {"const": "/health"}
+            }
+          }
+        }
+      }
+    }
+  }]
+}
+```
+
+Core compares `requires` with advertised runtime capabilities and validates each
+returned fact against its check's JSON Schema Draft 2020-12. References must be
+local (`#` or `#/...`); external references and `$id` are rejected. Unknown APIs,
+missing capabilities and invalid schemas fail at lock time. Invalid facts fail
+at check time with registered `runtime.rule-failed` diagnostics. Process/config
+failures use `runtime.refused`; incompatible APIs/capabilities use
+`runtime.incompatible` (exit 5). Other failures exit 1; success exits 0. Standard
+Lekalo diagnostic normalization and stdout/stderr selection apply.
+
+Capability names define shared semantics between package authors. A PHP runtime
+and a Zen runtime can produce the same neutral HTTP facts and consume identical
+rule bytes. Core does not branch on their identities. The host validates the
+reported evidence; the runtime remains responsible for deriving honest, complete
+facts from its source language. This is not a proof of application behavior.
+PHP callbacks or framework syntax alone are not portable contract rules.
+
+## Migration boundary and verification
+
+This is the process/config foundation of the extraction, not its completion.
+Existing `adapters/` snapshots, linked discovery/OpenSpec/HLV libraries and their
+legacy callers still exist. The published language/framework repositories have
+not all adopted this v1 protocol. A PHP composition manifest using
+`lekalo/php-package/v1` is not a portable `lekalo/package/v1` manifest.
+
+The remaining migration must move existing scan/generate/verify behavior onto
+external contracts, convert framework requirements to portable rules, adapt
+OpenSpec/HLV providers, and then delete snapshots and compile-time runtime
+links with their replacement tests. Parent/child configuration discovery and
+producer/consumer contract-change propagation are not implemented by this slice.
+
+Run `LEKALO_BIN=/absolute/path/to/lekalo node --test scripts/test-external-runtime.mjs`.
+The acceptance test builds two independent fixture runtimes unknown to core,
+checks both against identical HTTP rules, tests multi-file packages, immutable
+Git resolution and offline operation, and requires refusal for changed bytes,
+unsupported capabilities, unsafe paths, incomplete/mismatched responses and a
+broken coexisting Model. Fixtures are protocol tests, not production Zen/PHP
+implementations or a claim that Laravel's whole rule set is portable already.

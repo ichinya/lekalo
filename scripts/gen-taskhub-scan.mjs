@@ -33,7 +33,7 @@ const outPath = path.join(
 );
 
 const adapter = await import(
-  new URL(`file://${path.join(repo, "adapters/node-typescript/adapter.mjs")}`).href
+  new URL(`file://${path.join(repo, "tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs")}`).href
 );
 const kernel = adapter.__lekaloKernel;
 const scanner = adapter.__lekaloScanner;

@@ -210,7 +210,7 @@ fn the_php_kernel_describes_itself_through_the_production_client() {
         described.capabilities.adapter.id,
         "lekalo-target-php-laravel"
     );
-    assert_eq!(described.capabilities.adapter.version, "0.8.0");
+    assert_eq!(described.capabilities.adapter.version, "0.9.0");
     assert!(
         described.capabilities.read_scopes.iter().all(|scope| {
             !lekalo_core::target_protocol::scopes::scope_covers(scope, ".lekalo/cache/writer.lock")

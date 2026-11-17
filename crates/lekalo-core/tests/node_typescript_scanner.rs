@@ -19,7 +19,7 @@ use lekalo_core::target_protocol::{CallRequest, TargetClient, TargetFailure};
 
 fn adapter_path() -> String {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../adapters/node-typescript/adapter.mjs")
+        .join("../../tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs")
         .display()
         .to_string()
 }
@@ -33,7 +33,7 @@ fn scanner_command() -> AdapterCommand {
 
 fn fixture_profile() -> String {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../tests/fixtures/node-typescript-scanner/protocol/scan.profile.json");
+        .join("../../tests/external/lekalo-typescript/tests/fixtures/node-typescript-scanner/protocol/scan.profile.json");
     let text = std::fs::read_to_string(&path).expect("scan profile fixture");
     text.split_whitespace().collect::<String>()
 }

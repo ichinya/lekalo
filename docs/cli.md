@@ -159,6 +159,12 @@ evidence of a hosted pass. The supported delivery boundary is documented in
 
 Create a new minimal Model project with [bootstrap](bootstrap.md). Start with [minimal project](project-layout.md#minimal-project) for a complete first run.
 
+With `--runtime`, create an [external runtime configuration](external-runtimes.md) instead.
+
+### `lekalo runtime init`, `lock` and `check`
+
+[External runtimes](external-runtimes.md) owns package resolution, API negotiation, component paths and offline contract checks.
+
 ### `lekalo init --adopt`
 
 Add a minimal skeleton to an existing repository using [adopt](adopt.md). Detection remains evidence; it does not generate an application or rewrite source.
@@ -173,7 +179,7 @@ Create an empty module using the grammar and no-clobber rules in [bootstrap](boo
 
 ### `lekalo validate`
 
-[Validation](validation.md) owns scopes, profiles and semantic findings.
+[Validation](validation.md) owns scopes, profiles and semantic findings. A selected root containing `lekalo.yaml` also runs [external component contract checks](external-runtimes.md); an existing Model must pass first.
 
 ### `lekalo lock` and `lekalo update`
 
@@ -496,6 +502,10 @@ Status: **Implemented** command handlers for product 1.3.0. Handler existence do
 | `lekalo requirements report` | `lekalo requirements report [OPTIONS] <PATH>` | [reference](requirements.md) |
 | `lekalo requirements trace` | `lekalo requirements trace [OPTIONS] <PATH>` | [reference](requirements.md) |
 | `lekalo requirements validate` | `lekalo requirements validate [OPTIONS] <PATH>` | [reference](requirements.md) |
+| `lekalo runtime` | `lekalo runtime [OPTIONS] <COMMAND>` | [reference](external-runtimes.md) |
+| `lekalo runtime check` | `lekalo runtime check [OPTIONS]` | [reference](external-runtimes.md) |
+| `lekalo runtime init` | `lekalo runtime init [OPTIONS]` | [reference](external-runtimes.md) |
+| `lekalo runtime lock` | `lekalo runtime lock [OPTIONS]` | [reference](external-runtimes.md) |
 | `lekalo scan` | `lekalo scan [OPTIONS] --target <TARGET> [PROGRAM_ARGS]...` | [reference](observed-mode.md) |
 | `lekalo search` | `lekalo search [OPTIONS] <QUERY>` | [reference](semantic-search.md) |
 | `lekalo search-index` | `lekalo search-index [OPTIONS] <COMMAND>` | [reference](semantic-search.md) |

@@ -28,3 +28,12 @@ tests/fixtures/pilot/worklog-changelog/model/.lekalo/
 sdk/templates/go/*/*.exe
 sdk/templates/go/*/[a-z]*-adapter
 sdk/go/bin/
+
+# Standalone external Rust package build output.
+/packages/**/target/
+
+# Optional development/test packages provisioned from immutable external pins.
+/sdk/
+/adapters/node-typescript/
+
+/tests/external/

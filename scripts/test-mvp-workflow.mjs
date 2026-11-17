@@ -3,7 +3,10 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {join} from 'node:path';
-import {repo,binary,catalog,cli,prepare,verify,save,hash,bytes,inventory,cleanup} from './test-node-native-tools.mjs';
+import {pathToFileURL} from 'node:url';
+import {externalRoot,hostRoot as repo} from './external-tool.mjs';
+process.env.LEKALO_BIN ??= join(repo,'target',process.env.RUNTIME_PROFILE ?? 'release',process.platform==='win32'?'lekalo.exe':'lekalo');
+const {binary,catalog,cli,prepare,verify,save,hash,bytes,inventory,cleanup} = await import(pathToFileURL(join(externalRoot('lekalo-typescript'),'scripts/test-node-native-tools.mjs')).href);
 
 const fixture=join(repo,'tests/fixtures/public-typescript-scan');
 const scope={schemaVersion:'lekalo/discovery-scope/v0.9.0',identity:'dev.lekalo.discovery-scope@0.9.0',includes:['.'],excludes:['packages/web/out'],gitIgnore:'respect'};
@@ -35,7 +38,7 @@ try {
       save(join(root,'lekalo/authorization.yaml'),authorization);
       cli(root,['validate','--strict']);
       const profile={id:'standalone',mode:'observed',target:'node-typescript',readRoots:[{path:'package.json',kind:'file'},{path:'tsconfig.json',kind:'file'},{path:'packages',kind:'tree'}],exclusions:['packages/core/test/**','packages/web/src/main.ts','packages/web/out/**'],provenance:{origin:'declared',revision:'mvp-domain-client-1',disposition:'user-confirmed'}};
-      const scanned=cli(root,['scan','--target','node-typescript','--profile','standalone','--project','.',process.execPath,join(repo,'adapters/node-typescript/adapter.mjs'),'--lekalo-project-profile-json',JSON.stringify(profile)]);
+      const scanned=cli(root,['scan','--target','node-typescript','--profile','standalone','--project','.',process.execPath,join(repo,'tests/external/lekalo-typescript/adapters/node-typescript/adapter.mjs'),'--lekalo-project-profile-json',JSON.stringify(profile)]);
       assert.ok(scanned.symbols>=2);
       const proposals=cli(root,['bindings','propose']);
       let confirmed=0;

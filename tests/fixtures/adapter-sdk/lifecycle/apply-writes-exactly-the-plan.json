@@ -1,5 +1,0 @@
-{
-  "adapterMode": "undeclared-write",
-  "case": "apply-writes-exactly-the-plan",
-  "expectedTerminal": "extra-write"
-}

@@ -1,0 +1,29 @@
+{
+  "schema": "lekalo/php-package/v1",
+  "id": "lekalo-php",
+  "version": "0.1.0",
+  "kind": "runtime",
+  "provider_api": "lekalo/provider/v0.1.0",
+  "modules": [
+    "src/provider.php",
+    "src/ai-lint.php",
+    "src/analyzer.php",
+    "src/strict-profile.php",
+    "src/kernel.php",
+    "src/scenario-map.php",
+    "src/type-policy.php",
+    "src/type-map.php",
+    "src/type-codec.php",
+    "src/type-emit.php",
+    "src/type-bindings.php",
+    "src/operation-policy.php",
+    "src/operation-map.php",
+    "src/operation-emit.php",
+    "src/operation-bindings.php",
+    "src/route-policy.php",
+    "src/route-map.php"
+  ],
+  "resources": {
+    "MAGO_TOOLCHAIN_LOCK_BUNDLED": "mago-toolchain.lock.json"
+  }
+}

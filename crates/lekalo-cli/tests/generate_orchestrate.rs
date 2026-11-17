@@ -721,7 +721,7 @@ fn with_zod_adapter(root: &Path) {
     let home = root.join("adapters/node-typescript");
     std::fs::create_dir_all(&home).expect("adapter home");
     std::fs::copy(
-        workspace_path("adapters/node-typescript/adapter-zod.mjs"),
+        workspace_path("tests/external/lekalo-typescript/adapters/node-typescript/adapter-zod.mjs"),
         home.join("adapter-zod.mjs"),
     )
     .expect("copy the generation artifact");

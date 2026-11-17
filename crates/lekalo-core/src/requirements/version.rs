@@ -44,7 +44,7 @@ pub const MAX_CAPABILITIES: usize = 256;
 
 /// The maximum distinct requirement ids encountered in one provider and
 /// the aggregate catalog, coverage or conflict rows across all providers.
-pub const MAX_REQUIREMENTS: usize = 10_000;
+pub const MAX_REQUIREMENTS: usize = 10000;
 
 /// The maximum number of active change directories one provider may apply
 /// (fatal beyond it); the archive subtree is not read.
@@ -55,7 +55,7 @@ pub const MAX_TITLE_CHARS: usize = 128;
 
 /// The maximum size in bytes of one spec or delta document accepted for
 /// reading (fatal beyond it).
-pub const MAX_SPEC_BYTES: usize = 1024 * 1024;
+pub const MAX_SPEC_BYTES: usize = 1048576;
 
 /// The maximum size in bytes of one attachment document accepted for
 /// validation (fatal beyond it).

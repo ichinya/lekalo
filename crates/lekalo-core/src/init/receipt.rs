@@ -38,7 +38,7 @@ pub struct WorkspaceRoot {
     /// Logical project-relative POSIX path of the workspace manifest.
     pub path: String,
     /// The closed ecosystem token (`node`, `go`, `rust`, `gradle`).
-    pub ecosystem: &'static str,
+    pub ecosystem: String,
     /// The declared member glob/list entries, verbatim.
     pub members: Vec<String>,
     /// The closed confidence vocabulary.
@@ -134,7 +134,7 @@ pub struct ObservedModule {
 }
 
 /// The closed confidence vocabulary of every detection entry.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Confidence {
     /// Declared directly by a manifest field.
@@ -164,6 +164,8 @@ pub struct Detection {
     pub basis: &'static str,
     /// Invocation-relative candidate spellings when ambiguity was resolved.
     pub candidates: Vec<String>,
+    #[serde(skip)]
+    pub name_candidates: Vec<(u8, String, String, String)>,
     pub manifests: Vec<Evidence>,
     #[serde(rename = "packageManagers")]
     pub package_managers: Vec<Evidence>,

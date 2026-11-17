@@ -9,9 +9,13 @@
 
 declare(strict_types=1);
 
-require __DIR__ . '/../src/analyzer.php';
-require __DIR__ . '/../src/strict-profile.php';
-require __DIR__ . '/../src/kernel.php';
+// Explicit legacy composition; the language runtime itself defaults to PHP.
+define('ADAPTER_ID', 'lekalo-target-php-laravel');
+define('TARGET_TOKEN', 'php-laravel');
+
+require __DIR__ . '/../vendor/lekalo-php/src/analyzer.php';
+require __DIR__ . '/../vendor/lekalo-php/src/strict-profile.php';
+require __DIR__ . '/../vendor/lekalo-php/src/kernel.php';
 
 $GLOBALS['__lekalo_failures'] = [];
 $GLOBALS['__lekalo_checks'] = 0;
@@ -130,6 +134,9 @@ check($probe['exit'] === 0, 'version probe exits cleanly');
 $metadata = json_decode(trim($probe['stdout']), true);
 check(($metadata['adapter'] ?? '') === ADAPTER_ID && isset($metadata['php']), 'version probe shape');
 
+$sourceProbe = shell_exec(escapeshellarg(PHP_BINARY) . ' -n ' . escapeshellarg(dirname(__DIR__) . '/main.php') . ' --version-json');
+check(json_decode((string) $sourceProbe, true) === $metadata, 'source entry preserves the artifact identity');
+
 // --- packaging determinism --------------------------------------------------
 
 $build = dirname(__DIR__) . '/build.php';
@@ -142,11 +149,11 @@ check($committed !== false && hash('sha256', $committed) === substr((string) $ch
 
 // --- confined tokenizer dependency -----------------------------------------
 
-require_once __DIR__ . '/../src/ai-lint.php';
+require_once __DIR__ . '/../vendor/lekalo-php/src/ai-lint.php';
 lint_require_tokenizer();
 check(function_exists('token_get_all'), 'standard tokenizer is available or loaded');
 $runtimeProbe = 'final class RequestRefusal extends RuntimeException {};' .
-    'require ' . var_export(dirname(__DIR__) . '/src/ai-lint.php', true) . ';' .
+    'require ' . var_export(dirname(__DIR__) . '/vendor/lekalo-php/src/ai-lint.php', true) . ';' .
     'try { lint_require_tokenizer(); exit(9); }' .
     'catch (RequestRefusal $e) { echo $e->getMessage(); }';
 $runtimeChild = proc_open([

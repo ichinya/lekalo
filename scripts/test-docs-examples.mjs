@@ -149,13 +149,14 @@ function inventory(base, logicalBase=relative(ROOT,base).replaceAll("\\","/")) {
   walk(base);
   return result;
 }
-const INPUTS=["scripts","adapters","contracts","tests/fixtures","docs","README.md","Cargo.toml","Cargo.lock","crates",".gitattributes"];
+const repositoryInputs=registry.examples.some(row=>row.lane===lane && row.fixture==="repository") ? ["external-tools.lock.json","tests/external/lekalo-typescript"] : [];
+const INPUTS=["scripts","adapters",...repositoryInputs,"contracts","tests/fixtures","docs","README.md","Cargo.toml","Cargo.lock","crates",".gitattributes"];
 const sourceBefore = INPUTS.map(path=>statSync(safePath(path)).isDirectory()?inventory(safePath(path)):sha(readFileSync(safePath(path))));
 const root=realpathSync.native(mkdtempSync(join(tmpdir(),"lekalo-docs-105-")));
 const owned = path => assert.ok(resolve(path).startsWith(root+sep),"temporary path escapes owned replay root");
 function copy(from,to) {
   owned(to);
-  cpSync(from,to,{recursive:true,filter:path=>admitSource(relative(ROOT,path).replaceAll("\\","/"))});
+  cpSync(realpathSync(from),to,{recursive:true,filter:path=>admitSource(relative(ROOT,path).replaceAll("\\","/"))});
 }
 const temp=join(root,"tmp"); mkdirSync(temp);
 const childEnv={...fixtureGitEnv(),TMPDIR:temp,TEMP:temp,TMP:temp};
@@ -172,17 +173,18 @@ function repositoryCopy() {
   // Authoring examples explicitly use the original native API outside the
   // product sandbox. Prepare its pinned dependencies before replay; project
   // commands never install packages and deployed adapters need no node_modules.
-  const adapterRoot=safePath("adapters/node-typescript");
+  const adapterRoot=safePath("tests/external/lekalo-typescript/adapters/node-typescript");
   const compilerPins=JSON.parse(readFileSync(join(adapterRoot,"compiler-resources.json"),"utf8"));
   const native=compilerPins.resources.find(row=>row.platform===`${process.platform}-${process.arch}`);
   assert.ok(native,"qualified authoring compiler platform required");
   for(const name of ["typescript",native.package]) {
     const source=join(adapterRoot,"node_modules",name);
     assert.equal(JSON.parse(readFileSync(join(source,"package.json"),"utf8")).version,compilerPins.typescript,"authoring compiler pin mismatch");
-    const destination=join(repository,"adapters/node-typescript/node_modules",name); owned(destination);
-    mkdirSync(dirname(destination),{recursive:true});
-    cpSync(source,destination,{recursive:true,dereference:true});
   }
+  // Source-level tutorial imports also use the pinned external framework
+  // packages. Reuse the complete npm-ci result; never install during replay.
+  const authoringModules=join(repository,"tests/external/lekalo-typescript/adapters/node-typescript/node_modules"); owned(authoringModules);
+  cpSync(join(adapterRoot,"node_modules"),authoringModules,{recursive:true,dereference:true});
   const copiedBin=join(repository,"target/debug",basename(bin)); mkdirSync(dirname(copiedBin),{recursive:true}); cpSync(bin,copiedBin);
   // The M8 provenance gate verifies binary fixtures through Git's actual
   // clean filter. Give the disposable replay its own index and the exact

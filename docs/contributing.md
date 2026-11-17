@@ -238,6 +238,10 @@ Do not run the writer with an old binary. Prose-only edits need no regeneration.
 
 ## Dependencies and generated files
 
+Runtime and integration source ownership and snapshot updates are documented in
+[External implementation ownership](external-packages.md). Edit the owning
+package repository, then update the pinned dependency; do not edit snapshot files.
+
 Provision dependencies before gates. The root `package-lock.json` pins Ajv for checks needing only that package:
 
 ```sh
@@ -252,3 +256,7 @@ commands are separate operations.
 Adapter and native fixture locks have separate dependency sets; follow their owner and CI setup. Before scanner/lint or workspace integration tests, provision the [TypeScript 7 runtime bundle](typescript-native-runtime.md#provisioning-and-distribution). Root dependencies do not satisfy every fixture. If dependencies are provisioned externally, set `NODE_PATH` to the absolute installed `node_modules` directory: `export NODE_PATH=/absolute/path/node_modules` in Bash, or `$env:NODE_PATH = 'C:\absolute\path\node_modules'` in PowerShell. Do not copy Bash assignment syntax into PowerShell.
 
 Keep build output, installed dependencies and temporary execution material under ignored homes such as `target/` and `node_modules/`. Published contracts, reviewed goldens and provenance manifests remain tracked inputs. Run generators as explicit authoring operations and review their bytes, hashes and controls.
+
+## External integration services
+
+Before running adoption, requirements or trace integration tests, provision and build the pinned standalone services and set `LEKALO_SERVICES` as shown in [external services](external-services.md#development-and-ci). Their implementation is not compiled into the host.

@@ -112,7 +112,7 @@ const verifyAdapter = (directory, adapterId, entryName, irVersion) => {
 };
 
 const nodeBytes = verifyAdapter(
-  "adapters/node-typescript",
+  "tests/external/lekalo-typescript/adapters/node-typescript",
   "lekalo-target-node-typescript",
   "adapter.mjs",
   "0.2.16",
