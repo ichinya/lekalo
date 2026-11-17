@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,symlinkSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -73,9 +74,10 @@ for(const attempt of [()=>readHost(${JSON.stringify(secret)}),()=>writeHost(${JS
     assert.equal(report.components.length,2);
     assert(report.components.every(c=>c.status==='valid'));
     assert.equal(readFileSync(secret,'utf8'),'not granted to runtime');
-    const cliBytes=readFileSync(cli);
+    const cliDigest=()=>createHash('sha256').update(readFileSync(cli)).digest('hex');
+    const initialCliDigest=cliDigest();
     ok(run(project,['runtime','lock','--offline'],cache));
-    assert.deepEqual(readFileSync(cli),cliBytes,'composition never rebuilds core');
+    assert.equal(cliDigest(),initialCliDigest,'composition never rebuilds core');
 
     writeFileSync(join(project,'app','server.zen'),'route GET /broken\n');
     const mismatch=run(project,['runtime','check','--component','zen'],cache);
@@ -144,7 +146,7 @@ for(const attempt of [()=>readHost(${JSON.stringify(secret)}),()=>writeHost(${JS
     rmSync(rules,{recursive:true});
     ok(run(project,['runtime','lock','--offline'],cache));
     ok(run(project,['runtime','check'],cache));
-    assert.deepEqual(readFileSync(cli),cliBytes);
+    assert.equal(cliDigest(),initialCliDigest,'composition never rebuilds core');
 
     // Configuration parsing is strict, not last-key-wins JSON admission.
     writeFileSync(join(project,'lekalo.yaml'),'{"schema":"lekalo/runtime-config/v1","components":{},"components":{}}');
