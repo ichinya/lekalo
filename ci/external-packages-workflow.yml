@@ -1,4 +1,4 @@
-name: Legacy PHP source custody
+name: Pinned PHP compatibility adapter
 on:
   push:
     branches: [main]
@@ -15,4 +15,4 @@ jobs:
         with:
           node-version: 24.x
           package-manager-cache: false
-      - run: node scripts/sync-php-packages.mjs --check
+      - run: node scripts/external-tool.mjs --provision-php

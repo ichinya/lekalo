@@ -24,6 +24,17 @@ pub enum Command {
         #[arg(long, default_value = ".")]
         project: PathBuf,
     },
+    /// Export a certified public fact to stdout for a dependent project.
+    Export {
+        #[arg(long)]
+        component: String,
+        #[arg(long)]
+        package: String,
+        #[arg(long)]
+        rule: String,
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+    },
     /// Check source contracts with the locked runtime and rules, offline.
     Check {
         #[arg(long)]
@@ -43,17 +54,18 @@ pub fn configured(project: Option<&str>) -> bool {
         .is_ok()
 }
 
-pub fn check(project: Option<&str>, json_output: bool) -> u8 {
+pub fn check(project: Option<&str>) -> lekalo_core::DomainResult {
     let result = std::fs::canonicalize(project.unwrap_or("."))
         .map_err(|_| runtime::error("project-missing"))
         .and_then(|root| runtime::check(&root, None));
-    emit(result, json_output)
+    runtime::outcome(result)
 }
 
 pub fn run(command: Command, json_output: bool) -> u8 {
     let project = match &command {
         Command::Init { project, .. }
         | Command::Lock { project, .. }
+        | Command::Export { project, .. }
         | Command::Check { project, .. } => project,
     };
     let root = match std::fs::canonicalize(project) {
@@ -70,6 +82,12 @@ pub fn run(command: Command, json_output: bool) -> u8 {
         Command::Lock { offline, .. } => {
             runtime::lock(&root, offline).map(|lock| json!({"status":"valid","lock":lock}))
         }
+        Command::Export {
+            component,
+            package,
+            rule,
+            ..
+        } => runtime::export(&root, &component, &package, &rule),
         Command::Check { component, .. } => runtime::check(&root, component.as_deref()),
     };
     emit(result, json_output)

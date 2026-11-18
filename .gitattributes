@@ -19,7 +19,6 @@
 adapters/node-typescript/adapter.mjs -whitespace
 # Upstream legal text contains mixed line endings; its reviewed SHA is exact.
 adapters/node-typescript/typescript-native-notices.txt -text !eol -whitespace
-adapters/php-laravel/adapter.php -whitespace
 
 # Generated Go clients are byte-compared by the client-SDK drift gate:
 # gofmt requires LF, so CRLF checkout conversion would flag the fixture.

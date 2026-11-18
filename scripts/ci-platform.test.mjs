@@ -13,7 +13,7 @@ test('Mago lint cleanup only renames the intentionally discarded platform field'
  assert.equal(job.split('read -r _PLATFORM ARCHIVE WANT_SHA <<EOF').length,2);
  const original=job.replace('read -r _PLATFORM ARCHIVE WANT_SHA <<EOF','read -r PLATFORM ARCHIVE WANT_SHA <<EOF');
  // Preserve the source job byte for byte apart from this one identifier.
- assert.equal(createHash('sha256').update(original).digest('hex'),'eed16f0f22e02f413b340a551dcb3b7899ca59bf593b6c685eb94ccb66627b8a');
+ assert.equal(createHash('sha256').update(original).digest('hex'),'af73a8ddcd9205b006bb518a3f29ab3ed486c73ac10bb61977e75b611acc513a');
  const changed=caller.replace('read -r _PLATFORM ARCHIVE WANT_SHA <<EOF','read -r _PLATFORM WANT_SHA ARCHIVE <<EOF');
  assert.notEqual(changed,caller);
  assert.throws(()=>checkPlatform({caller:changed}),/Unrelated job mago-real changed/);

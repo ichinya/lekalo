@@ -1521,7 +1521,7 @@ mod tests {
     fn unix_confined_php_runtime_qualification() {
         let root = tempfile::tempdir().unwrap();
         let source =
-            include_str!("../../../../adapters/php-laravel/vendor/lekalo-php/src/ai-lint.php");
+            include_str!("../../../../tests/external/lekalo-php/src/ai-lint.php");
         let script = root.path().join("php-runtime.php");
         std::fs::write(
             &script,

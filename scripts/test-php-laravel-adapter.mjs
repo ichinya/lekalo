@@ -6,7 +6,7 @@
 // run from the repo root.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
@@ -30,6 +30,7 @@ function findPhp() {
 function runPhp(php, script) {
   const result = spawnSync(php, ["-n", script], {
     cwd: adapterRoot,
+    env: {...process.env, LEKALO_PHP_SRC: realpathSync(join(root, "tests/external/lekalo-php/src"))},
     encoding: "utf8",
     timeout: 120_000,
   });
@@ -46,17 +47,12 @@ if (php === null) {
   fail("php-missing", "no PHP interpreter found; install PHP >= 8.3 or set LEKALO_PHP");
 }
 
-// Stage 4 (issue #241): the protocol and analyzer suites live in the
-// vendored lekalo-php package, the framework suite in the vendored
-// lekalo-php-laravel package, and the process suite stays beside the
-// transitional unified artifact. The framework suite resolves the
-// vendored language package through its ../lekalo-php/src convention.
 for (const suite of [
-  "vendor/lekalo-php/tests/protocol.php",
+  "../../tests/external/lekalo-php/tests/protocol.php",
   "tests/process.php",
-  "vendor/lekalo-php/tests/analyzer.php",
-  "vendor/lekalo-php/tests/composition.php",
-  "vendor/lekalo-php-laravel/tests/laravel.php",
+  "../../tests/external/lekalo-php/tests/analyzer.php",
+  "../../tests/external/lekalo-php/tests/composition.php",
+  "../../tests/external/lekalo-php-laravel/tests/laravel.php",
 ]) {
   const script = join(adapterRoot, suite);
   const outcome = runPhp(php, script);
@@ -74,23 +70,6 @@ for (const suite of [
   }
   process.stdout.write(`${JSON.stringify({ ok: true, suite, ...summary })}\n`);
 }
-
-// 1b. The vendored package bytes match php-packages.lock.json exactly
-// (offline integrity: the unified build consumes pinned releases).
-const vendorCheck = spawnSync(process.execPath, [join(root, "scripts", "sync-php-packages.mjs"), "--check"], {
-  cwd: root,
-  encoding: "utf8",
-  timeout: 120_000,
-});
-if (vendorCheck.status !== 0) {
-  fail("vendor-digests", (vendorCheck.stderr || vendorCheck.stdout || "").slice(0, 400));
-}
-process.stdout.write(`${(vendorCheck.stdout || "").trim()}\n`);
-const syncTests = spawnSync(process.execPath, ["--test", join(root, "scripts", "test-php-packages-sync.mjs")], {
-  cwd: root, encoding: "utf8", timeout: 120_000,
-});
-if (syncTests.status !== 0) fail("vendor-sync-regression", (syncTests.stderr || syncTests.stdout || "").slice(0, 1000));
-process.stdout.write(`${JSON.stringify({ ok: true, gate: "php-packages-sync-regression" })}\n`);
 
 // 2. Packaging: the committed artifact is exactly the deterministic
 // rebuild output, with a matching reported digest.

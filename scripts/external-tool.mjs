@@ -2,7 +2,8 @@
 // Development/test tools live in their own repositories. No source snapshots
 // are written into the host repository or compiled into its production binary.
 import {execFileSync, spawnSync} from 'node:child_process';
-import {appendFileSync, copyFileSync, chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync} from 'node:fs';
+import {appendFileSync, constants, copyFileSync, chmodSync, existsSync, mkdirSync, lstatSync, readFileSync, realpathSync, symlinkSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {homedir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -44,18 +45,44 @@ export function runExternal(name, script, args = process.argv.slice(2)) {
   if (result.error) throw result.error;
   process.exit(result.status ?? 1);
 }
-export function provision() {
-  // Legacy test/CI path compatibility. These are ignored links to external
-  // checkouts, never vendored or committed implementation directories.
-  for (const name of Object.keys(JSON.parse(readFileSync(join(hostRoot,'external-tools.lock.json'))).packages)) {
-    const destination = 'tests/external/'+name;
-    const target = externalRoot(name), link = join(hostRoot,destination);
-    if (existsSync(link)) {
-      if (realpathSync(link) !== realpathSync(target)) throw new Error(`Refusing to replace existing ${destination}`);
-      continue;
+function linkCheckout(name) {
+  const target = externalRoot(name);
+  const link = join(hostRoot, 'tests', 'external', name);
+  if (existsSync(link)) {
+    if (realpathSync(link) !== target) throw new Error(`Refusing to replace existing ${link}`);
+  } else {
+    mkdirSync(dirname(link), {recursive: true});
+    symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+  }
+  return target;
+}
+
+// Install the regular file required by the legacy target's confinement.
+export function provisionPhp() {
+  const runtime = linkCheckout('lekalo-php');
+  const rules = linkCheckout('lekalo-php-laravel');
+  const directory = join(hostRoot, 'adapters', 'php-laravel');
+  const manifest = JSON.parse(readFileSync(join(directory, 'adapter.manifest.json'), 'utf8'));
+  const entry = manifest.integrity.files.find(file => file.path === 'adapter.php');
+  const source = join(rules, 'compat', 'adapter.php');
+  const destination = join(directory, entry.path);
+  function verify(path) {
+    if (!lstatSync(path).isFile()) throw new Error(`Expected a regular PHP artifact: ${path}`);
+    const bytes = readFileSync(path);
+    if (bytes.length !== entry.bytes || 'sha256:' + createHash('sha256').update(bytes).digest('hex') !== entry.digest) {
+      throw new Error(`PHP compatibility artifact differs from the pinned manifest: ${path}`);
     }
-    mkdirSync(dirname(link),{recursive:true});
-    symlinkSync(target,link,process.platform === 'win32' ? 'junction' : 'dir');
+  }
+  verify(source);
+  if (!existsSync(destination)) copyFileSync(source, destination, constants.COPYFILE_EXCL);
+  verify(destination);
+  if (process.env.GITHUB_ENV) appendFileSync(process.env.GITHUB_ENV, `LEKALO_PHP_SRC=${join(runtime,'src')}\n`);
+}
+
+export function provision() {
+  provisionPhp();
+  for (const name of Object.keys(JSON.parse(readFileSync(join(hostRoot,'external-tools.lock.json'))).packages)) {
+    if (name !== 'lekalo-php' && name !== 'lekalo-php-laravel') linkCheckout(name);
   }
   if (process.env.GITHUB_ENV) {
     appendFileSync(process.env.GITHUB_ENV,`LEKALO_SERVICES=${serviceEnvironment(join(hostRoot,'target'))}\n`);
@@ -66,6 +93,7 @@ export function provision() {
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv[2] === '--provision') provision();
+  else if (process.argv[2] === '--provision-php') provisionPhp();
   else if (process.argv[2] === '--build-services') buildServices();
   else if (process.argv.length === 3) console.log(externalRoot(process.argv[2]));
   else runExternal(process.argv[2],process.argv[3],process.argv.slice(4));

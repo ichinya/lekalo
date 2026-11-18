@@ -160,6 +160,10 @@ pub struct Lock {
 pub struct Rules {
     pub schema: String,
     pub requires: Vec<String>,
+    /// Optional, data-only hints for source readers. The host pins and forwards
+    /// them, while every runtime is checked against the same fact schemas.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub bindings: BTreeMap<String, Value>,
     pub checks: Vec<Check>,
 }
 
@@ -186,7 +190,12 @@ fn rules(package: &package::Package) -> Result<Rules> {
     if rules.schema != RULES_API {
         return Err(Error::version("rules-api"));
     }
-    if rules.requires.len() > 64
+    if rules.bindings.len() > 32
+        || rules
+            .bindings
+            .iter()
+            .any(|(id, binding)| !config::token(id) || !binding.is_object())
+        || rules.requires.len() > 64
         || rules.requires.iter().any(|s| !config::token(s))
         || rules.checks.is_empty()
         || rules.checks.len() > 256
@@ -455,10 +464,11 @@ fn describe(
     }
     Ok(d)
 }
-fn service_pin(root: &Path, source: &config::Source) -> Result<RuntimePin> {
+fn service_pin(root: &Path, id: &str, source: &config::Source) -> Result<RuntimePin> {
     let session = Session::new(root, source)?;
     let (command, files) = pin_command(root, &session.command, session.package.as_ref())?;
     let description = describe_service(root, &command, session.package.as_ref())?;
+    services::check_role(id, &description.operations)?;
     if session.package.as_ref().is_some_and(|p| {
         p.manifest.id != description.id || p.manifest.version != description.version
     }) {
@@ -547,7 +557,7 @@ pub fn lock(root: &Path, offline: bool) -> Result<Lock> {
     let services = config
         .services
         .iter()
-        .map(|(id, source)| Ok((id.clone(), service_pin(root, source)?)))
+        .map(|(id, source)| Ok((id.clone(), service_pin(root, id, source)?)))
         .collect::<Result<_>>()?;
     let lock = Lock {
         schema: "lekalo/runtime-lock/v1".into(),
@@ -599,6 +609,7 @@ pub fn check_lock(root: &Path) -> Result<Lock> {
         return Err(error("lock-stale"));
     }
     for (id, pin) in &lock.services {
+        services::check_role(id, &pin.description.operations)?;
         verify_runtime(pin)?;
         let (command, files) = match &config.services[id] {
             config::Source::Executable(e) if pin.package.is_none() => {
@@ -718,6 +729,17 @@ fn sources(root: &Path, component: &config::Component) -> Result<Vec<Value>> {
 }
 
 pub fn check(root: &Path, selected: Option<&str>) -> Result<Value> {
+    evaluate(root, selected, None)
+}
+
+/// Export one validated fact. The digest includes its selector and rules package
+/// but excludes private source inputs and machine-local executable paths.
+pub fn export(root: &Path, component: &str, package: &str, rule: &str) -> Result<Value> {
+    evaluate(root, Some(component), Some((package, rule)))
+}
+
+fn evaluate(root: &Path, selected: Option<&str>, export: Option<(&str, &str)>) -> Result<Value> {
+    let mut exported = None;
     let config = load(root)?;
     let lock = check_lock(root)?;
     if selected.is_some_and(|id| !config.components.contains_key(id)) {
@@ -775,6 +797,12 @@ pub fn check(root: &Path, selected: Option<&str>) -> Result<Value> {
                 let fact = facts
                     .get(&check.id)
                     .ok_or_else(|| error("rule-result-missing"))?;
+                if export == Some((package.manifest.id.as_str(), check.id.as_str())) {
+                    let contract = json!({"component":id,"package":package.manifest.id,"rule":check.id,
+                        "rules_digest":package.digest,"fact":fact});
+                    exported = Some(json!({"schema":"lekalo/runtime-export/v1","status":"valid",
+                        "digest":digest(&serde_json::to_vec(&contract).unwrap()),"contract":contract}));
+                }
                 if !schema(&check.schema)?.is_valid(fact) {
                     finding_count += 1;
                     if finding_count > crate::diagnostics::types::limits::DIAGNOSTICS_PER_RESULT {
@@ -789,6 +817,9 @@ pub fn check(root: &Path, selected: Option<&str>) -> Result<Value> {
             return Err(error("source-changed"));
         }
         reports.push(json!({"component":id,"runtime":current.id,"status":if findings.is_empty(){"valid"}else{"invalid"},"findings":findings,"source_digest":source_digest}));
+    }
+    if export.is_some() && finding_count == 0 {
+        return exported.ok_or_else(|| error("export-unknown"));
     }
     Ok(
         json!({"schema":"lekalo/runtime-check/v1","status":if reports.iter().all(|r|r["status"]=="valid"){"valid"}else{"invalid"},"components":reports}),

@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "1.3.0",
-  "cliSourceDigest": "sha256:46c41b433a2a3cebba856826a9c0c19d27b9232718f992f1d18d2f1dda699e00",
+  "cliSourceDigest": "sha256:a53d50f9629a2806901cbf78c981eb80fd424f40ada292edab2cc9734847643b",
   "p0Pages": [
     {
       "page": "README.md",
@@ -2328,7 +2328,7 @@
       "kind": "command",
       "command": "runtime",
       "usage": "lekalo runtime [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:086407147579e9e627275b11be9dff05e77759ed4cc60f218f67a9e4442364cf",
+      "helpDigest": "sha256:d0a490225ba0c3d05222389b83c860471245b41e9e8f01bd420d2a4d445c4f71",
       "summary": "Configure external runtimes and portable contract rules",
       "leaf": false,
       "owner": "docs/external-runtimes.md",
@@ -2341,6 +2341,17 @@
       "usage": "lekalo runtime check [OPTIONS]",
       "helpDigest": "sha256:da6b46d9c8951c6dcece578215bed5844d776d7b548742c940dd8db6564a23a3",
       "summary": "Check source contracts with the locked runtime and rules, offline",
+      "leaf": true,
+      "owner": "docs/external-runtimes.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:runtime export",
+      "kind": "command",
+      "command": "runtime export",
+      "usage": "lekalo runtime export [OPTIONS] --component <COMPONENT> --package <PACKAGE> --rule <RULE>",
+      "helpDigest": "sha256:a1dd5656764db9946297f2c02c1bfa913854fcc0b1bf9bab98c5b4d8b1cb0a2f",
+      "summary": "Export a certified public fact to stdout for a dependent project",
       "leaf": true,
       "owner": "docs/external-runtimes.md",
       "status": "implemented"
@@ -2746,7 +2757,7 @@
       "kind": "command",
       "command": "trace assess",
       "usage": "lekalo trace assess [OPTIONS] --evidence <PATH> <PATH>",
-      "helpDigest": "sha256:9f9b9a1fd9d226e7ed6a5821fdfde5635ff14acd5c2982292855d0cc329cc21d",
+      "helpDigest": "sha256:7aac40c8d12fc6b643d35a6d5ab5cf80e96dd456441bad815403637b8b7d63c7",
       "summary": "Assess an explicit neutral mapping and revision-bound provider receipts",
       "leaf": true,
       "owner": "docs/trace-manifest.md",
@@ -2937,6 +2948,39 @@
       "summary": "Read-only incremental validation and drift checks on source saves",
       "leaf": true,
       "owner": "docs/cli.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:workspace",
+      "kind": "command",
+      "command": "workspace",
+      "usage": "lekalo workspace [OPTIONS] <COMMAND>",
+      "helpDigest": "sha256:cde5b0aa42986f2d5effda832d691c1576e931e3b27971fc1eac6a7e7bbe848c",
+      "summary": "Check independent Lekalo projects and their public contract pins",
+      "leaf": false,
+      "owner": "docs/external-runtimes.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:workspace check",
+      "kind": "command",
+      "command": "workspace check",
+      "usage": "lekalo workspace check [OPTIONS]",
+      "helpDigest": "sha256:3636afcf3d16e691a1f6738c6da4603e8e9fbc2739ae10b36eb843fea3a57ea1",
+      "summary": "Validate this project, its declared children and consumer-owned pins",
+      "leaf": true,
+      "owner": "docs/external-runtimes.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:workspace export",
+      "kind": "command",
+      "command": "workspace export",
+      "usage": "lekalo workspace export [OPTIONS] <NAME>",
+      "helpDigest": "sha256:f284972c98186908c23defd5dbc194231680f4e3196f8c3e165aa629d047be84",
+      "summary": "Print a declared contract for review and installation by a consumer",
+      "leaf": true,
+      "owner": "docs/external-runtimes.md",
       "status": "implemented"
     },
     {
@@ -3831,7 +3875,7 @@
       "id": "contract:contracts/external-runtime.schema.v1.json",
       "kind": "contract",
       "source": "contracts/external-runtime.schema.v1.json",
-      "sourceDigest": "sha256:840af4676bfcd2ddcb68602223885fe847600b3aff125a2dd1be98ff7f7cd891",
+      "sourceDigest": "sha256:5f0cb4cb2cca3ae8c154d370278ba72ab07a415b9f6cf490e794dadc589c2d89",
       "owner": "docs/external-runtimes.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -5610,6 +5654,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/workspace.schema.v1.json",
+      "kind": "contract",
+      "source": "contracts/workspace.schema.v1.json",
+      "sourceDigest": "sha256:78e3928a0c8ace249fc47613ade660f1a8de97bad1fb73d5d4f03a73780f2b6c",
+      "owner": "docs/external-runtimes.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "protocol:compiled-ir",
       "kind": "protocol",
       "source": "crates/lekalo-core/src/ir/version.rs",
@@ -5633,154 +5686,154 @@
     {
       "id": "protocol:php-laravel:lekalo/ai-lint-evidence/v0.6.4",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/laravel-migration-input/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/laravel-migration-ledger/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/native-gate-plan/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/native-selection/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-operations-evidence/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-operations-input/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-operations-map/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-routes-evidence/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-routes-input/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-routes-map/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-test-port/v0.1.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-types-evidence/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-types-input/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/php-types-map/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/provider-evidence/v0.1.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/provider/v0.1.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/scenario-ir/v0.2.16",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/scenario-run/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/scenario-test-map/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/scenario-toolchain/v0.1.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
     {
       "id": "protocol:php-laravel:lekalo/transport-http/v0.4.0",
       "kind": "protocol",
-      "source": "adapters/php-laravel/vendor",
+      "source": "external-tools.lock.json",
       "owner": "adapters/php-laravel/README.md",
       "status": "implemented"
     },
