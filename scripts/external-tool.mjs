@@ -100,9 +100,28 @@ export function provisionPhp() {
   if (process.env.GITHUB_ENV) appendFileSync(process.env.GITHUB_ENV, `LEKALO_PHP_SRC=${join(runtime,'src')}\n`);
 }
 
+// Some host regressions consume example inputs maintained alongside the adapter.
+function provisionTestFixtures(name, paths) {
+  if (!paths?.length) return;
+  const owner = externalRoot(name);
+  const prefix = 'host-tests/';
+  for (const path of paths) {
+    if (!/^tests\/fixtures\/[\w/-]+$/.test(path) || path.includes('..')) throw Error('Invalid fixture directory: ' + path);
+    const entries = execFileSync('git', ['-C', owner, 'ls-files', '-z', '--', prefix + path + '/'], {encoding:'utf8'}).split('\0').filter(Boolean);
+    if (!entries.length) throw Error('Missing package fixtures: ' + path);
+    for (const entry of entries) {
+      const destination = join(hostRoot, entry.slice(prefix.length));
+      const source = join(owner, entry);
+      mkdirSync(dirname(destination), {recursive:true});
+      if (!existsSync(destination)) copyFileSync(source, destination, constants.COPYFILE_EXCL);
+      else if (!lstatSync(destination).isFile() || !readFileSync(source).equals(readFileSync(destination))) throw Error('Host fixture differs from its pinned package: ' + destination);
+    }
+  }
+}
 export function provision() {
   provisionPhp();
-  for (const name of Object.keys(JSON.parse(readFileSync(join(hostRoot,'external-tools.lock.json'))).packages)) {
+  for (const [name, pin] of Object.entries(JSON.parse(readFileSync(join(hostRoot,'external-tools.lock.json'))).packages)) {
+    provisionTestFixtures(name, pin.testFixtures);
     if (name !== 'lekalo-php' && name !== 'lekalo-php-laravel') linkCheckout(name);
   }
   if (process.env.GITHUB_ENV) {

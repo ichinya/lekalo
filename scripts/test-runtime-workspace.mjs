@@ -1,11 +1,10 @@
-// Exercise real PHP and Laravel packages through the same public CLI as a third-party runtime.
+// Exercise parent imports and module exports through a standalone protocol fixture.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import test from 'node:test';
-import {externalRoot} from './external-tool.mjs';
 
 const cli = process.env.LEKALO_BIN ?? resolve('target/debug/lekalo');
 const write = (file, value) => writeFileSync(file, JSON.stringify(value, null, 2));
@@ -34,6 +33,7 @@ function check(input) {
     const [method, path] = line.split(' ');
     return {method, path};
   }));
+  routes.sort((left, right) => left.path.localeCompare(right.path));
   const facts = {};
   for (const pack of input.rules) {
     facts[pack.id] = Object.fromEntries(pack.rules.checks.map(check => [check.id, {routes}]));
@@ -45,7 +45,7 @@ const description = {id: 'independent-zen', version: '1.0.0', capabilities: ['ht
 const result = q.operation === 'describe' ? description : check(q.input);
 process.stdout.write(JSON.stringify({protocol: q.protocol, request_id: q.request_id, result}));`;
 
-test('the Laravel contract is portable and parent validation identifies the affected consumer', t => {
+test('parent validation identifies the consumer of a changed runtime contract', t => {
   const {tmp, run} = fixture(t);
   const parent = join(tmp, 'pushhard');
   const api = join(parent, 'api');
@@ -54,15 +54,17 @@ test('the Laravel contract is portable and parent validation identifies the affe
 
   const zen = join(tmp, 'zen.mjs');
   writeFileSync(zen, independentRuntime);
-  const rules = ['path:' + externalRoot('lekalo-php-laravel')];
-  for (const [root, runtime] of [[api, 'path:' + externalRoot('lekalo-php')], [web, {command: [process.execPath, zen]}]]) {
-    write(join(root, 'lekalo.yaml'), {schema: 'lekalo/runtime-config/v1', components: {app: {path: 'src', runtime, rules}}});
+  const policy = join(tmp, 'rules');
+  mkdirSync(policy);
+  write(join(policy, 'lekalo.package.json'), {schema:'lekalo/package/v1',id:'route-policy',version:'1.0.0',kind:'rules',rules:'routes.json',files:['routes.json']});
+  write(join(policy, 'routes.json'), {schema:'lekalo/contract-rules/v1',requires:['http.routes/v1'],checks:[{id:'health-route',schema:{required:['routes'],properties:{routes:{type:'array',contains:{required:['method','path'],properties:{method:{const:'GET'},path:{const:'/health'}}}}}}}]});
+  const rules = ['path:' + policy];
+  for (const root of [api, web]) {
+    write(join(root, 'lekalo.yaml'), {schema:'lekalo/runtime-config/v1', components:{app:{path:'src',runtime:{command:[process.execPath,zen]},rules}}});
   }
   const zenSource = join(web, 'src/http.zen');
-  const route = path => "R::get('" + path + "', function () { return 'ok'; });";
-  const phpRoutes = (...lines) => writeFileSync(join(api, 'src/web.php'),
-    "<?php\nuse Illuminate\\Support\\Facades\\Route as R;\n" + lines.join('\n') + '\n');
-  phpRoutes(route('/health'), route('/orders'));
+  const apiRoutes = (...paths) => writeFileSync(join(api,'src/routes.zen'),paths.map(path => 'GET ' + path).join('\n'));
+  apiRoutes('/health','/orders');
   writeFileSync(zenSource, 'GET /health\n');
 
   const pins = [api, web].map(root => run(root, ['runtime', 'lock']).lock.components.app.rules[0].digest);
@@ -73,7 +75,7 @@ test('the Laravel contract is portable and parent validation identifies the affe
   assert.equal(run(web, validate, 1).diagnostics[0].data.rule, 'health-route');
   writeFileSync(zenSource, 'GET /health\n');
 
-  workspace(api, {exports: {routes: {kind: 'runtime-fact', component: 'app', package: 'lekalo-php-laravel', rule: 'health-route'}}});
+  workspace(api, {exports: {routes: {kind: 'runtime-fact', component: 'app', package: 'route-policy', rule: 'health-route'}}});
   const bundle = run(api, ['workspace', 'export', 'routes']);
   write(join(web, 'routes.json'), bundle);
   workspace(web, {imports: {routes: {from: 'api', export: 'routes', bundle: 'routes.json', digest: bundle.digest}}});
@@ -82,9 +84,9 @@ test('the Laravel contract is portable and parent validation identifies the affe
     {consumer: 'web', import: 'routes', producer: 'api', export: 'routes', digest: bundle.digest},
   ]);
 
-  phpRoutes(route('/orders'), route('/health'), '// internal implementation changed');
+  apiRoutes('/orders', '/health');
   run(parent, validate);
-  phpRoutes(route('/health'), route('/v2/orders'));
+  apiRoutes('/health', '/v2/orders');
   run(api, validate);
   renameSync(api, join(tmp, 'separate-api-checkout'));
   run(web, validate);
@@ -92,13 +94,11 @@ test('the Laravel contract is portable and parent validation identifies the affe
   assert.match(JSON.stringify(run(parent, validate, 1)), /workspace-contract-changed.web.routes.api/);
   assert.deepEqual(JSON.parse(readFileSync(join(web, 'routes.json'))), bundle);
 
-  phpRoutes('// ' + route('/health'), route('/orders'));
+  apiRoutes('/orders');
   assert.equal(run(api, ['runtime', 'check'], 1).diagnostics[0].data.rule, 'health-route');
   const failure = JSON.stringify(run(parent, validate, 1));
   assert.match(failure, /workspace-child-invalid.api/);
   assert.match(failure, /workspace-export-unavailable.web.routes.api/);
-  phpRoutes("R::prefix('internal')->group(function () { " + route('/health') + " });");
-  assert.match(JSON.stringify(run(api, ['runtime', 'check'], 1)), /runtime-incomplete/);
   write(join(web, 'routes.json'), {...bundle, contract: {...bundle.contract, fact: {routes: []}}});
   assert.match(JSON.stringify(run(web, validate, 1)), /workspace-pin-mismatch/);
 });
@@ -107,11 +107,13 @@ test('configured runtimes preserve module API validation, public digest and cons
   const {tmp, run} = fixture(t);
   const root = join(tmp, 'project');
   cpSync(resolve('tests/fixtures/module-api/reference/tasks'), root, {recursive: true});
+  const zen = join(tmp, 'runtime.mjs');
+  writeFileSync(zen, independentRuntime);
   const args = ['validate', '--module-api', 'module-api.json'];
   const baseline = run(root, args);
   mkdirSync(join(root, 'src'));
   write(join(root, 'lekalo.yaml'), {schema: 'lekalo/runtime-config/v1',
-    components: {app: {path: 'src', runtime: 'path:' + externalRoot('lekalo-php')}}});
+    components: {app: {path: 'src', runtime: {command:[process.execPath,zen]}}}});
   run(root, ['runtime', 'lock']);
   assert.deepEqual(run(root, args), baseline);
   workspace(root, {exports: {tasks: {kind: 'module-api', api: 'module-api.json', module: 'tasks'}}});

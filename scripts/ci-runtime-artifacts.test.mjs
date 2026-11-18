@@ -14,11 +14,10 @@ function fixture(t,platform='linux',profile='debug'){
  t.after(()=>rmSync(root,{recursive:true,force:true}));
  const c={sourceSha:'a'.repeat(40),runId:'1234',attempt:'1',platform,arch:platform==='darwin'?'arm64':'x64',image:{linux:'ubuntu-26.04',win32:'windows-latest',darwin:'macos-latest'}[platform],imageOS:{linux:'ubuntu26',win32:'win25',darwin:'macos26'}[platform],profile};
  const source=join(root,'source'),directory=join(root,'artifact'),destination=join(root,'target'),suffix=platform==='win32'?'.exe':'';
- mkdirSync(join(source,profile,'examples'),{recursive:true});mkdirSync(destination);
+ mkdirSync(join(source,profile),{recursive:true});mkdirSync(destination);
  mkdirSync(join(source,'external-services/debug'),{recursive:true});
  for(const name of serviceBinaries)writeFileSync(join(source,'external-services/debug',name+suffix),'fixture-service-'+name);
  writeFileSync(join(source,profile,'lekalo'+suffix),'fixture-cli');
- if(profile==='debug')writeFileSync(join(source,'debug/examples/typescript-native-contract'+suffix),'fixture-example');
  const r=prepare({source,destination:directory,...c});
  const options={directory,destination,manifestSha256:r.manifestSha256,...c};
  return {root,c,source,directory,destination,suffix,options,verify:()=>verify(options),mutate(fn){const m=JSON.parse(readFileSync(join(directory,'runtime.json')));fn(m);const b=JSON.stringify(m);writeFileSync(join(directory,'runtime.json'),b);options.manifestSha256=hash(b);}};
@@ -44,7 +43,7 @@ for(const [name,change] of [
 test('refuses tampered manifest, bytes, unknown and missing files',t=>{
  const f=fixture(t);writeFileSync(join(f.directory,'lekalo'),'changed-cli');assert.throws(f.verify,/digest mismatch/);
  writeFileSync(join(f.directory,'lekalo'),'fixture-cli');writeFileSync(join(f.directory,'unknown'),'bad');assert.throws(f.verify,/contents/);unlinkSync(join(f.directory,'unknown'));
- unlinkSync(join(f.directory,'typescript-native-contract'));assert.throws(f.verify,/ENOENT/);assert.deepEqual(readdirSync(f.destination),[]);
+ unlinkSync(join(f.directory,serviceBinaries[0]));assert.throws(f.verify,/ENOENT/);assert.deepEqual(readdirSync(f.destination),[]);
  const g=fixture(t);writeFileSync(join(g.directory,'runtime.json'),'{}');assert.throws(g.verify,/Manifest digest/);
 });
 test('refuses a missing producer digest and invalid context',t=>{

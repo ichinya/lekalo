@@ -44,3 +44,15 @@ sdk/go/bin/
 /tests/fixtures/php-laravel/planner/src/task-links-worker.php
 /adapters/pilots/worklog.json
 /adapters/pilots/task-links.json
+
+# Package-owned inputs installed for host compatibility tests.
+/tests/fixtures/client-sdk/
+/tests/fixtures/laravel-migrations/
+/tests/fixtures/mago/
+/tests/fixtures/node-native-tools/
+/tests/fixtures/php-laravel/
+/tests/fixtures/pilot/brownfield-ts/
+/tests/fixtures/public-typescript-scan/
+/tests/fixtures/python-scan/fastapi/
+/tests/fixtures/python-scan/model/
+/tests/fixtures/python-scan/standalone/
