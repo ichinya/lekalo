@@ -17,7 +17,10 @@ assert.equal(physical(realpathSync(dirname(output))), physical(dirname(output)),
 const source = target === 'brownfield' ? 'tests/fixtures/pilot/brownfield-mysql' : `examples/planner-${target}`;
 // Read-only integrity verification runs before creating output.
 const lock = JSON.parse(readFileSync(join(root, 'examples/reference-projects.lock.json'), 'utf8'));
-for (const [path, digest] of Object.entries({ ...lock.files, ...lock.adapters })) {
+// Adapter manifests are provenance for these source-only exports. Check any
+// provisioned manifests as well; the package integration gate verifies both.
+const installedAdapters = Object.entries(lock.adapters).filter(([path]) => existsSync(join(root, path)));
+for (const [path, digest] of [...Object.entries(lock.files), ...installedAdapters]) {
   assert.equal(`sha256:${createHash('sha256').update(readFileSync(join(root, path))).digest('hex')}`, digest, `source drift: ${path}`);
 }
 cpSync(join(root, source), output, { recursive: true, filter: (path) => !['vendor', 'node_modules', '.gitignore'].includes(path.split(/[\\/]/).at(-1)) });

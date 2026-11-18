@@ -6,6 +6,7 @@ import {join,resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
+import {typescriptAdapter} from './framework-lift-rounding.mjs';
 import {prepare,helper} from './framework-lift-planner.mjs';
 import {compactResearchInstructions} from './framework-lift-context.mjs';
 import {assertFreshReportPath} from './framework-lift-research-report.mjs';
@@ -29,7 +30,7 @@ export function contextPreflight(){
  assert.ok(outputs.compact.instructionAndCapsuleBytes<outputs.full.instructionAndCapsuleBytes);
  for(const directory of ['full-context','compact-context'])assert.equal(fs.readFileSync(join(root,directory+'/.agents/lekalo.md'),'utf8'),installed.toString());
  const pin=p=>hash(fs.readFileSync(join(repo,p)));
- const report={format:'lekalo-167-compact-context-preflight/1',inference:false,tokenSavings:'NOTRUN; bytes are not tokens or a causal effect estimate',variant:'experimental native-only instruction and grouped native pointer identities; full capsule body retained',sourceInstructionUnchanged:true,sourcePins:{binary:hash(fs.readFileSync(binary)),adapter:pin('adapters/node-typescript/adapter.mjs'),renderer:pin('scripts/research/framework-lift-context.mjs'),builder:pin('scripts/research/framework-lift-planner.mjs'),sourceReader:pin('scripts/research/framework-lift-workspace.mjs'),preflight:pin('scripts/research/framework-lift-context-preflight.mjs')},preflight:{baselineHoldout:'fails as expected',referenceHoldout:20,sourcePreserved:true},outputs};
+ const report={format:'lekalo-167-compact-context-preflight/1',inference:false,tokenSavings:'NOTRUN; bytes are not tokens or a causal effect estimate',variant:'experimental native-only instruction and grouped native pointer identities; full capsule body retained',sourceInstructionUnchanged:true,sourcePins:{binary:hash(fs.readFileSync(binary)),adapter:hash(fs.readFileSync(typescriptAdapter)),renderer:pin('scripts/research/framework-lift-context.mjs'),builder:pin('scripts/research/framework-lift-planner.mjs'),sourceReader:pin('scripts/research/framework-lift-workspace.mjs'),preflight:pin('scripts/research/framework-lift-context-preflight.mjs')},preflight:{baselineHoldout:'fails as expected',referenceHoldout:20,sourcePreserved:true},outputs};
  fs.writeFileSync(join(root,'compact-preflight.json'),JSON.stringify(report,null,2)+'\n',{flag:'wx'});return {root,report};
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
