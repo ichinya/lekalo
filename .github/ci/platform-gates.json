@@ -961,7 +961,7 @@
     "contracts-rust": "feb748f1aeb0ea2a77ba2e81e6449eeab88c9dcdd0888a9e6350fd86e9fc69be",
     "fmt": "bdea42bfdddd0923ec2ca3c4f08f8f5c9abf9af275213a6be0c1e3ac18a6bb98",
     "msrv": "601c45fdf40e9d7d866cd7d6b65b472a897fde451c71e0b70cb6214bc5adebab",
-    "runtime-packages": "54e60c04066138da910f33fb1cca464c86ac56bd9c2d609a40413f038f69f7de",
+    "runtime-packages": "15dcd6082baca449eab918c22d2f5ff8de6ab9b604a74580b8b8a34072e45e3c",
     "release-version": "56ce43851182720fb25c45d3f90b1dac2691d0abf1367411b7d74ef1918d30c9"
   },
   "callerPreambleSha256": "528b38b92e26539fbd21da259165029b4e9e85d3b343f9f4276f025a12a0d7e2",

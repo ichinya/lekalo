@@ -315,9 +315,31 @@ jobs:
           path: target/debug
       - name: Verify CLI and external services
         run: node scripts/ci-contracts-cli.mjs verify target/debug
+      - name: Prepare bubblewrap on GitHub-hosted Linux
+        if: runner.os == 'Linux' && runner.environment == 'github-hosted'
+        id: confinement
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -x /usr/bin/bwrap ]]; then
+            sudo apt-get update
+            sudo apt-get install --yes bubblewrap
+          fi
+          if ! /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/true; then
+            bash ./.github/ci/bwrap-apparmor.sh load
+            echo 'loaded=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Verify the Linux namespace backend
+        if: runner.os == 'Linux'
+        shell: bash
+        run: /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/true
       - name: Check portable runtime rules, workspace imports and selected services
         run: |
           set -euo pipefail
           npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.20.0" --ignore-scripts --no-audit --no-fund --no-save ajv@8.20.0
           unset LEKALO_SERVICES LEKALO_PROJECT
           NODE_PATH="$RUNNER_TEMP/lekalo-ajv-8.20.0/node_modules" node --test --test-concurrency=1 scripts/test-external-tool.mjs scripts/test-runtime-workspace.mjs scripts/test-external-runtime.mjs scripts/test-external-services.mjs
+      - name: Remove the job's AppArmor policy
+        if: always() && steps.confinement.outputs.loaded == 'true'
+        shell: bash
+        run: bash ./.github/ci/bwrap-apparmor.sh remove

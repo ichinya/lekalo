@@ -43,7 +43,7 @@ paid usage, or measured token savings. Both variants suppress repeated unchanged
 capsules; the public native baseline/reference controls and source preservation
 passed without inference. A fresh pinned campaign must measure actual usage;
 never reuse old workspaces or pool changed harnesses into the original campaign.
-Reproduce without agent CLIs or dependency installation:
+After the [one-time adapter setup](#planner-after-the-native-scan-changes), reproduce the measurement offline:
 
 ```text
 node scripts/research/framework-lift-context-preflight.mjs NEW_OUTPUT_JSON
@@ -260,11 +260,20 @@ retains the baseline's strict authorization refusal and the unsupported
 canonical semantic/native ID join; this is a bounded assisted workflow,
 not qualified complete semantic adoption. Native source bytes are checked
 against the committed first-pilot inventory, and cold CLI time excludes unknown
-Model authoring. Public task, oracle and partial authored Model inputs live in
-`tests/fixtures/public-typescript-scan/planner/`; preparation requires no ignored
-experiment archive. Set `LEKALO_DEVIN` to the Devin executable and `LEKALO_CODEX`
-to the Codex JavaScript entrypoint. `LEKALO_BIN` defaults to the checkout's debug
-CLI and `LEKALO_TSC` to the adapter's installed pinned TypeScript `bin/tsc`.
+Model authoring. The TypeScript package owns the public task, oracle and
+partial authored Model in `host-tests/tests/fixtures/public-typescript-scan/planner/`.
+From the host checkout, prepare the pinned adapter and compiler once:
+
+```sh
+node scripts/external-tool.mjs --provision
+npm ci --prefix tests/external/lekalo-typescript/adapters/node-typescript --ignore-scripts --no-audit --no-fund
+node tests/external/lekalo-typescript/adapters/node-typescript/provision-compiler.mjs
+```
+
+Set `LEKALO_TYPESCRIPT_ROOT` to use an explicitly provisioned package checkout.
+`LEKALO_BIN` defaults to the host's debug CLI and `LEKALO_TSC` to the adapter's
+installed TypeScript `bin/tsc`. For a live campaign, set `LEKALO_DEVIN` to the
+Devin executable and `LEKALO_CODEX` to the Codex JavaScript entrypoint.
 Preparation never installs dependencies. For offline adoption/oracle preflight
 without either agent CLI, call the module's `prepare({configure: false})` API.
 Default CLI profile versions describe the measured campaign; callers using other
