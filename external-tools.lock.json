@@ -7,7 +7,7 @@
     },
     "lekalo-typescript": {
       "repository": "https://github.com/ichinya/lekalo-typescript.git",
-      "commit": "00d98e0a01fdd0c7b7101d1b973ba0c5e85cb4e4"
+      "commit": "67d197ba27b4ff1cecbb6e77dc9f33f317ed0d2c"
     },
     "lekalo-typescript-hono": {
       "repository": "https://github.com/ichinya/lekalo-typescript-hono.git",
@@ -47,11 +47,11 @@
     },
     "lekalo-php": {
       "repository": "https://github.com/ichinya/lekalo-php.git",
-      "commit": "5110a88646998824adffc9788db96246ee57c51e"
+      "commit": "87256bf5f277e3690641e745e7d374f8badebd15"
     },
     "lekalo-php-laravel": {
       "repository": "https://github.com/ichinya/lekalo-php-laravel.git",
-      "commit": "0291a64e6d0a76b511eae8e5c2f44deb24a8dade"
+      "commit": "444f40f8b8f04db9b42af279593648f97954d972"
     },
     "lekalo-php-symfony": {
       "repository": "https://github.com/ichinya/lekalo-php-symfony.git",
@@ -111,6 +111,21 @@
       "package": "lekalo-go",
       "manifest": "crates/expressions/Cargo.toml",
       "binary": "lekalo-expressions-go"
+    },
+    "attachments/operations": {
+      "package": "lekalo-php-laravel",
+      "manifest": "crates/attachments/Cargo.toml",
+      "binary": "lekalo-laravel-attachments"
+    },
+    "attachments/routes": {
+      "package": "lekalo-php-laravel",
+      "manifest": "crates/attachments/Cargo.toml",
+      "binary": "lekalo-laravel-attachments"
+    },
+    "discovery/php": {
+      "package": "lekalo-php",
+      "manifest": "crates/discovery/Cargo.toml",
+      "binary": "lekalo-php-discovery"
     }
   }
 }

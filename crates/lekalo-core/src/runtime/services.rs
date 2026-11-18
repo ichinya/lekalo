@@ -5,6 +5,7 @@ use std::{collections::BTreeMap, path::Path};
 
 pub(super) fn check_role(id: &str, operations: &[String]) -> Result<()> {
     let required: &[&str] = match id.split('/').next() {
+        Some("attachments") => &["attachments.check"],
         Some("expressions") => &["expressions.render"],
         Some("discovery") => &["discovery.describe", "discovery.inspect"],
         Some("requirements") => &["requirements.snapshot"],

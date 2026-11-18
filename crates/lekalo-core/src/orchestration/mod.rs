@@ -15,6 +15,7 @@
 //! `contracts/orchestration-report.schema.v0.2.16.json`
 //! (`dev.lekalo.orchestration-report@0.2.16`).
 
+mod attachment_check;
 pub mod catalog;
 mod diagnostic;
 mod generate;

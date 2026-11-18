@@ -125,3 +125,14 @@ and the ordered records. Each record has an id, typed parameters, result type
 and compiled expression body. The SDK's expression-provider crate defines the
 wire types. The service replies with `schema: lekalo/expression-program/v1`
 and the generated source in `program`. A new target uses the same operation.
+
+## Pre-generation attachment checks
+
+Projects using the legacy operations and route inputs select `attachments/operations`
+and `attachments/routes` independently. The Laravel owner ships
+`lekalo-laravel-attachments`. Install it with `cargo install --locked --path crates/attachments`
+in that checkout, select its command for both roles, and lock the selections.
+Before generation the host supplies the input text, validated canonical IR,
+registry bindings, transport and evidence digests. The selected service returns
+the semantic findings through `attachments.check`. The host refuses unavailable
+validators, incomplete responses and findings before accepting generated writes.

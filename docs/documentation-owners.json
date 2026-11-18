@@ -3895,7 +3895,7 @@
       "id": "contract:contracts/external-services.schema.v1.json",
       "kind": "contract",
       "source": "contracts/external-services.schema.v1.json",
-      "sourceDigest": "sha256:8d505da92c41a7ddf391b09a9fe6342010fa3bfb1258a67f69192b5266519b26",
+      "sourceDigest": "sha256:1a949188e18de318465dc07a47da28db1604a1173a25c3f008652587d5383ac7",
       "owner": "docs/external-services.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
