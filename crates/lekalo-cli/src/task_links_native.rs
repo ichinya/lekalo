@@ -1,4 +1,4 @@
-//! Explicit opt-in execution owner for the maintained Laravel port. Authority
+//! Explicit opt-in execution owner for the reviewed native worker. Authority
 //! comes from this process launching the reviewed worker, controlling barriers,
 //! observing termination and independently checking fresh durable state. Neither
 //! a database, sidecar, environment flag nor a child's success label is admitted.
@@ -16,7 +16,7 @@ use lekalo_core::task_links::{
 };
 use lekalo_core::DomainResult;
 
-const TARGET: &str = "php-laravel-maintained";
+use crate::pilot_profile::{self, Artifact, Worker};
 
 fn refused() -> DomainResult {
     tl::into_result(&tl::input_failure("native-execution-unqualified"))
@@ -66,11 +66,12 @@ impl Drop for Scratch {
     }
 }
 
-struct WorkerProcess {
+struct WorkerProcess<'a> {
+    profile: &'a Worker,
     child: Child,
     lines: Receiver<String>,
 }
-impl WorkerProcess {
+impl WorkerProcess<'_> {
     fn line(&self) -> Result<String, DomainResult> {
         self.lines
             .recv_timeout(Duration::from_secs(30))
@@ -91,8 +92,8 @@ impl WorkerProcess {
             result.as_object().is_some_and(|object| object.len() == 5)
                 && result["runId"] == run
                 && result["operation"] == operation
-                && result["runtime"] == "laravel/framework@13.33.0"
-                && result["engine"] == "pdo-sqlite",
+                && result["runtime"] == self.profile.runtime
+                && result["engine"] == self.profile.engine,
         )?;
         let start = Instant::now();
         loop {
@@ -116,7 +117,7 @@ impl WorkerProcess {
         check(!self.child.wait().map_err(|_| refused())?.success())
     }
 }
-impl Drop for WorkerProcess {
+impl Drop for WorkerProcess<'_> {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
@@ -124,6 +125,7 @@ impl Drop for WorkerProcess {
 }
 
 struct Runner<'a> {
+    profile: &'a Worker,
     script: PathBuf,
     store: PathBuf,
     autoload: PathBuf,
@@ -140,8 +142,8 @@ impl Runner<'_> {
         intent: &str,
         token: &str,
         task: &str,
-    ) -> Result<WorkerProcess, DomainResult> {
-        let mut child = Command::new("php")
+    ) -> Result<WorkerProcess<'_>, DomainResult> {
+        let mut child = Command::new(&self.profile.interpreter)
             .arg(&self.script)
             .arg(&self.autoload)
             .arg(&self.store)
@@ -183,6 +185,7 @@ impl Runner<'_> {
             }
         });
         let process = WorkerProcess {
+            profile: self.profile,
             child,
             lines: receiver,
         };
@@ -239,7 +242,7 @@ fn open(path: &Path) -> Result<rusqlite::Connection, DomainResult> {
 
 /// Private, live capability. There is intentionally no Deserialize/import path.
 struct NativeExecution {
-    target: &'static str,
+    target: String,
     profile_digest: String,
     result_digest: String,
     facts: Vec<&'static str>,
@@ -267,38 +270,38 @@ fn execute(attachment: &Attachment, profile_digest: &str) -> Result<NativeExecut
         .ok_or_else(refused)?;
     check(fields.fields == ["state", "title"])?;
     let root = std::env::current_dir().map_err(|_| refused())?;
-    let fixture = root.join("tests/fixtures/php-laravel/planner");
+    let profile = pilot_profile::task_links().ok_or_else(refused)?;
+    let fixture = root.join(&profile.fixture);
     // Locked maintained framework runtime, provisioned explicitly outside this
     // execution command. Missing/mismatched dependencies are a refusal.
     // Stage only the reviewed bytes that were actually checked.
-    let reviewed = |path: &str, expected: &str| -> Result<Vec<u8>, DomainResult> {
-        let bytes =
-            lekalo_core::runtime::read(&fixture, path, 2 * 1024 * 1024).map_err(|_| refused())?;
-        check(lekalo_core::digest::sha256_hex(&bytes) == expected)?;
+    let reviewed = |artifact: &Artifact| -> Result<Vec<u8>, DomainResult> {
+        let bytes = lekalo_core::runtime::read(&fixture, &artifact.path, 2 * 1024 * 1024)
+            .map_err(|_| refused())?;
+        check(lekalo_core::digest::sha256_hex(&bytes) == artifact.sha256)?;
         Ok(bytes)
     };
-    let lock = reviewed(
-        "composer.lock",
-        "e41adfada5bc77d37cbf0ff040420b713cdb91727a4d9db843d372775d84015a",
-    )?;
-    let worker = reviewed(
-        "src/task-links-worker.php",
-        "7f71001c2adc8f0445adee789817c611f8cfffff32403798fdc9ffb7bd785963",
-    )?;
-    let implementation = reviewed(
-        "app/Lekalo/TaskLinksStore.php",
-        "4ada016a7bace8ff42efc122ea178ca2c0eaede6e6b0e6d864ce8c674239b43d",
-    )?;
-    let autoload = fixture.join("vendor/autoload.php");
+    let lock = reviewed(&profile.lock)?;
+    let worker = reviewed(&profile.worker)?;
+    let implementation = reviewed(&profile.store)?;
+    let autoload = fixture.join(&profile.bootstrap);
     check(autoload.is_file())?;
     let scratch = Scratch::new()?;
-    let script = scratch.stage("worker.php", &worker)?;
-    let store = scratch.stage("TaskLinksStore.php", &implementation)?;
+    let stage = |artifact: &Artifact, bytes: &[u8]| {
+        let name = Path::new(&artifact.path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .ok_or_else(refused)?;
+        scratch.stage(name, bytes)
+    };
+    let script = stage(&profile.worker, &worker)?;
+    let store = stage(&profile.store, &implementation)?;
     let database = scratch.stage("run.sqlite", &[])?;
     let run = tl::wire_digest(scratch.0.to_string_lossy().as_bytes())
         .as_str()
         .to_owned();
     let runner = Runner {
+        profile: &profile,
         script,
         store,
         autoload,
@@ -413,6 +416,7 @@ fn execute(attachment: &Attachment, profile_digest: &str) -> Result<NativeExecut
     let bad = Runner {
         policy: "sha256:revoked",
         ..Runner {
+            profile: &profile,
             script: runner.script.clone(),
             store: runner.store.clone(),
             autoload: runner.autoload.clone(),
@@ -469,10 +473,9 @@ fn execute(attachment: &Attachment, profile_digest: &str) -> Result<NativeExecut
         )?,
     );
     drop(db);
-    let framework = std::fs::read(
-        fixture.join("vendor/laravel/framework/src/Illuminate/Database/Connection.php"),
-    )
-    .map_err(|_| refused())?;
+    let framework =
+        lekalo_core::runtime::read(&fixture, &profile.framework_source, 2 * 1024 * 1024)
+            .map_err(|_| refused())?;
     let build_digest = tl::wire_digest(
         &[
             implementation.as_slice(),
@@ -485,7 +488,7 @@ fn execute(attachment: &Attachment, profile_digest: &str) -> Result<NativeExecut
     let input = (
         attachment.computed_revision(),
         attachment.ir_digest().as_str(),
-        TARGET,
+        profile.target.as_str(),
         profile_digest,
         build_digest.as_str(),
         runner.policy,
@@ -514,12 +517,12 @@ fn execute(attachment: &Attachment, profile_digest: &str) -> Result<NativeExecut
     .to_owned();
     let provenance = tl::portability::ExecutionProvenance {
         owner: "lekalo-cli/maintained-native-execution".to_owned(),
-        implementation: "php-laravel-maintained/laravel-13.33.0-pdo-sqlite".to_owned(),
+        implementation: profile.implementation.clone(),
         build_digest: build_digest.as_str().to_owned(),
         source_digest: attachment.ir_digest().as_str().to_owned(),
         input_digest,
         result_digest: result_digest.clone(),
-        profile_id: TARGET.to_owned(),
+        profile_id: profile.target.clone(),
         profile_digest: profile_digest.to_owned(),
         origin: "native".to_owned(),
         assertions: facts
@@ -535,7 +538,7 @@ fn execute(attachment: &Attachment, profile_digest: &str) -> Result<NativeExecut
             .collect(),
     };
     Ok(NativeExecution {
-        target: TARGET,
+        target: profile.target.clone(),
         profile_digest: profile_digest.to_owned(),
         result_digest,
         facts,

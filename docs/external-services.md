@@ -136,3 +136,21 @@ Before generation the host supplies the input text, validated canonical IR,
 registry bindings, transport and evidence digests. The selected service returns
 the semantic findings through `attachments.check`. The host refuses unavailable
 validators, incomplete responses and findings before accepting generated writes.
+
+## Project discovery
+
+Ruby and Java discovery can be selected with `discovery/ruby: gh/ichinya/lekalo-ruby`
+and `discovery/java: gh/ichinya/lekalo-java`. These packages run on Node and inspect
+manifest names, including Gradle settings files at a workspace root. Composer and
+Deno observations come from the PHP and TypeScript discovery services.
+
+## Native pilot profiles
+
+The Laravel package publishes the reviewed Worklog and Task Links worker profiles
+under `pilots/`. Development provisioning installs them in `adapters/pilots/`.
+Use `LEKALO_PILOT_PROFILES` to select an installed profile directory from another
+working directory. The CLI verifies each profile's SHA-256 before using its
+interpreter, target, identity or artifact paths. An operator can pin an
+alternative profile with `LEKALO_WORKLOG_PROFILE_SHA256` or
+`LEKALO_TASK_LINKS_PROFILE_SHA256` (64 lowercase hex digits). The host still
+stages the verified worker bytes and observes the execution itself.

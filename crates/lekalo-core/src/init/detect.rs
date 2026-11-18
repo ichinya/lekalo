@@ -56,16 +56,6 @@ pub(crate) const SKIP_DIRS: [&str; 18] = [
     ".hlv",
 ];
 
-// Legacy technologies not yet migrated to discovery services.
-const OTHER_MANIFESTS: &[(&str, &str)] = &[
-    ("Gemfile", "ruby"),
-    ("pom.xml", "java"),
-    ("build.gradle", "java"),
-    ("build.gradle.kts", "java"),
-    ("settings.gradle", "java"),
-    ("settings.gradle.kts", "java"),
-];
-
 /// Directory names recorded as source-directory evidence.
 const SOURCE_DIRS: [&str; 7] = ["src", "lib", "app", "source", "sources", "internal", "pkg"];
 
@@ -319,15 +309,7 @@ pub(crate) fn probe(
             .ok()
             .flatten()
     })?;
-    let workspace = !data.workspaces.is_empty()
-        || ["settings.gradle", "settings.gradle.kts"]
-            .iter()
-            .any(|name| matches!(fs.entry_type("", name), Ok(EntryType::File)));
-    let manifest = !data.manifests.is_empty()
-        || OTHER_MANIFESTS
-            .iter()
-            .any(|(name, _)| matches!(fs.entry_type("", name), Ok(EntryType::File)));
-    Ok((workspace, manifest))
+    Ok((!data.workspaces.is_empty(), !data.manifests.is_empty()))
 }
 
 /// Run the full closed detection pass over one adopted root.
@@ -406,26 +388,6 @@ pub(crate) fn detect(
             .file_name()
             .map(|name| name.to_string_lossy().into_owned());
         let Some(name) = name else { continue };
-        if let Some((_, ecosystem)) = OTHER_MANIFESTS.iter().find(|(stem, _)| *stem == name) {
-            if detection.manifests.len() < MAX_PER_COLLECTION {
-                detection.manifests.push(Evidence {
-                    path: entry.path.clone(),
-                    detail: (*ecosystem).to_owned(),
-                });
-            }
-        }
-        if name == "Gemfile" {
-            push_hint(
-                &mut detection.languages,
-                Hint {
-                    label: "ruby".to_owned(),
-                    kind: "language",
-                    path: entry.path.clone(),
-                    field: None,
-                    confidence: Confidence::Medium,
-                },
-            );
-        }
         if detection.openapi.len() < MAX_OPENAPI
             && (OPENAPI_STEMS.contains(&name.as_str())
                 || (name.ends_with(".yaml") || name.ends_with(".yml") || name.ends_with(".json"))
@@ -440,24 +402,6 @@ pub(crate) fn detect(
         }
     }
 
-    for directory in std::iter::once(".").chain(
-        walk.entries
-            .iter()
-            .filter(|e| e.is_dir)
-            .map(|e| e.path.as_str()),
-    ) {
-        if ["settings.gradle", "settings.gradle.kts"]
-            .iter()
-            .any(|name| walk.has_file(&child_path(directory, name)))
-        {
-            detection.workspace_roots.push(WorkspaceRoot {
-                path: directory.into(),
-                ecosystem: "gradle".into(),
-                members: Vec::new(),
-                confidence: Confidence::High,
-            });
-        }
-    }
     // Observed modules: workspace members carrying a manifest.
     for workspace in &detection.workspace_roots {
         for glob in &workspace.members {
@@ -590,15 +534,6 @@ pub(crate) fn detect(
     Ok(detection)
 }
 
-fn child_path(directory: &str, name: &str) -> String {
-    if directory == "." {
-        name.to_owned()
-    } else {
-        format!("{directory}/{name}")
-    }
-}
-
-/// Insert one hint, keeping collections bounded and duplicate-free.
 fn push_hint(hints: &mut Vec<Hint>, hint: Hint) {
     if hints.len() >= MAX_PER_COLLECTION {
         return;

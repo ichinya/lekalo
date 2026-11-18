@@ -78,6 +78,8 @@ export function provisionPhp() {
   if (!existsSync(destination)) copyFileSync(source, destination, constants.COPYFILE_EXCL);
   verify(destination);
   const fixtures = {
+    "pilots/worklog-changelog/backends.json": "adapters/pilots/worklog.json",
+    "pilots/task-links/profile.json": "adapters/pilots/task-links.json",
     "pilots/worklog-changelog/run.php": "tests/fixtures/pilot/worklog-changelog/php/run.php",
     "pilots/task-links/TaskLinksStore.php": "tests/fixtures/php-laravel/planner/app/Lekalo/TaskLinksStore.php",
     "pilots/task-links/task-links-worker.php": "tests/fixtures/php-laravel/planner/src/task-links-worker.php"
@@ -117,7 +119,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 export function buildServices() {
   const built = new Set();
   for (const spec of Object.values(serviceSpecs)) {
-    if (built.has(spec.binary)) continue;
+    // Script packages run directly from their pinned checkout.
+    if (spec.script || built.has(spec.binary)) continue;
     built.add(spec.binary);
     if (!/^[a-z][a-z0-9-]*$/.test(spec.binary) || spec.manifest.split('/').some(p=>!p||p==='..'||p.includes('\\'))) throw new Error('Invalid service build specification');
     const root=externalRoot(spec.package);

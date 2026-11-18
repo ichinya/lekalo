@@ -47,6 +47,7 @@ mod workspace;
 use native_execution::NativeCommands;
 mod module_api;
 mod pilot_battery;
+mod pilot_profile;
 mod portability;
 mod report_git;
 pub(crate) mod report_output;
@@ -7670,10 +7671,6 @@ fn check_model_custody(
     Ok(digest)
 }
 
-/// Pin the reviewed external pilot independently of the supplied project.
-const REVIEWED_PHP_DIGEST: &str =
-    "sha256:accb5045c148a40e13bdb96a510c994ac5c4b74cfd23ddbbe8406ad447b2b374";
-
 fn engine_backend_provenance(
     selection: &LoadSelection,
     composition_dir: &std::path::Path,
@@ -7683,14 +7680,20 @@ fn engine_backend_provenance(
         return provenance;
     };
     // The native lane rides the fixture root beside the composition's
-    // attachments directory: `<root>/<lane>/run.php`. A composition
+    // attachments directory, at the reviewed relative entry. A composition
     // laid out differently declares no executable lane, so no
     // provenance exists and any bound backend refuses.
     let fixture_root = composition_dir.parent().unwrap_or(composition_dir);
+    let backends = pilot_profile::worklog();
     for definition in &compilation.project.definitions {
         if let lekalo_core::ir::Definition::TargetBinding(binding) = definition {
-            if let Some((lane, identity)) = native_lane_for(binding.target.as_str()) {
-                let lane_path = fixture_root.join(lane).join("run.php");
+            if let Some(backend) = backends
+                .iter()
+                .find(|b| b.target == binding.target.as_str())
+            {
+                let lane = backend.lane.as_str();
+                let identity = backend.identity.as_str();
+                let lane_path = fixture_root.join(lane).join(&backend.entry);
                 // The lane bytes are custody-confined to the fixture
                 // tree like every other consumed input: an escaping
                 // link never provides provenance.
@@ -7698,7 +7701,7 @@ fn engine_backend_provenance(
                     continue;
                 };
                 let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
-                if digest != REVIEWED_PHP_DIGEST {
+                if digest.strip_prefix("sha256:") != Some(backend.sha256.as_str()) {
                     continue;
                 }
                 provenance.insert(
@@ -7714,15 +7717,6 @@ fn engine_backend_provenance(
     provenance
 }
 
-/// The native runtime lane of one compiled target binding: the closed
-/// lane vocabulary and its backend identity.
-fn native_lane_for(target: &str) -> Option<(&'static str, &'static str)> {
-    match target {
-        "php-laravel" => Some(("php", "taskhub.runtime/fake-transport")),
-        _ => None,
-    }
-}
-
 /// The trusted execution receipts (issue #51 r5): the engine shell
 /// itself executes every declared native lane for this admission
 /// under an engine-built execution battery and hands the
@@ -7730,8 +7724,7 @@ fn native_lane_for(target: &str) -> Option<(&'static str, &'static str)> {
 /// the custody-read, pin-verified scenario corpus of the pinned
 /// compilation — never from the lane's own output — and a fresh
 /// per-run nonce probe defeats captured-output replay. Eligibility is
-/// separately bound to the reviewed implementation embedded in the
-/// trusted binary: a battery-aware printer cannot qualify either.
+/// separately bound to the independently pinned implementation profile: a battery-aware printer cannot qualify either.
 /// A lane that cannot launch at all is recorded as an engine-side
 /// failure, never mislabeled as an unverified execution claim, and
 /// the absolute lane path makes the admission verdict independent of
@@ -7761,6 +7754,7 @@ fn native_execution_receipts(
         "sha256:{}",
         lekalo_core::digest::sha256_hex(compilation.project.to_canonical_json().as_bytes())
     );
+    let backends = pilot_profile::worklog();
     let allowlist: Vec<String> = composition
         .public_allowlist()
         .fields()
@@ -7771,10 +7765,15 @@ fn native_execution_receipts(
         let lekalo_core::ir::Definition::TargetBinding(binding) = definition else {
             continue;
         };
-        let Some((lane, identity)) = native_lane_for(binding.target.as_str()) else {
+        let Some(backend) = backends
+            .iter()
+            .find(|b| b.target == binding.target.as_str())
+        else {
             continue;
         };
-        let lane_path = fixture_root.join(lane).join("run.php");
+        let lane = backend.lane.as_str();
+        let identity = backend.identity.as_str();
+        let lane_path = fixture_root.join(lane).join(&backend.entry);
         let Ok(bytes) = confined_read(&fixture_root, &lane_path) else {
             continue;
         };
@@ -7794,7 +7793,7 @@ fn native_execution_receipts(
         };
         // R6 F2: a replacement cannot mint its own eligibility by
         // printing its digest or answering the disclosed battery.
-        if digest != REVIEWED_PHP_DIGEST {
+        if digest.strip_prefix("sha256:") != Some(backend.sha256.as_str()) {
             fail_closed("backend-untrusted");
             continue;
         }
@@ -7815,14 +7814,13 @@ fn native_execution_receipts(
         // swap the implementation between eligibility and spawn.
         let run_dir = std::env::temp_dir().join(format!("lekalo-battery-{}", battery.nonce));
         let battery_path = run_dir.join("battery.json");
-        let executed_lane = run_dir.join("run.php");
+        let executed_lane = run_dir.join(&backend.entry);
         let owns_run_dir = std::fs::create_dir(&run_dir).is_ok();
         let writable = owns_run_dir
             && std::fs::write(&battery_path, &battery.bytes).is_ok()
             && std::fs::write(&executed_lane, &bytes).is_ok();
-        // The interpreter resolves exactly the way the harness
-        // resolves it: LEKALO_PHP first, then the PATH default.
-        let interpreters: Vec<String> = std::env::var("LEKALO_PHP")
+        // A reviewed profile names both the operator override and the default interpreter.
+        let interpreters: Vec<String> = std::env::var(&backend.interpreter_env)
             .ok()
             .filter(|value| !value.is_empty())
             .map(|value| {
@@ -7832,7 +7830,7 @@ fn native_execution_receipts(
                     .map(str::to_owned)
                     .collect()
             })
-            .unwrap_or_else(|| vec!["php".to_owned()]);
+            .unwrap_or_else(|| vec![backend.interpreter.clone()]);
         let outcome = if writable {
             pilot_battery::run_battery(
                 &interpreters,

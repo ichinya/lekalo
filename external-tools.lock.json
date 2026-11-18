@@ -39,7 +39,7 @@
     },
     "lekalo-hlv": {
       "repository": "https://github.com/ichinya/lekalo-hlv.git",
-      "commit": "f0a654cf46dc08e03a64e54c69445aed995a5308"
+      "commit": "ec6ec1d89e58537650e88c53673793acc9088d9f"
     },
     "lekalo-openspec": {
       "repository": "https://github.com/ichinya/lekalo-openspec.git",
@@ -51,7 +51,7 @@
     },
     "lekalo-php-laravel": {
       "repository": "https://github.com/ichinya/lekalo-php-laravel.git",
-      "commit": "444f40f8b8f04db9b42af279593648f97954d972"
+      "commit": "21a33db3c897c2aaab1ef899e063cd5d8d392e1d"
     },
     "lekalo-php-symfony": {
       "repository": "https://github.com/ichinya/lekalo-php-symfony.git",
@@ -64,6 +64,14 @@
     "lekalo-python-fastmcp": {
       "repository": "https://github.com/ichinya/lekalo-python-fastmcp.git",
       "commit": "12fb48b7b28bd0dc25d05dff433b50e56af40634"
+    },
+    "lekalo-ruby": {
+      "repository": "https://github.com/ichinya/lekalo-ruby.git",
+      "commit": "786270b2101681aff065b887c7a55269ca5be5cb"
+    },
+    "lekalo-java": {
+      "repository": "https://github.com/ichinya/lekalo-java.git",
+      "commit": "f97419e556f9a910674d6dc7405b429a0441893d"
     }
   },
   "services": {
@@ -126,6 +134,14 @@
       "package": "lekalo-php",
       "manifest": "crates/discovery/Cargo.toml",
       "binary": "lekalo-php-discovery"
+    },
+    "discovery/ruby": {
+      "package": "lekalo-ruby",
+      "script": "bin/discovery.cjs"
+    },
+    "discovery/java": {
+      "package": "lekalo-java",
+      "script": "bin/discovery.cjs"
     }
   }
 }

@@ -37,7 +37,7 @@ pub struct Hint {
 pub struct WorkspaceRoot {
     /// Logical project-relative POSIX path of the workspace manifest.
     pub path: String,
-    /// The closed ecosystem token (`node`, `go`, `rust`, `gradle`).
+    /// The ecosystem identifier reported by the selected discovery service.
     pub ecosystem: String,
     /// The declared member glob/list entries, verbatim.
     pub members: Vec<String>,
