@@ -1,0 +1,35 @@
+name: Test an official runtime or rule package
+description: Run the candidate checkout and its pinned counterparts through the public Lekalo CLI
+inputs:
+  package:
+    description: Expected ID in the candidate package manifest
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24.x
+        package-manager-cache: false
+    - uses: shivammathur/setup-php@v2
+      if: startsWith(inputs.package, 'lekalo-php')
+      with:
+        php-version: '8.3'
+        extensions: tokenizer
+        tools: none
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Check passing and failing sources with the candidate
+      shell: bash
+      env:
+        LEKALO_TEST_PACKAGE: ${{ inputs.package }}
+        CARGO_INCREMENTAL: '0'
+        CARGO_PROFILE_DEV_DEBUG: '0'
+      run: |
+        set -euo pipefail
+        host="$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)"
+        export CARGO_TARGET_DIR="$RUNNER_TEMP/lekalo-contract-host"
+        cargo build --manifest-path "$host/Cargo.toml" --locked -p lekalo-cli --bin lekalo
+        export LEKALO_BIN="$CARGO_TARGET_DIR/debug/lekalo"
+        LEKALO_EXTERNAL_TOOLS="$(node -p 'JSON.stringify({[process.env.LEKALO_TEST_PACKAGE]: process.env.GITHUB_WORKSPACE})')"
+        export LEKALO_EXTERNAL_TOOLS
+        node --test --test-name-pattern='independent language and framework' "$host/scripts/test-official-runtime-packages.mjs"

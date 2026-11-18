@@ -7,7 +7,7 @@ import {dirname, join, resolve} from 'node:path';
 import test from 'node:test';
 import {externalRoot} from './external-tool.mjs';
 
-const cases = [
+const fixtures = [
   ['go', 'go', null, 'service.go', 'package api\nfunc Health() {}', 'package api'],
   ['rust', 'rust', null, 'lib.rs', 'pub fn health() {}', '// no declarations'],
   ['hono', 'typescript', 'typescript-hono', 'app.ts', "import { Hono } from 'hono'; const app = new Hono(); app.get('/health', c => c.text('ok'));", "import { Hono } from 'hono'; const app = new Hono();"],
@@ -15,10 +15,22 @@ const cases = [
   ['drizzle', 'typescript', 'typescript-drizzle', 'tables.ts', "import { pgTable as table } from 'drizzle-orm/pg-core'; export const cat = table('cat', {});", "import { pgTable as table } from 'another'; export const cat = table('cat', {});"],
   ['fastapi', 'python', 'python-fastapi', 'main.py', "from fastapi import FastAPI\napp = FastAPI()\n@app.get('/health')\ndef health(): pass", "from fastapi import FastAPI\napp = FastAPI()"],
   ['fastmcp', 'python', 'python-fastmcp', 'server.py', "from fastmcp import FastMCP\ns = FastMCP('tools')\n@s.tool()\ndef health(): pass", "from fastmcp import FastMCP\ns = FastMCP('tools')\ndef health(): pass"],
+  ['laravel', 'php', 'php-laravel', 'routes/web.php', "<?php use Illuminate\\Support\\Facades\\Route as R; R::get('/health', function () {});", '<?php // no routes'],
   ['symfony', 'php', 'php-symfony', 'src/Controller/HealthController.php', "<?php use Symfony\\Component\\Routing\\Attribute\\Route; final class C { #[Route('/health', methods: ['GET'])] public function index() {} }", '<?php final class C { public function index() {} }'],
 ];
 
 test('independent language and framework packages certify and reject real sources', t => {
+  const candidate = process.env.LEKALO_TEST_PACKAGE;
+  const cases = candidate
+    ? fixtures.filter(([, runtime, rules]) => candidate === 'lekalo-' + runtime || (rules && candidate === 'lekalo-' + rules))
+    : fixtures;
+  assert.ok(cases.length, 'No contract fixture for ' + candidate);
+  if (candidate) {
+    const overrides = JSON.parse(process.env.LEKALO_EXTERNAL_TOOLS ?? '{}');
+    assert.ok(overrides[candidate], 'Expected the candidate checkout for ' + candidate);
+    const manifest = JSON.parse(readFileSync(join(externalRoot(candidate), 'lekalo.package.json')));
+    assert.equal(manifest.id, candidate);
+  }
   const scratch = mkdtempSync(join(process.env.BB_THREAD_STORAGE ?? tmpdir(), 'lekalo-packages-'));
   t.after(() => rmSync(scratch, {recursive:true, force:true}));
   const project = join(scratch, 'app'), declarations = join(scratch, 'declarations');
@@ -48,7 +60,11 @@ test('independent language and framework packages certify and reject real source
   assert.deepEqual(diagnostics.map(d=>d.data.component).sort(),cases.map(c=>c[0]).sort());
   assert(diagnostics.every(d=>d.id==='runtime.rule-failed'));
   const pinned=JSON.parse(readFileSync(join(project,'lekalo.runtime.lock')));
-  assert.equal(pinned.components.go.runtime.package.dependencies.parser.manifest.kind,'library');
+  for (const [id, runtime] of cases) {
+    if (['go', 'rust', 'typescript'].includes(runtime)) {
+      assert.equal(pinned.components[id].runtime.package.dependencies.parser.manifest.kind, 'library');
+    }
+  }
 });
 
 test('Ruby and Java discovery resolve project and Gradle workspace roots', t => {
@@ -66,9 +82,13 @@ test('Ruby and Java discovery resolve project and Gradle workspace roots', t => 
   }
   for (const [language, marker, basis] of [
     ['ruby', 'Gemfile', 'manifest'],
+    ['java', 'pom.xml', 'manifest'],
+    ['java', 'build.gradle', 'manifest'],
+    ['java', 'build.gradle.kts', 'manifest'],
+    ['java', 'settings.gradle', 'workspace-root'],
     ['java', 'settings.gradle.kts', 'workspace-root'],
   ]) {
-    const root = join(scratch, language);
+    const root = join(scratch, marker);
     const nested = join(root, 'subdirectory');
     mkdirSync(nested, {recursive: true});
     writeFileSync(join(root, marker), '');
