@@ -51,7 +51,7 @@
     },
     "lekalo-php-laravel": {
       "repository": "https://github.com/ichinya/lekalo-php-laravel.git",
-      "commit": "21a33db3c897c2aaab1ef899e063cd5d8d392e1d"
+      "commit": "ef62474884a37d2392c7cd764a2a1dfea36b7a2e"
     },
     "lekalo-php-symfony": {
       "repository": "https://github.com/ichinya/lekalo-php-symfony.git",

@@ -229,7 +229,7 @@ operations, the generic route map) keeps working — the honest
 language-only outcome, never a silent downgrade.
 
 The two source packages are pinned by commit in `external-tools.lock.json`.
-The Laravel repository publishes the compatibility artifact in `compat/adapter.php`.
+The Laravel repository publishes the compatibility artifact, its build and launch entry points, and its process conformance suite in `compat/`.
 Development setup installs it at the path used by existing integration tests and checks
 its SHA-256 against `adapter.manifest.json`.
 
