@@ -30,8 +30,10 @@ Expected: exit 0; actual-package typecheck and one HTTP test pass, including 201
 
 **Experimental** contributor path, from the Lekalo repository root:
 
+Provision the pinned TypeScript package with `node scripts/external-tool.mjs --provision` before running the example from the host checkout.
+
 ```sh docs-example=mysql-observed
-node scripts/pilot-brownfield-ts.mjs --consumer tests/fixtures/pilot/brownfield-mysql --bind packages/api/src/routes/tasks.ts:submitTask:task.submit --disposition public-fixture
+node tests/external/lekalo-typescript/host-tests/scripts/pilot-brownfield-ts.mjs --consumer tests/fixtures/pilot/brownfield-mysql --bind packages/api/src/routes/tasks.ts:submitTask:task.submit --disposition public-fixture
 ```
 
 Expected: a fresh disposable consumer copy, adoption dry-run purity, adoption, explicitly scoped scan, confirmed `task.submit`, promotion, inspect/impact/context and mutation/revert staleness checks; exit 0 only when every stage passes. The script records the actual wire result first. A documented direct-kernel fallback is not a successful `lekalo scan` protocol exchange. No scope/manifest/uncertainty refusal is weakened to pass this example.

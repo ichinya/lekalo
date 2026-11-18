@@ -463,8 +463,6 @@ jobs:
           node scripts/test-golden-determinism.mjs
           node scripts/test-golden-diagnostic-coverage.mjs
           node scripts/test-golden-planner-e2e.mjs
-          node scripts/test-reference-model.mjs
-          node scripts/test-reference-contract.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-golden-update-policy.mjs
       - name: Run the issue-136 adoption gates against the real binary
         # The contracts gate (schemas + registry + live read-only
@@ -542,7 +540,6 @@ jobs:
       - *ci-setup-9
       - *ci-setup-10
       - *ci-setup-11
-      - *ci-setup-26
       - name: Replay portable documentation commands in disposable copies (issue #105)
         timeout-minutes: 60
         env:

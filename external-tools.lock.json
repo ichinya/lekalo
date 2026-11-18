@@ -7,7 +7,7 @@
     },
     "lekalo-typescript": {
       "repository": "https://github.com/ichinya/lekalo-typescript.git",
-      "commit": "4b495bba0fb74492ec00d35afbe5083e9d21b02c",
+      "commit": "11932d05a6b1b42403a0f35efa2ea5e9dc7d73a1",
       "testFixtures": [
         "tests/fixtures/client-sdk",
         "tests/fixtures/node-native-tools",

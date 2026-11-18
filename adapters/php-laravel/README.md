@@ -238,11 +238,9 @@ its SHA-256 against `adapter.manifest.json`.
 ```sh
 node scripts/external-tool.mjs --provision-php
 php adapters/php-laravel/build.php --check
-node scripts/test-php-laravel-adapter.mjs
-node scripts/test-mago-integration.mjs --fake  # required fake gate (no Mago)
-node scripts/test-mago-integration.mjs --real  # real gate (LEKALO_MAGO or PATH; visible skip when absent)
-cargo test -p lekalo-core --test php_laravel_kernel
 ```
+
+The [Laravel rules integration suite](https://github.com/ichinya/lekalo-php-laravel/tree/main/host-tests) checks the adapter. The [PHP runtime suite](https://github.com/ichinya/lekalo-php/tree/main/host-tests) checks Mago and runtime integration.
 
 The production conformance battery:
 

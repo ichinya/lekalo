@@ -470,10 +470,10 @@
       "owner": "cli-core",
       "sourceJob": "build-test",
       "index": 57,
-      "raw": "      - name: Run the golden fixture suite gates (issue #90)\n        # The suite runs on every OS: byte-stable determinism lanes,\n        # per-rule paired coverage with fresh execution receipts, the\n        # P0 planner chain, the newline/separator normalization vectors\n        # (they execute the CLI), and the digest-bound update-flow\n        # rehearsal \u2014 all in external sandboxes against the binary\n        # built above.\n        env:\n          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules\n        timeout-minutes: 20\n        run: |\n          node scripts/run-golden.mjs --verify\n          node scripts/test-golden-normalization.mjs\n          node scripts/test-golden-determinism.mjs\n          node scripts/test-golden-diagnostic-coverage.mjs\n          node scripts/test-golden-planner-e2e.mjs\n          node scripts/test-reference-model.mjs\n          node scripts/test-reference-contract.mjs\n          NODE_PATH=\"$LEKALO_AJV_NODE_PATH\" node scripts/test-golden-update-policy.mjs",
+      "raw": "      - name: Run the golden fixture suite gates (issue #90)\n        # The suite runs on every OS: byte-stable determinism lanes,\n        # per-rule paired coverage with fresh execution receipts, the\n        # P0 planner chain, the newline/separator normalization vectors\n        # (they execute the CLI), and the digest-bound update-flow\n        # rehearsal — all in external sandboxes against the binary\n        # built above.\n        env:\n          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules\n        timeout-minutes: 20\n        run: |\n          node scripts/run-golden.mjs --verify\n          node scripts/test-golden-normalization.mjs\n          node scripts/test-golden-determinism.mjs\n          node scripts/test-golden-diagnostic-coverage.mjs\n          node scripts/test-golden-planner-e2e.mjs\n          NODE_PATH=\"$LEKALO_AJV_NODE_PATH\" node scripts/test-golden-update-policy.mjs",
       "name": "Run the golden fixture suite gates (issue #90)",
       "uses": null,
-      "run": "node scripts/run-golden.mjs --verify\nnode scripts/test-golden-normalization.mjs\nnode scripts/test-golden-determinism.mjs\nnode scripts/test-golden-diagnostic-coverage.mjs\nnode scripts/test-golden-planner-e2e.mjs\nnode scripts/test-reference-model.mjs\nnode scripts/test-reference-contract.mjs\nNODE_PATH=\"$LEKALO_AJV_NODE_PATH\" node scripts/test-golden-update-policy.mjs",
+      "run": "node scripts/run-golden.mjs --verify\nnode scripts/test-golden-normalization.mjs\nnode scripts/test-golden-determinism.mjs\nnode scripts/test-golden-diagnostic-coverage.mjs\nnode scripts/test-golden-planner-e2e.mjs\nNODE_PATH=\"$LEKALO_AJV_NODE_PATH\" node scripts/test-golden-update-policy.mjs",
       "condition": null,
       "timeout": "20",
       "workingDirectory": null,
@@ -992,7 +992,6 @@
       9,
       10,
       11,
-      26,
       104
     ],
     "mcp": [
