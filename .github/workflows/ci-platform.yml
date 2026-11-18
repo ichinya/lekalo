@@ -146,18 +146,6 @@ jobs:
       - name: "Verify and install runtime before gates"
         run: |
           node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-debug"
-      - &ci-setup-6
-        name: Provision PHP 8.3 (issue #54, visible setup step, no project install)
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          # Composer is needed on every OS by the issue #56 fixture
-          # provisioning step (the locked vendor tree is not committed).
-          tools: composer
-          # The locked Laravel runtime of the issue #56 fixture needs its
-          # platform extensions; every dependency-free suite is unaffected.
-          extensions: mbstring, openssl, pdo_sqlite, sqlite3, tokenizer, xml, dom, xmlwriter, ctype, fileinfo, iconv, session
-        id: php
       - &ci-setup-8
         name: Provision exact Ajv 8.20.0 outside the checkout (issues #32, #48)
         run: |
@@ -191,12 +179,6 @@ jobs:
           npm ci --prefix "$LEKALO_TYPESCRIPT_ROOT/adapters/node-typescript" --ignore-scripts --no-audit --no-fund
           node tests/external/lekalo-typescript/adapters/node-typescript/provision-compiler.mjs
           node tests/external/lekalo-typescript/adapters/node-typescript/build.mjs --check
-      - &ci-setup-46
-        name: Provision the planner fixture vendor tree per the committed lock (issues #52/#56)
-        # Explicit setup, before both maintained-native and later adapter gates.
-        # Runtime/compile processes never install packages or run lifecycle scripts.
-        timeout-minutes: 15
-        run: composer install --no-interaction --prefer-dist --no-scripts --working-dir tests/fixtures/php-laravel/planner
       - &ci-setup-35
         name: Provision ripgrep for the Windows search comparison
         if: runner.os == 'Windows'
@@ -556,7 +538,6 @@ jobs:
       - name: "Verify and install runtime before gates"
         run: |
           node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-debug"
-      - *ci-setup-6
       - *ci-setup-8
       - *ci-setup-9
       - *ci-setup-10
@@ -652,21 +633,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-platform-rust
-      - *ci-setup-6
-      - &ci-setup-90
-        name: Provision the pinned Go toolchain for the client-SDK gate (issue #72)
-        uses: actions/setup-go@v7
-        with:
-          go-version: "1.23.5"
-          # The SDK gate creates its Go module in a disposable directory.
-          # There is no repository-root dependency file to use as a cache key.
-          cache: false
       - *ci-setup-8
       - *ci-setup-9
       - *ci-setup-10
       - *ci-setup-11
       - *ci-setup-26
-      - *ci-setup-46
       - *ci-setup-35
       - *ci-setup-36
       - name: Build pinned external services
@@ -713,14 +684,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-platform-rust-process
-      - *ci-setup-6
-      - *ci-setup-90
       - *ci-setup-8
       - *ci-setup-9
       - *ci-setup-10
       - *ci-setup-11
       - *ci-setup-26
-      - *ci-setup-46
       - *ci-setup-35
       - *ci-setup-36
       - name: Build pinned external services

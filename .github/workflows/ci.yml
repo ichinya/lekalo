@@ -133,6 +133,7 @@ jobs:
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-model-ajv.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-lockfile-ajv.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-adapter-manifest-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-diagnostic-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-validation-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-graph-contracts.mjs

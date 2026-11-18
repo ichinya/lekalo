@@ -62,7 +62,8 @@ export function provisionPhp() {
   const runtime = linkCheckout('lekalo-php');
   const rules = linkCheckout('lekalo-php-laravel');
   const directory = join(hostRoot, 'adapters', 'php-laravel');
-  const manifest = JSON.parse(readFileSync(join(directory, 'adapter.manifest.json'), 'utf8'));
+  const manifestSource = join(rules, 'host-tests', 'adapters', 'php-laravel', 'adapter.manifest.json');
+  const manifest = JSON.parse(readFileSync(manifestSource, 'utf8'));
   const entry = manifest.integrity.files.find(file => file.path === 'adapter.php');
   const source = join(rules, 'compat', 'adapter.php');
   const destination = join(directory, entry.path);
@@ -78,6 +79,7 @@ export function provisionPhp() {
   if (!existsSync(destination)) copyFileSync(source, destination, constants.COPYFILE_EXCL);
   verify(destination);
   const fixtures = {
+    "host-tests/adapters/php-laravel/adapter.manifest.json": "adapters/php-laravel/adapter.manifest.json",
     "compat/build.php": "adapters/php-laravel/build.php",
     "compat/main.php": "adapters/php-laravel/main.php",
     "compat/packages.php": "adapters/php-laravel/packages.php",

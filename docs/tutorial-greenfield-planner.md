@@ -28,13 +28,13 @@ lekalo --no-cache --json verify
 
 Expected: exit 0/stdout. Lock records zero adapters; check returns `verdict: clean` with zero artifacts. Verify emits `lekalo/orchestration/v0.2.16`, model validation pass and explicit unsupported native/scenario execution components. This checks an empty artifact inventory and portable contracts; it does not generate files or execute a target. The next command exercises actual supported adapter generation and verification.
 
-**Implemented** contributor reproduction. From the repository root after building the CLI, this orchestrator uses disposable fixture copies and the shared scenario corpus:
+**Implemented** contributor reproduction. From the repository root after building the CLI, this orchestrator uses disposable fixture copies and the shared trace fixture:
 
 ```sh docs-example=planner-chain
 node scripts/test-golden-planner-e2e.mjs
 ```
 
-Expected: exit 0 with passing load/IR/validation, projections, semantic-diff mutation/control, actual adapter dry-run/apply/verify scenario lane and canonical trace checks. The later scenario corpus and trace are committed shared inputs, not invented outputs of the earlier stages. Generation/check alone does not prove maintained source or a database/UI was created. Missing binary or stage is a failure.
+The host checks loading, validation, projections, semantic changes and canonical trace export. The six adapter scenarios run in the [TypeScript package suite](https://github.com/ichinya/lekalo-typescript).
 
 ## Laravel and Vue target evidence
 

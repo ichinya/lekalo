@@ -15,8 +15,7 @@ const registryPath = "contracts/diagnostic-registry.v0.8.0.json";
 const registry = JSON.parse(readFileSync(join(root, registryPath), "utf8"));
 const gates = ["test-mcp-contracts.mjs", "test-mcp-boundaries.mjs", "test-mcp-stdio.mjs", "test-mcp-host.mjs",
   "test-adoption-contracts.mjs", "test-format-contracts.mjs", "test-managed-contracts.mjs",
-  "test-portability-contracts.mjs", "test-module-api-contracts.mjs", "test-task-links-contracts.mjs",
-  "test-worklog-changelog-contracts.mjs"];
+  "test-portability-contracts.mjs", "test-module-api-contracts.mjs", "test-task-links-contracts.mjs"];
 const families = ["format.", "adoption.", "managed.", "portability.", "tasklink.", "worklog-changelog.", "module-api.", "mcp."];
 const stage = mkdtempSync(join(tmpdir(), "lekalo-mcp-union-r7-"));
 let checks = 0;

@@ -59,7 +59,6 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   const job=graph[owner];
   assert.deepEqual(job.needs,[]);assert(!job.steps.some(s=>s.uses?.startsWith('actions/download-artifact')));
   assert(job.steps.some(s=>s.run==='cargo build --workspace --locked'));
-  for(const tool of ['shivammathur/setup-php@v2','actions/setup-go@v7'])assert(job.steps.some(s=>s.uses===tool),`${owner} parity needs ${tool}`);
   const lane=owner==='rust'?'core':'process';
   const runs=job.steps.filter(s=>s.run?.includes('node scripts/ci-rust-tests.mjs'));
   assert.equal(runs.length,1,`${owner}: one Rust lane invocation`);

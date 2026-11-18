@@ -209,7 +209,7 @@
       "id": "mysql-observed",
       "document": "docs/tutorial-brownfield-typescript.md",
       "fixture": "repository",
-      "lane": "portable",
+      "lane": "observed",
       "write": false,
       "commands": [
         {

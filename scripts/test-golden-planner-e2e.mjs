@@ -10,11 +10,7 @@
 //      the SAME sandbox project, symbol chosen from its own IR bytes
 //   3. semantic diff of that project against a real mutation of itself
 //      (equal-formatting shared control; seeds must name the mutation)
-//   4. the committed six-scenario corpus runs through the real
-//      dry-run/apply/verify adapter lane (documented residual: the
-//      corpus is the catalog-registered shared input, not bytes
-//      produced by stages 1-3)
-//   5. the canonical trace golden validates and exports stably
+//   4. the canonical trace golden validates and exports stably
 //      (documented residual: a chain-built trace needs the G05
 //      producer work recorded in the research)
 //
@@ -166,19 +162,7 @@ try {
     };
   });
 
-  // Stage 4: scenario compile + run through the committed node lane.
-  step("scenario-lane-compile-and-run", () => {
-    const result = spawnSync(
-      process.execPath,
-      [join(repoRoot, "scripts", "test-node-scenario-tests.mjs")],
-      { cwd: repoRoot, encoding: "utf8", timeout: 600000 },
-    );
-    expect(result.status === 0, `scenario lane exit ${result.status}: ${(result.stdout ?? "").slice(-200)}`);
-    expect(/ok \(6 scenarios\)/.test(result.stdout ?? ""), "all six scenarios adjudicated");
-    return { scenarios: 6 };
-  });
-
-  // Stage 5: trace manifest validates and its digest is stable.
+  // Stage 4: trace manifest validates and its digest is stable.
   step("trace-manifest-chain", () => {
     const direct = spawnSync(binary, ["--no-cache", "trace", "export", TRACE_GOLDEN, "--json"], { cwd: repoRoot, encoding: "utf8", timeout: 60000 });
     expect(direct.status === 0, `trace exit ${direct.status}: ${String(direct.stderr ?? "").slice(0, 200)}`);

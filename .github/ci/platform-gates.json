@@ -731,17 +731,6 @@
       "env": {}
     },
     {
-      "index": 6,
-      "raw": "      - name: Provision PHP 8.3 (issue #54, visible setup step, no project install)\n        uses: shivammathur/setup-php@v2\n        with:\n          php-version: '8.3'\n          # Composer is needed on every OS by the issue #56 fixture\n          # provisioning step (the locked vendor tree is not committed).\n          tools: composer\n          # The locked Laravel runtime of the issue #56 fixture needs its\n          # platform extensions; every dependency-free suite is unaffected.\n          extensions: mbstring, openssl, pdo_sqlite, sqlite3, tokenizer, xml, dom, xmlwriter, ctype, fileinfo, iconv, session\n        id: php",
-      "name": "Provision PHP 8.3 (issue #54, visible setup step, no project install)",
-      "uses": "shivammathur/setup-php@v2",
-      "run": null,
-      "condition": null,
-      "timeout": null,
-      "workingDirectory": null,
-      "env": {}
-    },
-    {
       "index": 7,
       "raw": "      - name: Use physical temporary paths for synthetic project fixtures\n        run: |\n          node --input-type=module <<'NODE'\n          import {appendFileSync, realpathSync} from 'node:fs';\n          import {tmpdir} from 'node:os';\n          // The native Windows resolver also expands 8.3 names.\n          const root = realpathSync.native(tmpdir());\n          for (const name of ['TEMP', 'TMP', 'TMPDIR']) {\n            appendFileSync(process.env.GITHUB_ENV, `${name}=${root}\\n`);\n          }\n          NODE",
       "name": "Use physical temporary paths for synthetic project fixtures",
@@ -841,28 +830,6 @@
       "env": {
         "HOMEBREW_NO_AUTO_UPDATE": "1"
       }
-    },
-    {
-      "index": 46,
-      "raw": "      - name: Provision the planner fixture vendor tree per the committed lock (issues #52/#56)\n        # Explicit setup, before both maintained-native and later adapter gates.\n        # Runtime/compile processes never install packages or run lifecycle scripts.\n        timeout-minutes: 15\n        run: composer install --no-interaction --prefer-dist --no-scripts --working-dir tests/fixtures/php-laravel/planner",
-      "name": "Provision the planner fixture vendor tree per the committed lock (issues #52/#56)",
-      "uses": null,
-      "run": "composer install --no-interaction --prefer-dist --no-scripts --working-dir tests/fixtures/php-laravel/planner",
-      "condition": null,
-      "timeout": "15",
-      "workingDirectory": null,
-      "env": {}
-    },
-    {
-      "index": 90,
-      "raw": "      - name: Provision the pinned Go toolchain for the client-SDK gate (issue #72)\n        uses: actions/setup-go@v7\n        with:\n          go-version: \"1.23.5\"\n          # The SDK gate creates its Go module in a disposable directory.\n          # There is no repository-root dependency file to use as a cache key.\n          cache: false",
-      "name": "Provision the pinned Go toolchain for the client-SDK gate (issue #72)",
-      "uses": "actions/setup-go@v7",
-      "run": null,
-      "condition": null,
-      "timeout": null,
-      "workingDirectory": null,
-      "env": {}
     },
     {
       "index": 104,
@@ -990,7 +957,7 @@
   ],
   "unchangedJobs": {
     "clippy": "3855585d12ae0aeec4e02f2f0ddcafbdbd43882eee3537d2012de099b86fbf34",
-    "contracts": "e8f48b2cb62e9883076386661ad12cd0c0917845d10a84ef70e407d28a251fcd",
+    "contracts": "ae8d7feb009f06b1c340dd370fa4cd1a59467b24d4e5b6e2f51c1a8b50931b0b",
     "contracts-rust": "feb748f1aeb0ea2a77ba2e81e6449eeab88c9dcdd0888a9e6350fd86e9fc69be",
     "fmt": "bdea42bfdddd0923ec2ca3c4f08f8f5c9abf9af275213a6be0c1e3ac18a6bb98",
     "msrv": "601c45fdf40e9d7d866cd7d6b65b472a897fde451c71e0b70cb6214bc5adebab",
@@ -1007,7 +974,6 @@
     "cli-core": [
       0,
       3,
-      6,
       7,
       8,
       9,
@@ -1016,13 +982,11 @@
       26,
       35,
       36,
-      46,
       104
     ],
     "docs": [
       0,
       3,
-      6,
       7,
       8,
       9,
@@ -1040,7 +1004,6 @@
     "rust": [
       0,
       3,
-      6,
       7,
       8,
       9,
@@ -1050,8 +1013,6 @@
       26,
       35,
       36,
-      46,
-      90,
       104
     ],
     "native-execution": [
@@ -1068,7 +1029,6 @@
     "rust-process": [
       0,
       3,
-      6,
       7,
       8,
       9,
@@ -1078,8 +1038,6 @@
       26,
       35,
       36,
-      46,
-      90,
       104
     ]
   },

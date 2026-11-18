@@ -54,17 +54,6 @@ fn lekalo_in(dir: &Path, head: &[&str], adapter: bool) -> Output {
 }
 
 /// Run the real binary with one custom adapter vector after `--`.
-fn lekalo_with(dir: &Path, head: &[&str], adapter_args: &[&str]) -> Output {
-    let mut args: Vec<&str> = head.to_vec();
-    args.push("--");
-    args.extend_from_slice(adapter_args);
-    Command::new(env!("CARGO_BIN_EXE_lekalo"))
-        .args(&args)
-        .current_dir(alias_free_path(dir))
-        .output()
-        .expect("run the real lekalo binary")
-}
-
 fn stdout(output: &Output) -> String {
     String::from_utf8(output.stdout.clone()).expect("stdout utf8")
 }
