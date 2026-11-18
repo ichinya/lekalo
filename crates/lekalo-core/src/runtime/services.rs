@@ -3,6 +3,25 @@ use super::{config, error, Result, Session};
 use serde_json::Value;
 use std::{collections::BTreeMap, path::Path};
 
+pub(super) fn check_role(id: &str, operations: &[String]) -> Result<()> {
+    let required: &[&str] = match id.split('/').next() {
+        Some("attachments") => &["attachments.check"],
+        Some("expressions") => &["expressions.render"],
+        Some("discovery") => &["discovery.describe", "discovery.inspect"],
+        Some("requirements") => &["requirements.snapshot"],
+        Some("trace") => &["trace.mappings"],
+        _ => &[],
+    };
+    if required
+        .iter()
+        .all(|required| operations.iter().any(|op| op == required))
+    {
+        Ok(())
+    } else {
+        Err(super::Error::version("service-operation-unsupported"))
+    }
+}
+
 pub struct Service {
     pub id: String,
     session: Session,
@@ -44,6 +63,7 @@ pub fn selected(root: &Path, role: &str) -> Result<Vec<Service>> {
                 let session = Session::new(root, &source)?;
                 let description =
                     super::describe_service(root, &session.command, session.package.as_ref())?;
+                check_role(&id, &description.operations)?;
                 Ok(Service {
                     id,
                     session,

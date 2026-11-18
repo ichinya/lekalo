@@ -49,10 +49,14 @@ runtimes still have to implement the portable rules/check contract. Unknown
 operations, missing services required by a consumer, invalid responses, stale
 locks and altered executables fail closed. No package fallback is compiled in.
 
-The requirements command selects services from its project root. Trace assessment
-currently selects from the process working directory. Discovery with explicit
-`--project` uses that root; ancestor probing uses the invocation directory's
-selection. Parent/child service inheritance is not implemented in this change.
+Locking checks the operations required by the selected role. A discovery provider
+must implement both discovery operations. The requirements and trace roles must
+implement their respective snapshot and mappings operations.
+
+Requirements and `trace assess --project DIR` select services from that project.
+Trace defaults to the invocation directory. Discovery with an explicit project uses
+that root. Ancestor discovery reads the locked selection of the candidate root.
+Each child project owns its service selection.
 
 ## Data contracts
 
@@ -104,3 +108,49 @@ information and incremental compilation disabled, then includes them in the
 existing digest-checked runtime artifact. Consumer jobs reuse that artifact.
 Core's Cargo graph contains none of these six packages. Their library tests run
 in the owner repositories; host process and confinement tests remain here.
+
+
+## Expression generators
+
+`lekalo expressions render FILE --target NAME --project DIR` selects the service
+`expressions/NAME` from DIR. Set its `command` to an installed executable or
+use a Git package implementing `expressions.render`. Run `lekalo runtime lock`
+after selecting it. The TypeScript, PHP and Go repositories ship the original
+generators in `crates/expressions`. For example, install the PHP package with
+`cargo install --locked --path crates/expressions` in its checkout, then select
+`services: {"expressions/php": {"command": ["lekalo-expressions-php"]}}`.
+
+The host sends `schema: lekalo/expression-projection/v1`, the semantic identity
+and the ordered records. Each record has an id, typed parameters, result type
+and compiled expression body. The SDK's expression-provider crate defines the
+wire types. The service replies with `schema: lekalo/expression-program/v1`
+and the generated source in `program`. A new target uses the same operation.
+
+## Pre-generation attachment checks
+
+Projects using the legacy operations and route inputs select `attachments/operations`
+and `attachments/routes` independently. The Laravel owner ships
+`lekalo-laravel-attachments`. Install it with `cargo install --locked --path crates/attachments`
+in that checkout, select its command for both roles, and lock the selections.
+Before generation the host supplies the input text, validated canonical IR,
+registry bindings, transport and evidence digests. The selected service returns
+the semantic findings through `attachments.check`. The host refuses unavailable
+validators, incomplete responses and findings before accepting generated writes.
+
+## Project discovery
+
+Ruby and Java discovery can be selected with `discovery/ruby: gh/ichinya/lekalo-ruby`
+and `discovery/java: gh/ichinya/lekalo-java`. These packages run on Node and inspect
+manifest names, including Gradle settings files at a workspace root. Composer and
+Deno observations come from the PHP and TypeScript discovery services.
+
+## Native pilot profiles
+
+The Laravel package publishes the reviewed Worklog and Task Links worker profiles
+under `pilots/`. Development provisioning installs them in `adapters/pilots/`.
+Use `LEKALO_PILOT_PROFILES` to select an installed profile directory from another
+working directory. The CLI verifies each profile's SHA-256 before using its
+interpreter, target, identity or artifact paths. An operator can pin an
+alternative profile with `LEKALO_WORKLOG_PROFILE_SHA256` or
+`LEKALO_TASK_LINKS_PROFILE_SHA256` (64 lowercase hex digits). The host still
+stages the verified worker bytes and observes the execution itself.

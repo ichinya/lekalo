@@ -2,7 +2,8 @@
 // Development/test tools live in their own repositories. No source snapshots
 // are written into the host repository or compiled into its production binary.
 import {execFileSync, spawnSync} from 'node:child_process';
-import {appendFileSync, copyFileSync, chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync} from 'node:fs';
+import {appendFileSync, constants, copyFileSync, chmodSync, existsSync, mkdirSync, lstatSync, readFileSync, realpathSync, symlinkSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {homedir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -44,18 +45,86 @@ export function runExternal(name, script, args = process.argv.slice(2)) {
   if (result.error) throw result.error;
   process.exit(result.status ?? 1);
 }
-export function provision() {
-  // Legacy test/CI path compatibility. These are ignored links to external
-  // checkouts, never vendored or committed implementation directories.
-  for (const name of Object.keys(JSON.parse(readFileSync(join(hostRoot,'external-tools.lock.json'))).packages)) {
-    const destination = 'tests/external/'+name;
-    const target = externalRoot(name), link = join(hostRoot,destination);
-    if (existsSync(link)) {
-      if (realpathSync(link) !== realpathSync(target)) throw new Error(`Refusing to replace existing ${destination}`);
-      continue;
+function linkCheckout(name) {
+  const target = externalRoot(name);
+  const link = join(hostRoot, 'tests', 'external', name);
+  if (existsSync(link)) {
+    if (realpathSync(link) !== target) throw new Error(`Refusing to replace existing ${link}`);
+  } else {
+    mkdirSync(dirname(link), {recursive: true});
+    symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+  }
+  return target;
+}
+
+// Install the regular file required by the legacy target's confinement.
+export function provisionPhp() {
+  const runtime = linkCheckout('lekalo-php');
+  const rules = linkCheckout('lekalo-php-laravel');
+  const directory = join(hostRoot, 'adapters', 'php-laravel');
+  const manifestSource = join(rules, 'host-tests', 'adapters', 'php-laravel', 'adapter.manifest.json');
+  const manifest = JSON.parse(readFileSync(manifestSource, 'utf8'));
+  const entry = manifest.integrity.files.find(file => file.path === 'adapter.php');
+  const source = join(rules, 'compat', 'adapter.php');
+  const destination = join(directory, entry.path);
+  function verify(path) {
+    if (!lstatSync(path).isFile()) throw new Error(`Expected a regular PHP artifact: ${path}`);
+    const bytes = readFileSync(path);
+    if (bytes.length !== entry.bytes || 'sha256:' + createHash('sha256').update(bytes).digest('hex') !== entry.digest) {
+      throw new Error(`PHP compatibility artifact differs from the pinned manifest: ${path}`);
     }
-    mkdirSync(dirname(link),{recursive:true});
-    symlinkSync(target,link,process.platform === 'win32' ? 'junction' : 'dir');
+  }
+  verify(source);
+  mkdirSync(dirname(destination), {recursive: true});
+  if (!existsSync(destination)) copyFileSync(source, destination, constants.COPYFILE_EXCL);
+  verify(destination);
+  const fixtures = {
+    "host-tests/adapters/php-laravel/adapter.manifest.json": "adapters/php-laravel/adapter.manifest.json",
+    "compat/build.php": "adapters/php-laravel/build.php",
+    "compat/main.php": "adapters/php-laravel/main.php",
+    "compat/packages.php": "adapters/php-laravel/packages.php",
+    "compat/tests/process.php": "adapters/php-laravel/tests/process.php",
+    "pilots/worklog-changelog/backends.json": "adapters/pilots/worklog.json",
+    "pilots/task-links/profile.json": "adapters/pilots/task-links.json",
+    "pilots/worklog-changelog/run.php": "tests/fixtures/pilot/worklog-changelog/php/run.php",
+    "pilots/task-links/TaskLinksStore.php": "tests/fixtures/php-laravel/planner/app/Lekalo/TaskLinksStore.php",
+    "pilots/task-links/task-links-worker.php": "tests/fixtures/php-laravel/planner/src/task-links-worker.php",
+  };
+  for (const [sourcePath, fixturePath] of Object.entries(fixtures)) {
+    const published = join(rules, sourcePath);
+    const installed = join(hostRoot, fixturePath);
+    mkdirSync(dirname(installed), {recursive: true});
+    if (!existsSync(installed)) copyFileSync(published, installed, constants.COPYFILE_EXCL);
+    if (!lstatSync(installed).isFile() || !readFileSync(installed).equals(readFileSync(published))) {
+      throw new Error(`Installed compatibility file differs from pinned package: ${installed}`);
+    }
+  }
+  if (process.env.GITHUB_ENV) appendFileSync(process.env.GITHUB_ENV, `LEKALO_PHP_SRC=${join(runtime,'src')}\n`);
+}
+
+// Some host regressions consume example inputs maintained alongside the adapter.
+function provisionTestFixtures(name, paths) {
+  if (!paths?.length) return;
+  const owner = externalRoot(name);
+  const prefix = 'host-tests/';
+  for (const path of paths) {
+    if (!/^tests\/fixtures\/[\w/-]+$/.test(path) || path.includes('..')) throw Error('Invalid fixture directory: ' + path);
+    const entries = execFileSync('git', ['-C', owner, 'ls-files', '-z', '--', prefix + path + '/'], {encoding:'utf8'}).split('\0').filter(Boolean);
+    if (!entries.length) throw Error('Missing package fixtures: ' + path);
+    for (const entry of entries) {
+      const destination = join(hostRoot, entry.slice(prefix.length));
+      const source = join(owner, entry);
+      mkdirSync(dirname(destination), {recursive:true});
+      if (!existsSync(destination)) copyFileSync(source, destination, constants.COPYFILE_EXCL);
+      else if (!lstatSync(destination).isFile() || !readFileSync(source).equals(readFileSync(destination))) throw Error('Host fixture differs from its pinned package: ' + destination);
+    }
+  }
+}
+export function provision() {
+  provisionPhp();
+  for (const [name, pin] of Object.entries(JSON.parse(readFileSync(join(hostRoot,'external-tools.lock.json'))).packages)) {
+    provisionTestFixtures(name, pin.testFixtures);
+    if (name !== 'lekalo-php' && name !== 'lekalo-php-laravel') linkCheckout(name);
   }
   if (process.env.GITHUB_ENV) {
     appendFileSync(process.env.GITHUB_ENV,`LEKALO_SERVICES=${serviceEnvironment(join(hostRoot,'target'))}\n`);
@@ -66,13 +135,18 @@ export function provision() {
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.argv[2] === '--provision') provision();
+  else if (process.argv[2] === '--provision-php') provisionPhp();
   else if (process.argv[2] === '--build-services') buildServices();
   else if (process.argv.length === 3) console.log(externalRoot(process.argv[2]));
   else runExternal(process.argv[2],process.argv[3],process.argv.slice(4));
 }
 
 export function buildServices() {
+  const built = new Set();
   for (const spec of Object.values(serviceSpecs)) {
+    // Script packages run directly from their pinned checkout.
+    if (spec.script || built.has(spec.binary)) continue;
+    built.add(spec.binary);
     if (!/^[a-z][a-z0-9-]*$/.test(spec.binary) || spec.manifest.split('/').some(p=>!p||p==='..'||p.includes('\\'))) throw new Error('Invalid service build specification');
     const root=externalRoot(spec.package);
     const result=spawnSync('cargo',['build','--locked','--manifest-path',join(root,spec.manifest),'--bin',spec.binary],{cwd:root,env:{...process.env,CARGO_TARGET_DIR:join(hostRoot,'target/external-service-build'),CARGO_PROFILE_DEV_DEBUG:'0',CARGO_INCREMENTAL:'0'},stdio:'inherit'});

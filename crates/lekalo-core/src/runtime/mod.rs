@@ -160,6 +160,10 @@ pub struct Lock {
 pub struct Rules {
     pub schema: String,
     pub requires: Vec<String>,
+    /// Optional, data-only hints for source readers. The host pins and forwards
+    /// them, while every runtime is checked against the same fact schemas.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub bindings: BTreeMap<String, Value>,
     pub checks: Vec<Check>,
 }
 
@@ -186,7 +190,12 @@ fn rules(package: &package::Package) -> Result<Rules> {
     if rules.schema != RULES_API {
         return Err(Error::version("rules-api"));
     }
-    if rules.requires.len() > 64
+    if rules.bindings.len() > 32
+        || rules
+            .bindings
+            .iter()
+            .any(|(id, binding)| !config::token(id) || !binding.is_object())
+        || rules.requires.len() > 64
         || rules.requires.iter().any(|s| !config::token(s))
         || rules.checks.is_empty()
         || rules.checks.len() > 256
@@ -455,10 +464,11 @@ fn describe(
     }
     Ok(d)
 }
-fn service_pin(root: &Path, source: &config::Source) -> Result<RuntimePin> {
+fn service_pin(root: &Path, id: &str, source: &config::Source) -> Result<RuntimePin> {
     let session = Session::new(root, source)?;
     let (command, files) = pin_command(root, &session.command, session.package.as_ref())?;
     let description = describe_service(root, &command, session.package.as_ref())?;
+    services::check_role(id, &description.operations)?;
     if session.package.as_ref().is_some_and(|p| {
         p.manifest.id != description.id || p.manifest.version != description.version
     }) {
@@ -481,6 +491,31 @@ fn config_digest(config: &config::Config) -> String {
     digest(&serde_json::to_vec(config).unwrap())
 }
 
+fn check_target_version(root: &Path, pin: &RuntimePin, version: Option<&str>) -> Result<()> {
+    let Some(version) = version else {
+        return Ok(());
+    };
+    if !pin
+        .description
+        .operations
+        .iter()
+        .any(|op| op == "target.version")
+    {
+        return Err(Error::version("target-version-unsupported"));
+    }
+    let reply = exchange(
+        root,
+        &pin.command,
+        pin.package.as_ref(),
+        "target.version",
+        json!({"version":version}),
+    )?;
+    if reply != json!({"version":version,"supported":true}) {
+        return Err(Error::version("target-version-unsupported"));
+    }
+    Ok(())
+}
+
 fn compatible(runtime: &Description, package: &package::Package) -> Result<Rules> {
     let r = rules(package)?;
     if r.requires.iter().any(|c| !runtime.capabilities.contains(c)) {
@@ -495,7 +530,8 @@ pub fn lock(root: &Path, offline: bool) -> Result<Lock> {
         return Err(error("components-empty"));
     }
     if offline {
-        return check_lock(root);
+        check_lock(root)?;
+        return read_lock(root);
     }
     let mut components = BTreeMap::new();
     for (id, component) in &config.components {
@@ -524,6 +560,7 @@ pub fn lock(root: &Path, offline: bool) -> Result<Lock> {
             package,
         };
         verify_runtime(&runtime)?;
+        check_target_version(root, &runtime, component.target_version.as_deref())?;
         let mut selected_rules = Vec::new();
         for source in &component.rules {
             let package = package::resolve(root, source, "rules", false)?;
@@ -547,14 +584,20 @@ pub fn lock(root: &Path, offline: bool) -> Result<Lock> {
     let services = config
         .services
         .iter()
-        .map(|(id, source)| Ok((id.clone(), service_pin(root, source)?)))
+        .map(|(id, source)| Ok((id.clone(), service_pin(root, id, source)?)))
         .collect::<Result<_>>()?;
-    let lock = Lock {
-        schema: "lekalo/runtime-lock/v1".into(),
+    let mut lock = Lock {
+        schema: "lekalo/runtime-lock/v2".into(),
         config_digest: config_digest(&config),
         components,
         services,
     };
+    for (id, pin) in &mut lock.services {
+        make_portable(pin, &config.services[id])?;
+    }
+    for (id, component) in &mut lock.components {
+        make_portable(&mut component.runtime, &config.components[id].runtime)?;
+    }
     write_lock(root, &lock)?;
     Ok(lock)
 }
@@ -582,72 +625,121 @@ fn write_lock(root: &Path, lock: &Lock) -> Result<()> {
     Ok(())
 }
 
+pub fn check_lock(root: &Path) -> Result<Lock> {
+    verify_selections(root, false)
+}
+
+/// Restore only the snapshots selected by the committed lock.
+pub fn restore(root: &Path) -> Result<Lock> {
+    verify_selections(root, true)?;
+    read_lock(root)
+}
+
 const LOCK_LIMIT: usize = 8 * 1024 * 1024;
 
-pub fn check_lock(root: &Path) -> Result<Lock> {
+fn declared_command<'a>(pin: &'a RuntimePin, source: &'a config::Source) -> Result<&'a [String]> {
+    match (source, &pin.package) {
+        (config::Source::Executable(e), None) => Ok(&e.command),
+        (config::Source::Package(source), Some(p))
+            if *source == p.source && p.manifest.kind == "runtime" =>
+        {
+            Ok(&p.manifest.command)
+        }
+        _ => Err(error("lock-stale")),
+    }
+}
+
+// Positions, rather than host paths, identify the executable and its optional entry.
+fn file_slots(command: &[String], files: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    command
+        .iter()
+        .take(2)
+        .enumerate()
+        .filter_map(|(i, arg)| files.get(arg).map(|hash| (i.to_string(), hash.clone())))
+        .collect()
+}
+
+fn make_portable(pin: &mut RuntimePin, source: &config::Source) -> Result<()> {
+    let argv = declared_command(pin, source)?.to_vec();
+    pin.files = file_slots(&pin.command, &pin.files);
+    pin.command = argv;
+    Ok(())
+}
+
+fn locate_runtime(
+    root: &Path,
+    source: &config::Source,
+    pin: &mut RuntimePin,
+    portable: bool,
+) -> Result<()> {
+    if let Some(package) = &pin.package {
+        package::verify(package)?;
+    }
+    let argv = declared_command(pin, source)?;
+    let (command, files) = pin_command(root, argv, pin.package.as_ref())?;
+    let unchanged = if portable {
+        pin.command == argv && pin.files == file_slots(&command, &files)
+    } else {
+        pin.command == command && pin.files == files
+    };
+    if !unchanged {
+        return Err(error("runtime-changed"));
+    }
+    pin.command = command;
+    pin.files = files;
+    Ok(())
+}
+
+fn read_lock(root: &Path) -> Result<Lock> {
+    serde_json::from_value(config::value(&read(root, config::LOCK, LOCK_LIMIT)?)?)
+        .map_err(|_| error("lock-invalid"))
+}
+
+fn verify_selections(root: &Path, restore: bool) -> Result<Lock> {
     let config = load(root)?;
     if config.components.is_empty() && config.services.is_empty() {
         return Err(error("components-empty"));
     }
-    let lock: Lock = serde_json::from_value(config::value(&read(root, config::LOCK, LOCK_LIMIT)?)?)
-        .map_err(|_| error("lock-invalid"))?;
-    if lock.schema != "lekalo/runtime-lock/v1"
+    let mut lock = read_lock(root)?;
+    let portable = lock.schema == "lekalo/runtime-lock/v2";
+    if !(portable || lock.schema == "lekalo/runtime-lock/v1")
         || lock.config_digest != config_digest(&config)
         || !lock.components.keys().eq(config.components.keys())
         || !lock.services.keys().eq(config.services.keys())
     {
         return Err(error("lock-stale"));
     }
-    for (id, pin) in &lock.services {
-        verify_runtime(pin)?;
-        let (command, files) = match &config.services[id] {
-            config::Source::Executable(e) if pin.package.is_none() => {
-                pin_command(root, &e.command, None)?
+    for (id, pin) in &mut lock.services {
+        let source = &config.services[id];
+        declared_command(pin, source)?;
+        if restore {
+            if let Some(p) = &pin.package {
+                package::restore(root, p)?;
             }
-            config::Source::Package(source) => {
-                let p = pin.package.as_ref().ok_or_else(|| error("lock-stale"))?;
-                if *source != p.source || p.manifest.kind != "runtime" {
-                    return Err(error("lock-stale"));
-                }
-                pin_command(root, &p.manifest.command, Some(p))?
-            }
-            _ => return Err(error("lock-stale")),
-        };
-        if command != pin.command || files != pin.files {
-            return Err(error("runtime-changed"));
         }
+        services::check_role(id, &pin.description.operations)?;
+        locate_runtime(root, source, pin, portable)?;
     }
-    for (id, pin) in &lock.components {
-        verify_runtime(&pin.runtime)?;
-        let declaration = &config.components[id];
-        if declaration.rules.len() != pin.rules.len() {
+    for (id, pin) in &mut lock.components {
+        let component = &config.components[id];
+        declared_command(&pin.runtime, &component.runtime)?;
+        if restore {
+            if let Some(p) = &pin.runtime.package {
+                package::restore(root, p)?;
+            }
+        }
+        locate_runtime(root, &component.runtime, &mut pin.runtime, portable)?;
+        if component.rules.len() != pin.rules.len() {
             return Err(error("lock-stale"));
         }
-        for (source, p) in declaration.rules.iter().zip(&pin.rules) {
-            if *source != p.source || p.manifest.kind != "rules" {
+        for (source, p) in component.rules.iter().zip(&pin.rules) {
+            if source != &p.source || p.manifest.kind != "rules" {
                 return Err(error("lock-stale"));
             }
+            if restore {
+                package::restore(root, p)?;
+            }
             compatible(&pin.runtime.description, p)?;
-        }
-        let (command, files) = match &declaration.runtime {
-            config::Source::Executable(e) if pin.runtime.package.is_none() => {
-                pin_command(root, &e.command, None)?
-            }
-            config::Source::Package(source) => {
-                let p = pin
-                    .runtime
-                    .package
-                    .as_ref()
-                    .ok_or_else(|| error("lock-stale"))?;
-                if *source != p.source || p.manifest.kind != "runtime" {
-                    return Err(error("lock-stale"));
-                }
-                pin_command(root, &p.manifest.command, Some(p))?
-            }
-            _ => return Err(error("lock-stale")),
-        };
-        if command != pin.runtime.command || files != pin.runtime.files {
-            return Err(error("runtime-changed"));
         }
     }
     Ok(lock)
@@ -718,6 +810,17 @@ fn sources(root: &Path, component: &config::Component) -> Result<Vec<Value>> {
 }
 
 pub fn check(root: &Path, selected: Option<&str>) -> Result<Value> {
+    evaluate(root, selected, None)
+}
+
+/// Export one validated fact. The digest includes its selector and rules package
+/// but excludes private source inputs and machine-local executable paths.
+pub fn export(root: &Path, component: &str, package: &str, rule: &str) -> Result<Value> {
+    evaluate(root, Some(component), Some((package, rule)))
+}
+
+fn evaluate(root: &Path, selected: Option<&str>, export: Option<(&str, &str)>) -> Result<Value> {
+    let mut exported = None;
     let config = load(root)?;
     let lock = check_lock(root)?;
     if selected.is_some_and(|id| !config.components.contains_key(id)) {
@@ -738,7 +841,11 @@ pub fn check(root: &Path, selected: Option<&str>) -> Result<Value> {
         }
         let packs: Vec<Value> = pin.rules.iter().map(|p| Ok(json!({"id":p.manifest.id,"version":p.manifest.version,"digest":p.digest,"rules":compatible(&current,p)?}))).collect::<Result<_>>()?;
         let files = sources(root, component)?;
-        let input = json!({"component":id,"files":files,"rules":packs});
+        check_target_version(root, &pin.runtime, component.target_version.as_deref())?;
+        let mut input = json!({"component":id,"files":files,"rules":packs});
+        if let Some(version) = &component.target_version {
+            input["target_version"] = json!(version);
+        }
         let source_digest = digest(&serde_json::to_vec(&input["files"]).unwrap());
         let response = exchange(
             root,
@@ -775,6 +882,12 @@ pub fn check(root: &Path, selected: Option<&str>) -> Result<Value> {
                 let fact = facts
                     .get(&check.id)
                     .ok_or_else(|| error("rule-result-missing"))?;
+                if export == Some((package.manifest.id.as_str(), check.id.as_str())) {
+                    let contract = json!({"component":id,"package":package.manifest.id,"rule":check.id,
+                        "rules_digest":package.digest,"fact":fact});
+                    exported = Some(json!({"schema":"lekalo/runtime-export/v1","status":"valid",
+                        "digest":digest(&serde_json::to_vec(&contract).unwrap()),"contract":contract}));
+                }
                 if !schema(&check.schema)?.is_valid(fact) {
                     finding_count += 1;
                     if finding_count > crate::diagnostics::types::limits::DIAGNOSTICS_PER_RESULT {
@@ -790,6 +903,9 @@ pub fn check(root: &Path, selected: Option<&str>) -> Result<Value> {
         }
         reports.push(json!({"component":id,"runtime":current.id,"status":if findings.is_empty(){"valid"}else{"invalid"},"findings":findings,"source_digest":source_digest}));
     }
+    if export.is_some() && finding_count == 0 {
+        return exported.ok_or_else(|| error("export-unknown"));
+    }
     Ok(
         json!({"schema":"lekalo/runtime-check/v1","status":if reports.iter().all(|r|r["status"]=="valid"){"valid"}else{"invalid"},"components":reports}),
     )
@@ -798,6 +914,7 @@ pub fn check(root: &Path, selected: Option<&str>) -> Result<Value> {
 pub fn init(
     root: &Path,
     runtime: Option<String>,
+    target_version: Option<String>,
     rules: Vec<String>,
     path: String,
 ) -> Result<Value> {
@@ -814,12 +931,13 @@ pub fn init(
         components.insert(
             "app".into(),
             config::Component {
+                target_version,
                 path,
                 runtime: source,
                 rules,
             },
         );
-    } else if !rules.is_empty() {
+    } else if !rules.is_empty() || target_version.is_some() {
         return Err(error("runtime-required"));
     }
     let config = config::Config {

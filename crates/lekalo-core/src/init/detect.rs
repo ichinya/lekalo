@@ -13,7 +13,6 @@ use super::scope::{self, DiscoveryScope, ScopeReceipt};
 use crate::project_fs::{EntryType, Fs, FsErrorKind};
 use crate::DomainResult;
 use ignore::gitignore::Gitignore;
-use serde_json::Value;
 
 use super::receipt::{
     Adapter, Confidence, Detection, Evidence, GateProposal, Hint, Layout, ObservedModule,
@@ -57,19 +56,6 @@ pub(crate) const SKIP_DIRS: [&str; 18] = [
     ".hlv",
 ];
 
-// Legacy technologies not yet migrated to discovery services.
-const OTHER_MANIFESTS: &[(&str, &str)] = &[
-    ("composer.json", "php"),
-    ("Gemfile", "ruby"),
-    ("pom.xml", "java"),
-    ("build.gradle", "java"),
-    ("build.gradle.kts", "java"),
-    ("settings.gradle", "java"),
-    ("settings.gradle.kts", "java"),
-    ("deno.json", "deno"),
-    ("deno.jsonc", "deno"),
-];
-
 /// Directory names recorded as source-directory evidence.
 const SOURCE_DIRS: [&str; 7] = ["src", "lib", "app", "source", "sources", "internal", "pkg"];
 
@@ -93,22 +79,6 @@ const OPENAPI_STEMS: [&str; 6] = [
     "swagger.yaml",
     "swagger.yml",
 ];
-
-/// Whether one hint is a language or a framework.
-#[derive(Clone, Copy)]
-enum HintKind {
-    Language,
-    Framework,
-}
-
-impl HintKind {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Language => "language",
-            Self::Framework => "framework",
-        }
-    }
-}
 
 /// One visited tree entry: logical project-relative POSIX path plus kind.
 struct Visited {
@@ -300,17 +270,6 @@ impl Walk {
         }
     }
 
-    fn json(&self, path: &str) -> Option<Value> {
-        let bytes = self.read(path)?;
-        match serde_json::from_slice(&bytes) {
-            Ok(value) => Some(value),
-            Err(_) => {
-                self.read_failures.borrow_mut().push(path.to_owned());
-                None
-            }
-        }
-    }
-
     fn finish_scope(mut self) -> ScopeReceipt {
         for path in self.read_failures.into_inner() {
             self.scope.limited("manifest-read-or-parse-refused");
@@ -350,15 +309,7 @@ pub(crate) fn probe(
             .ok()
             .flatten()
     })?;
-    let workspace = !data.workspaces.is_empty()
-        || ["settings.gradle", "settings.gradle.kts"]
-            .iter()
-            .any(|name| matches!(fs.entry_type("", name), Ok(EntryType::File)));
-    let manifest = !data.manifests.is_empty()
-        || OTHER_MANIFESTS
-            .iter()
-            .any(|(name, _)| matches!(fs.entry_type("", name), Ok(EntryType::File)));
-    Ok((workspace, manifest))
+    Ok((!data.workspaces.is_empty(), !data.manifests.is_empty()))
 }
 
 /// Run the full closed detection pass over one adopted root.
@@ -415,9 +366,6 @@ pub(crate) fn detect(
         });
     }
 
-    let mut composer_manifests: Vec<(String, Value)> = Vec::new();
-    let mut artisan_paths = BTreeSet::new();
-
     for entry in &walk.entries {
         if entry.is_dir {
             let name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
@@ -440,51 +388,6 @@ pub(crate) fn detect(
             .file_name()
             .map(|name| name.to_string_lossy().into_owned());
         let Some(name) = name else { continue };
-        if let Some((_, ecosystem)) = OTHER_MANIFESTS.iter().find(|(stem, _)| *stem == name) {
-            if detection.manifests.len() < MAX_PER_COLLECTION {
-                detection.manifests.push(Evidence {
-                    path: entry.path.clone(),
-                    detail: (*ecosystem).to_owned(),
-                });
-            }
-        }
-        if name == "composer.lock" && detection.package_managers.len() < MAX_PER_COLLECTION {
-            detection.package_managers.push(Evidence {
-                path: entry.path.clone(),
-                detail: "composer".into(),
-            });
-        }
-        if name == "composer.json" {
-            if let Some(value) = walk.json(&entry.path) {
-                scan_composer_manifest(&entry.path, &value, &mut detection);
-                if let Some(name) = value["name"].as_str() {
-                    detection.name_candidates.push((
-                        20,
-                        entry.path.clone(),
-                        name.into(),
-                        "composer.json#name".into(),
-                    ));
-                }
-                if composer_manifests.len() < MAX_PER_COLLECTION {
-                    composer_manifests.push((entry.path.clone(), value));
-                }
-            }
-        }
-        if name == "artisan" {
-            artisan_paths.insert(entry.path.clone());
-        }
-        if name == "Gemfile" {
-            push_hint(
-                &mut detection.languages,
-                Hint {
-                    label: "ruby".to_owned(),
-                    kind: HintKind::Language.as_str(),
-                    path: entry.path.clone(),
-                    field: None,
-                    confidence: Confidence::Medium,
-                },
-            );
-        }
         if detection.openapi.len() < MAX_OPENAPI
             && (OPENAPI_STEMS.contains(&name.as_str())
                 || (name.ends_with(".yaml") || name.ends_with(".yml") || name.ends_with(".json"))
@@ -499,24 +402,6 @@ pub(crate) fn detect(
         }
     }
 
-    for directory in std::iter::once(".").chain(
-        walk.entries
-            .iter()
-            .filter(|e| e.is_dir)
-            .map(|e| e.path.as_str()),
-    ) {
-        if ["settings.gradle", "settings.gradle.kts"]
-            .iter()
-            .any(|name| walk.has_file(&child_path(directory, name)))
-        {
-            detection.workspace_roots.push(WorkspaceRoot {
-                path: directory.into(),
-                ecosystem: "gradle".into(),
-                members: Vec::new(),
-                confidence: Confidence::High,
-            });
-        }
-    }
     // Observed modules: workspace members carrying a manifest.
     for workspace in &detection.workspace_roots {
         for glob in &workspace.members {
@@ -546,41 +431,20 @@ pub(crate) fn detect(
             }
         }
     }
-    // Native gates: package.json scripts verbatim; ecosystem conventions.
     if input.is_some() {
-        for (path, value) in &composer_manifests {
-            if let Some(name) = value.get("name").and_then(Value::as_str) {
-                let directory = path
-                    .rsplit_once('/')
-                    .map(|(directory, _)| directory)
-                    .unwrap_or(".");
+        for module in module_evidence.iter().filter(|m| m.observe_when_scoped) {
+            if let Some(name) = &module.name {
                 push_module(
                     &mut detection.modules,
                     ObservedModule {
-                        name: name.to_owned(),
-                        path: directory.to_owned(),
+                        name: name.clone(),
+                        path: module.path.clone(),
                         mode: "observed",
-                        evidence: vec![path.clone()],
+                        evidence: vec![module.manifest.clone()],
                         confidence: Confidence::High,
                     },
                 );
             }
-        }
-    }
-    for (path, _) in &composer_manifests {
-        let directory = path
-            .rsplit_once('/')
-            .map(|(directory, _)| directory)
-            .unwrap_or(".");
-        let artisan = child_path(directory, "artisan");
-        if artisan_paths.contains(&artisan) {
-            detection.gates.push(GateProposal {
-                gate: "test",
-                command: "php artisan test".to_owned(),
-                source: "derived",
-                evidence: artisan,
-                confidence: Confidence::Medium,
-            });
         }
     }
     // Installed target adapters: a bounded PATH lookup, never an execution.
@@ -670,15 +534,6 @@ pub(crate) fn detect(
     Ok(detection)
 }
 
-fn child_path(directory: &str, name: &str) -> String {
-    if directory == "." {
-        name.to_owned()
-    } else {
-        format!("{directory}/{name}")
-    }
-}
-
-/// Insert one hint, keeping collections bounded and duplicate-free.
 fn push_hint(hints: &mut Vec<Hint>, hint: Hint) {
     if hints.len() >= MAX_PER_COLLECTION {
         return;
@@ -742,19 +597,10 @@ fn expand_member_glob(
             .iter()
             .filter(|m| m.path == entry.path)
             .min_by_key(|m| m.priority);
-        let composer = child_path(&entry.path, "composer.json");
-        let (manifest, name) = if let Some(selected) =
-            selected.filter(|s| s.priority < 20 || !walk.has_file(&composer))
-        {
-            (selected.manifest.clone(), selected.name.clone())
-        } else if walk.has_file(&composer) {
-            let name = walk
-                .json(&composer)
-                .and_then(|v| v["name"].as_str().map(str::to_owned));
-            (composer, name)
-        } else {
+        let Some(selected) = selected else {
             continue;
         };
+        let (manifest, name) = (selected.manifest.clone(), selected.name.clone());
         modules.push(ObservedModule {
             name: name.unwrap_or_else(|| relative.to_owned()),
             path: entry.path.clone(),
@@ -774,47 +620,6 @@ fn gate_name(script: &str) -> Option<&'static str> {
         "lint" => Some("lint"),
         "check" | "ci" => Some("check"),
         _ => None,
-    }
-}
-
-/// Apply the closed composer hint table to one manifest.
-fn scan_composer_manifest(path: &str, value: &Value, detection: &mut Detection) {
-    for field in ["require", "require-dev"] {
-        let Some(map) = value.get(field).and_then(Value::as_object) else {
-            continue;
-        };
-        for (dependency, _) in map {
-            let framework = match dependency.as_str() {
-                "laravel/framework" => Some("laravel"),
-                "symfony/framework-bundle" => Some("symfony"),
-                _ => None,
-            };
-            if let Some(framework) = framework {
-                push_hint(
-                    &mut detection.languages,
-                    Hint {
-                        label: framework.to_owned(),
-                        kind: HintKind::Framework.as_str(),
-                        path: path.to_owned(),
-                        field: Some(field.to_owned()),
-                        confidence: Confidence::High,
-                    },
-                );
-            }
-        }
-    }
-    if let Some(scripts) = value.get("scripts").and_then(Value::as_object) {
-        for script in scripts.keys() {
-            if let Some(gate) = gate_name(script) {
-                detection.gates.push(GateProposal {
-                    gate,
-                    command: format!("composer {script}"),
-                    source: "workflow",
-                    evidence: format!("{path}#scripts.{script}"),
-                    confidence: Confidence::High,
-                });
-            }
-        }
     }
 }
 
@@ -1015,6 +820,8 @@ struct ModuleEvidence {
     manifest: String,
     name: Option<String>,
     standalone: bool,
+    #[serde(default)]
+    observe_when_scoped: bool,
     priority: u8,
 }
 #[derive(Deserialize)]

@@ -75,8 +75,18 @@ test('requirements providers cannot ask the host to read outside their declared 
 });
 test('trace service results must cover every requested mapping',t=>{
  const f=fixture(t);f.config.services={trace:{command:[process.execPath,f.entry]}};f.save();f.ok(['runtime','lock']);
- const r=f.run(['trace','assess',resolve('tests/fixtures/trace-assessment/trace.json'),'--evidence',resolve('tests/fixtures/trace-assessment/input/ready.json')]);
+ const r=f.run(['trace','assess',resolve('tests/fixtures/trace-assessment/trace.json'),'--evidence',resolve('tests/fixtures/trace-assessment/input/ready.json'),'--project',f.project],f.dir);
  assert.notEqual(r.status,0);assert.match(r.stderr,/provider-response/);
+});
+
+test('locking a named service checks the operations required by its role',t=>{
+ const f=fixture(t);
+ for(const [role,op] of [['discovery/zen','discovery.inspect'],['trace','trace.mappings'],['requirements','requirements.snapshot']]){
+   f.config.services={[role]:{command:[process.execPath,f.entry]}};f.save();
+   writeFileSync(f.entry,f.code.replace("operations:['discovery.describe','discovery.inspect','requirements.snapshot','trace.mappings']",
+     'operations:'+JSON.stringify(['discovery.describe','discovery.inspect','requirements.snapshot','trace.mappings'].filter(x=>x!==op))));
+   const r=f.run(['runtime','lock']);assert.equal(r.status,5,r.stderr);assert.match(r.stderr,/service-operation-unsupported/);
+ }
 });
 
 test('service DTO schemas reject unknown fields and incompatible versions',()=>{
@@ -91,4 +101,26 @@ test('service DTO schemas reject unknown fields and incompatible versions',()=>{
   const valid=ajv.getSchema(`${schema.$id}#/$defs/${kind}`);assert(valid,kind);
   assert(valid(value),JSON.stringify(valid.errors));assert(!valid({...value,extra:true}));assert(!valid({...value,schema:'unknown'}));
  }
+});
+
+test('an unregistered expression target renders through its project lock', t => {
+  const f = fixture(t);
+  writeFileSync(f.entry,`import {readFileSync} from 'node:fs';
+const q=JSON.parse(readFileSync(0,'utf8'));
+let result;
+if(q.operation==='describe'){
+  result={id:'community-writer',version:'1.0.0',operations:['expressions.render'],capabilities:[],rules_api:[]};
+}else if(q.operation==='expressions.render' && q.input.schema==='lekalo/expression-projection/v1'){
+  result={schema:'lekalo/expression-program/v1',program:q.input.records.map(r=>r.id).join('\\n')};
+}else process.exit(2);
+process.stdout.write(JSON.stringify({protocol:q.protocol,request_id:q.request_id,result}));`);
+  f.config.services={'expressions/zen':{command:[process.execPath,f.entry]}};f.save();
+  f.ok(['runtime','lock']);
+  const attachment=resolve('tests/fixtures/expressions/valid/planner.json');
+  const rendered=f.ok(['expressions','render',attachment,'--target','zen','--project',f.project]);
+  assert.equal(rendered.expressionRender.target,'zen');
+  assert.match(rendered.expressionRender.program,/expr.planner\/overdue-check/);
+  const absent=f.run(['expressions','render',attachment,'--target','unconfigured']);
+  assert.notEqual(absent.status,0);
+  assert.match(absent.stderr,/service-selection-required/);
 });

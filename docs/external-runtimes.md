@@ -17,7 +17,8 @@ lekalo runtime check
 ```
 
 The coordinates above are placeholders for repositories you control, not
-published example packages. `init` only creates `lekalo.yaml`; `runtime lock`
+published example packages. Plain `init` creates the starter Model and editable
+`lekalo.yaml`. With `--runtime` it creates just the component configuration. `runtime lock`
 fetches declared packages and executes their confined `describe` operation.
 An existing config is never overwritten. `lekalo runtime init` creates an empty
 configuration to edit; lock/check refuse it until a component or service is declared.
@@ -42,7 +43,10 @@ Coordinates are strings: `gh/OWNER/REPO[#REF]`, `git+https://HOST/REPO.git[#REF]
 `git+file:///ABSOLUTE/REPO[#REF]`, or `path:DIRECTORY`. A command is an argv array,
 never shell text. `--runtime exec:PROGRAM` is the one-program shorthand.
 Git references are pinned to a commit; uncommitted worktree files are ignored.
-`8.0` as a Git ref is a package author's choice, not a PHP-version parser in core.
+Set `target_version: "8.0"` on a component (or pass `init --target-version 8.0`)
+to request the target language version. The selected runtime must advertise
+`target.version` and answer with the requested version and `supported: true`.
+The PHP and Python readers compare the request with their interpreter version.
 
 Component paths are project-relative and must not overlap or escape the root.
 The current scanner sends bounded UTF-8 files below each component, with
@@ -54,9 +58,12 @@ excess depth, entry count, file size or total size cause refusal.
 entry script, description and selected rules. Packages live outside the project,
 under `LEKALO_PACKAGE_HOME` or the user's cache. `runtime check`, `validate`, and
 `runtime lock --offline` never fetch or update packages. Edited executable/package
-bytes, stale configuration or missing cache entries require explicit re-locking.
-The current lock includes machine-local executable/cache paths; moving it to a
-new machine requires `runtime lock` there. Portable lock restoration is pending.
+bytes or a changed configuration refuse validation. Copy the config and v2 lock
+to a new checkout and run `lekalo runtime restore` to populate its cache from
+the locked Git commits. The executable and script digests must still match.
+Absolute paths explicitly declared by the project retain their meaning. Older
+v1 locks can still be checked on their original machine. An explicit online
+`runtime lock` writes the new format.
 
 `lekalo validate --strict` runs component checks when the selected root has
 `lekalo.yaml`. If `lekalo/project.yaml` also exists, its existing Model validation
@@ -178,24 +185,104 @@ reported evidence; the runtime remains responsible for deriving honest, complete
 facts from its source language. This is not a proof of application behavior.
 PHP callbacks or framework syntax alone are not portable contract rules.
 
-## Migration boundary and verification
+## Public HTTP rules
 
-This is the process/config foundation of the extraction, not its completion.
-Existing `adapters/` snapshots, linked discovery/OpenSpec/HLV libraries and their
-legacy callers still exist. The published language/framework repositories have
-not all adopted this v1 protocol. A PHP composition manifest using
-`lekalo/php-package/v1` is not a portable `lekalo/package/v1` manifest.
+`gh/ichinya/lekalo-php` and `gh/ichinya/lekalo-php-laravel` publish v1 package
+manifests. The Laravel package requires `http.routes/v1`. Its `health-route` rule
+requires a `GET /health` entry in the returned `routes` array. The optional
+`bindings` object supplies reader-specific data. PHP uses its static router
+binding to read direct, literal routes in `web.php` or `routes/web.php` relative
+to the component. An independent runtime can derive the same facts from its own
+language. Changing the selected contract package changes its digest.
 
-The remaining migration must move existing scan/generate/verify behavior onto
-external contracts, convert framework requirements to portable rules, adapt
-OpenSpec/HLV providers, and then delete snapshots and compile-time runtime
-links with their replacement tests. Parent/child configuration discovery and
-producer/consumer contract-change propagation are not implemented by this slice.
+## Independent projects in a workspace
 
-Run `LEKALO_BIN=/absolute/path/to/lekalo node --test scripts/test-external-runtime.mjs`.
-The acceptance test builds two independent fixture runtimes unknown to core,
-checks both against identical HTTP rules, tests multi-file packages, immutable
-Git resolution and offline operation, and requires refusal for changed bytes,
-unsupported capabilities, unsafe paths, incomplete/mismatched responses and a
-broken coexisting Model. Fixtures are protocol tests, not production Zen/PHP
-implementations or a claim that Laravel's whole rule set is portable already.
+Keep each child's `lekalo.yaml` and `lekalo.runtime.lock` with the child.
+At the common parent, create `lekalo.workspace.yaml`:
+
+```yaml
+schema: lekalo/workspace/v1
+children:
+  api: pushhard-api
+  web: pushhard-web
+```
+
+In `pushhard-api/lekalo.workspace.yaml`, select the checked fact to publish:
+
+```yaml
+schema: lekalo/workspace/v1
+exports:
+  routes:
+    kind: runtime-fact
+    component: app
+    package: lekalo-php-laravel
+    rule: health-route
+```
+
+From the parent, print the candidate contract and review it before accepting it
+in the web repository. This example uses an existing `pushhard-web/contracts` directory:
+
+```sh
+lekalo --json workspace export routes --project pushhard-api > candidate.json &&
+  cp candidate.json pushhard-web/contracts/routes.json
+jq -r .digest pushhard-web/contracts/routes.json
+```
+
+In `pushhard-web/lekalo.workspace.yaml`, replace the placeholder with that digest:
+
+```yaml
+schema: lekalo/workspace/v1
+imports:
+  routes:
+    from: api
+    export: routes
+    bundle: contracts/routes.json
+    digest: "sha256:<64 hex digits from the reviewed bundle>"
+```
+
+`lekalo validate --strict --project pushhard-web` verifies the accepted bundle
+without a producer checkout. From the parent, `lekalo validate --strict` also
+checks each declared child against its own lock and compares consumed exports.
+A public route change reports the consumer, import and producer. A private edit
+that leaves the canonical route list intact keeps the pin valid. A broken
+producer reports an unavailable export. Updating a pin is an explicit consumer
+change. This version supports one parent level and up to 32 children.
+
+For a Model module, declare an export with `kind: module-api`, `api:
+module-api.json` and `module: tasks`. It uses the same certified public bundle
+and digest as `lekalo module api export`. Model validation with
+`--module-api` and `--module-api-lock` also checks configured runtimes.
+
+The PHP target-protocol adapter retains its scan/generate/verify interface in
+the external packages. Other language providers are at different stages of
+migration. Discovery, requirements and external trace mappings use selected
+process services. See [external services](external-services.md).
+
+Run the process and workspace examples against a built CLI:
+
+```sh
+node scripts/external-tool.mjs --provision-php
+node --test scripts/test-external-runtime.mjs scripts/test-portable-laravel.mjs
+```
+
+
+## Official packages
+
+| Runtime | Evidence and independent rules |
+| --- | --- |
+| `gh/ichinya/lekalo-go`, `gh/ichinya/lekalo-rust` | Tree-sitter source declarations and rule-supplied syntax queries |
+| `gh/ichinya/lekalo-typescript` | TypeScript and TSX declarations and queries, Hono routes, exported Drizzle tables and Zod schemas |
+| `gh/ichinya/lekalo-python` | Python AST declarations, direct FastAPI routes and FastMCP tools |
+| `gh/ichinya/lekalo-php` | Static Laravel route registrations and direct Symfony controller route attributes |
+
+Select framework rules by their repository coordinate, e.g. `gh/ichinya/lekalo-python-fastapi`,
+`gh/ichinya/lekalo-php-symfony` or `gh/ichinya/lekalo-typescript-drizzle`.
+The PHP and Python runtimes use an installed interpreter. The Go, Rust and
+TypeScript syntax readers use Node and packaged WebAssembly grammars. Each
+package README documents the syntax covered by its evidence.
+
+A package may mount pure data or code libraries using
+`"libraries": {"parser": "gh/owner/library#<40-hex-commit>"}`.
+The library declares `"kind": "library"` with its files at its root. The host
+pins and verifies the whole graph and mounts the reviewed files under the named
+directory in the sandbox. Remote packages can only reference remote libraries.

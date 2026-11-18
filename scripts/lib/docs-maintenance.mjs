@@ -45,6 +45,7 @@ export function discoverCommands(bin) {
 }
 const commandOwners = {
   runtime:"external-runtimes",
+  workspace:"external-runtimes",
   ownership:"ownership-transitions",
   install:"agent-instructions",
   watch:"cli",
@@ -88,6 +89,7 @@ const families = {
 families["external-runtime"]="external-runtimes";
 families["external-services"]="external-services";
 families["discovery-scope"]="adopt";
+families["workspace"]="external-runtimes";
 families["compiler-runtime"]="typescript-native-runtime";
 families["discovery-scope-receipt"]="adopt";
 for (const family of ["native-execution-policy", "native-tool-catalog", "native-execution-plan", "native-command-output"]) families[family]="native-gates";
@@ -113,13 +115,13 @@ export function protocolRecords() {
   for(const [id,source] of [["owners","scripts/test-docs-ownership.mjs"],["examples","scripts/test-docs-examples.mjs"]]) result.push({id:`protocol:docs:${id}`,kind:"protocol",source,owner:"docs/architecture.md",status:"implemented"});
   for (const operation of ["describe","scan","bind","validate","generate","verify","plan-clean","clean","plan-native"]) result.push({id:`protocol:target:${operation}`,kind:"protocol",source:"contracts/target-protocol.schema.v0.3.2.json",owner:"docs/target-protocol.md",status:"implemented"});
   // Stage 4 (issue #241): the PHP adapter's source lives in the
-  // vendored pinned packages (lekalo-php, lekalo-php-laravel); every
+  // pinned external packages (lekalo-php, lekalo-php-laravel); every
   // discovered protocol stays owned by the transitional unified
   // adapter README during the transition.
   const adapterSources = {
     "php-laravel": {
-      dirs: [join(ROOT,"adapters","php-laravel","vendor","lekalo-php","src"), join(ROOT,"adapters","php-laravel","vendor","lekalo-php-laravel","src")],
-      label: "adapters/php-laravel/vendor",
+      dirs: [join(ROOT,"tests","external","lekalo-php","src"), join(ROOT,"tests","external","lekalo-php-laravel","src")],
+      label: "external-tools.lock.json",
     },
   };
   for (const [adapter, { dirs, label }] of Object.entries(adapterSources)) {

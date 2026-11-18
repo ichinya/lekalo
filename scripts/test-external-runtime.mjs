@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,symlinkSync,existsSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,cpSync,writeFileSync,readFileSync,rmSync,symlinkSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve} from 'node:path';
 import test from 'node:test';
@@ -137,11 +137,23 @@ for(const attempt of [()=>readHost(${JSON.stringify(secret)}),()=>writeHost(${JS
     const git=(args)=>{const r=spawnSync('git',args,{cwd:zen,encoding:'utf8'});assert.equal(r.status,0,r.stderr);return r.stdout.trim();};
     git(['init','-q']);git(['add','.']);git(['-c','user.name=Runtime test','-c','user.email=runtime@example.invalid','-c','commit.gpgsign=false','commit','-qm','fixture']);
     const commit=git(['rev-parse','HEAD']);
-    config.components.zen.runtime=`git+${pathToFileURL(zen).href}#${commit}`;
+    // A branch may move after review. Restore must fetch the recorded Git object.
+    config.components.zen.runtime=`git+${pathToFileURL(zen).href}#HEAD`;
     emit(join(project,'lekalo.yaml'),config);
-    writeFileSync(join(zen,'main.mjs'),'throw new Error("uncommitted poison")');
     const gitLock=ok(run(project,['runtime','lock'],cache)).lock;
+    assert.equal(gitLock.schema,'lekalo/runtime-lock/v2');
     assert.equal(gitLock.components.zen.runtime.package.revision,commit);
+    assert.deepEqual(Object.keys(gitLock.components.zen.runtime.files),['0','1']);
+    assert(!JSON.stringify(gitLock).includes(cache));
+    writeFileSync(join(zen,'main.mjs'),'throw new Error("upstream changed")');
+    git(['add','main.mjs']);git(['-c','user.name=Runtime test','-c','user.email=runtime@example.invalid','-c','commit.gpgsign=false','commit','-qm','new upstream']);
+    const moved=join(scratch,'relocated'), freshCache=join(scratch,'restored-cache');
+    cpSync(project,moved,{recursive:true});
+    const lockBefore=readFileSync(join(moved,'lekalo.runtime.lock'));
+    ok(run(moved,['runtime','restore'],freshCache));
+    assert.deepEqual(readFileSync(join(moved,'lekalo.runtime.lock')),lockBefore);
+    ok(run(moved,['runtime','lock','--offline'],freshCache));
+    ok(run(moved,['runtime','check'],freshCache));
     rmSync(zen,{recursive:true});
     rmSync(rules,{recursive:true});
     ok(run(project,['runtime','lock','--offline'],cache));

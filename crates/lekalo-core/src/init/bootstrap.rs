@@ -196,6 +196,7 @@ fn templates(request: &BootstrapRequest) -> Vec<TemplateRecord> {
     let mut records = vec![
         TemplateRecord::project(TEMPLATE_VERSION),
         TemplateRecord::module(TEMPLATE_VERSION),
+        TemplateRecord::runtime_config(TEMPLATE_VERSION),
     ];
     if request.target.is_some() {
         records.push(TemplateRecord::target(TEMPLATE_VERSION));
@@ -467,6 +468,18 @@ pub fn bootstrap(request: &BootstrapRequest) -> DomainResult {
         Some(file) => files.push(file),
         None => return usage_refusal(),
     }
+    let runtime_path = crate::runtime::config::CONFIG;
+    // Keep an existing valid composition when adding a Model to a configured project.
+    let runtime_bytes = crate::runtime::read(&root, runtime_path, 128 * 1024)
+        .ok()
+        .filter(|b| crate::runtime::config::decode(b).is_ok())
+        .unwrap_or_else(|| {
+            b"{\n  \"schema\": \"lekalo/runtime-config/v1\",\n  \"components\": {}\n}\n".to_vec()
+        });
+    files.push(plan::PlannedFile {
+        path: runtime_path.to_owned(),
+        bytes: runtime_bytes,
+    });
     if let Some(target) = request.target.as_deref() {
         match plan::target_document(target, request.profile.as_deref()) {
             Some(file) => files.push(file),

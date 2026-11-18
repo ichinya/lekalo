@@ -62,6 +62,15 @@ pub(crate) struct WriterLock {
     _directories: Vec<std::fs::File>,
 }
 
+#[cfg(unix)]
+impl Drop for WriterLock {
+    fn drop(&mut self) {
+        // A concurrently spawned process can still hold a duplicate until exec.
+        // Release the flock when this writer finishes, even during that window.
+        let _ = rustix::fs::flock(&self._file, rustix::fs::FlockOperation::Unlock);
+    }
+}
+
 impl WriterLock {
     pub(crate) fn acquire(root: &Path) -> Result<Self, crate::change::ChangeError> {
         Self::open(root).map_err(|_| crate::change::ChangeError::PreconditionFailed {
@@ -225,6 +234,21 @@ mod tests {
         drop(first);
         assert!(root.path().join(LOCK_PATH).is_file());
         assert!(WriterLock::acquire(root.path()).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn releasing_a_writer_while_a_child_holds_a_duplicate_allows_the_next_writer() {
+        let root = tempfile::tempdir().unwrap();
+        let writer = WriterLock::acquire(root.path()).unwrap();
+        // A concurrent fork duplicates the open description until exec closes CLOEXEC fds.
+        let inherited = writer._file.try_clone().unwrap();
+        assert!(WriterLock::acquire(root.path()).is_err());
+        drop(writer);
+        let next = WriterLock::acquire(root.path()).unwrap();
+        drop(inherited);
+        assert!(WriterLock::acquire(root.path()).is_err());
+        drop(next);
     }
 
     #[test]

@@ -20,6 +20,14 @@ pub use wire::*;
 
 /// Parse and assess explicitly supplied evidence against an accepted trace.
 pub fn assess(trace: &TraceManifest, bytes: &[u8]) -> Result<AssessmentReport, DiagnosticSet> {
+    assess_in(std::path::Path::new("."), trace, bytes)
+}
+
+pub fn assess_in(
+    project: &std::path::Path,
+    trace: &TraceManifest,
+    bytes: &[u8],
+) -> Result<AssessmentReport, DiagnosticSet> {
     let mut input = validate::parse(bytes)?;
     let manifest = trace.manifest();
     let trace_digest = trace.digest()?;
@@ -38,7 +46,7 @@ pub fn assess(trace: &TraceManifest, bytes: &[u8]) -> Result<AssessmentReport, D
         .iter()
         .map(|r| (r.id.clone(), r.clone()))
         .collect();
-    let external_mappings = mapping_results(&input, &nodes, &receipts)?;
+    let external_mappings = mapping_results(project, &input, &nodes, &receipts)?;
     let mut findings = Vec::new();
     let current = manifest.source_revision == input.source_revision
         && manifest.model_ref == input.model_ref
@@ -574,6 +582,7 @@ impl AssessmentReport {
 /// External mapping policy sees only explicitly supplied aliases/revisions.
 /// Generic relation, custody and completeness checks remain in the host.
 fn mapping_results(
+    project: &std::path::Path,
     input: &EvidenceDocument,
     nodes: &BTreeMap<&str, &Node>,
     receipts: &BTreeMap<String, Evidence>,
@@ -614,7 +623,9 @@ fn mapping_results(
     if rows.is_empty() {
         return Ok(BTreeMap::new());
     }
-    let root = std::env::current_dir().map_err(|_| diagnostic::invalid("provider-root"))?;
+    let root = project
+        .canonicalize()
+        .map_err(|_| diagnostic::invalid("provider-root"))?;
     let provider = crate::runtime::services::one(&root, "trace")
         .map_err(|error| diagnostic::invalid(&format!("provider-unavailable-{}", error.detail)))?;
     let response = provider

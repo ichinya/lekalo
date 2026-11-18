@@ -19,7 +19,7 @@ use serde_json::{json, Value as Json};
 use super::version::{MAX_DURATION_SECONDS, MAX_INT};
 
 /// One scalar type.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, serde::Serialize)]
 pub enum ScalarType {
     /// A boolean.
     Bool,
@@ -64,7 +64,7 @@ impl ScalarType {
 }
 
 /// One expression type: a scalar or a homogeneous set of scalars.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, serde::Serialize)]
 pub enum ExprType {
     /// A scalar value.
     Scalar(ScalarType),

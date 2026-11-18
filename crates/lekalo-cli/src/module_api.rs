@@ -293,6 +293,29 @@ fn compilation(project: &Option<String>) -> Result<lekalo_core::ir::Compilation,
     }
 }
 
+/// Produce the same certified bundle as the standalone module API command.
+pub(crate) fn public_contract(
+    root: &str,
+    api: &str,
+    module: &str,
+) -> Result<module_api::PublicBundle, DomainResult> {
+    certified_export(&Some(root.to_owned()), api, module).map_err(|e| match e {
+        Failure::Set(set) => failure(set),
+        Failure::Finished(result) => result,
+    })
+}
+
+fn certified_export(
+    project: &Option<String>,
+    api: &str,
+    module: &str,
+) -> Result<module_api::PublicBundle, Failure> {
+    let compilation = compilation(project)?;
+    let attachment = read_project_input(project, api)?;
+    let resolved = resolve(&attachment, &compilation, project)?;
+    Ok(module_api::export_public(&resolved, &compilation, module)?)
+}
+
 /// The envelope projection of one typed payload document.
 fn envelope(name: &str, payload: serde_json::Value, human: String) -> DomainResult {
     let mut value = serde_json::json!({ "status": "valid" });
@@ -514,13 +537,7 @@ fn execute(command: ApiCommands) -> Result<DomainResult, Failure> {
             project,
             api,
         } => {
-            let compilation = compilation(&project)?;
-            let attachment = read_project_input(&project, &api)?;
-            let resolved = resolve(&attachment, &compilation, &project)?;
-            // Certified-bundle rule (core seam, r3 review finding 2/codex):
-            // an incomplete, illegal, or uncertifiable public closure
-            // refuses even without --strict.
-            let bundle = module_api::export_public(&resolved, &compilation, &module)?;
+            let bundle = certified_export(&project, &api, &module)?;
             let human = format!(
                 "Module API: {} exports for {} (apiVersion {}).",
                 bundle.exports.len(),

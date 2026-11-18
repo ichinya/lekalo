@@ -6,13 +6,12 @@ import fs from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
-import {repo,sha,write,inventory,exec} from './framework-lift-rounding.mjs';
+import {repo,sha,write,inventory,exec,typescriptRoot,typescriptAdapterDir,typescriptAdapter} from './framework-lift-rounding.mjs';
 import {configure} from './framework-lift-runner.mjs';
 import {workspaceToolSource} from './framework-lift-workspace.mjs';
 const defaultBinary=process.env.LEKALO_BIN??join(repo,'target/debug/lekalo'+(process.platform==='win32'?'.exe':''));
-const defaultTsc=process.env.LEKALO_TSC??join(repo,'adapters/node-typescript/node_modules/typescript/bin/tsc');
-const adapter=join(repo,'adapters/node-typescript/adapter.mjs');
-const fixture=join(repo,'tests/fixtures/public-typescript-scan/planner');
+const defaultTsc=process.env.LEKALO_TSC??join(typescriptAdapterDir,'node_modules/typescript/bin/tsc');
+const fixture=join(typescriptRoot,'host-tests/tests/fixtures/public-typescript-scan/planner');
 export function helper(binary=defaultBinary,compact=false){return semanticToolSource({binary,symbol:'synthetic_priority_planner.task',compact,note:'Canonical lowercase IDs and native proposal IDs are separate; no automatic join is claimed. Semantic fields use snake_case aliases.'});}
 
 export function prepare(options={}){
@@ -52,7 +51,7 @@ export function prepare(options={}){
  cli(['install','prompt']);
  const profile={id:'standalone',mode:'observed',target:'node-typescript',readRoots:[{kind:'file',path:'package.json'},{kind:'file',path:'tsconfig.json'},{kind:'tree',path:'src'}],exclusions:[],provenance:{origin:'declared',revision:'planner-afterfix-baseline-v1',disposition:'public-fixture'}};
  write(root,'scan-profile.json',profile);
- const scan=cli(['scan','--target','node-typescript','--profile','standalone',process.execPath,adapter,'--lekalo-project-profile-json',JSON.stringify(profile)]);
+ const scan=cli(['scan','--target','node-typescript','--profile','standalone',process.execPath,typescriptAdapter,'--lekalo-project-profile-json',JSON.stringify(profile)]);
  const proposal=cli(['bindings','propose']);assert.equal(proposal.ambiguous,0);assert.equal(proposal.proposals.length,14);
  const plan=cli(['bindings','confirm','--batch','--preview']);
  cli(['bindings','confirm','--batch','--confirm',plan.plan]);

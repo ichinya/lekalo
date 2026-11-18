@@ -10,6 +10,10 @@ import {dirname,join,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {workspaceToolSource} from './framework-lift-workspace.mjs';
 export const repo=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
+export const typescriptRoot = resolve(process.env.LEKALO_TYPESCRIPT_ROOT ?? join(repo, 'tests/external/lekalo-typescript'));
+export const typescriptAdapterDir = join(typescriptRoot, 'adapters/node-typescript');
+export const typescriptAdapter = join(typescriptAdapterDir, 'adapter.mjs');
+export const typescriptManifest = join(typescriptAdapterDir, 'adapter.manifest.json');
 export const sha=b=>createHash('sha256').update(b).digest('hex');
 export function write(root,name,value){const p=join(root,name);fs.mkdirSync(dirname(p),{recursive:true});fs.writeFileSync(p,typeof value==='string'?value:JSON.stringify(value,null,2)+'\n');}
 export function inventory(root,prefix=''){return fs.readdirSync(join(root,prefix),{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name)).flatMap(e=>{const p=prefix?prefix+'/'+e.name:e.name;return e.isDirectory()?inventory(root,p):[{path:p,sha256:sha(fs.readFileSync(join(root,p))),bytes:fs.statSync(join(root,p)).size}];});}
@@ -104,7 +108,7 @@ export function prepare(options={}){
   semantic(adopted);cli(['validate','--strict','--project','.']);
   const profile={id:'standalone',mode:'observed',target:'node-typescript',readRoots:[{kind:'file',path:'package.json'},{kind:'file',path:'tsconfig.json'},{kind:'tree',path:'src'}],exclusions:[],provenance:{origin:'declared',revision:'rounding-baseline-v1',disposition:'public-fixture'}};
   write(root,'scan-profile.json',profile);
-  const scan=cli(['scan','--target','node-typescript','--profile','standalone','--project','.',process.execPath,join(repo,'adapters/node-typescript/adapter.mjs'),'--lekalo-project-profile-json',JSON.stringify(profile)]);
+  const scan=cli(['scan','--target','node-typescript','--profile','standalone','--project','.',process.execPath,typescriptAdapter,'--lekalo-project-profile-json',JSON.stringify(profile)]);
   const proposals=cli(['bindings','propose','--project','.']);assert.equal(proposals.ambiguous,0);
   for(const p of proposals.proposals){assert.equal(p.candidates.length,1);assert.ok(fs.existsSync(join(adopted,p.candidates[0].path)));cli(['bindings','confirm',p.proposal,'--project','.']);}
   const audit=cli(['bindings','audit','--project','.']);assert.equal(audit.current,scan.symbols);assert.equal(audit.unknown,0);

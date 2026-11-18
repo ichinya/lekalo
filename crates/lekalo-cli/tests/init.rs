@@ -1,7 +1,7 @@
 //! Issue #38 CLI tests for `lekalo init --adopt`: the dry-run no-write
 //! plan, the minimal canonical skeleton, the unchanged monorepo sources,
 //! the no-overwrite conflict, the idempotent re-run, ambiguity resolution,
-//! and the Laravel/Go/empty-repository detection fixtures.
+//! and adoption of an empty repository.
 //!
 //! Every child chdir runs through the alias-free temp spelling: GitHub's
 //! Windows runners export `%TEMP%` with the 8.3 profile alias and the
@@ -14,9 +14,6 @@ use std::process::{Command, Output};
 use serde_json::Value;
 
 /// The accepted adoption fixtures (issue #38).
-const NODE_MONOREPO: &str = "tests/fixtures/adopt/node-monorepo";
-const LARAVEL_APP: &str = "tests/fixtures/adopt/laravel-app";
-const GO_MODULE: &str = "tests/fixtures/adopt/go-module";
 const EMPTY_REPO: &str = "tests/fixtures/adopt/empty-repo";
 
 fn lekalo_in(dir: &Path, args: &[&str]) -> Output {
@@ -90,158 +87,17 @@ fn copy_tree(from: &Path, to: &Path) {
     }
 }
 
-/// The sorted `(relative path, bytes)` of every regular file below `root`,
-/// skipping the canonical `lekalo/` tree when `skip_lekalo` is set.
-fn snapshot(root: &Path, skip_lekalo: bool) -> Vec<(String, Vec<u8>)> {
-    let mut out = Vec::new();
-    walk(root, root, skip_lekalo, &mut out);
-    out.sort_by(|left, right| left.0.as_bytes().cmp(right.0.as_bytes()));
-    out
-}
-
-fn walk(root: &Path, dir: &Path, skip_lekalo: bool, out: &mut Vec<(String, Vec<u8>)>) {
-    for entry in fs::read_dir(dir).expect("walk directory") {
-        let entry = entry.expect("walk entry");
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if skip_lekalo && (name == "lekalo" || name == ".lekalo") {
-            continue;
-        }
-        let relative = entry
-            .path()
-            .strip_prefix(root)
-            .expect("walk below root")
-            .to_string_lossy()
-            .replace('\\', "/");
-        if entry.file_type().expect("walk type").is_dir() {
-            walk(root, &entry.path(), skip_lekalo, out);
-        } else {
-            out.push((relative, fs::read(entry.path()).expect("walk read")));
-        }
-    }
-}
-
-/// The Node.js monorepo dry-run plans every write, detects the workspace
-/// with provenance, and changes nothing on disk.
-#[test]
-fn adopt_dry_run_plans_every_write_without_touching_the_tree() {
-    let (_temp, root) = materialize(NODE_MONOREPO);
-    let before = snapshot(&root, false);
-    let output = lekalo_in(
-        &root,
-        &[
-            "--json",
-            "init",
-            "--adopt",
-            "--target",
-            "node-typescript",
-            "--dry-run",
-        ],
-    );
-    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
-    let envelope = stdout_json(&output);
-    assert_eq!(envelope["status"], "valid");
-    assert_eq!(envelope["operation"], "init");
-    assert_eq!(envelope["mode"], "dry-run");
-    assert_eq!(envelope["changed"], false);
-    assert_eq!(envelope["projectId"], "acme_node_monorepo");
-    assert_eq!(envelope["projectIdSource"]["source"], "package.json#name");
-    assert_eq!(
-        envelope["projectIdSource"]["original"],
-        "acme-node-monorepo"
-    );
-    assert_eq!(envelope["target"], "node-typescript");
-    let writes = envelope["writes"].as_array().expect("writes array");
-    assert_eq!(writes.len(), 2);
-    let paths: Vec<&str> = writes
-        .iter()
-        .map(|write| write["path"].as_str().expect("write path"))
-        .collect();
-    assert_eq!(
-        paths,
-        vec!["lekalo/project.yaml", "lekalo/targets/node-typescript.yaml"]
-    );
-    for write in writes {
-        assert_eq!(write["action"], "create");
-        assert_eq!(write["disposition"], "create");
-    }
-    let detection = &envelope["detection"];
-    assert_eq!(detection["basis"], "workspace-root");
-    let workspace_roots = detection["workspaceRoots"]
-        .as_array()
-        .expect("workspace roots");
-    assert_eq!(workspace_roots.len(), 1);
-    assert_eq!(workspace_roots[0]["path"], ".");
-    assert_eq!(workspace_roots[0]["ecosystem"], "node");
-    assert_eq!(workspace_roots[0]["members"][0], "apps/*");
-    let modules = detection["modules"].as_array().expect("observed modules");
-    let module_paths: Vec<&str> = modules
-        .iter()
-        .map(|module| module["path"].as_str().expect("module path"))
-        .collect();
-    assert_eq!(module_paths, vec!["apps/web", "packages/ui"]);
-    for module in modules {
-        assert_eq!(module["mode"], "observed");
-        assert_eq!(module["confidence"], "high");
-    }
-    let layouts = detection["layouts"].as_array().expect("layouts");
-    assert!(layouts
-        .iter()
-        .any(|layout| layout["kind"] == "openspec" && layout["confidence"] == "high"));
-    let gates = detection["gates"].as_array().expect("gates");
-    assert!(gates.iter().any(|gate| gate["gate"] == "build"
-        && gate["source"] == "workflow"
-        && gate["command"] == "npm run build"));
-    assert!(detection["packageManagers"]
-        .as_array()
-        .expect("package managers")
-        .iter()
-        .any(|item| item["detail"] == "npm"));
-    // Dry-run wrote nothing at all.
-    assert_eq!(snapshot(&root, false), before);
-}
-
-/// The applied adoption writes only the minimal canonical skeleton, keeps
-/// every `apps/**` and `packages/**` byte identical, and the skeleton
-/// passes the normal loader and validator.
-#[test]
-fn adopt_creates_minimal_skeleton_and_preserves_the_monorepo() {
-    let (_temp, root) = materialize(NODE_MONOREPO);
-    let before = snapshot(&root, true);
-    let output = lekalo_in(&root, &["--json", "init", "--adopt"]);
-    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
-    let envelope = stdout_json(&output);
-    assert_eq!(envelope["mode"], "apply");
-    assert_eq!(envelope["changed"], true);
-    assert_eq!(envelope["created"], 1);
-    assert_eq!(envelope["gate"]["status"], "valid");
-    assert_eq!(envelope["gate"]["modelVersion"], "0.2.16");
-    // The canonical skeleton is exactly the project document.
-    let project_yaml = fs::read(root.join("lekalo").join("project.yaml")).expect("skeleton bytes");
-    assert_eq!(
-        project_yaml,
-        b"{\"schema_version\":\"0.2.16\",\"definitions\":[{\"id\":\"acme_node_monorepo\",\"kind\":\"project\",\"version\":1,\"description\":\"Adopted existing project.\"}]}\n"
-    );
-    // No `apps/**` or `packages/**` byte changed; only `lekalo/**` appeared.
-    assert_eq!(snapshot(&root, true), before);
-    // The written skeleton loads and validates through the normal path.
-    let load = lekalo_in(&root, &["--json", "load"]);
-    assert_eq!(exit_code(&load), 0, "{}", stderr_text(&load));
-    let validate = lekalo_in(&root, &["--json", "validate"]);
-    assert_eq!(exit_code(&validate), 0, "{}", stderr_text(&validate));
-    assert_eq!(stdout_json(&validate)["status"], "valid");
-}
-
 /// A repeated init is idempotent: identical bytes are reported, no gate
 /// runs, and the skeleton bytes stay identical.
 #[test]
 fn adopt_is_idempotent_on_a_second_run() {
-    let (_temp, root) = materialize(NODE_MONOREPO);
-    let first = lekalo_in(&root, &["init", "--adopt", "--target", "node-typescript"]);
+    let (_temp, root) = materialize(EMPTY_REPO);
+    let first = lekalo_in(&root, &["init", "--adopt", "--target", "fixture-adapter"]);
     assert_eq!(exit_code(&first), 0, "{}", stderr_text(&first));
     let skeleton = fs::read(root.join("lekalo").join("project.yaml")).expect("skeleton");
     let second = lekalo_in(
         &root,
-        &["--json", "init", "--adopt", "--target", "node-typescript"],
+        &["--json", "init", "--adopt", "--target", "fixture-adapter"],
     );
     assert_eq!(exit_code(&second), 0, "{}", stderr_text(&second));
     let envelope = stdout_json(&second);
@@ -263,7 +119,7 @@ fn adopt_is_idempotent_on_a_second_run() {
 /// selection never overwrites — it denies with `init.adopt-conflict`.
 #[test]
 fn adopt_records_the_explicit_adapter_profile() {
-    let (_temp, root) = materialize(NODE_MONOREPO);
+    let (_temp, root) = materialize(EMPTY_REPO);
     // An orphan profile is refused before any plan or write.
     let orphan = lekalo_in(&root, &["init", "--adopt", "--profile", "default"]);
     assert_eq!(exit_code(&orphan), 1);
@@ -277,7 +133,7 @@ fn adopt_records_the_explicit_adapter_profile() {
             "init",
             "--adopt",
             "--target",
-            "node-typescript",
+            "fixture-adapter",
             "--profile",
             "Default_Profile",
         ],
@@ -286,7 +142,7 @@ fn adopt_records_the_explicit_adapter_profile() {
     assert!(stderr_text(&malformed).contains("cli.usage"));
     assert!(!root.join("lekalo").exists(), "nothing is written");
     // The valid selection is recorded and persists.
-    let document = "{\"target\":\"node-typescript\",\"profile\":\"default\",\"note\":\"Adopted target selection.\"}\n";
+    let document = "{\"target\":\"fixture-adapter\",\"profile\":\"default\",\"note\":\"Adopted target selection.\"}\n";
     let applied = lekalo_in(
         &root,
         &[
@@ -294,14 +150,14 @@ fn adopt_records_the_explicit_adapter_profile() {
             "init",
             "--adopt",
             "--target",
-            "node-typescript",
+            "fixture-adapter",
             "--profile",
             "default",
         ],
     );
     assert_eq!(exit_code(&applied), 0, "{}", stderr_text(&applied));
     let envelope = stdout_json(&applied);
-    assert_eq!(envelope["target"], "node-typescript");
+    assert_eq!(envelope["target"], "fixture-adapter");
     assert_eq!(envelope["adapterProfile"], "default");
     assert_eq!(
         envelope["gate"]["profile"], "default",
@@ -311,7 +167,7 @@ fn adopt_records_the_explicit_adapter_profile() {
         fs::read_to_string(
             root.join("lekalo")
                 .join("targets")
-                .join("node-typescript.yaml")
+                .join("fixture-adapter.yaml")
         )
         .expect("target document"),
         document
@@ -324,7 +180,7 @@ fn adopt_records_the_explicit_adapter_profile() {
             "init",
             "--adopt",
             "--target",
-            "node-typescript",
+            "fixture-adapter",
             "--profile",
             "default",
             "--dry-run",
@@ -339,7 +195,7 @@ fn adopt_records_the_explicit_adapter_profile() {
         fs::read_to_string(
             root.join("lekalo")
                 .join("targets")
-                .join("node-typescript.yaml")
+                .join("fixture-adapter.yaml")
         )
         .expect("target document"),
         document
@@ -352,7 +208,7 @@ fn adopt_records_the_explicit_adapter_profile() {
             "init",
             "--adopt",
             "--target",
-            "node-typescript",
+            "fixture-adapter",
             "--profile",
             "default",
         ],
@@ -363,7 +219,7 @@ fn adopt_records_the_explicit_adapter_profile() {
         fs::read_to_string(
             root.join("lekalo")
                 .join("targets")
-                .join("node-typescript.yaml")
+                .join("fixture-adapter.yaml")
         )
         .expect("target document"),
         document
@@ -376,7 +232,7 @@ fn adopt_records_the_explicit_adapter_profile() {
             "init",
             "--adopt",
             "--target",
-            "node-typescript",
+            "fixture-adapter",
             "--profile",
             "strict",
         ],
@@ -390,7 +246,7 @@ fn adopt_records_the_explicit_adapter_profile() {
         fs::read_to_string(
             root.join("lekalo")
                 .join("targets")
-                .join("node-typescript.yaml")
+                .join("fixture-adapter.yaml")
         )
         .expect("target document survives"),
         document
@@ -401,7 +257,7 @@ fn adopt_records_the_explicit_adapter_profile() {
 /// `init.adopt-conflict` and the conflicting bytes survive untouched.
 #[test]
 fn adopt_refuses_to_overwrite_existing_files() {
-    let (_temp, root) = materialize(NODE_MONOREPO);
+    let (_temp, root) = materialize(EMPTY_REPO);
     let first = lekalo_in(&root, &["init", "--adopt"]);
     assert_eq!(exit_code(&first), 0, "{}", stderr_text(&first));
     fs::write(
@@ -463,116 +319,12 @@ fn adopt_ambiguous_roots_require_explicit_resolution() {
 /// `bootstrap.rs`).
 #[test]
 fn init_usage_failures_stay_stable() {
-    let (_temp, root) = materialize(NODE_MONOREPO);
+    let (_temp, root) = materialize(EMPTY_REPO);
     let bad_target = lekalo_in(&root, &["init", "--adopt", "--target", "Bad_Target"]);
     assert!(!root.join("lekalo").exists(), "nothing is written");
     assert_eq!(exit_code(&bad_target), 1);
     assert!(stdout_text(&bad_target).is_empty());
     assert!(stderr_text(&bad_target).contains("cli.usage"));
-}
-
-/// The Laravel fixture: composer framework hints, the artisan gate
-/// proposal, and the composer script workflow gate.
-#[test]
-fn adopt_detects_the_laravel_layout() {
-    let (_temp, root) = materialize(LARAVEL_APP);
-    let output = lekalo_in(&root, &["--json", "init", "--adopt", "--dry-run"]);
-    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
-    let envelope = stdout_json(&output);
-    assert_eq!(envelope["projectId"], "acme_shop");
-    assert_eq!(envelope["projectIdSource"]["source"], "composer.json#name");
-    assert_eq!(envelope["projectIdSource"]["original"], "acme/shop");
-    let detection = &envelope["detection"];
-    let languages = detection["languages"].as_array().expect("languages");
-    assert!(languages.iter().any(|hint| hint["label"] == "laravel"
-        && hint["kind"] == "framework"
-        && hint["confidence"] == "high"));
-    let gates = detection["gates"].as_array().expect("gates");
-    assert!(gates
-        .iter()
-        .any(|gate| gate["gate"] == "test" && gate["command"] == "composer test"));
-    assert!(gates
-        .iter()
-        .any(|gate| gate["command"] == "php artisan test" && gate["source"] == "derived"));
-    // The write plan is the single project document.
-    assert_eq!(envelope["writes"].as_array().expect("writes").len(), 1);
-}
-
-/// The Go fixture: module-path id derivation and the derived go gates.
-#[test]
-fn adopt_detects_the_go_module() {
-    let (_temp, root) = materialize(GO_MODULE);
-    let output = lekalo_in(&root, &["--json", "init", "--adopt", "--dry-run"]);
-    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
-    let envelope = stdout_json(&output);
-    assert_eq!(envelope["projectId"], "ledger");
-    assert_eq!(envelope["projectIdSource"]["source"], "go.mod#module");
-    let detection = &envelope["detection"];
-    assert!(detection["languages"]
-        .as_array()
-        .expect("languages")
-        .iter()
-        .any(|hint| hint["label"] == "go" && hint["confidence"] == "high"));
-    let gates = detection["gates"].as_array().expect("gates");
-    assert!(gates
-        .iter()
-        .any(|gate| gate["command"] == "go test ./..." && gate["source"] == "derived"));
-}
-
-/// A Cargo workspace can contain modules from all four external discovery
-/// packages. The host still owns scope, path validation and read-only adoption.
-#[test]
-fn external_language_discovery_keeps_mixed_workspace_members_confined() {
-    let temp = tempfile::tempdir().expect("temp");
-    let root = temp.path().join("project");
-    fs::create_dir_all(&root).unwrap();
-    let files = [
-        ("Cargo.toml", "[package]\nname = \"workspace_service\"\n[workspace]\nmembers = [\"components/*\", \"../outside\"]\n"),
-        ("components/api/go.mod", "module example.com/team/api\n"),
-        ("components/native/Cargo.toml", "[package]\nname = \"native_service\"\n"),
-        ("components/web/package.json", r#"{"name":"web","dependencies":{"react":"1"},"devDependencies":{"typescript":"1"},"scripts":{"test":"touch executed"}}"#),
-        ("components/worker/pyproject.toml", "[project]\nname = 'worker'\n"),
-        ("components/worker/setup.py", "raise RuntimeError('must never execute')\n"),
-    ];
-    for (path, text) in files {
-        let path = root.join(path);
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, text).unwrap();
-    }
-    fs::create_dir_all(temp.path().join("outside")).unwrap();
-    fs::write(
-        temp.path().join("outside/Cargo.toml"),
-        "[package]\nname = \"outside_marker\"\n",
-    )
-    .unwrap();
-    let before = snapshot(&root, false);
-    let output = lekalo_in(&root, &["--json", "init", "--adopt", "--dry-run"]);
-    assert_eq!(exit_code(&output), 0, "{}", stderr_text(&output));
-    let envelope = stdout_json(&output);
-    assert_eq!(envelope["projectId"], "workspace_service");
-    let detection = &envelope["detection"];
-    let modules = detection["modules"].as_array().unwrap();
-    let names: Vec<_> = modules
-        .iter()
-        .map(|module| module["name"].as_str().unwrap())
-        .collect();
-    assert_eq!(names, ["api", "native_service", "web", "components/worker"]);
-    assert!(detection["manifests"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|entry| entry["path"] == "components/worker/setup.py" && entry["detail"] == "python"));
-    assert!(detection["languages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|hint| hint["label"] == "react" && hint["kind"] == "framework"));
-    assert!(!stdout_text(&output).contains("outside_marker"));
-    assert_eq!(
-        snapshot(&root, false),
-        before,
-        "discovery cannot execute scripts or write files"
-    );
 }
 
 /// The empty repository: adoption falls back to the invocation directory,

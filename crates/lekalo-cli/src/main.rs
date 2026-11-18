@@ -43,9 +43,11 @@ mod native_execution;
 mod native_verify;
 mod ownership;
 mod runtime_config;
+mod workspace;
 use native_execution::NativeCommands;
 mod module_api;
 mod pilot_battery;
+mod pilot_profile;
 mod portability;
 mod report_git;
 pub(crate) mod report_output;
@@ -188,6 +190,11 @@ struct ContextBudgetArgs {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Check independent Lekalo projects and their public contract pins.
+    Workspace {
+        #[command(subcommand)]
+        command: workspace::Command,
+    },
     /// Configure external runtimes and portable contract rules.
     Runtime {
         #[command(subcommand)]
@@ -682,6 +689,9 @@ enum Commands {
         /// Configure an external runtime package or exec:PROGRAM in lekalo.yaml.
         #[arg(long, conflicts_with_all = ["adopt", "target", "profile", "dry_run", "project_id", "module", "frontend", "editor_hints"])]
         runtime: Option<String>,
+        /// Exact language version negotiated with the selected runtime.
+        #[arg(long, requires = "runtime")]
+        target_version: Option<String>,
         /// Independently selected external contract-rules packages.
         #[arg(long, requires = "runtime")]
         rules: Vec<String>,
@@ -1470,6 +1480,9 @@ enum TraceCommands {
         /// Path to the neutral validation evidence JSON document.
         #[arg(long, value_name = "PATH")]
         evidence: String,
+        /// Project whose locked trace service handles the supplied evidence.
+        #[arg(long, default_value = ".")]
+        project: String,
     },
     /// Validate one neutral trace manifest document.
     Validate {
@@ -2061,14 +2074,16 @@ enum ExpressionsCommands {
         #[arg(long, value_name = "FILE")]
         builtin_support: Option<String>,
     },
-    /// Render one complete cross-target program (node, php, or go)
-    /// that computes the shared vectors.
+    /// Render a program using a selected external expression generator.
     Render {
         /// Path to the expressions attachment JSON document.
         path: String,
-        /// The closed target vocabulary.
-        #[arg(long, value_enum)]
-        target: ExpressionTarget,
+        /// Name of the expressions/<target> service in the project.
+        #[arg(long)]
+        target: String,
+        /// Project whose services and lock select the generator.
+        #[arg(long, default_value = ".")]
+        project: std::path::PathBuf,
         /// Path to a built-in capability snapshot (managed mode).
         #[arg(long, value_name = "FILE")]
         builtin_support: Option<String>,
@@ -2153,17 +2168,6 @@ enum StorageProfileCommands {
         /// Path to the candidate profile JSON document.
         candidate: String,
     },
-}
-
-/// The closed expression render target vocabulary.
-#[derive(Clone, Copy, Debug, ValueEnum)]
-enum ExpressionTarget {
-    /// Node (ECMAScript).
-    Node,
-    /// PHP.
-    Php,
-    /// Go.
-    Go,
 }
 
 /// The `cache` subcommands: the thin status/clear handoff (issue #20).
@@ -2621,6 +2625,7 @@ fn runtime() -> u8 {
 
     let result = match Cli::try_parse() {
         Ok(cli) => match cli.command {
+            Commands::Workspace { command } => workspace::run(command, cli.no_cache),
             Commands::Runtime { command } => return runtime_config::run(command, json_requested),
             Commands::Watch { args } => {
                 return match watch::run(args, json_requested, cli.no_cache) {
@@ -2659,29 +2664,6 @@ fn runtime() -> u8 {
                 ci_policy,
             } => {
                 let project = project.or_else(|| std::env::var("LEKALO_PROJECT").ok());
-                if runtime_config::configured(project.as_deref()) {
-                    if module.is_some()
-                        || module_api.is_some()
-                        || module_api_lock.is_some()
-                        || report_file.is_some()
-                        || report_format.is_some()
-                        || ci_policy.is_some()
-                    {
-                        return emit(DomainResult::usage_error(), json_requested);
-                    }
-                    if std::fs::symlink_metadata(
-                        std::path::Path::new(project.as_deref().unwrap_or("."))
-                            .join("lekalo/project.yaml"),
-                    )
-                    .is_ok()
-                    {
-                        let model = run_validate(project.clone(), None, strict, cli.no_cache);
-                        if model.status() != lekalo_core::result::Status::Valid {
-                            return emit(model, json_requested);
-                        }
-                    }
-                    return runtime_config::check(project.as_deref(), json_requested);
-                }
                 let request = crate::report_output::ReportRequest {
                     file: report_file,
                     format: report_format,
@@ -2692,23 +2674,19 @@ fn runtime() -> u8 {
                 if let Err(result) = request.validate() {
                     return emit(result, json_requested);
                 }
-                if let Some(attachment) = module_api {
-                    let seam_result = module_api::run_validate_seam(module_api::ValidateSeam {
-                        project: project.clone(),
-                        module: module.clone(),
-                        strict,
-                        attachment,
-                        lock: module_api_lock,
-                    });
-                    // The seam honors the CI report flags: a finished
-                    // validate-family result is reported exactly like the
-                    // base path (finding 22: silently dropped flags).
-                    return emit(
-                        report_finished_result(seam_result, &request, &project, &module, strict),
-                        json_requested,
-                    );
+                let result = workspace::validate(
+                    &project,
+                    &module,
+                    strict,
+                    cli.no_cache,
+                    module_api,
+                    module_api_lock,
+                );
+                if request.is_requested() {
+                    report_finished_result(result, &request, &project, &module, strict)
+                } else {
+                    result
                 }
-                run_validate_reported(project, module, strict, cli.no_cache, &request)
             }
             Commands::Compatibility => run_compatibility(),
             Commands::Mcp { command } => match mcp::run(command, json_requested) {
@@ -2970,6 +2948,7 @@ fn runtime() -> u8 {
             Commands::Dataflow { command } => run_dataflow(command),
             Commands::Init {
                 runtime,
+                target_version,
                 rules,
                 component_path,
                 adopt,
@@ -2987,6 +2966,7 @@ fn runtime() -> u8 {
                     return runtime_config::run(
                         runtime_config::Command::Init {
                             runtime: Some(runtime),
+                            target_version,
                             rules,
                             path: component_path,
                             project: project.unwrap_or_else(|| ".".into()).into(),
@@ -3096,25 +3076,52 @@ fn emit(result: DomainResult, json: bool) -> u8 {
     }
 }
 
-/// The CI report projection of one validate run (issue #103): the
-/// normalized diagnostics ride the report, the check row carries the
-/// validation verdict, and the provenance snapshot pins the exact
-/// revisions. The report never changes the status-owned stream; a
-/// report-write failure composes as the typed `ci.report-write-failed`
-/// unavailable result after a passing run and never masks a failing
-/// run.
-fn run_validate_reported(
-    project: Option<String>,
-    module: Option<String>,
+fn validate_project(
+    project: &Option<String>,
+    module: &Option<String>,
     strict: bool,
     no_cache: bool,
-    request: &crate::report_output::ReportRequest,
+    attachment: Option<String>,
+    lock: Option<String>,
 ) -> DomainResult {
-    if !request.is_requested() {
-        return run_validate(project, module.clone(), strict, no_cache);
+    let root = std::path::Path::new(project.as_deref().unwrap_or("."));
+    let runtime = runtime_config::configured(project.as_deref());
+    let preserve_model = attachment.is_some() || module.is_some();
+    let model = if let Some(attachment) = attachment {
+        Some(module_api::run_validate_seam(module_api::ValidateSeam {
+            project: project.clone(),
+            module: module.clone(),
+            strict,
+            attachment,
+            lock,
+        }))
+    } else if !runtime
+        || module.is_some()
+        || root.join("lekalo/project.yaml").symlink_metadata().is_ok()
+    {
+        Some(run_validate(
+            project.clone(),
+            module.clone(),
+            strict,
+            no_cache,
+        ))
+    } else {
+        None
+    };
+    let model = match model {
+        Some(result) if result.status() != lekalo_core::result::Status::Valid => return result,
+        other => other,
+    };
+    if runtime {
+        let result = runtime_config::check(project.as_deref());
+        if !preserve_model
+            || model.is_none()
+            || result.status() != lekalo_core::result::Status::Valid
+        {
+            return result;
+        }
     }
-    let result = run_validate(project.clone(), module.clone(), strict, no_cache);
-    report_finished_result(result, request, &project, &module, strict)
+    model.expect("validation always has a model or a runtime")
 }
 
 /// The CI report projection of one finished validate-family result (the
@@ -6864,7 +6871,11 @@ fn edge_line(label: &str, edge: &lekalo_core::graph::GraphEdge) -> String {
 /// exits onto the accepted 0/1 envelope.
 fn run_trace(command: TraceCommands) -> DomainResult {
     let (path, step) = match command {
-        TraceCommands::Assess { path, evidence } => return trace_assess(&path, &evidence),
+        TraceCommands::Assess {
+            path,
+            evidence,
+            project,
+        } => return trace_assess(&path, &evidence, &project),
         // The collect arm never reads a manifest file: it rebuilds the
         // scenario-evidence document through the core and persists it.
         TraceCommands::Collect { project } => {
@@ -6908,7 +6919,7 @@ fn run_trace(command: TraceCommands) -> DomainResult {
     }
 }
 
-fn trace_assess(path: &str, evidence: &str) -> DomainResult {
+fn trace_assess(path: &str, evidence: &str, project: &str) -> DomainResult {
     use std::io::Read;
     let read = |path: &str, limit: usize| -> io::Result<Vec<u8>> {
         let file = std::fs::File::open(path)?;
@@ -6928,7 +6939,7 @@ fn trace_assess(path: &str, evidence: &str) -> DomainResult {
         Ok(bytes) => bytes,
         Err(_) => return DomainResult::invalid(lekalo_core::trace::io_failure("file-unreadable")),
     };
-    match lekalo_core::trace::assessment::assess(&trace, &bytes) {
+    match lekalo_core::trace::assessment::assess_in(std::path::Path::new(project), &trace, &bytes) {
         Ok(report) => report.domain_result(),
         Err(diagnostics) => DomainResult::invalid(diagnostics),
     }
@@ -7660,18 +7671,6 @@ fn check_model_custody(
     Ok(digest)
 }
 
-/// The independently custodied implementation identity, frozen into
-/// the trusted engine artifact at build time. Caller-supplied neighboring
-/// files and evidence can never redefine the eligible backend pin.
-const REVIEWED_PHP_BACKEND: &[u8] =
-    include_bytes!("../../../tests/fixtures/pilot/worklog-changelog/php/run.php");
-
-/// Engine backend eligibility requires the exact reviewed implementation
-/// embedded in this binary, as well as confined custody of its fixture
-/// copy. The expected digest is never derived from a replacement file.
-/// The go target stays undeclared here (its committed refusal record is
-/// the honest absence), so any `bound` go row is
-/// provenance-forged under the receipt rule.
 fn engine_backend_provenance(
     selection: &LoadSelection,
     composition_dir: &std::path::Path,
@@ -7681,27 +7680,30 @@ fn engine_backend_provenance(
         return provenance;
     };
     // The native lane rides the fixture root beside the composition's
-    // attachments directory: `<root>/<lane>/run.php`. A composition
+    // attachments directory, at the reviewed relative entry. A composition
     // laid out differently declares no executable lane, so no
     // provenance exists and any bound backend refuses.
     let fixture_root = composition_dir.parent().unwrap_or(composition_dir);
+    let backends = pilot_profile::worklog();
     for definition in &compilation.project.definitions {
         if let lekalo_core::ir::Definition::TargetBinding(binding) = definition {
-            if let Some((lane, identity)) = native_lane_for(binding.target.as_str()) {
-                let lane_path = fixture_root.join(lane).join("run.php");
+            if let Some(backend) = backends
+                .iter()
+                .find(|b| b.target == binding.target.as_str())
+            {
+                let lane = backend.lane.as_str();
+                let identity = backend.identity.as_str();
+                let lane_path = fixture_root.join(lane).join(&backend.entry);
                 // The lane bytes are custody-confined to the fixture
                 // tree like every other consumed input: an escaping
                 // link never provides provenance.
                 let Some(bytes) = confined_read(fixture_root, &lane_path).ok() else {
                     continue;
                 };
-                if bytes != REVIEWED_PHP_BACKEND {
+                let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
+                if digest.strip_prefix("sha256:") != Some(backend.sha256.as_str()) {
                     continue;
                 }
-                let digest = format!(
-                    "sha256:{}",
-                    lekalo_core::digest::sha256_hex(REVIEWED_PHP_BACKEND)
-                );
                 provenance.insert(
                     lane.to_owned(),
                     lekalo_core::worklog_changelog::BackendProvenance {
@@ -7715,15 +7717,6 @@ fn engine_backend_provenance(
     provenance
 }
 
-/// The native runtime lane of one compiled target binding: the closed
-/// lane vocabulary and its backend identity.
-fn native_lane_for(target: &str) -> Option<(&'static str, &'static str)> {
-    match target {
-        "php-laravel" => Some(("php", "taskhub.runtime/fake-transport")),
-        _ => None,
-    }
-}
-
 /// The trusted execution receipts (issue #51 r5): the engine shell
 /// itself executes every declared native lane for this admission
 /// under an engine-built execution battery and hands the
@@ -7731,8 +7724,7 @@ fn native_lane_for(target: &str) -> Option<(&'static str, &'static str)> {
 /// the custody-read, pin-verified scenario corpus of the pinned
 /// compilation — never from the lane's own output — and a fresh
 /// per-run nonce probe defeats captured-output replay. Eligibility is
-/// separately bound to the reviewed implementation embedded in the
-/// trusted binary: a battery-aware printer cannot qualify either.
+/// separately bound to the independently pinned implementation profile: a battery-aware printer cannot qualify either.
 /// A lane that cannot launch at all is recorded as an engine-side
 /// failure, never mislabeled as an unverified execution claim, and
 /// the absolute lane path makes the admission verdict independent of
@@ -7762,6 +7754,7 @@ fn native_execution_receipts(
         "sha256:{}",
         lekalo_core::digest::sha256_hex(compilation.project.to_canonical_json().as_bytes())
     );
+    let backends = pilot_profile::worklog();
     let allowlist: Vec<String> = composition
         .public_allowlist()
         .fields()
@@ -7772,10 +7765,15 @@ fn native_execution_receipts(
         let lekalo_core::ir::Definition::TargetBinding(binding) = definition else {
             continue;
         };
-        let Some((lane, identity)) = native_lane_for(binding.target.as_str()) else {
+        let Some(backend) = backends
+            .iter()
+            .find(|b| b.target == binding.target.as_str())
+        else {
             continue;
         };
-        let lane_path = fixture_root.join(lane).join("run.php");
+        let lane = backend.lane.as_str();
+        let identity = backend.identity.as_str();
+        let lane_path = fixture_root.join(lane).join(&backend.entry);
         let Ok(bytes) = confined_read(&fixture_root, &lane_path) else {
             continue;
         };
@@ -7795,7 +7793,7 @@ fn native_execution_receipts(
         };
         // R6 F2: a replacement cannot mint its own eligibility by
         // printing its digest or answering the disclosed battery.
-        if bytes != REVIEWED_PHP_BACKEND {
+        if digest.strip_prefix("sha256:") != Some(backend.sha256.as_str()) {
             fail_closed("backend-untrusted");
             continue;
         }
@@ -7816,14 +7814,13 @@ fn native_execution_receipts(
         // swap the implementation between eligibility and spawn.
         let run_dir = std::env::temp_dir().join(format!("lekalo-battery-{}", battery.nonce));
         let battery_path = run_dir.join("battery.json");
-        let executed_lane = run_dir.join("run.php");
+        let executed_lane = run_dir.join(&backend.entry);
         let owns_run_dir = std::fs::create_dir(&run_dir).is_ok();
         let writable = owns_run_dir
             && std::fs::write(&battery_path, &battery.bytes).is_ok()
-            && std::fs::write(&executed_lane, REVIEWED_PHP_BACKEND).is_ok();
-        // The interpreter resolves exactly the way the harness
-        // resolves it: LEKALO_PHP first, then the PATH default.
-        let interpreters: Vec<String> = std::env::var("LEKALO_PHP")
+            && std::fs::write(&executed_lane, &bytes).is_ok();
+        // A reviewed profile names both the operator override and the default interpreter.
+        let interpreters: Vec<String> = std::env::var(&backend.interpreter_env)
             .ok()
             .filter(|value| !value.is_empty())
             .map(|value| {
@@ -7833,7 +7830,7 @@ fn native_execution_receipts(
                     .map(str::to_owned)
                     .collect()
             })
-            .unwrap_or_else(|| vec!["php".to_owned()]);
+            .unwrap_or_else(|| vec![backend.interpreter.clone()]);
         let outcome = if writable {
             pilot_battery::run_battery(
                 &interpreters,
@@ -10823,7 +10820,8 @@ fn run_expressions(command: ExpressionsCommands) -> DomainResult {
             path,
             target,
             builtin_support,
-        } => expressions_render(&path, target, builtin_support.as_deref()),
+            project,
+        } => expressions_render(&path, &target, &project, builtin_support.as_deref()),
         ExpressionsCommands::Diff { base, candidate } => expressions_diff(&base, &candidate),
     }
 }
@@ -10998,22 +10996,21 @@ fn expressions_eval(path: &str, vectors_path: &str, support: Option<&str>) -> Do
 }
 
 /// `lekalo expressions render`: the complete cross-target program.
-fn expressions_render(path: &str, target: ExpressionTarget, support: Option<&str>) -> DomainResult {
+fn expressions_render(
+    path: &str,
+    target: &str,
+    project: &std::path::Path,
+    support: Option<&str>,
+) -> DomainResult {
     let attachment = match expressions_attachment(path, support) {
         Ok(attachment) => attachment,
         Err(result) => return result,
     };
-    let core_target = match target {
-        ExpressionTarget::Node => lekalo_core::expressions::Target::Node,
-        ExpressionTarget::Php => lekalo_core::expressions::Target::Php,
-        ExpressionTarget::Go => lekalo_core::expressions::Target::Go,
+    let program = match lekalo_core::expressions::render_program(project, &attachment, target) {
+        Ok(program) => program,
+        Err(err) => return lekalo_core::runtime::outcome(Err(err)),
     };
-    let program = lekalo_core::expressions::render_program(&attachment, core_target);
-    let json = format!(
-        "{{\"status\":\"valid\",\"expressionRender\":{{\"target\":\"{}\",\"program\":{}}}}}",
-        core_target.key(),
-        serde_json::to_string(&program).unwrap_or_default(),
-    );
+    let json = serde_json::json!({"status":"valid", "expressionRender":{"target":target,"program":program}}).to_string();
     let human = program;
     DomainResult::graph(json, human, Vec::new())
 }

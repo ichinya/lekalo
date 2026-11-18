@@ -3,7 +3,7 @@ import {assertRuntimeGate} from './ci-workflow.mjs';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, mkdtempSync, cpSync, mkdirSync, rmSync, existsSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, cpSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -97,12 +97,9 @@ export function attachments(env) {
 export function golden(name,value,update) {
   const family=['report','evidence','config','waivers','comparison'].find(f=>name===f||name.startsWith(f+'-'));
   const legacyPath=family?join(root,'tests/fixtures',`ai-lint-${family}`,'golden',name+'.json'):join(fixture,'golden',name+'.json');
-  // M8 upgrades the PHP producer and the Node declaration closure while
-  // the evidence wire stays frozen. Preserve both predecessor receipts.
-  const m8Adapter=['0.8.0','0.8.14','0.8.15','0.9.0','1.0.0','1.1.0','1.2.0','1.3.0'].includes(product)&&['adapter-php-laravel','adapter-node-typescript'].includes(name);
-  const qualified=m8Adapter||(productPinnedGoldens.has(name)&&['0.6.5','0.8.0','0.8.14','0.8.15','0.9.0','1.0.0','1.1.0','1.2.0','1.3.0'].includes(product));
+  const qualified=productPinnedGoldens.has(name)&&['0.6.5','0.8.0','0.8.14','0.8.15','0.9.0','1.0.0','1.1.0','1.2.0','1.3.0'].includes(product);
   const path=qualified?legacyPath.replace(/\.json$/,`.product-${product}.json`):legacyPath;
-  if(qualified) schema(m8Adapter?'evidence':family,JSON.parse(readFileSync(legacyPath,'utf8')));
+  if(qualified) schema(family,JSON.parse(readFileSync(legacyPath,'utf8')));
   if(update) {mkdirSync(dirname(path),{recursive:true});writeFileSync(path,canonical(value)+'\n');}
   else assert.equal(readFileSync(path,'utf8'),canonical(value)+'\n',`golden drift: ${name}`);
 }
@@ -219,72 +216,6 @@ export function comparisonCases(env,update) {
   const regression=clone(report);regression.findings=[];regression.metrics.forEach(m=>m.raw=m.active=m.waived=0);Object.assign(regression.summary,{raw:0,active:0,waived:0,possibleEffects:0,ambiguitySets:0});
   const deterioration=run(env.project,[...args,'--baseline',env.file('clean-baseline.json',regression)]).report.comparison.value;assert.equal(deterioration.regression.value,true);assert.ok(deterioration.deltas.some(d=>d.raw>0));
 }
-export function adapterCases(env,update) {
-  const protocol=ajv.compile(read('contracts/target-protocol.schema.v0.6.4.json')),frozen=ajv.compile(read('contracts/target-protocol.schema.v0.3.2.json'));
-  for(const [target,runtime,path,bindings] of [
-    ['node-typescript',process.execPath,'src/events.ts',[['src/events.ts#Task','planner.task','entity'],['src/events.ts#focus','planner.focus_task','command'],['src/events.ts#edit','planner.edit_task_cmd','command']]],
-    ['php-laravel','php','app/events.php',[['app/events.php#Task','planner.task','entity'],['app/events.php#Commands.focus','planner.focus_task','command'],['app/events.php#Commands.edit','planner.edit_task_cmd','command']]]]) {
-    const adapterHome=join(root,target==='node-typescript'?'tests/external/lekalo-typescript/adapters/node-typescript':'adapters/php-laravel');
-    const adapter=join(adapterHome,target==='node-typescript'?'test/native-test-entry.mjs':'adapter.php'),bytes=readFileSync(join(env.project,path));
-    const request={protocol:'lekalo.target/v1',protocol_version:'0.6.4',request_id:'req-'+'7'.repeat(64),operation:'lint',project_root:'.',target,limits:{max_output_bytes:8388608,timeout_ms:600000},lint_request:{scope:['planner'],pins:env.pins,bindings:bindings.map(([nativeId,symbol,kind])=>({path,nativeId,symbol,kind,fingerprint:digest(bytes)})),files:[path]}};
-    assert.ok(protocol(request),JSON.stringify(protocol.errors));assert.equal(frozen(request),false);
-    const call=r=>spawnSync(runtime,[adapter],{cwd:env.project,input:canonical(r),encoding:'utf8',timeout:60000,maxBuffer:16*1024*1024});
-    const child=call(request);assert.equal(child.status,0,child.stderr);const response=JSON.parse(child.stdout);assert.ok(protocol(response),JSON.stringify(protocol.errors));const e=response.result.lint_evidence;schema('evidence',e);
-    assert.ok(e.records.some(r=>r.kind==='effect'&&r.mechanism==='observer'&&r.activation.length===5),`${target} actual observer chain`);assert.ok(e.records.some(r=>r.kind==='reflection'),`${target} dynamic call`);assert.ok(e.coverage.every(c=>c.state!=='complete'));
-    const live=run(env.project,[...env.args,'--evidence',env.file(`${target}-live.json`,e)]).report;
-    assert.ok(live.findings.some(f=>f.ruleId==='hidden.observer-write'&&f.semanticSymbol.value==='planner.focus_task'));
-    assert.ok(!live.findings.some(f=>f.ruleId==='hidden.observer-write'&&f.semanticSymbol.value==='planner.edit_task_cmd'),'declared effect control');
-    assert.ok(live.findings.some(f=>f.ruleId==='hidden.reflective-call'));assert.equal(live.summary.verifiedEffects,0);
-    // Compiler/runtime pins are part of custody, so golden producer receipts are
-    // schema vectors; live receipts are always regenerated and admitted above.
-    const snapshot=clone(e);snapshot.producer.compiler=known(target==='php-laravel'?'php/8.3':'typescript/7.0.2');golden(`adapter-${target}`,snapshot,update);
-    const duplicateBinding=clone(request);duplicateBinding.lint_request.bindings.push({...duplicateBinding.lint_request.bindings[0],symbol:'planner.edit_task_cmd'});assert.notEqual(call(duplicateBinding).status,0,'ambiguous native join is refused');
-    const old=clone(request);old.protocol_version='0.3.2';assert.notEqual(call(old).status,0);
-    const extra=clone(request);extra.lint_request.extra=true;assert.notEqual(call(extra).status,0);
-    const nullRequest=clone(request);nullRequest.lint_request=null;assert.notEqual(call(nullRequest).status,0);
-    const traversal=clone(request);traversal.lint_request.files=['../host.ts'];assert.notEqual(call(traversal).status,0);
-    // A same-spelled API without recognized receiver/registration is not a hook.
-    const original=bytes.toString('utf8'),negative=target==='node-typescript'?original.replace("bus.on('saved',", "// bus.on('saved',"):original.replace('Task::observe(TaskObserver::class);','// Task::observe(TaskObserver::class);');
-    writeFileSync(join(env.project,path),negative);const negRequest=clone(request);negRequest.lint_request.bindings.forEach(b=>b.fingerprint=digest(negative));const nc=call(negRequest);assert.equal(nc.status,0,nc.stderr);assert.ok(!JSON.parse(nc.stdout).result.lint_evidence.records.some(r=>r.kind==='effect'));writeFileSync(join(env.project,path),bytes);
-    const install=raw(env.project,['adapter','install','path:'+adapterHome,'--dry-run']);assert.equal(install.child.status,0,JSON.stringify(install.envelope));
-    const plan=install.envelope.plan?.planId??install.envelope.planId??install.envelope.plan?.id;assert.ok(plan,JSON.stringify(install.envelope));
-    const applied=raw(env.project,['adapter','install','path:'+adapterHome,'--confirm',plan]);assert.equal(applied.child.status,0,JSON.stringify(applied.envelope));
-    const scan=run(env.project,[...env.args,'--scan-target',target,'--source-file',path]);assert.ok(scan.report.coverage.some(c=>c.target===target));assert.equal(scan.report.summary.verifiedEffects,0);
-    const observed={schemaVersion:'lekalo/observed-scan/v0.2.16',adapter:{id:'lekalo-target-'+target,version:target==='node-typescript'?'0.4.0':'0.2.0',digest:null},project:'planner',revision:digest(bytes),symbols:bindings.map(([nativeId,symbol,kind])=>({id:symbol,kind,stableKey:nativeId,location:{path,line:1},fingerprint:digest(bytes),mappingConfidence:'high',evidence:{}})),endpoints:[],schemas:[]};
-    const updated=raw(env.project,['observe','update','--scan',env.file('observed-scan.json',observed)]);assert.equal(updated.child.status,0,JSON.stringify(updated.envelope));
-    for(const [,symbol]of bindings){const confirmed=raw(env.project,['observe','confirm',symbol]);assert.equal(confirmed.child.status,0,JSON.stringify(confirmed.envelope));}
-    const indexPath=join(env.project,'.lekalo/import/observed/index.json'),beforeIndex=readFileSync(indexPath),beforeSource=readFileSync(join(env.project,path));
-    const collected=run(env.project,[...env.args,'--scan-target',target,'--source-file',path,'--spans']);
-    assert.ok(collected.report.findings.some(f=>f.ruleId==='hidden.observer-write'&&f.semanticSymbol.value==='planner.focus_task'),target+' installed production collector positive');
-    assert.ok(!collected.report.findings.some(f=>f.ruleId==='hidden.observer-write'&&f.semanticSymbol.value==='planner.edit_task_cmd'));
-    assert.ok(collected.report.findings.some(f=>f.ruleId==='hidden.reflective-call'));assert.equal(collected.report.summary.verifiedEffects,0);
-    const selected=raw(env.project,['ai-lint','--symbol','planner.focus_task',...env.args,'--scan-target',target,'--source-file',path]);assert.equal(selected.child.status,0,JSON.stringify(selected.envelope));assert.ok(selected.envelope.report.findings.some(f=>f.ruleId==='hidden.observer-write'&&f.semanticSymbol.value==='planner.focus_task'),target+' single-symbol scope retains entity mapping');
-    assert.deepEqual(readFileSync(indexPath),beforeIndex,'lint retains observed index');assert.deepEqual(readFileSync(join(env.project,path)),beforeSource,'lint retains source');
-    unlinkSync(indexPath);
-    // R1: exactly 32/33 detector locations, through both admission paths.
-    // PHP creates one method span plus one computed-call span; an empty
-    // seventeenth method yields precisely 33 rather than 34 locations.
-    try {for(const count of [32,33]) {
-      const text=target==='node-typescript'
-        ? Array.from({length:count},(_,i)=>`export function case${i}(obj: any, key: string) { obj[key](); }`).join('\n')+'\n'
-        : '<?php\nclass Cases {\n'+Array.from({length:16},(_,i)=>`public function case${i}($obj, $key) { $obj->$key(); }`).join('\n')+(count===33?'\npublic function extra() {}':'')+'\n}\n';
-      writeFileSync(join(env.project,path),text);
-      const boundary=clone(request);boundary.lint_request.bindings=[];
-      const receipt=call(boundary);assert.equal(receipt.status,0,receipt.stderr);const response=JSON.parse(receipt.stdout);assert.ok(protocol(response),JSON.stringify(protocol.errors));
-      const evidence=response.result.lint_evidence;schema('evidence',evidence);assert.equal(evidence.locations.length,32);assert.equal(evidence.limitations.includes('document-location-limit'),count===33);
-      const expectedRecords=target==='node-typescript'?32:16;assert.equal(evidence.records.length,expectedRecords,'whole retained records');
-      const supplied=run(env.project,[...env.args,'--evidence',env.file('bounded-collector.json',evidence)]),installed=run(env.project,[...env.args,'--scan-target',target,'--source-file',path]);
-      const selected=report=>report.findings.filter(f=>f.target===target).map(f=>[f.id,f.ruleId,f.confidence,f.severity]);
-      assert.deepEqual(selected(installed.report),selected(supplied.report));assert.equal(selected(supplied.report).length,expectedRecords);
-      assert.deepEqual(installed.report.coverage.filter(c=>c.target===target),supplied.report.coverage.filter(c=>c.target===target),'collection/replay coverage parity');
-      for(const result of [supplied,installed]) {
-        assert.ok(result.envelope.diagnostics.some(d=>d.id==='ai-lint.coverage-incomplete'));
-        const coverage=result.report.coverage.find(c=>c.target===target&&c.rule==='hidden.reflective-call');assert.equal(coverage.state,'partial');assert.equal(coverage.limitations.includes('document-location-limit'),count===33);
-      }
-      const oversized=clone(evidence);oversized.locations.push(clone(oversized.locations[0]));schema('evidence',oversized,false);refusal(env,[...env.args,'--evidence',env.file('over-bound-collector.json',oversized)],'ai-lint.input-invalid');
-    }} finally {writeFileSync(join(env.project,path),bytes);}
-  }
-}
 export function gate(family) {
   const productProbe=spawnSync(binary,['--version'],{cwd:root,encoding:'utf8',timeout:10000});
   assert.equal(productProbe.status,0);assert.equal(productProbe.stdout.trim(),`lekalo ${product}`,'built product must match exact golden selection');
@@ -293,7 +224,7 @@ export function gate(family) {
     for(const f of ['report','evidence','config','waivers','comparison']) {assertRuntimeGate('test-ai-lint-'+f+'-contracts.mjs',{ajv:true});assert.equal(read('tests/fixtures/fixture-provenance.json').families.find(e=>e.family==='ai-lint-'+f)?.origin,'synthetic');}
     if(family==='report') {for(const generator of ['gen-ai-lint-contracts.mjs','gen-ai-lint-protocol.mjs']) {const r=spawnSync(process.execPath,[join(root,'scripts',generator),'--check'],{cwd:root,encoding:'utf8'});assert.equal(r.status,0,r.stderr);}}
     if(family==='report')reportCases(env,update);
-    else if(family==='evidence'){evidenceCases(env,update);adapterCases(env,update);}
+    else if(family==='evidence')evidenceCases(env,update);
     else if(family==='config')configCases(env,update);
     else if(family==='waivers')waiverCases(env,update);
     else if(family==='comparison')comparisonCases(env,update);

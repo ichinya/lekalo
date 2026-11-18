@@ -172,52 +172,6 @@ fn eval_runs_the_shared_vectors_with_the_injected_clock() {
 }
 
 #[test]
-fn render_emits_complete_programs_for_every_target() {
-    let root = expressions_root();
-    for (target, marker) in [
-        ("node", "const LEK = Object.create(null);"),
-        ("php", "<?php"),
-        ("go", "package main"),
-    ] {
-        let output = lekalo_in(
-            &root,
-            &[
-                "expressions",
-                "render",
-                "valid/planner.json",
-                "--target",
-                target,
-            ],
-        );
-        assert_eq!(exit_code(&output), 0, "{target}: {}", stdout_text(&output));
-        let program = stdout_text(&output);
-        assert!(program.contains(marker), "{target} missing {marker}");
-        assert!(program.contains("expr.planner/overdue-check"), "{target}");
-        // The JSON envelope carries the same program.
-        let json_output = lekalo_in(
-            &root,
-            &[
-                "--json",
-                "expressions",
-                "render",
-                "valid/planner.json",
-                "--target",
-                target,
-            ],
-        );
-        assert_eq!(exit_code(&json_output), 0);
-        let document = json_of(&json_output);
-        assert_eq!(document["expressionRender"]["target"], target);
-        assert_eq!(
-            document["expressionRender"]["program"]
-                .as_str()
-                .map(str::len),
-            Some(program.len())
-        );
-    }
-}
-
-#[test]
 fn managed_mode_blocks_builtins_absent_from_the_snapshot() {
     let root = expressions_root();
     let ok = lekalo_in(

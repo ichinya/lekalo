@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/workspace.schema.v1.json",
+  "title": "Independent Lekalo projects and contract imports",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "children"
+      ],
+      "properties": {
+        "children": {
+          "minProperties": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "imports"
+      ],
+      "properties": {
+        "imports": {
+          "minProperties": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "exports"
+      ],
+      "properties": {
+        "exports": {
+          "minProperties": 1
+        }
+      }
+    }
+  ],
+  "properties": {
+    "schema": {
+      "const": "lekalo/workspace/v1"
+    },
+    "children": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "maxProperties": 32,
+      "additionalProperties": {
+        "$ref": "#/$defs/path"
+      }
+    },
+    "imports": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "maxProperties": 32,
+      "additionalProperties": {
+        "$ref": "#/$defs/import"
+      }
+    },
+    "exports": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "maxProperties": 32,
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/fact"
+          },
+          {
+            "$ref": "#/$defs/module"
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{1,48}$"
+    },
+    "token": {
+      "type": "string",
+      "pattern": "^[-A-Za-z0-9._/@]{1,128}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Project-relative Lekalo path."
+    },
+    "import": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/name"
+        },
+        "export": {
+          "$ref": "#/$defs/name"
+        },
+        "bundle": {
+          "$ref": "#/$defs/path"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "from",
+        "export",
+        "bundle",
+        "digest"
+      ]
+    },
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "runtime-fact"
+        },
+        "component": {
+          "$ref": "#/$defs/token"
+        },
+        "package": {
+          "$ref": "#/$defs/token"
+        },
+        "rule": {
+          "$ref": "#/$defs/token"
+        }
+      },
+      "required": [
+        "kind",
+        "component",
+        "package",
+        "rule"
+      ]
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "module-api"
+        },
+        "api": {
+          "$ref": "#/$defs/path"
+        },
+        "module": {
+          "$ref": "#/$defs/token"
+        }
+      },
+      "required": [
+        "kind",
+        "api",
+        "module"
+      ]
+    }
+  }
+}

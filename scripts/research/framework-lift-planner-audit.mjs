@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {join,resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
-import {repo,sha,write,inventory} from './framework-lift-rounding.mjs';
+import {repo,sha,write,inventory,typescriptAdapter} from './framework-lift-rounding.mjs';
 import {usage,observations,completionAudit,markedReads} from './framework-lift-runner.mjs';
 const read=p=>JSON.parse(fs.readFileSync(p,'utf8'));
 export function maintain(root){
@@ -15,12 +15,12 @@ export function maintain(root){
   const before=inventory(join(work,'src')),indexPath=join(work,'.lekalo/import/observed/index.json'),accepted=fs.readFileSync(indexPath),receipts=[];
   function cli(args){const start=performance.now(),r=spawnSync(c.paths.binary,['--json','--no-cache',...args,'--project','.'],{cwd:work,encoding:'utf8',timeout:120000,maxBuffer:16e6,windowsHide:true});let doc;try{doc=JSON.parse(r.stdout.trim()||r.stderr.trim());}catch{doc=null;}const row={args,exit:r.status,durationMs:performance.now()-start,stdout:r.stdout,stderr:r.stderr,document:doc};receipts.push(row);return row;}
   const changed=cli(['bindings','audit']);
-  const scan=cli(['scan','--target','node-typescript','--profile','standalone',process.execPath,join(repo,'adapters/node-typescript/adapter.mjs'),'--lekalo-project-profile-json',JSON.stringify(profile)]);
+  const scan=cli(['scan','--target','node-typescript','--profile','standalone',process.execPath,typescriptAdapter,'--lekalo-project-profile-json',JSON.stringify(profile)]);
   let plan=null,confirmation=null,after=null,repeat=null,deterministic=null;
   if(scan.exit===0){
    plan=cli(['bindings','confirm','--batch','--preview']);if(plan.exit===0&&plan.document.entries.length)confirmation=cli(['bindings','confirm','--batch','--confirm',plan.document.plan]);
    after=cli(['bindings','audit']);
-   const b=fs.readFileSync(indexPath);repeat=cli(['scan','--target','node-typescript','--profile','standalone',process.execPath,join(repo,'adapters/node-typescript/adapter.mjs'),'--lekalo-project-profile-json',JSON.stringify(profile)]);
+   const b=fs.readFileSync(indexPath);repeat=cli(['scan','--target','node-typescript','--profile','standalone',process.execPath,typescriptAdapter,'--lekalo-project-profile-json',JSON.stringify(profile)]);
    deterministic=b.equals(fs.readFileSync(indexPath));
   }
   const refusedPreservesIndex=scan.exit!==0?accepted.equals(fs.readFileSync(indexPath)):null;

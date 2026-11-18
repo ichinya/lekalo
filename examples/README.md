@@ -2,7 +2,7 @@
 
 Status: maintained synthetic Node and Laravel HTTP/PostgreSQL references for [issue #109](https://github.com/ichinya/lekalo/issues/109). Owner: reference-project maintainers. These are small onboarding/conformance examples, not a mandatory application architecture.
 
-One canonical [Lekalo Model](planner-shared/lekalo/project.yaml), [HTTP profile](planner-shared/reference-matrix.json), [portable HTTP scenario corpus](planner-shared/scenarios.json), SQL schema and deterministic seed are shared by both targets. The model was derived from the existing public routes fixture; that historical fixture remains a separate regression input. `reference-projects.lock.json` pins exact shared/example bytes, dependency locks and native adapter manifests. No verification step rewrites locks or installs dependencies.
+One canonical [Lekalo Model](planner-shared/lekalo/project.yaml), [HTTP profile](planner-shared/reference-matrix.json), [portable HTTP scenario corpus](planner-shared/scenarios.json), SQL schema and deterministic seed are shared by both targets. The model was derived from the existing public routes fixture; that historical fixture remains a separate regression input. `reference-projects.lock.json` pins exact shared/example bytes, dependency locks and native adapter manifests. Standalone exports verify the committed inputs offline and record both adapter manifest digests in `reference-revision.json`. When a manifest is provisioned, the exporter also checks its bytes. The package integration gate checks both installed manifests.
 
 ## Quickstart
 
@@ -26,6 +26,8 @@ curl -H 'X-Actor: user-a' -H 'X-Tenant: workspace-a' -H 'Idempotency-Key: first-
 The curl commands above use Bash quoting. Use `curl.exe` in Windows PowerShell when `curl` is its web-request alias and adapt native JSON argument quoting for your PowerShell version. The [Node](planner-node/README.md) and [Laravel](planner-laravel/README.md) pages document standalone local exports, database setup and exact differences. Both implement the same profile; move/complete/count operations are outside this reference revision and are not included in its canonical model. Unsupported operations are not silently counted as passed.
 
 ## Conformance
+
+The package-owned test commands below run in the integration checkout prepared by the [Laravel reference-project workflow](https://github.com/ichinya/lekalo-php-laravel/blob/main/.github/workflows/reference-projects.yml).
 
 Read-only source/lock check, with no database or installed application dependencies:
 

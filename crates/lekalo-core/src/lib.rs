@@ -52,8 +52,6 @@ pub mod observed;
 pub mod openapi;
 pub mod orchestration;
 pub mod ownership;
-pub mod php_operations;
-pub mod php_routes;
 pub mod portability;
 pub mod privacy;
 pub mod project_fs;
