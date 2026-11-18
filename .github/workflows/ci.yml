@@ -420,6 +420,13 @@ jobs:
           cargo build -p lekalo-cli --locked
           node scripts/test-php-laravel-migrations.mjs
 
+      - name: Check portable runtime rules, workspace imports and selected services
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.20.0" --ignore-scripts --no-audit --no-fund --no-save ajv@8.20.0
+          unset LEKALO_SERVICES LEKALO_PROJECT
+          NODE_PATH="$RUNNER_TEMP/lekalo-ajv-8.20.0/node_modules" node --test scripts/test-portable-laravel.mjs scripts/test-external-runtime.mjs scripts/test-external-services.mjs
+
   mago-real:
     name: Mago real-toolchain gate (issue #55)
     # The real-toolchain leg: installs the checksum-pinned Mago release
@@ -430,6 +437,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - name: Install the pinned PHP packages and compatibility artifact
+        run: node scripts/external-tool.mjs --provision-php
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
@@ -443,7 +452,7 @@ jobs:
       - name: Install the pinned Mago toolchain (checksum-verified, outside the checkout)
         run: |
           set -euo pipefail
-          LOCK=adapters/php-laravel/vendor/lekalo-php/mago-toolchain.lock.json
+          LOCK=tests/external/lekalo-php/mago-toolchain.lock.json
           PIN_VERSION=$(node -p "require('./$LOCK').tool.version")
           test "$PIN_VERSION" = "1.0.0"
           # Resolve THIS runner's platform entry from the lock — the
@@ -489,7 +498,7 @@ jobs:
 
   php-versions:
     name: PHP version matrix (lekalo-php#1, all current versions)
-    # The vendored language and framework suites, the unified
+    # The external language and framework suites, the unified
     # artifact's describe handshake, and the deterministic rebuild all
     # run on every current PHP version (8.6 rides its RC until GA).
     runs-on: ubuntu-26.04
@@ -500,17 +509,19 @@ jobs:
         php: ['8.0', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6']
     steps:
       - uses: actions/checkout@v7
+      - name: Install the pinned PHP packages and compatibility artifact
+        run: node scripts/external-tool.mjs --provision-php
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
           tools: none
           extensions: none
-      - name: Vendored language and framework suites
+      - name: External language and framework suites
         run: |
           set -euo pipefail
-          php -n adapters/php-laravel/vendor/lekalo-php/tests/protocol.php
-          php -n adapters/php-laravel/vendor/lekalo-php/tests/analyzer.php
-          php -n adapters/php-laravel/vendor/lekalo-php-laravel/tests/laravel.php
+          php -n tests/external/lekalo-php/tests/protocol.php
+          php -n tests/external/lekalo-php/tests/analyzer.php
+          php -n tests/external/lekalo-php-laravel/tests/laravel.php
       - name: The unified artifact answers describe on this version
         run: |
           set -euo pipefail

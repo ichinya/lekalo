@@ -49,10 +49,14 @@ runtimes still have to implement the portable rules/check contract. Unknown
 operations, missing services required by a consumer, invalid responses, stale
 locks and altered executables fail closed. No package fallback is compiled in.
 
-The requirements command selects services from its project root. Trace assessment
-currently selects from the process working directory. Discovery with explicit
-`--project` uses that root; ancestor probing uses the invocation directory's
-selection. Parent/child service inheritance is not implemented in this change.
+Locking checks the operations required by the selected role. A discovery provider
+must implement both discovery operations. The requirements and trace roles must
+implement their respective snapshot and mappings operations.
+
+Requirements and `trace assess --project DIR` select services from that project.
+Trace defaults to the invocation directory. Discovery with an explicit project uses
+that root. Ancestor discovery reads the locked selection of the candidate root.
+Each child project owns its service selection.
 
 ## Data contracts
 

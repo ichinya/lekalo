@@ -13,9 +13,9 @@ declare(strict_types=1);
 define('ADAPTER_ID', 'lekalo-target-php-laravel');
 define('TARGET_TOKEN', 'php-laravel');
 
-require __DIR__ . '/../vendor/lekalo-php/src/analyzer.php';
-require __DIR__ . '/../vendor/lekalo-php/src/strict-profile.php';
-require __DIR__ . '/../vendor/lekalo-php/src/kernel.php';
+require __DIR__ . '/../../../tests/external/lekalo-php/src/analyzer.php';
+require __DIR__ . '/../../../tests/external/lekalo-php/src/strict-profile.php';
+require __DIR__ . '/../../../tests/external/lekalo-php/src/kernel.php';
 
 $GLOBALS['__lekalo_failures'] = [];
 $GLOBALS['__lekalo_checks'] = 0;
@@ -149,11 +149,11 @@ check($committed !== false && hash('sha256', $committed) === substr((string) $ch
 
 // --- confined tokenizer dependency -----------------------------------------
 
-require_once __DIR__ . '/../vendor/lekalo-php/src/ai-lint.php';
+require_once __DIR__ . '/../../../tests/external/lekalo-php/src/ai-lint.php';
 lint_require_tokenizer();
 check(function_exists('token_get_all'), 'standard tokenizer is available or loaded');
 $runtimeProbe = 'final class RequestRefusal extends RuntimeException {};' .
-    'require ' . var_export(dirname(__DIR__) . '/vendor/lekalo-php/src/ai-lint.php', true) . ';' .
+    'require ' . var_export(dirname(__DIR__) . '/../../tests/external/lekalo-php/src/ai-lint.php', true) . ';' .
     'try { lint_require_tokenizer(); exit(9); }' .
     'catch (RequestRefusal $e) { echo $e->getMessage(); }';
 $runtimeChild = proc_open([

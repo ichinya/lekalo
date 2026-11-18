@@ -43,6 +43,7 @@ mod native_execution;
 mod native_verify;
 mod ownership;
 mod runtime_config;
+mod workspace;
 use native_execution::NativeCommands;
 mod module_api;
 mod pilot_battery;
@@ -188,6 +189,11 @@ struct ContextBudgetArgs {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Check independent Lekalo projects and their public contract pins.
+    Workspace {
+        #[command(subcommand)]
+        command: workspace::Command,
+    },
     /// Configure external runtimes and portable contract rules.
     Runtime {
         #[command(subcommand)]
@@ -1470,6 +1476,9 @@ enum TraceCommands {
         /// Path to the neutral validation evidence JSON document.
         #[arg(long, value_name = "PATH")]
         evidence: String,
+        /// Project whose locked trace service handles the supplied evidence.
+        #[arg(long, default_value = ".")]
+        project: String,
     },
     /// Validate one neutral trace manifest document.
     Validate {
@@ -2621,6 +2630,7 @@ fn runtime() -> u8 {
 
     let result = match Cli::try_parse() {
         Ok(cli) => match cli.command {
+            Commands::Workspace { command } => workspace::run(command, cli.no_cache),
             Commands::Runtime { command } => return runtime_config::run(command, json_requested),
             Commands::Watch { args } => {
                 return match watch::run(args, json_requested, cli.no_cache) {
@@ -2659,29 +2669,6 @@ fn runtime() -> u8 {
                 ci_policy,
             } => {
                 let project = project.or_else(|| std::env::var("LEKALO_PROJECT").ok());
-                if runtime_config::configured(project.as_deref()) {
-                    if module.is_some()
-                        || module_api.is_some()
-                        || module_api_lock.is_some()
-                        || report_file.is_some()
-                        || report_format.is_some()
-                        || ci_policy.is_some()
-                    {
-                        return emit(DomainResult::usage_error(), json_requested);
-                    }
-                    if std::fs::symlink_metadata(
-                        std::path::Path::new(project.as_deref().unwrap_or("."))
-                            .join("lekalo/project.yaml"),
-                    )
-                    .is_ok()
-                    {
-                        let model = run_validate(project.clone(), None, strict, cli.no_cache);
-                        if model.status() != lekalo_core::result::Status::Valid {
-                            return emit(model, json_requested);
-                        }
-                    }
-                    return runtime_config::check(project.as_deref(), json_requested);
-                }
                 let request = crate::report_output::ReportRequest {
                     file: report_file,
                     format: report_format,
@@ -2692,23 +2679,19 @@ fn runtime() -> u8 {
                 if let Err(result) = request.validate() {
                     return emit(result, json_requested);
                 }
-                if let Some(attachment) = module_api {
-                    let seam_result = module_api::run_validate_seam(module_api::ValidateSeam {
-                        project: project.clone(),
-                        module: module.clone(),
-                        strict,
-                        attachment,
-                        lock: module_api_lock,
-                    });
-                    // The seam honors the CI report flags: a finished
-                    // validate-family result is reported exactly like the
-                    // base path (finding 22: silently dropped flags).
-                    return emit(
-                        report_finished_result(seam_result, &request, &project, &module, strict),
-                        json_requested,
-                    );
+                let result = workspace::validate(
+                    &project,
+                    &module,
+                    strict,
+                    cli.no_cache,
+                    module_api,
+                    module_api_lock,
+                );
+                if request.is_requested() {
+                    report_finished_result(result, &request, &project, &module, strict)
+                } else {
+                    result
                 }
-                run_validate_reported(project, module, strict, cli.no_cache, &request)
             }
             Commands::Compatibility => run_compatibility(),
             Commands::Mcp { command } => match mcp::run(command, json_requested) {
@@ -3096,25 +3079,52 @@ fn emit(result: DomainResult, json: bool) -> u8 {
     }
 }
 
-/// The CI report projection of one validate run (issue #103): the
-/// normalized diagnostics ride the report, the check row carries the
-/// validation verdict, and the provenance snapshot pins the exact
-/// revisions. The report never changes the status-owned stream; a
-/// report-write failure composes as the typed `ci.report-write-failed`
-/// unavailable result after a passing run and never masks a failing
-/// run.
-fn run_validate_reported(
-    project: Option<String>,
-    module: Option<String>,
+fn validate_project(
+    project: &Option<String>,
+    module: &Option<String>,
     strict: bool,
     no_cache: bool,
-    request: &crate::report_output::ReportRequest,
+    attachment: Option<String>,
+    lock: Option<String>,
 ) -> DomainResult {
-    if !request.is_requested() {
-        return run_validate(project, module.clone(), strict, no_cache);
+    let root = std::path::Path::new(project.as_deref().unwrap_or("."));
+    let runtime = runtime_config::configured(project.as_deref());
+    let preserve_model = attachment.is_some() || module.is_some();
+    let model = if let Some(attachment) = attachment {
+        Some(module_api::run_validate_seam(module_api::ValidateSeam {
+            project: project.clone(),
+            module: module.clone(),
+            strict,
+            attachment,
+            lock,
+        }))
+    } else if !runtime
+        || module.is_some()
+        || root.join("lekalo/project.yaml").symlink_metadata().is_ok()
+    {
+        Some(run_validate(
+            project.clone(),
+            module.clone(),
+            strict,
+            no_cache,
+        ))
+    } else {
+        None
+    };
+    let model = match model {
+        Some(result) if result.status() != lekalo_core::result::Status::Valid => return result,
+        other => other,
+    };
+    if runtime {
+        let result = runtime_config::check(project.as_deref());
+        if !preserve_model
+            || model.is_none()
+            || result.status() != lekalo_core::result::Status::Valid
+        {
+            return result;
+        }
     }
-    let result = run_validate(project.clone(), module.clone(), strict, no_cache);
-    report_finished_result(result, request, &project, &module, strict)
+    model.expect("validation always has a model or a runtime")
 }
 
 /// The CI report projection of one finished validate-family result (the
@@ -6864,7 +6874,11 @@ fn edge_line(label: &str, edge: &lekalo_core::graph::GraphEdge) -> String {
 /// exits onto the accepted 0/1 envelope.
 fn run_trace(command: TraceCommands) -> DomainResult {
     let (path, step) = match command {
-        TraceCommands::Assess { path, evidence } => return trace_assess(&path, &evidence),
+        TraceCommands::Assess {
+            path,
+            evidence,
+            project,
+        } => return trace_assess(&path, &evidence, &project),
         // The collect arm never reads a manifest file: it rebuilds the
         // scenario-evidence document through the core and persists it.
         TraceCommands::Collect { project } => {
@@ -6908,7 +6922,7 @@ fn run_trace(command: TraceCommands) -> DomainResult {
     }
 }
 
-fn trace_assess(path: &str, evidence: &str) -> DomainResult {
+fn trace_assess(path: &str, evidence: &str, project: &str) -> DomainResult {
     use std::io::Read;
     let read = |path: &str, limit: usize| -> io::Result<Vec<u8>> {
         let file = std::fs::File::open(path)?;
@@ -6928,7 +6942,7 @@ fn trace_assess(path: &str, evidence: &str) -> DomainResult {
         Ok(bytes) => bytes,
         Err(_) => return DomainResult::invalid(lekalo_core::trace::io_failure("file-unreadable")),
     };
-    match lekalo_core::trace::assessment::assess(&trace, &bytes) {
+    match lekalo_core::trace::assessment::assess_in(std::path::Path::new(project), &trace, &bytes) {
         Ok(report) => report.domain_result(),
         Err(diagnostics) => DomainResult::invalid(diagnostics),
     }

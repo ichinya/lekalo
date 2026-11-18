@@ -2,13 +2,13 @@
 <?php
 /** Transitional compatibility entry; package manifests own every source/resource. */
 declare(strict_types=1);
-require __DIR__ . '/vendor/lekalo-php/build-lib.php';
+require __DIR__ . '/../../tests/external/lekalo-php/build-lib.php';
 try {
     $args = array_slice($_SERVER['argv'] ?? [], 1);
     if ($args !== [] && $args !== ['--check']) { throw new RuntimeException('usage: build.php [--check]'); }
     $result = lekalo_build_compose(
-        __DIR__ . '/vendor/lekalo-php',
-        [__DIR__ . '/vendor/lekalo-php-laravel'],
+        realpath(__DIR__ . '/../../tests/external/lekalo-php'),
+        [realpath(__DIR__ . '/../../tests/external/lekalo-php-laravel')],
         'lekalo-target-php-laravel',
         'php-laravel',
     );

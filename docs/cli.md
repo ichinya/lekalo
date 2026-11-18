@@ -504,6 +504,7 @@ Status: **Implemented** command handlers for product 1.3.0. Handler existence do
 | `lekalo requirements validate` | `lekalo requirements validate [OPTIONS] <PATH>` | [reference](requirements.md) |
 | `lekalo runtime` | `lekalo runtime [OPTIONS] <COMMAND>` | [reference](external-runtimes.md) |
 | `lekalo runtime check` | `lekalo runtime check [OPTIONS]` | [reference](external-runtimes.md) |
+| `lekalo runtime export` | `lekalo runtime export [OPTIONS] --component <COMPONENT> --package <PACKAGE> --rule <RULE>` | [reference](external-runtimes.md) |
 | `lekalo runtime init` | `lekalo runtime init [OPTIONS]` | [reference](external-runtimes.md) |
 | `lekalo runtime lock` | `lekalo runtime lock [OPTIONS]` | [reference](external-runtimes.md) |
 | `lekalo scan` | `lekalo scan [OPTIONS] --target <TARGET> [PROGRAM_ARGS]...` | [reference](observed-mode.md) |
@@ -558,3 +559,6 @@ Status: **Implemented** command handlers for product 1.3.0. Handler existence do
 | `lekalo waivers audit` | `lekalo waivers audit [OPTIONS]` | [reference](waivers.md) |
 | `lekalo waivers list` | `lekalo waivers list [OPTIONS]` | [reference](waivers.md) |
 | `lekalo watch` | `lekalo watch [OPTIONS]` | [reference](cli.md) |
+| `lekalo workspace` | `lekalo workspace [OPTIONS] <COMMAND>` | [reference](external-runtimes.md) |
+| `lekalo workspace check` | `lekalo workspace check [OPTIONS]` | [reference](external-runtimes.md) |
+| `lekalo workspace export` | `lekalo workspace export [OPTIONS] <NAME>` | [reference](external-runtimes.md) |

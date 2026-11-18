@@ -44,6 +44,14 @@
     "lekalo-openspec": {
       "repository": "https://github.com/ichinya/lekalo-openspec.git",
       "commit": "b5fe8a3999caa28f761d94c64d77bbe793be7620"
+    },
+    "lekalo-php": {
+      "repository": "https://github.com/ichinya/lekalo-php.git",
+      "commit": "85e1cb57eff925619bd13c66decbba0d9a2c633c"
+    },
+    "lekalo-php-laravel": {
+      "repository": "https://github.com/ichinya/lekalo-php-laravel.git",
+      "commit": "d6e4c5422de839e2cd66fbaf2393391b182e75c5"
     }
   },
   "services": {

@@ -75,8 +75,18 @@ test('requirements providers cannot ask the host to read outside their declared 
 });
 test('trace service results must cover every requested mapping',t=>{
  const f=fixture(t);f.config.services={trace:{command:[process.execPath,f.entry]}};f.save();f.ok(['runtime','lock']);
- const r=f.run(['trace','assess',resolve('tests/fixtures/trace-assessment/trace.json'),'--evidence',resolve('tests/fixtures/trace-assessment/input/ready.json')]);
+ const r=f.run(['trace','assess',resolve('tests/fixtures/trace-assessment/trace.json'),'--evidence',resolve('tests/fixtures/trace-assessment/input/ready.json'),'--project',f.project],f.dir);
  assert.notEqual(r.status,0);assert.match(r.stderr,/provider-response/);
+});
+
+test('locking a named service checks the operations required by its role',t=>{
+ const f=fixture(t);
+ for(const [role,op] of [['discovery/zen','discovery.inspect'],['trace','trace.mappings'],['requirements','requirements.snapshot']]){
+   f.config.services={[role]:{command:[process.execPath,f.entry]}};f.save();
+   writeFileSync(f.entry,f.code.replace("operations:['discovery.describe','discovery.inspect','requirements.snapshot','trace.mappings']",
+     'operations:'+JSON.stringify(['discovery.describe','discovery.inspect','requirements.snapshot','trace.mappings'].filter(x=>x!==op))));
+   const r=f.run(['runtime','lock']);assert.equal(r.status,5,r.stderr);assert.match(r.stderr,/service-operation-unsupported/);
+ }
 });
 
 test('service DTO schemas reject unknown fields and incompatible versions',()=>{

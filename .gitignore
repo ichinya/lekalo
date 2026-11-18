@@ -37,3 +37,4 @@ sdk/go/bin/
 /adapters/node-typescript/
 
 /tests/external/
+/adapters/php-laravel/adapter.php
