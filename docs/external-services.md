@@ -108,3 +108,20 @@ information and incremental compilation disabled, then includes them in the
 existing digest-checked runtime artifact. Consumer jobs reuse that artifact.
 Core's Cargo graph contains none of these six packages. Their library tests run
 in the owner repositories; host process and confinement tests remain here.
+
+
+## Expression generators
+
+`lekalo expressions render FILE --target NAME --project DIR` selects the service
+`expressions/NAME` from DIR. Set its `command` to an installed executable or
+use a Git package implementing `expressions.render`. Run `lekalo runtime lock`
+after selecting it. The TypeScript, PHP and Go repositories ship the original
+generators in `crates/expressions`. For example, install the PHP package with
+`cargo install --locked --path crates/expressions` in its checkout, then select
+`services: {"expressions/php": {"command": ["lekalo-expressions-php"]}}`.
+
+The host sends `schema: lekalo/expression-projection/v1`, the semantic identity
+and the ordered records. Each record has an id, typed parameters, result type
+and compiled expression body. The SDK's expression-provider crate defines the
+wire types. The service replies with `schema: lekalo/expression-program/v1`
+and the generated source in `program`. A new target uses the same operation.

@@ -6,10 +6,18 @@ use std::path::{Path, PathBuf};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Restore immutable package snapshots and verify the selected local executables.
+    Restore {
+        #[arg(long, default_value = ".")]
+        project: PathBuf,
+    },
+
     /// Create lekalo.yaml without executing or installing packages.
     Init {
         #[arg(long)]
         runtime: Option<String>,
+        #[arg(long, requires = "runtime")]
+        target_version: Option<String>,
         #[arg(long = "rules")]
         rules: Vec<String>,
         #[arg(long, default_value = ".")]
@@ -49,9 +57,13 @@ pub fn emit(result: Result<Value>, json_output: bool) -> u8 {
 }
 
 pub fn configured(project: Option<&str>) -> bool {
-    // A malformed file kind is still a selected config and must fail admission.
-    std::fs::symlink_metadata(Path::new(project.unwrap_or(".")).join(runtime::config::CONFIG))
-        .is_ok()
+    let root = Path::new(project.unwrap_or("."));
+    if std::fs::symlink_metadata(root.join(runtime::config::CONFIG)).is_err() {
+        return false;
+    }
+    // A greenfield model has an empty editable component declaration until selection.
+    !(root.join("lekalo/project.yaml").is_file()
+        && runtime::load(root).is_ok_and(|c| c.components.is_empty() && c.services.is_empty()))
 }
 
 pub fn check(project: Option<&str>) -> lekalo_core::DomainResult {
@@ -63,7 +75,8 @@ pub fn check(project: Option<&str>) -> lekalo_core::DomainResult {
 
 pub fn run(command: Command, json_output: bool) -> u8 {
     let project = match &command {
-        Command::Init { project, .. }
+        Command::Restore { project }
+        | Command::Init { project, .. }
         | Command::Lock { project, .. }
         | Command::Export { project, .. }
         | Command::Check { project, .. } => project,
@@ -73,12 +86,16 @@ pub fn run(command: Command, json_output: bool) -> u8 {
         Err(_) => return emit(Err(runtime::error("project-missing")), json_output),
     };
     let result = match command {
+        Command::Restore { .. } => {
+            runtime::restore(&root).map(|lock| json!({"status":"valid","lock":lock}))
+        }
         Command::Init {
             runtime: source,
+            target_version,
             rules,
             path,
             ..
-        } => runtime::init(&root, source, rules, path),
+        } => runtime::init(&root, source, target_version, rules, path),
         Command::Lock { offline, .. } => {
             runtime::lock(&root, offline).map(|lock| json!({"status":"valid","lock":lock}))
         }

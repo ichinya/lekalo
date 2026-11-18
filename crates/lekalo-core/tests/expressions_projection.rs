@@ -16,8 +16,25 @@
 use std::process::{Command, Stdio};
 
 use lekalo_core::expressions::{
-    evaluate, render_program, Bindings, Clock, ExpressionsAttachment, Target, VectorsDocument,
+    evaluate, render_program, Bindings, Clock, ExpressionsAttachment, VectorsDocument,
 };
+
+#[derive(Clone, Copy, Debug)]
+enum Target {
+    Node,
+    Php,
+    Go,
+}
+
+impl Target {
+    fn key(self) -> &'static str {
+        match self {
+            Self::Node => "node",
+            Self::Php => "php",
+            Self::Go => "go",
+        }
+    }
+}
 
 const VALID: &[u8] = include_bytes!("../../../tests/fixtures/expressions/valid/planner.json");
 
@@ -344,13 +361,17 @@ fn write_program(
     attachment: &ExpressionsAttachment,
     target: Target,
 ) -> std::path::PathBuf {
-    let file = match target {
-        Target::Node => "probe.cjs",
-        Target::Php => "probe.php",
-        Target::Go => "probe.go",
+    let (file, id) = match target {
+        Target::Node => ("probe.cjs", "node"),
+        Target::Php => ("probe.php", "php"),
+        Target::Go => ("probe.go", "go"),
     };
     let path = dir.join(file);
-    std::fs::write(&path, render_program(attachment, target)).expect("write program");
+    std::fs::write(
+        &path,
+        render_program(dir, attachment, id).expect("selected expression generator"),
+    )
+    .expect("write program");
     path
 }
 

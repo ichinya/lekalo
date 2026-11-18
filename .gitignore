@@ -38,3 +38,6 @@ sdk/go/bin/
 
 /tests/external/
 /adapters/php-laravel/adapter.php
+/tests/fixtures/pilot/worklog-changelog/php/run.php
+/tests/fixtures/php-laravel/planner/app/Lekalo/TaskLinksStore.php
+/tests/fixtures/php-laravel/planner/src/task-links-worker.php

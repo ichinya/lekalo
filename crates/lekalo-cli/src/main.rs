@@ -688,6 +688,9 @@ enum Commands {
         /// Configure an external runtime package or exec:PROGRAM in lekalo.yaml.
         #[arg(long, conflicts_with_all = ["adopt", "target", "profile", "dry_run", "project_id", "module", "frontend", "editor_hints"])]
         runtime: Option<String>,
+        /// Exact language version negotiated with the selected runtime.
+        #[arg(long, requires = "runtime")]
+        target_version: Option<String>,
         /// Independently selected external contract-rules packages.
         #[arg(long, requires = "runtime")]
         rules: Vec<String>,
@@ -2070,14 +2073,16 @@ enum ExpressionsCommands {
         #[arg(long, value_name = "FILE")]
         builtin_support: Option<String>,
     },
-    /// Render one complete cross-target program (node, php, or go)
-    /// that computes the shared vectors.
+    /// Render a program using a selected external expression generator.
     Render {
         /// Path to the expressions attachment JSON document.
         path: String,
-        /// The closed target vocabulary.
-        #[arg(long, value_enum)]
-        target: ExpressionTarget,
+        /// Name of the expressions/<target> service in the project.
+        #[arg(long)]
+        target: String,
+        /// Project whose services and lock select the generator.
+        #[arg(long, default_value = ".")]
+        project: std::path::PathBuf,
         /// Path to a built-in capability snapshot (managed mode).
         #[arg(long, value_name = "FILE")]
         builtin_support: Option<String>,
@@ -2162,17 +2167,6 @@ enum StorageProfileCommands {
         /// Path to the candidate profile JSON document.
         candidate: String,
     },
-}
-
-/// The closed expression render target vocabulary.
-#[derive(Clone, Copy, Debug, ValueEnum)]
-enum ExpressionTarget {
-    /// Node (ECMAScript).
-    Node,
-    /// PHP.
-    Php,
-    /// Go.
-    Go,
 }
 
 /// The `cache` subcommands: the thin status/clear handoff (issue #20).
@@ -2953,6 +2947,7 @@ fn runtime() -> u8 {
             Commands::Dataflow { command } => run_dataflow(command),
             Commands::Init {
                 runtime,
+                target_version,
                 rules,
                 component_path,
                 adopt,
@@ -2970,6 +2965,7 @@ fn runtime() -> u8 {
                     return runtime_config::run(
                         runtime_config::Command::Init {
                             runtime: Some(runtime),
+                            target_version,
                             rules,
                             path: component_path,
                             project: project.unwrap_or_else(|| ".".into()).into(),
@@ -7674,18 +7670,10 @@ fn check_model_custody(
     Ok(digest)
 }
 
-/// The independently custodied implementation identity, frozen into
-/// the trusted engine artifact at build time. Caller-supplied neighboring
-/// files and evidence can never redefine the eligible backend pin.
-const REVIEWED_PHP_BACKEND: &[u8] =
-    include_bytes!("../../../tests/fixtures/pilot/worklog-changelog/php/run.php");
+/// Pin the reviewed external pilot independently of the supplied project.
+const REVIEWED_PHP_DIGEST: &str =
+    "sha256:accb5045c148a40e13bdb96a510c994ac5c4b74cfd23ddbbe8406ad447b2b374";
 
-/// Engine backend eligibility requires the exact reviewed implementation
-/// embedded in this binary, as well as confined custody of its fixture
-/// copy. The expected digest is never derived from a replacement file.
-/// The go target stays undeclared here (its committed refusal record is
-/// the honest absence), so any `bound` go row is
-/// provenance-forged under the receipt rule.
 fn engine_backend_provenance(
     selection: &LoadSelection,
     composition_dir: &std::path::Path,
@@ -7709,13 +7697,10 @@ fn engine_backend_provenance(
                 let Some(bytes) = confined_read(fixture_root, &lane_path).ok() else {
                     continue;
                 };
-                if bytes != REVIEWED_PHP_BACKEND {
+                let digest = format!("sha256:{}", lekalo_core::digest::sha256_hex(&bytes));
+                if digest != REVIEWED_PHP_DIGEST {
                     continue;
                 }
-                let digest = format!(
-                    "sha256:{}",
-                    lekalo_core::digest::sha256_hex(REVIEWED_PHP_BACKEND)
-                );
                 provenance.insert(
                     lane.to_owned(),
                     lekalo_core::worklog_changelog::BackendProvenance {
@@ -7809,7 +7794,7 @@ fn native_execution_receipts(
         };
         // R6 F2: a replacement cannot mint its own eligibility by
         // printing its digest or answering the disclosed battery.
-        if bytes != REVIEWED_PHP_BACKEND {
+        if digest != REVIEWED_PHP_DIGEST {
             fail_closed("backend-untrusted");
             continue;
         }
@@ -7834,7 +7819,7 @@ fn native_execution_receipts(
         let owns_run_dir = std::fs::create_dir(&run_dir).is_ok();
         let writable = owns_run_dir
             && std::fs::write(&battery_path, &battery.bytes).is_ok()
-            && std::fs::write(&executed_lane, REVIEWED_PHP_BACKEND).is_ok();
+            && std::fs::write(&executed_lane, &bytes).is_ok();
         // The interpreter resolves exactly the way the harness
         // resolves it: LEKALO_PHP first, then the PATH default.
         let interpreters: Vec<String> = std::env::var("LEKALO_PHP")
@@ -10837,7 +10822,8 @@ fn run_expressions(command: ExpressionsCommands) -> DomainResult {
             path,
             target,
             builtin_support,
-        } => expressions_render(&path, target, builtin_support.as_deref()),
+            project,
+        } => expressions_render(&path, &target, &project, builtin_support.as_deref()),
         ExpressionsCommands::Diff { base, candidate } => expressions_diff(&base, &candidate),
     }
 }
@@ -11012,22 +10998,21 @@ fn expressions_eval(path: &str, vectors_path: &str, support: Option<&str>) -> Do
 }
 
 /// `lekalo expressions render`: the complete cross-target program.
-fn expressions_render(path: &str, target: ExpressionTarget, support: Option<&str>) -> DomainResult {
+fn expressions_render(
+    path: &str,
+    target: &str,
+    project: &std::path::Path,
+    support: Option<&str>,
+) -> DomainResult {
     let attachment = match expressions_attachment(path, support) {
         Ok(attachment) => attachment,
         Err(result) => return result,
     };
-    let core_target = match target {
-        ExpressionTarget::Node => lekalo_core::expressions::Target::Node,
-        ExpressionTarget::Php => lekalo_core::expressions::Target::Php,
-        ExpressionTarget::Go => lekalo_core::expressions::Target::Go,
+    let program = match lekalo_core::expressions::render_program(project, &attachment, target) {
+        Ok(program) => program,
+        Err(err) => return lekalo_core::runtime::outcome(Err(err)),
     };
-    let program = lekalo_core::expressions::render_program(&attachment, core_target);
-    let json = format!(
-        "{{\"status\":\"valid\",\"expressionRender\":{{\"target\":\"{}\",\"program\":{}}}}}",
-        core_target.key(),
-        serde_json::to_string(&program).unwrap_or_default(),
-    );
+    let json = serde_json::json!({"status":"valid", "expressionRender":{"target":target,"program":program}}).to_string();
     let human = program;
     DomainResult::graph(json, human, Vec::new())
 }

@@ -74,8 +74,23 @@ export function provisionPhp() {
     }
   }
   verify(source);
+  mkdirSync(dirname(destination), {recursive: true});
   if (!existsSync(destination)) copyFileSync(source, destination, constants.COPYFILE_EXCL);
   verify(destination);
+  const fixtures = {
+    "pilots/worklog-changelog/run.php": "tests/fixtures/pilot/worklog-changelog/php/run.php",
+    "pilots/task-links/TaskLinksStore.php": "tests/fixtures/php-laravel/planner/app/Lekalo/TaskLinksStore.php",
+    "pilots/task-links/task-links-worker.php": "tests/fixtures/php-laravel/planner/src/task-links-worker.php"
+};
+  for (const [sourcePath, fixturePath] of Object.entries(fixtures)) {
+    const published = join(rules, sourcePath);
+    const installed = join(hostRoot, fixturePath);
+    mkdirSync(dirname(installed), {recursive: true});
+    if (!existsSync(installed)) copyFileSync(published, installed, constants.COPYFILE_EXCL);
+    if (!lstatSync(installed).isFile() || !readFileSync(installed).equals(readFileSync(published))) {
+      throw new Error(`PHP pilot fixture differs from pinned package: ${installed}`);
+    }
+  }
   if (process.env.GITHUB_ENV) appendFileSync(process.env.GITHUB_ENV, `LEKALO_PHP_SRC=${join(runtime,'src')}\n`);
 }
 

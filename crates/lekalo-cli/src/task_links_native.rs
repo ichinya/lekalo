@@ -1,5 +1,5 @@
 //! Explicit opt-in execution owner for the maintained Laravel port. Authority
-//! comes from this process launching the embedded worker, controlling barriers,
+//! comes from this process launching the reviewed worker, controlling barriers,
 //! observing termination and independently checking fresh durable state. Neither
 //! a database, sidecar, environment flag nor a child's success label is admitted.
 
@@ -16,11 +16,6 @@ use lekalo_core::task_links::{
 };
 use lekalo_core::DomainResult;
 
-const IMPLEMENTATION: &str =
-    include_str!("../../../tests/fixtures/php-laravel/planner/app/Lekalo/TaskLinksStore.php");
-const WORKER: &str =
-    include_str!("../../../tests/fixtures/php-laravel/planner/src/task-links-worker.php");
-const LOCK: &[u8] = include_bytes!("../../../tests/fixtures/php-laravel/planner/composer.lock");
 const TARGET: &str = "php-laravel-maintained";
 
 fn refused() -> DomainResult {
@@ -275,12 +270,30 @@ fn execute(attachment: &Attachment, profile_digest: &str) -> Result<NativeExecut
     let fixture = root.join("tests/fixtures/php-laravel/planner");
     // Locked maintained framework runtime, provisioned explicitly outside this
     // execution command. Missing/mismatched dependencies are a refusal.
-    check(std::fs::read(fixture.join("composer.lock")).map_err(|_| refused())? == LOCK)?;
+    // Stage only the reviewed bytes that were actually checked.
+    let reviewed = |path: &str, expected: &str| -> Result<Vec<u8>, DomainResult> {
+        let bytes =
+            lekalo_core::runtime::read(&fixture, path, 2 * 1024 * 1024).map_err(|_| refused())?;
+        check(lekalo_core::digest::sha256_hex(&bytes) == expected)?;
+        Ok(bytes)
+    };
+    let lock = reviewed(
+        "composer.lock",
+        "e41adfada5bc77d37cbf0ff040420b713cdb91727a4d9db843d372775d84015a",
+    )?;
+    let worker = reviewed(
+        "src/task-links-worker.php",
+        "7f71001c2adc8f0445adee789817c611f8cfffff32403798fdc9ffb7bd785963",
+    )?;
+    let implementation = reviewed(
+        "app/Lekalo/TaskLinksStore.php",
+        "4ada016a7bace8ff42efc122ea178ca2c0eaede6e6b0e6d864ce8c674239b43d",
+    )?;
     let autoload = fixture.join("vendor/autoload.php");
     check(autoload.is_file())?;
     let scratch = Scratch::new()?;
-    let script = scratch.stage("worker.php", WORKER.as_bytes())?;
-    let store = scratch.stage("TaskLinksStore.php", IMPLEMENTATION.as_bytes())?;
+    let script = scratch.stage("worker.php", &worker)?;
+    let store = scratch.stage("TaskLinksStore.php", &implementation)?;
     let database = scratch.stage("run.sqlite", &[])?;
     let run = tl::wire_digest(scratch.0.to_string_lossy().as_bytes())
         .as_str()
@@ -462,10 +475,10 @@ fn execute(attachment: &Attachment, profile_digest: &str) -> Result<NativeExecut
     .map_err(|_| refused())?;
     let build_digest = tl::wire_digest(
         &[
-            IMPLEMENTATION.as_bytes(),
-            WORKER.as_bytes(),
-            LOCK,
-            &framework,
+            implementation.as_slice(),
+            worker.as_slice(),
+            lock.as_slice(),
+            framework.as_slice(),
         ]
         .concat(),
     );

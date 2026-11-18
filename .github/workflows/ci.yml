@@ -425,7 +425,7 @@ jobs:
           set -euo pipefail
           npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.20.0" --ignore-scripts --no-audit --no-fund --no-save ajv@8.20.0
           unset LEKALO_SERVICES LEKALO_PROJECT
-          NODE_PATH="$RUNNER_TEMP/lekalo-ajv-8.20.0/node_modules" node --test scripts/test-portable-laravel.mjs scripts/test-external-runtime.mjs scripts/test-external-services.mjs
+          NODE_PATH="$RUNNER_TEMP/lekalo-ajv-8.20.0/node_modules" node --test scripts/test-portable-laravel.mjs scripts/test-external-runtime.mjs scripts/test-external-services.mjs scripts/test-official-runtime-packages.mjs
 
   mago-real:
     name: Mago real-toolchain gate (issue #55)

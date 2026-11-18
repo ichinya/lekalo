@@ -5,7 +5,7 @@
 
 use lekalo_core::expressions::{
     canonical, canonical_bytes, check_builtin_support, compare, evaluate, render_program, Bindings,
-    BuiltinSupport, DiffClass, ExpressionsAttachment, Target, VectorExpect, VectorsDocument,
+    BuiltinSupport, DiffClass, ExpressionsAttachment, VectorExpect, VectorsDocument,
 };
 
 const VALID: &[u8] = include_bytes!("../../../tests/fixtures/expressions/valid/planner.json");
@@ -237,9 +237,11 @@ fn managed_mode_blocks_builtins_the_target_does_not_declare() {
 #[test]
 fn every_target_renders_a_deterministic_program() {
     let attachment = parse(VALID);
-    for target in [Target::Node, Target::Php, Target::Go] {
-        let first = render_program(&attachment, target);
-        let second = render_program(&attachment, target);
+    for target in ["node", "php", "go"] {
+        let first = render_program(std::path::Path::new("."), &attachment, target)
+            .expect("selected expression generator");
+        let second = render_program(std::path::Path::new("."), &attachment, target)
+            .expect("selected expression generator");
         assert_eq!(first, second, "{target:?} renders deterministically");
         assert!(first.contains("expr.planner/overdue-check"), "{target:?}");
         assert!(first.contains("lekFail"), "{target:?}");
@@ -305,9 +307,9 @@ fn every_generated_program_executes_the_shared_vectors_identically() {
 
     let mut executed: Vec<&'static str> = Vec::new();
     for (target, file, tool, args) in [
-        (Target::Node, "planner.cjs", "node", vec![]),
-        (Target::Php, "planner.php", "php", vec![]),
-        (Target::Go, "planner.go", "go", vec!["run".to_owned()]),
+        ("node", "planner.cjs", "node", vec![]),
+        ("php", "planner.php", "php", vec![]),
+        ("go", "planner.go", "go", vec!["run".to_owned()]),
     ] {
         let present = match tool {
             "node" => node,
@@ -318,7 +320,8 @@ fn every_generated_program_executes_the_shared_vectors_identically() {
             eprintln!("skipping target {target:?}: {tool} is not on this host");
             continue;
         }
-        let program = render_program(&attachment, target);
+        let program = render_program(std::path::Path::new("."), &attachment, target)
+            .expect("selected expression generator");
         let path = dir.join(file);
         std::fs::write(&path, program).expect("write program");
 

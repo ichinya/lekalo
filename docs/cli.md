@@ -507,6 +507,7 @@ Status: **Implemented** command handlers for product 1.3.0. Handler existence do
 | `lekalo runtime export` | `lekalo runtime export [OPTIONS] --component <COMPONENT> --package <PACKAGE> --rule <RULE>` | [reference](external-runtimes.md) |
 | `lekalo runtime init` | `lekalo runtime init [OPTIONS]` | [reference](external-runtimes.md) |
 | `lekalo runtime lock` | `lekalo runtime lock [OPTIONS]` | [reference](external-runtimes.md) |
+| `lekalo runtime restore` | `lekalo runtime restore [OPTIONS]` | [reference](external-runtimes.md) |
 | `lekalo scan` | `lekalo scan [OPTIONS] --target <TARGET> [PROGRAM_ARGS]...` | [reference](observed-mode.md) |
 | `lekalo search` | `lekalo search [OPTIONS] <QUERY>` | [reference](semantic-search.md) |
 | `lekalo search-index` | `lekalo search-index [OPTIONS] <COMMAND>` | [reference](semantic-search.md) |

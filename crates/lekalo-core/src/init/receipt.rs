@@ -286,6 +286,15 @@ impl TemplateRecord {
         }
     }
 
+    /// Editable component configuration.
+    pub const fn runtime_config(version: &'static str) -> Self {
+        Self {
+            artifact: "runtime-config",
+            template: "lekalo/init/runtime-config",
+            version,
+        }
+    }
+
     /// The `lekalo/init/target` record.
     pub const fn target(version: &'static str) -> Self {
         Self {
