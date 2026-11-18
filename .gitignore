@@ -37,4 +37,10 @@ sdk/go/bin/
 /adapters/node-typescript/
 
 /tests/external/
-/adapters/php-laravel/adapter.php
+/adapters/php-laravel/*.php
+/adapters/php-laravel/tests/process.php
+/tests/fixtures/pilot/worklog-changelog/php/run.php
+/tests/fixtures/php-laravel/planner/app/Lekalo/TaskLinksStore.php
+/tests/fixtures/php-laravel/planner/src/task-links-worker.php
+/adapters/pilots/worklog.json
+/adapters/pilots/task-links.json

@@ -108,6 +108,7 @@ fn greenfield_dry_run_plans_every_artifact_without_writing() {
         vec![
             "lekalo/project.yaml",
             "lekalo/modules/app/module.yaml",
+            "lekalo.yaml",
             ".gitignore"
         ]
     );
@@ -116,7 +117,7 @@ fn greenfield_dry_run_plans_every_artifact_without_writing() {
         assert_eq!(write["disposition"], "create");
     }
     let templates = envelope["templates"].as_array().expect("templates");
-    assert_eq!(templates.len(), 3);
+    assert_eq!(templates.len(), 4);
     assert!(templates
         .iter()
         .all(|record| record["version"] == env!("CARGO_PKG_VERSION")));
@@ -136,7 +137,7 @@ fn greenfield_bootstrap_creates_a_valid_minimal_project() {
     let envelope = stdout_json(&output);
     assert_eq!(envelope["mode"], "apply");
     assert_eq!(envelope["changed"], true);
-    assert_eq!(envelope["added"], 3);
+    assert_eq!(envelope["added"], 4);
     assert_eq!(envelope["unchanged"], 0);
     assert_eq!(envelope["conflicting"], 0);
     assert_eq!(envelope["gate"]["status"], "valid");
@@ -169,6 +170,7 @@ fn greenfield_bootstrap_creates_a_valid_minimal_project() {
         files,
         vec![
             ".gitignore".to_owned(),
+            "lekalo.yaml".to_owned(),
             "lekalo/modules/app/module.yaml".to_owned(),
             "lekalo/project.yaml".to_owned(),
         ]
@@ -209,7 +211,7 @@ fn greenfield_re_run_reports_every_artifact_unchanged() {
     assert_eq!(envelope["mode"], "apply");
     assert_eq!(envelope["changed"], false);
     assert_eq!(envelope["added"], 0);
-    assert_eq!(envelope["unchanged"], 3);
+    assert_eq!(envelope["unchanged"], 4);
     assert_eq!(envelope["conflicting"], 0);
     assert!(envelope["gate"].is_null());
     for write in envelope["writes"].as_array().expect("writes") {

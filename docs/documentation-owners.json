@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "1.3.0",
-  "cliSourceDigest": "sha256:a53d50f9629a2806901cbf78c981eb80fd424f40ada292edab2cc9734847643b",
+  "cliSourceDigest": "sha256:1d2e330dcda6456d3ce671781c81144d5a66bcdba94a80366a313e9068ff1385",
   "p0Pages": [
     {
       "page": "README.md",
@@ -1041,7 +1041,7 @@
       "kind": "command",
       "command": "expressions",
       "usage": "lekalo expressions [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:ade9a6b20b76db0d6cb0c8b222b2d8ecf868b9e18f7c76c074f3e1081759df3a",
+      "helpDigest": "sha256:75bff7744f65e0f376fd3dca1d5179f29bef9628e6063c4ab51aa88cfa1445f3",
       "summary": "Validate, evaluate, render, or compare typed-expression attachments (issue #66). The core owns every decision; this binary only selects, renders, and maps exits",
       "leaf": false,
       "owner": "docs/expressions.md",
@@ -1074,8 +1074,8 @@
       "kind": "command",
       "command": "expressions render",
       "usage": "lekalo expressions render [OPTIONS] --target <TARGET> <PATH>",
-      "helpDigest": "sha256:b32218239f136b886b49021c8c7e323b60706b8fbe37060b9640085a0a9de03a",
-      "summary": "Render one complete cross-target program (node, php, or go) that computes the shared vectors",
+      "helpDigest": "sha256:21e6e94e9ac0576656b9b3f976b4027dae1cb9093a93184dca07710189689940",
+      "summary": "Render a program using a selected external expression generator",
       "leaf": true,
       "owner": "docs/expressions.md",
       "status": "implemented"
@@ -1382,7 +1382,7 @@
       "kind": "command",
       "command": "init",
       "usage": "lekalo init [OPTIONS]",
-      "helpDigest": "sha256:7c7727c69935bedcae8c6d1e890b30a40b5a039dac8f7de8233e349210956a89",
+      "helpDigest": "sha256:60cc2bbefe12d93eedeb16e85be8c25ed1b636e06f1b3c97133d3ce3135dca0b",
       "summary": "Bootstrap a new greenfield Lekalo project in the invocation directory (issue #97), or adopt an existing repository with `--adopt` (issue #38)",
       "leaf": true,
       "owner": "docs/bootstrap.md",
@@ -2328,7 +2328,7 @@
       "kind": "command",
       "command": "runtime",
       "usage": "lekalo runtime [OPTIONS] <COMMAND>",
-      "helpDigest": "sha256:d0a490225ba0c3d05222389b83c860471245b41e9e8f01bd420d2a4d445c4f71",
+      "helpDigest": "sha256:3140c1b0a59f3adf0f88cca24d61a4db4392b7ab489f7a2c82d06d10db14bc40",
       "summary": "Configure external runtimes and portable contract rules",
       "leaf": false,
       "owner": "docs/external-runtimes.md",
@@ -2361,7 +2361,7 @@
       "kind": "command",
       "command": "runtime init",
       "usage": "lekalo runtime init [OPTIONS]",
-      "helpDigest": "sha256:57d448a1d6c731ac152251ed89f44a41b7326120343b13111cb02144970cb66e",
+      "helpDigest": "sha256:e16cd097199d215feee76b940915a4c34af4d015d9c317fbeda8eb9f318f3458",
       "summary": "Create lekalo.yaml without executing or installing packages",
       "leaf": true,
       "owner": "docs/external-runtimes.md",
@@ -2374,6 +2374,17 @@
       "usage": "lekalo runtime lock [OPTIONS]",
       "helpDigest": "sha256:3d70a86f6594e0f58bf3383e05992f99a60f8e82d5b066a2664032822f9ca8df",
       "summary": "Resolve sources, negotiate APIs, and pin the selected composition",
+      "leaf": true,
+      "owner": "docs/external-runtimes.md",
+      "status": "implemented"
+    },
+    {
+      "id": "cli:runtime restore",
+      "kind": "command",
+      "command": "runtime restore",
+      "usage": "lekalo runtime restore [OPTIONS]",
+      "helpDigest": "sha256:6cb0098343e05e240572a2cd9de273ed35549221017ef82a25e4facd8b2e5d68",
+      "summary": "Restore immutable package snapshots and verify the selected local executables",
       "leaf": true,
       "owner": "docs/external-runtimes.md",
       "status": "implemented"
@@ -3875,7 +3886,7 @@
       "id": "contract:contracts/external-runtime.schema.v1.json",
       "kind": "contract",
       "source": "contracts/external-runtime.schema.v1.json",
-      "sourceDigest": "sha256:5f0cb4cb2cca3ae8c154d370278ba72ab07a415b9f6cf490e794dadc589c2d89",
+      "sourceDigest": "sha256:f2151ae5e69d929dba73d7361e034f3e516f8e130011ce8c4fb8aaaf7d832613",
       "owner": "docs/external-runtimes.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -3884,7 +3895,7 @@
       "id": "contract:contracts/external-services.schema.v1.json",
       "kind": "contract",
       "source": "contracts/external-services.schema.v1.json",
-      "sourceDigest": "sha256:8d505da92c41a7ddf391b09a9fe6342010fa3bfb1258a67f69192b5266519b26",
+      "sourceDigest": "sha256:1a949188e18de318465dc07a47da28db1604a1173a25c3f008652587d5383ac7",
       "owner": "docs/external-services.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

@@ -24,6 +24,8 @@ pub struct Config {
 pub struct Component {
     pub path: String,
     pub runtime: Source,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_version: Option<String>,
     #[serde(default)]
     pub rules: Vec<String>,
 }
@@ -123,6 +125,7 @@ pub fn decode(bytes: &[u8]) -> Result<Config> {
     for (id, component) in &config.components {
         if !token(id)
             || !relative(&component.path)
+            || component.target_version.as_ref().is_some_and(|v| !token(v))
             || component.rules.len() > 32
             || component
                 .rules

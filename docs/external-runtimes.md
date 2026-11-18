@@ -17,7 +17,8 @@ lekalo runtime check
 ```
 
 The coordinates above are placeholders for repositories you control, not
-published example packages. `init` only creates `lekalo.yaml`; `runtime lock`
+published example packages. Plain `init` creates the starter Model and editable
+`lekalo.yaml`. With `--runtime` it creates just the component configuration. `runtime lock`
 fetches declared packages and executes their confined `describe` operation.
 An existing config is never overwritten. `lekalo runtime init` creates an empty
 configuration to edit; lock/check refuse it until a component or service is declared.
@@ -42,7 +43,10 @@ Coordinates are strings: `gh/OWNER/REPO[#REF]`, `git+https://HOST/REPO.git[#REF]
 `git+file:///ABSOLUTE/REPO[#REF]`, or `path:DIRECTORY`. A command is an argv array,
 never shell text. `--runtime exec:PROGRAM` is the one-program shorthand.
 Git references are pinned to a commit; uncommitted worktree files are ignored.
-`8.0` as a Git ref is a package author's choice, not a PHP-version parser in core.
+Set `target_version: "8.0"` on a component (or pass `init --target-version 8.0`)
+to request the target language version. The selected runtime must advertise
+`target.version` and answer with the requested version and `supported: true`.
+The PHP and Python readers compare the request with their interpreter version.
 
 Component paths are project-relative and must not overlap or escape the root.
 The current scanner sends bounded UTF-8 files below each component, with
@@ -54,9 +58,12 @@ excess depth, entry count, file size or total size cause refusal.
 entry script, description and selected rules. Packages live outside the project,
 under `LEKALO_PACKAGE_HOME` or the user's cache. `runtime check`, `validate`, and
 `runtime lock --offline` never fetch or update packages. Edited executable/package
-bytes, stale configuration or missing cache entries require explicit re-locking.
-The current lock includes machine-local executable/cache paths; moving it to a
-new machine requires `runtime lock` there. Portable lock restoration is pending.
+bytes or a changed configuration refuse validation. Copy the config and v2 lock
+to a new checkout and run `lekalo runtime restore` to populate its cache from
+the locked Git commits. The executable and script digests must still match.
+Absolute paths explicitly declared by the project retain their meaning. Older
+v1 locks can still be checked on their original machine. An explicit online
+`runtime lock` writes the new format.
 
 `lekalo validate --strict` runs component checks when the selected root has
 `lekalo.yaml`. If `lekalo/project.yaml` also exists, its existing Model validation
@@ -257,3 +264,25 @@ Run the process and workspace examples against a built CLI:
 node scripts/external-tool.mjs --provision-php
 node --test scripts/test-external-runtime.mjs scripts/test-portable-laravel.mjs
 ```
+
+
+## Official packages
+
+| Runtime | Evidence and independent rules |
+| --- | --- |
+| `gh/ichinya/lekalo-go`, `gh/ichinya/lekalo-rust` | Tree-sitter source declarations and rule-supplied syntax queries |
+| `gh/ichinya/lekalo-typescript` | TypeScript and TSX declarations and queries, Hono routes, exported Drizzle tables and Zod schemas |
+| `gh/ichinya/lekalo-python` | Python AST declarations, direct FastAPI routes and FastMCP tools |
+| `gh/ichinya/lekalo-php` | Static Laravel route registrations and direct Symfony controller route attributes |
+
+Select framework rules by their repository coordinate, e.g. `gh/ichinya/lekalo-python-fastapi`,
+`gh/ichinya/lekalo-php-symfony` or `gh/ichinya/lekalo-typescript-drizzle`.
+The PHP and Python runtimes use an installed interpreter. The Go, Rust and
+TypeScript syntax readers use Node and packaged WebAssembly grammars. Each
+package README documents the syntax covered by its evidence.
+
+A package may mount pure data or code libraries using
+`"libraries": {"parser": "gh/owner/library#<40-hex-commit>"}`.
+The library declares `"kind": "library"` with its files at its root. The host
+pins and verifies the whole graph and mounts the reviewed files under the named
+directory in the sandbox. Remote packages can only reference remote libraries.

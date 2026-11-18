@@ -52,7 +52,7 @@ pub use canonical::canonical_bytes;
 pub use diagnostic::io_failure;
 pub use diff::{compare, DiffClass, DiffPath, DiffResult};
 pub use eval::{evaluate, Bindings, Clock};
-pub use projection::{projection_identity, render_program, Target};
+pub use projection::{projection_identity, render_program};
 pub use types::{ExprType, Scalar, ScalarType, Value};
 pub use wire::{check_builtin_support, BuiltinSupport, VectorCase, VectorExpect, VectorsDocument};
 

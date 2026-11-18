@@ -1688,7 +1688,7 @@
     "msrv": "601c45fdf40e9d7d866cd7d6b65b472a897fde451c71e0b70cb6214bc5adebab",
     "mysql-docs": "aec0cb474724d11db8ecefce5cd8a9327e0a9b37e8ded4ef24c71aecb289f751",
     "php-versions": "7afa93f6bc0f4529244014fdde4bc0b5f2228c0a735b7aa3436b5f4de4f19269",
-    "postgres-migrations": "7f2b89bad179a234a20d676e1d472ccc066e2b2e989deb5775f94f6258a72312",
+    "postgres-migrations": "8a198aae28e22f647360a36144a4440631eaf7f265cc031f4a04a88778d54662",
     "release-version": "56ce43851182720fb25c45d3f90b1dac2691d0abf1367411b7d74ef1918d30c9",
     "worklog-changelog-pilot": "fea3fa36b98bfaaf5d1ab7d2bc9869682a11f9e618ee06f6c3556725d6934670"
   },

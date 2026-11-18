@@ -172,39 +172,16 @@ fn run(request: GenerateRequest<'_>) -> Result<GenerateReceipt, DomainResult> {
     // generate run, and the only bytes an adapter may read as input.
     let evidence_path = format!("{IR_EVIDENCE_DIR}/{project_id}.json");
     write_evidence(prepared.root(), &evidence_path, ir_bytes.as_bytes())?;
-    // Issue #59: the PHP operations join is the acceptance authority.
-    // When the project declares an operations input, it joins against
-    // the compiled IR, the bound #62 error registry, the staged
-    // evidence digests, and the closed recipes HERE — before any
-    // adapter exchange — and a refused join is a typed invalid result.
-    let operations_input_path = prepared
-        .root()
-        .join("lekalo")
-        .join("operations")
-        .join(format!("{project_id}.operations.json"));
-    if operations_input_path.is_file() {
-        run_operations_join(
+    // The legacy attachment names retain their public diagnostics; their grammars
+    // and semantic joins are owned by the selected external validators.
+    for (family, rule) in [
+        ("operations", "php-operations.join-invalid"),
+        ("routes", "php-routes.join-invalid"),
+    ] {
+        super::attachment_check::check(
             prepared.root(),
-            &operations_input_path,
-            &compilation.project,
-            &project_id,
-        )?;
-    }
-    // Issue #60: the PHP routes join is the acceptance authority for
-    // the route wrappers. When the project declares a routes input, it
-    // joins against the compiled IR endpoints, the transport-http
-    // attachment, and the bound types/operations inputs HERE — before
-    // any adapter exchange — and a refused join is a typed invalid
-    // result.
-    let routes_input_path = prepared
-        .root()
-        .join("lekalo")
-        .join("routes")
-        .join(format!("{project_id}.routes.json"));
-    if routes_input_path.is_file() {
-        run_routes_join(
-            prepared.root(),
-            &routes_input_path,
+            family,
+            rule,
             &compilation.project,
             &project_id,
         )?;
@@ -688,153 +665,6 @@ pub(crate) fn unknown_module(module: &str) -> DomainResult {
     DomainResult::Invalid {
         diagnostics: wire_set(Status::Invalid, vec![diagnostic]),
     }
-}
-
-/// The operations join (issue #59): parse the authored operations input
-/// and join it against the compiled IR, the embedded #62 error
-/// registry, the staged evidence digests, and the closed recipes. Any
-/// finding refuses the run as the registered
-/// `php-operations.join-invalid` invalid result — before any adapter
-/// exchange.
-pub(crate) fn run_operations_join(
-    root: &Path,
-    input_path: &Path,
-    compilation: &crate::ir::CompiledProject,
-    project_id: &str,
-) -> Result<(), DomainResult> {
-    let join_findings = |findings: &[crate::php_operations::Finding]| -> DomainResult {
-        let codes: Vec<String> = findings
-            .iter()
-            .take(16)
-            .map(|finding| finding.code.clone())
-            .collect();
-        let first = findings.first();
-        let detail = first
-            .map(|finding| {
-                let pointer = finding
-                    .pointer
-                    .as_deref()
-                    .map(|pointer| format!(" at {pointer}"))
-                    .unwrap_or_default();
-                format!(
-                    "{}{}: {}",
-                    finding.semantic_id.as_deref().unwrap_or("operations"),
-                    pointer,
-                    finding.detail
-                )
-            })
-            .unwrap_or_else(|| "the operations input join refused".to_owned());
-        let mut data = DataObject::new();
-        data.insert("projectId".to_owned(), token_value(project_id));
-        data.insert(
-            "codes".to_owned(),
-            crate::diagnostics::DataValue::List(
-                codes
-                    .iter()
-                    .map(|code| {
-                        crate::diagnostics::Scalar::Token(crate::diagnostics::types::bound_token(
-                            code,
-                        ))
-                    })
-                    .collect(),
-            ),
-        );
-        data.insert("detail".to_owned(), token_value(&detail));
-        let diagnostic =
-            crate::diagnostics::normalize::build("php-operations.join-invalid", None, None, data)
-                .expect("php-operations.join-invalid is registered and active");
-        DomainResult::Invalid {
-            diagnostics: wire_set(Status::Invalid, vec![diagnostic]),
-        }
-    };
-    let bytes = std::fs::read(input_path).map_err(|_| {
-        join_findings(&[crate::php_operations::Finding {
-            code: "operations.input-unreadable".to_owned(),
-            semantic_id: None,
-            pointer: None,
-            detail: "the operations input document is unreadable".to_owned(),
-        }])
-    })?;
-    let input =
-        crate::php_operations::parse_input(&bytes).map_err(|findings| join_findings(&findings))?;
-    let findings = crate::php_operations::check_join(root, &input, compilation);
-    if findings.is_empty() {
-        return Ok(());
-    }
-    Err(join_findings(&findings))
-}
-
-/// The routes join (issue #60): parse the authored routes input and
-/// join it against the compiled IR endpoints, the transport-http
-/// attachment, and the staged evidence digests. Any finding refuses the
-/// run as the registered `php-routes.join-invalid` invalid result —
-/// before any adapter exchange.
-pub(crate) fn run_routes_join(
-    root: &Path,
-    input_path: &Path,
-    compilation: &crate::ir::CompiledProject,
-    project_id: &str,
-) -> Result<(), DomainResult> {
-    let join_findings = |findings: &[crate::php_routes::Finding]| -> DomainResult {
-        let codes: Vec<String> = findings
-            .iter()
-            .take(16)
-            .map(|finding| finding.code.clone())
-            .collect();
-        let first = findings.first();
-        let detail = first
-            .map(|finding| {
-                let pointer = finding
-                    .pointer
-                    .as_deref()
-                    .map(|pointer| format!(" at {pointer}"))
-                    .unwrap_or_default();
-                format!(
-                    "{}{}: {}",
-                    finding.semantic_id.as_deref().unwrap_or("routes"),
-                    pointer,
-                    finding.detail
-                )
-            })
-            .unwrap_or_else(|| "the routes input join refused".to_owned());
-        let mut data = DataObject::new();
-        data.insert("projectId".to_owned(), token_value(project_id));
-        data.insert(
-            "codes".to_owned(),
-            crate::diagnostics::DataValue::List(
-                codes
-                    .iter()
-                    .map(|code| {
-                        crate::diagnostics::Scalar::Token(crate::diagnostics::types::bound_token(
-                            code,
-                        ))
-                    })
-                    .collect(),
-            ),
-        );
-        data.insert("detail".to_owned(), token_value(&detail));
-        let diagnostic =
-            crate::diagnostics::normalize::build("php-routes.join-invalid", None, None, data)
-                .expect("php-routes.join-invalid is registered and active");
-        DomainResult::Invalid {
-            diagnostics: wire_set(Status::Invalid, vec![diagnostic]),
-        }
-    };
-    let bytes = std::fs::read(input_path).map_err(|_| {
-        join_findings(&[crate::php_routes::Finding {
-            code: "routes.input-unreadable".to_owned(),
-            semantic_id: None,
-            pointer: None,
-            detail: "the routes input document is unreadable".to_owned(),
-        }])
-    })?;
-    let input =
-        crate::php_routes::parse_input(&bytes).map_err(|findings| join_findings(&findings))?;
-    let findings = crate::php_routes::check_join(root, &input, compilation);
-    if findings.is_empty() {
-        return Ok(());
-    }
-    Err(join_findings(&findings))
 }
 
 /// The attribution scope: every module, or one known module.
@@ -1668,9 +1498,10 @@ mod operations_join_tests {
             serde_json::to_string_pretty(&input).expect("input serializes") + "\n",
         )
         .expect("operations input");
-        let outcome = run_operations_join(
+        let outcome = super::super::attachment_check::check(
             &sandbox,
-            &sandbox.join("lekalo/operations/planner.operations.json"),
+            "operations",
+            "php-operations.join-invalid",
             &compilation.project,
             "planner",
         )
@@ -1798,9 +1629,10 @@ mod routes_join_tests {
             serde_json::to_string_pretty(&input).expect("input serializes") + "\n",
         )
         .expect("routes input");
-        let outcome = run_routes_join(
+        let outcome = super::super::attachment_check::check(
             &sandbox,
-            &sandbox.join("lekalo/routes/planner.routes.json"),
+            "routes",
+            "php-routes.join-invalid",
             &compilation.project,
             "planner",
         )

@@ -23,6 +23,7 @@ assert.equal(require("ajv/package.json").version, "8.20.0");
 const ajv = new Ajv2020({ strict: true, allErrors: true });
 const validateScenario = ajv.compile(JSON.parse(readFileSync(join(root, "contracts/scenario-ir.schema.v0.2.16.json"), "utf8")));
 const execute = (command, args, cwd = root, env = process.env) => {
+  env = {LEKALO_PILOT_PROFILES: join(root, "adapters/pilots"), ...env};
   const result = spawnSync(command, args, { cwd, env, encoding: "utf8", timeout: 120_000, maxBuffer: 64 * 1024 * 1024 });
   assert.ifError(result.error);
   return result;
@@ -59,6 +60,19 @@ try {
   };
   assert.equal(admit().verdict, "pass", "honest reviewed backend control");
   cases.push("F2-reviewed-backend-control");
+
+  // A project-supplied profile cannot grant execution authority.
+  const fakeProfiles = join(temp, "profiles");
+  mkdirSync(fakeProfiles);
+  const profileFile = "worklog.json";
+  writeFileSync(join(fakeProfiles, profileFile), readFileSync(join(root, "adapters/pilots", profileFile), "utf8") + " ");
+  const untrusted = execute(binary, ["--json", "--no-cache", "pilot", "admit", reportPath,
+    join(caseRoot, "attachments/pilot.json"), "--profile", "strict", "--project", "model"], caseRoot,
+    {...process.env, LEKALO_PILOT_PROFILES: fakeProfiles});
+  assert.equal(untrusted.status, 4, untrusted.stderr);
+  const denied = JSON.parse(untrusted.stdout);
+  assert.ok((denied.pilot ?? denied.payload?.pilot).blockers.includes("php:backend:provenance"));
+  cases.push("modified-profile-refused");
 
   // F5: compare exact frozen schema refusal with standalone production
   // admission. No separate contracts gate is needed to refuse the corpus.

@@ -74,8 +74,29 @@ export function provisionPhp() {
     }
   }
   verify(source);
+  mkdirSync(dirname(destination), {recursive: true});
   if (!existsSync(destination)) copyFileSync(source, destination, constants.COPYFILE_EXCL);
   verify(destination);
+  const fixtures = {
+    "compat/build.php": "adapters/php-laravel/build.php",
+    "compat/main.php": "adapters/php-laravel/main.php",
+    "compat/packages.php": "adapters/php-laravel/packages.php",
+    "compat/tests/process.php": "adapters/php-laravel/tests/process.php",
+    "pilots/worklog-changelog/backends.json": "adapters/pilots/worklog.json",
+    "pilots/task-links/profile.json": "adapters/pilots/task-links.json",
+    "pilots/worklog-changelog/run.php": "tests/fixtures/pilot/worklog-changelog/php/run.php",
+    "pilots/task-links/TaskLinksStore.php": "tests/fixtures/php-laravel/planner/app/Lekalo/TaskLinksStore.php",
+    "pilots/task-links/task-links-worker.php": "tests/fixtures/php-laravel/planner/src/task-links-worker.php",
+  };
+  for (const [sourcePath, fixturePath] of Object.entries(fixtures)) {
+    const published = join(rules, sourcePath);
+    const installed = join(hostRoot, fixturePath);
+    mkdirSync(dirname(installed), {recursive: true});
+    if (!existsSync(installed)) copyFileSync(published, installed, constants.COPYFILE_EXCL);
+    if (!lstatSync(installed).isFile() || !readFileSync(installed).equals(readFileSync(published))) {
+      throw new Error(`Installed compatibility file differs from pinned package: ${installed}`);
+    }
+  }
   if (process.env.GITHUB_ENV) appendFileSync(process.env.GITHUB_ENV, `LEKALO_PHP_SRC=${join(runtime,'src')}\n`);
 }
 
@@ -100,7 +121,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 }
 
 export function buildServices() {
+  const built = new Set();
   for (const spec of Object.values(serviceSpecs)) {
+    // Script packages run directly from their pinned checkout.
+    if (spec.script || built.has(spec.binary)) continue;
+    built.add(spec.binary);
     if (!/^[a-z][a-z0-9-]*$/.test(spec.binary) || spec.manifest.split('/').some(p=>!p||p==='..'||p.includes('\\'))) throw new Error('Invalid service build specification');
     const root=externalRoot(spec.package);
     const result=spawnSync('cargo',['build','--locked','--manifest-path',join(root,spec.manifest),'--bin',spec.binary],{cwd:root,env:{...process.env,CARGO_TARGET_DIR:join(hostRoot,'target/external-service-build'),CARGO_PROFILE_DEV_DEBUG:'0',CARGO_INCREMENTAL:'0'},stdio:'inherit'});

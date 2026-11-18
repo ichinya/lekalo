@@ -178,6 +178,9 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 255
+        },
+        "observe_when_scoped": {
+          "type": "boolean"
         }
       },
       "required": [

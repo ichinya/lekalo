@@ -122,7 +122,7 @@ scoped-input anchoring is described above.
 1. an explicit `--project DIR` (or `LEKALO_PROJECT`) selector wins; the
    usual selection grammar and alias refusal apply, and the marker file is
    not required because it may not exist yet;
-2. otherwise the invocation ancestors are scanned for workspace roots
+2. otherwise the selected discovery services inspect the invocation ancestors for workspace roots
    (`package.json` with `workspaces`, `pnpm-workspace.yaml`, `go.work`,
    `Cargo.toml` with `[workspace]`, `settings.gradle(.kts)`); exactly one
    workspace root is adopted, more than one is ambiguous and demands
@@ -130,6 +130,12 @@ scoped-input anchoring is described above.
 3. otherwise the nearest ancestor with any recognized manifest is adopted;
 4. otherwise the invocation directory itself is adopted (an empty
    repository).
+
+Ruby and Java detection come from explicit services in `lekalo.yaml`. Select
+`discovery/ruby: gh/ichinya/lekalo-ruby` for Gemfile and
+`discovery/java: gh/ichinya/lekalo-java` for Maven or Gradle, then run
+`lekalo runtime lock` in that directory. A nested invocation uses the
+ancestor's locked selection.
 
 Candidate spellings are invocation-relative (`.`/`..`/`../..`); no
 absolute filesystem path ever enters a receipt.

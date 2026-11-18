@@ -11,6 +11,9 @@ pub struct Manifest {
     pub id: String,
     pub version: String,
     pub kind: String,
+    /// Directory mounts for independently pinned library packages.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub libraries: BTreeMap<String, String>,
     pub files: Vec<String>,
     #[serde(default)]
     pub command: Vec<String>,
@@ -26,6 +29,8 @@ pub struct Package {
     pub manifest: Manifest,
     pub digest: String,
     pub files: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub dependencies: BTreeMap<String, Package>,
 }
 
 pub fn home() -> Result<PathBuf> {
@@ -57,7 +62,22 @@ fn manifest(bytes: &[u8], kind: &str) -> Result<Manifest> {
         || !config::token(&m.id)
         || semver::Version::parse(&m.version).is_err()
         || m.kind != kind
-        || !matches!(m.kind.as_str(), "runtime" | "rules")
+        || !matches!(m.kind.as_str(), "runtime" | "rules" | "library")
+        || m.libraries.len() > 8
+        || m.libraries.iter().any(|(mount, source)| {
+            !mount
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                || mount.is_empty()
+                || mount.len() > 48
+                || m.files
+                    .iter()
+                    .any(|f| f.split('/').next() == Some(mount.as_str()))
+                || coordinate(source).is_err()
+                || !source.rsplit_once('#').is_some_and(|(_, rev)| {
+                    rev.len() == 40 && rev.bytes().all(|b| b.is_ascii_hexdigit())
+                })
+        })
         || m.files.is_empty()
         || m.files.len() > 256
         || m.files.iter().any(|p| {
@@ -76,6 +96,9 @@ fn manifest(bytes: &[u8], kind: &str) -> Result<Manifest> {
     match kind {
         "runtime" if m.command.is_empty() || m.command.len() > 16 || m.rules.is_some() => {
             return Err(error("runtime-entry-missing"))
+        }
+        "library" if !m.command.is_empty() || m.rules.is_some() => {
+            return Err(error("package-manifest-invalid"))
         }
         "rules"
             if !m.command.is_empty() || !m.rules.as_ref().is_some_and(|p| m.files.contains(p)) =>
@@ -154,6 +177,21 @@ fn coordinate(source: &str) -> Result<(String, String)> {
 }
 
 pub fn resolve(project: &Path, source: &str, kind: &str, offline: bool) -> Result<Package> {
+    resolve_inner(project, source, kind, offline, 0, &mut 16)
+}
+
+fn resolve_inner(
+    project: &Path,
+    source: &str,
+    kind: &str,
+    offline: bool,
+    depth: usize,
+    remaining: &mut usize,
+) -> Result<Package> {
+    if depth > 4 || *remaining == 0 {
+        return Err(error("package-dependency-limit"));
+    }
+    *remaining -= 1;
     let cache = home()?;
     if cache.starts_with(project) {
         return Err(error("package-home-inside-project"));
@@ -230,6 +268,32 @@ pub fn resolve(project: &Path, source: &str, kind: &str, offline: bool) -> Resul
         }
         content.insert(path.clone(), bytes);
     }
+    let mut dependencies = BTreeMap::new();
+    for (mount, coordinate) in &m.libraries {
+        if coordinate.starts_with("git+file:")
+            && !(source.starts_with("git+file:") || source.starts_with("path:"))
+        {
+            return Err(error("package-dependency-source"));
+        }
+        let dep = resolve_inner(
+            project,
+            coordinate,
+            "library",
+            offline,
+            depth + 1,
+            remaining,
+        )?;
+        let base = root(&dep)?;
+        for path in dep.files.keys() {
+            let bytes = read(&base, path, 32 * 1024 * 1024)?;
+            total += bytes.len();
+            if total > 128 * 1024 * 1024 || content.len() >= 256 {
+                return Err(error("package-size-limit"));
+            }
+            content.insert(format!("{mount}/{path}"), bytes);
+        }
+        dependencies.insert(mount.clone(), dep);
+    }
     let files: BTreeMap<_, _> = content
         .iter()
         .map(|(p, b)| (p.clone(), digest(b)))
@@ -239,6 +303,7 @@ pub fn resolve(project: &Path, source: &str, kind: &str, offline: bool) -> Resul
         source: source.to_owned(),
         revision,
         manifest: m,
+        dependencies,
         digest: hash,
         files,
     };
@@ -258,11 +323,40 @@ pub fn resolve(project: &Path, source: &str, kind: &str, offline: bool) -> Resul
                     .map_err(|_| error("package-stage-failed"))?;
             }
         }
-        std::fs::rename(staged.path(), &destination)
-            .map_err(|_| error("package-store-conflict"))?;
+        if std::fs::rename(staged.path(), &destination).is_err() && !destination.is_dir() {
+            return Err(error("package-store-conflict"));
+        }
     }
     verify(&p)?;
     Ok(p)
+}
+
+/// Populate a fresh cache from the locked commit, or verify a local path package.
+pub fn restore(project: &Path, p: &Package) -> Result<()> {
+    if root(p)?.symlink_metadata().is_ok() {
+        return verify(p);
+    }
+    let source = if p.source.starts_with("path:") && p.revision.is_none() {
+        p.source.clone()
+    } else {
+        let rev = p
+            .revision
+            .as_deref()
+            .ok_or_else(|| error("package-revision-invalid"))?;
+        if rev.len() != 40 || !rev.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(error("package-revision-invalid"));
+        }
+        let base = p
+            .source
+            .rsplit_once('#')
+            .map_or(p.source.as_str(), |(base, _)| base);
+        format!("{base}#{rev}")
+    };
+    let loaded = resolve(project, &source, &p.manifest.kind, false)?;
+    if loaded.digest != p.digest || loaded.revision != p.revision {
+        return Err(error("package-changed"));
+    }
+    verify(p)
 }
 
 pub fn verify(package: &Package) -> Result<()> {
@@ -270,26 +364,66 @@ pub fn verify(package: &Package) -> Result<()> {
         return Err(error("package-lock-invalid"));
     }
     let root = root(package)?;
+    verify_inventory(package, &root, "", 0, &mut 16)?;
+    let mut total = 0;
     for (path, hash) in &package.files {
-        if digest(&read(&root, path, 32 * 1024 * 1024)?) != *hash {
+        let bytes = read(&root, path, 32 * 1024 * 1024)?;
+        total += bytes.len();
+        if total > 128 * 1024 * 1024 || digest(&bytes) != *hash {
             return Err(error("package-changed"));
         }
     }
-    let expected: std::collections::BTreeSet<_> = package
-        .manifest
-        .files
-        .iter()
-        .map(String::as_str)
-        .chain(std::iter::once("lekalo.package.json"))
-        .collect();
-    if expected != package.files.keys().map(String::as_str).collect() {
+    Ok(())
+}
+
+fn verify_inventory(
+    p: &Package,
+    root: &Path,
+    prefix: &str,
+    depth: usize,
+    remaining: &mut usize,
+) -> Result<()> {
+    if depth > 4
+        || *remaining == 0
+        || p.files.len() > 257
+        || !p.dependencies.keys().eq(p.manifest.libraries.keys())
+    {
         return Err(error("package-lock-invalid"));
     }
+    *remaining -= 1;
     let actual = manifest(
-        &read(&root, "lekalo.package.json", 128 * 1024)?,
-        &package.manifest.kind,
+        &read(root, &format!("{prefix}lekalo.package.json"), 128 * 1024)?,
+        &p.manifest.kind,
     )?;
-    if serde_json::to_value(&actual).unwrap() != serde_json::to_value(&package.manifest).unwrap() {
+    if serde_json::to_value(actual).unwrap() != serde_json::to_value(&p.manifest).unwrap() {
+        return Err(error("package-lock-invalid"));
+    }
+    let mut expected: std::collections::BTreeSet<String> =
+        p.manifest.files.iter().cloned().collect();
+    expected.insert("lekalo.package.json".into());
+    for (mount, dep) in &p.dependencies {
+        if p.manifest.libraries[mount] != dep.source
+            || dep.manifest.kind != "library"
+            || dep.revision.as_deref() != dep.source.rsplit_once('#').map(|(_, r)| r)
+            || digest(&serde_json::to_vec(&dep.files).unwrap()) != dep.digest
+        {
+            return Err(error("package-lock-invalid"));
+        }
+        verify_inventory(
+            dep,
+            root,
+            &format!("{prefix}{mount}/"),
+            depth + 1,
+            remaining,
+        )?;
+        for (file, hash) in &dep.files {
+            let path = format!("{mount}/{file}");
+            if p.files.get(&path) != Some(hash) || !expected.insert(path) {
+                return Err(error("package-lock-invalid"));
+            }
+        }
+    }
+    if expected.iter().ne(p.files.keys()) {
         return Err(error("package-lock-invalid"));
     }
     Ok(())
