@@ -1520,8 +1520,11 @@ mod tests {
     #[test]
     fn unix_confined_php_runtime_qualification() {
         let root = tempfile::tempdir().unwrap();
-        let source =
-            include_str!("../../../../tests/external/lekalo-php/src/ai-lint.php");
+        let source = std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/external/lekalo-php/src/ai-lint.php"),
+        )
+        .expect("install the pinned PHP package with scripts/external-tool.mjs --provision-php");
         let script = root.path().join("php-runtime.php");
         std::fs::write(
             &script,
