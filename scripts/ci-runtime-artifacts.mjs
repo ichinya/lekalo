@@ -27,9 +27,9 @@ function context(c){
  else assert(new RegExp(c.platform==='win32'?'^win[0-9]+(?:[._-].*)?$':'^macos[0-9]+(?:[._-].*)?$').test(c.imageOS),'Image family/platform mismatch');
  assert(['debug','release'].includes(c.profile),'Invalid profile');
 }
-const names=c=>[...(c.profile==='debug'?['lekalo','typescript-native-contract']:['lekalo']),...serviceBinaries];
+const names=()=>['lekalo',...serviceBinaries];
 const filename=(name,c)=>name+(c.platform==='win32'?'.exe':'');
-const outputPath=(name,c)=>name==='lekalo'?join(c.profile,filename(name,c)):name==='typescript-native-contract'?join('debug','examples',filename(name,c)):join('external-services','debug',filename(name,c));
+const outputPath=(name,c)=>name==='lekalo'?join(c.profile,filename(name,c)):join('external-services','debug',filename(name,c));
 export function prepare({source,destination,...c}){
  context(c);
  const files=names(c).map(name=>{const bytes=plain(join(source,outputPath(name,c)));assert(bytes.length>0,'Empty executable');return {name,bytes};});

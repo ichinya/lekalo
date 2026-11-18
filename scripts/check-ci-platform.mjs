@@ -7,7 +7,7 @@ import {root,jobs,field,environment,assertRuntimeGate} from './lib/ci-workflow.m
 const read=p=>readFileSync(join(root,p),'utf8').replaceAll('\r\n','\n');
 const digest=s=>createHash('sha256').update(s).digest('hex');
 const expr=s=>'${{ '+s+' }}';
-const consumers=['cli-core','node-typescript','php-laravel','python','sdk','docs','mcp','native-execution'];
+const consumers=['cli-core','docs','mcp','native-execution'];
 // Preserve the historical gate inventory while changing only package locations.
 const externalize = text => text.replaceAll('adapters/python/','tests/external/lekalo-python/').replaceAll('tests/external/lekalo-python/tests/observed-host.test.mjs','tests/python-observed-host.test.mjs').replaceAll('adapters/node-typescript','tests/external/lekalo-typescript/adapters/node-typescript').replaceAll('tests/fixtures/node-typescript-scanner/','tests/external/lekalo-typescript/tests/fixtures/node-typescript-scanner/').replaceAll('tests/fixtures/node-typescript-transport/','tests/external/lekalo-typescript/tests/fixtures/node-typescript-transport/').replaceAll('npm ci --prefix tests/external/lekalo-typescript/adapters/node-typescript', 'npm ci --prefix "$LEKALO_TYPESCRIPT_ROOT/adapters/node-typescript"').replaceAll('working-directory: sdk/','working-directory: tests/external/lekalo-adapter-sdk/sdk/');
 const originalLocations = text => text.replaceAll('tests/external/lekalo-python/', 'adapters/python/').replaceAll('tests/python-observed-host.test.mjs','adapters/python/tests/observed-host.test.mjs').replaceAll('tests/external/lekalo-typescript/','').replaceAll('tests/external/lekalo-adapter-sdk/','').replaceAll('      - name: Provision pinned external integration packages\n        run: node scripts/external-tool.mjs --provision\n','');
@@ -45,7 +45,7 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   assert.equal(p.env.RUNTIME_PROFILE,profile);assert.equal(p.env.RUNTIME_IMAGE,expr('inputs.os'));
   for(const [key,value] of Object.entries({'artifact-id':expr('steps.upload.outputs.artifact-id'),'manifest-sha256':expr('steps.package.outputs.manifest-sha256'),'producer-attempt':expr('steps.package.outputs.producer-attempt')}))assert.equal(field(p.raw,key,6),value);
   const build=p.steps.findIndex(s=>s.run?.includes('cargo build'));
-  assert.equal(p.steps[build].run,profile==='debug'?'cargo build -p lekalo-cli --bin lekalo --locked\ncargo build -p lekalo-core --example typescript-native-contract --locked':'cargo build --release -p lekalo-cli --bin lekalo --locked');
+  assert.equal(p.steps[build].run,profile==='debug'?'cargo build -p lekalo-cli --bin lekalo --locked':'cargo build --release -p lekalo-cli --bin lekalo --locked');
   const pack=p.steps.findIndex(s=>s.run===`node scripts/ci-runtime-artifacts.mjs prepare "$RUNNER_TEMP/runtime-${profile}"`);
   const upload=p.steps.findIndex(s=>s.uses==='actions/upload-artifact@v7');
   assert(build<pack&&pack<upload);assert.equal(field(p.steps[pack].raw,'id',8),'package');assert.equal(field(p.steps[upload].raw,'id',8),'upload');
@@ -59,7 +59,6 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   const job=graph[owner];
   assert.deepEqual(job.needs,[]);assert(!job.steps.some(s=>s.uses?.startsWith('actions/download-artifact')));
   assert(job.steps.some(s=>s.run==='cargo build --workspace --locked'));
-  for(const tool of ['shivammathur/setup-php@v2','actions/setup-go@v7'])assert(job.steps.some(s=>s.uses===tool),`${owner} parity needs ${tool}`);
   const lane=owner==='rust'?'core':'process';
   const runs=job.steps.filter(s=>s.run?.includes('node scripts/ci-rust-tests.mjs'));
   assert.equal(runs.length,1,`${owner}: one Rust lane invocation`);
@@ -81,10 +80,9 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   for(const [index,step] of j.steps.entries())if(step.uses==='Swatinem/rust-cache@v2')assert(index<verify,`${owner}: Rust cache must run before verified runtime installation`);
   assert.equal(field(j.steps.find(s=>s.uses==='actions/download-artifact@v8').raw,'path',10),`${expr('runner.temp')}/runtime-${profile}`);
   for(const s of j.steps)if(s.run?.includes('cargo build')||s.run?.includes('cargo test'))assert(['sdk','python'].includes(owner)||s.condition?.includes('failure()'),`Hidden Cargo in ${owner}`);
-  if(['sdk','python'].includes(owner))assert(j.steps.some(s=>s.uses==='Swatinem/rust-cache@v2'&&field(s.raw,'cache-targets',10)==='false'),'A cache must not overwrite verified host binaries');
  }
  for(const [name,job] of Object.entries(graph)) assert(job.steps.some(s=>s.run==='node scripts/external-tool.mjs --provision'),`${name}: external integrations are not provisioned`);
- const seen=new Set();assert.equal(inventory.gates.length,91);
+ const seen=new Set();assert.equal(inventory.gates.length,46);
  const commands=new Map();
  for(const [owner,indices] of Object.entries(inventory.prerequisites))for(const index of indices){
   const s=inventory.setup.find(s=>s.index===index);assert(s,`Unknown setup ${index}`);
@@ -102,9 +100,7 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
  for(const gate of inventory.gates){
   assert(!seen.has(gate.id),'Duplicate inventory entry');seen.add(gate.id);
   let expected=externalize(gate.raw.replaceAll(expr('matrix.os'),expr('inputs.os')));
-  if(gate.id==='build-test-075')expected=expected.replace('          cargo build -p lekalo-core --example typescript-native-contract --locked\n','');
   if(gate.id==='native-execution-10')expected=expected.replace('          cargo build --release -p lekalo-cli --locked\n','');
-  if(gate.id==='native-execution-13')expected=expected.replace('name: native-acceptance-'+expr('inputs.os'),'name: native-acceptance-'+expr('inputs.os')+'-'+expr('github.run_attempt'));
   // The original test set is now partitioned between two mandatory jobs;
   // selectGroups/checkCoverage prove the union, and both commands are pinned above.
   if(gate.id==='build-test-056')expected=expected.replace('run: node scripts/ci-rust-tests.mjs','run: node scripts/ci-rust-tests.mjs --lane=core');

@@ -209,11 +209,11 @@
       "id": "mysql-observed",
       "document": "docs/tutorial-brownfield-typescript.md",
       "fixture": "repository",
-      "lane": "portable",
+      "lane": "observed",
       "write": false,
       "commands": [
         {
-          "line": "node scripts/pilot-brownfield-ts.mjs --consumer tests/fixtures/pilot/brownfield-mysql --bind packages/api/src/routes/tasks.ts:submitTask:task.submit --disposition public-fixture",
+          "line": "node tests/external/lekalo-typescript/host-tests/scripts/pilot-brownfield-ts.mjs --consumer tests/fixtures/pilot/brownfield-mysql --bind packages/api/src/routes/tasks.ts:submitTask:task.submit --disposition public-fixture",
           "exit": 0,
           "stream": "stdout",
           "check": "mysql-observed"

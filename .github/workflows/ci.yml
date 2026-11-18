@@ -133,6 +133,7 @@ jobs:
           set -euo pipefail
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-model-ajv.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-lockfile-ajv.mjs
+          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-adapter-manifest-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-diagnostic-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-validation-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-graph-contracts.mjs
@@ -164,7 +165,6 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-introspection-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-mysql-binding.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-storage-engine-contracts.mjs
-          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-laravel-migration-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-observed-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-bindings-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-query-model-contracts.mjs
@@ -186,18 +186,7 @@ jobs:
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-boundaries.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-mcp-union.mjs
-          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-contracts.mjs
           NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-explain-contracts.mjs --schema-only
-      - name: Run the adapter-SDK schema, digest, and generator gates (issue #106)
-        env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
-        # CI permits only the read-only generator --check; --write stays a
-        # local development action. The emitted outputs and records are
-        # pinned by committed digests, so drift fails here.
-        run: |
-          set -euo pipefail
-          node scripts/generate-adapter-sdk.mjs --check
-          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-adapter-sdk-contracts.mjs
       - name: Run contract checkers and suites
         env:
           LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
@@ -247,13 +236,12 @@ jobs:
           node scripts/test-model-contracts.mjs
           node scripts/test-versioning-contracts.mjs
           node scripts/test-lockfile-contracts.mjs
+
   fmt:
     name: Rustfmt
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v7
-      - name: Provision pinned external integration packages
-        run: node scripts/external-tool.mjs --provision
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -262,9 +250,6 @@ jobs:
       # [workspace]) is not covered by the root workspace (issue #106):
       # its generated modules pin their layout with #[rustfmt::skip], so
       # formatting can never fight the generator's byte --check.
-      - name: Rustfmt (adapter SDK workspace)
-        working-directory: tests/external/lekalo-adapter-sdk/sdk/rust
-        run: cargo fmt --all -- --check
 
   clippy:
     name: Clippy (${{ matrix.os }})
@@ -283,9 +268,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         if: runner.environment == 'github-hosted'
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - name: Clippy (adapter SDK workspace)
-        working-directory: tests/external/lekalo-adapter-sdk/sdk/rust
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   msrv:
     name: Rust 1.89.0 MSRV (${{ matrix.os }})
@@ -316,253 +298,26 @@ jobs:
     with:
       os: ${{ matrix.os }}
 
-  mysql-docs:
-    name: Synthetic MySQL documentation tutorial (issue #105)
+  runtime-packages:
+    name: External protocol and workspace contracts
+    needs: contracts-rust
     runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
-    timeout-minutes: 20
-    services:
-      mysql:
-        image: mysql:8.4.5@sha256:679e7e924f38a3cbb62a3d7df32924b83f7321a602d3f9f967c01b3df18495d6
-        env:
-          MYSQL_ROOT_PASSWORD: synthetic-root-only
-          MYSQL_DATABASE: lekalo_docs_tutorial
-          MYSQL_USER: tutorial
-          MYSQL_PASSWORD: synthetic-tutorial-only
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping --silent"
-          --health-interval=10s --health-timeout=5s --health-retries=20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        if: runner.environment == 'github-hosted'
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
           package-manager-cache: false
-      - name: Build the locked CLI and provision the exact schema validator
-        run: |
-          set -euo pipefail
-          cargo build -p lekalo-cli --locked
-          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.20.0" --ignore-scripts --no-audit --no-fund --no-save ajv@8.20.0
-      - name: Provision the synthetic fixture from its committed npm lock
-        # Visible setup only; replay never installs or uses a production URL.
-        run: npm ci --prefix tests/fixtures/pilot/brownfield-mysql --ignore-scripts --no-audit --no-fund
-      - name: Replay actual-package typecheck, HTTP and MySQL persistence
-        timeout-minutes: 10
-        env:
-          NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
-          LEKALO_DOCS_MYSQL_PORT: '3306'
-        run: node scripts/test-docs-examples.mjs --lane mysql
-
-  postgres-migrations:
-    name: PostgreSQL migration execution lane (issue #57)
-    # The migration gate's stage 3 executes the emitted up()/down()
-    # SQL on a real server. The build-test lanes reach it only when a
-    # docker engine happens to exist; this job provisions a
-    # digest-pinned services: PostgreSQL and hands it to the harness
-    # through LEKALO_MIGRATIONS_PG*, so execution is guaranteed and
-    # the server version stops floating with the postgres:16-alpine
-    # tag. A configured-but-unreachable service fails the harness
-    # (db:service-execution) — never a silent skip.
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
-    timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:16-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
-        env:
-          POSTGRES_DB: lekalo
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: synthetic-ci-only
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres -d lekalo"
-          --health-interval=10s --health-timeout=5s --health-retries=20
-    steps:
-      - uses: actions/checkout@v7
-      - name: Provision pinned external integration packages
-        run: node scripts/external-tool.mjs --provision
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        if: runner.environment == 'github-hosted'
-      - uses: actions/setup-node@v7
+      - uses: actions/download-artifact@v8
         with:
-          node-version: 24.x
-          package-manager-cache: false
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          tools: none
-          extensions: none
-      - name: Provision the PostgreSQL client tools
-        # The harness drives the service through the runner's psql;
-        # ubuntu-latest ships it, the self-hosted image may not.
-        run: |
-          set -euo pipefail
-          if ! command -v psql >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install --yes postgresql-client
-          fi
-          psql --version
-          pg_isready --version
-      - name: Build the locked CLI and run the migration pipeline gate
-        env:
-          LEKALO_MIGRATIONS_PGHOST: localhost
-          LEKALO_MIGRATIONS_PGPORT: '5432'
-          LEKALO_MIGRATIONS_PGUSER: postgres
-          LEKALO_MIGRATIONS_PGPASSWORD: synthetic-ci-only
-          LEKALO_MIGRATIONS_PGDATABASE: lekalo
-        run: |
-          set -euo pipefail
-          cargo build -p lekalo-cli --locked
-          node scripts/test-php-laravel-migrations.mjs
-
+          name: contracts-cli
+          path: target/debug
+      - name: Verify CLI and external services
+        run: node scripts/ci-contracts-cli.mjs verify target/debug
       - name: Check portable runtime rules, workspace imports and selected services
         run: |
           set -euo pipefail
           npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.20.0" --ignore-scripts --no-audit --no-fund --no-save ajv@8.20.0
           unset LEKALO_SERVICES LEKALO_PROJECT
-          NODE_PATH="$RUNNER_TEMP/lekalo-ajv-8.20.0/node_modules" node --test scripts/test-portable-laravel.mjs scripts/test-external-runtime.mjs scripts/test-external-services.mjs scripts/test-official-runtime-packages.mjs
-
-  mago-real:
-    name: Mago real-toolchain gate (issue #55)
-    # The real-toolchain leg: installs the checksum-pinned Mago release
-    # as a visible setup step outside the checkout, then runs the real
-    # suite with --require-available. A missing tool fails this job; a
-    # skipped leg is visible and never counts as Mago acceptance.
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install the pinned PHP packages and compatibility artifact
-        run: node scripts/external-tool.mjs --provision-php
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24.x
-          package-manager-cache: false
-      - name: Provision PHP 8.3 (no extensions, no Composer tools)
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          tools: none
-          extensions: none
-      - name: Install the pinned Mago toolchain (checksum-verified, outside the checkout)
-        run: |
-          set -euo pipefail
-          LOCK=tests/external/lekalo-php/mago-toolchain.lock.json
-          PIN_VERSION=$(node -p "require('./$LOCK').tool.version")
-          test "$PIN_VERSION" = "1.0.0"
-          # Resolve THIS runner's platform entry from the lock — the
-          # digest is custody, not decoration.
-          read -r _PLATFORM ARCHIVE WANT_SHA <<EOF
-          $(node -e "
-            const lock = require('./$LOCK');
-            const platform = process.arch === 'arm64' && process.platform === 'darwin'
-              ? 'aarch64-apple-darwin'
-              : 'x86_64-unknown-linux-gnu';
-            const artifact = lock.probe.artifacts.find((a) => a.platform === platform);
-            if (!artifact) { console.error('no pinned artifact for ' + platform); process.exit(1); }
-            console.log(artifact.platform, artifact.archive, artifact.archiveSha256);
-          ")
-          EOF
-          ARCHIVE_CACHE="$RUNNER_TOOL_CACHE/mago-archives/$WANT_SHA/$ARCHIVE"
-          if test -f "$ARCHIVE_CACHE"; then
-            cp "$ARCHIVE_CACHE" "$RUNNER_TEMP/mago-archive"
-          else
-            curl -sSfL --retry 3 -o "$RUNNER_TEMP/mago-archive" \
-              "https://github.com/carthage-software/mago/releases/download/${PIN_VERSION}/${ARCHIVE}"
-          fi
-          # Fail-closed verification: the downloaded archive must match
-          # the pinned digest byte for byte, or the job stops here.
-          echo "${WANT_SHA}  $RUNNER_TEMP/mago-archive" | sha256sum --check --strict
-          if test -w "$RUNNER_TOOL_CACHE"; then
-            mkdir -p "$(dirname "$ARCHIVE_CACHE")"
-            cp "$RUNNER_TEMP/mago-archive" "$ARCHIVE_CACHE"
-          fi
-          mkdir -p "$RUNNER_TEMP/mago-bin"
-          tar -xzf "$RUNNER_TEMP/mago-archive" -C "$RUNNER_TEMP/mago-bin"
-          BIN=$(find "$RUNNER_TEMP/mago-bin" -type f -name mago | head -1)
-          test -n "$BIN"
-          chmod +x "$BIN"
-          echo "LEKALO_MAGO=$BIN" >> "$GITHUB_ENV"
-      - name: Run the Mago integration gate, real mode
-        run: node scripts/test-mago-integration.mjs --real --require-available
-      - name: Run the generated-types Mago gate, real mode (issue #58)
-        # The generated type files pass the pinned lint AND analyze
-        # gates, with the violating negative control proving the rules
-        # ran. A missing tool fails this leg, never a silent skip.
-        run: node scripts/test-php-laravel-type-roundtrip.mjs --require-mago
-
-  php-versions:
-    name: PHP version matrix (lekalo-php#1, all current versions)
-    # The external language and framework suites, the unified
-    # artifact's describe handshake, and the deterministic rebuild all
-    # run on every current PHP version (8.6 rides its RC until GA).
-    runs-on: ubuntu-26.04
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        php: ['8.0', '8.1', '8.2', '8.3', '8.4', '8.5', '8.6']
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install the pinned PHP packages and compatibility artifact
-        run: node scripts/external-tool.mjs --provision-php
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: ${{ matrix.php }}
-          tools: none
-          extensions: none
-      - name: External language and framework suites
-        run: |
-          set -euo pipefail
-          php -n tests/external/lekalo-php/tests/protocol.php
-          php -n tests/external/lekalo-php/tests/analyzer.php
-          php -n tests/external/lekalo-php-laravel/tests/laravel.php
-      - name: The unified artifact answers describe on this version
-        run: |
-          set -euo pipefail
-          printf '%s' '{"protocol":"lekalo.target/v1","protocol_version":"0.6.4","operation":"describe","request_id":"req-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","project_root":"."}' \
-            | php -n adapters/php-laravel/adapter.php | grep -q '"version":"0.9.0"'
-      - name: The deterministic rebuild is byte-identical on this version
-        run: php -n adapters/php-laravel/build.php --check
-
-  worklog-changelog-pilot:
-    name: Worklog-changelog pilot binary gates (issue #51)
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        if: runner.environment == 'github-hosted'
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24.x
-          package-manager-cache: false
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.3"
-      - name: Provision pinned external integration packages
-        run: node scripts/external-tool.mjs --provision
-      - name: Build pinned external services
-        run: node scripts/external-tool.mjs --build-services
-      - name: Build the locked CLI and provision the exact schema validator
-        run: |
-          set -euo pipefail
-          cargo build -p lekalo-cli --locked
-          npm install --prefix "$RUNNER_TEMP/lekalo-ajv-8.20.0" --ignore-scripts --no-audit --no-fund --no-save ajv@8.20.0
-      - name: Run the pilot harness, impact, and neutrality gates
-        env:
-          LEKALO_AJV_NODE_PATH: ${{ runner.temp }}/lekalo-ajv-8.20.0/node_modules
-        run: |
-          set -euo pipefail
-          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target php --profile strict --case all
-          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target go --profile strict --case all --expect-denied
-          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-pilot.mjs --target go --profile permissive --case all
-          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-impact.mjs
-          NODE_PATH="$LEKALO_AJV_NODE_PATH" node scripts/test-worklog-changelog-admission.mjs
-          node scripts/test-worklog-changelog-neutrality.mjs
+          NODE_PATH="$RUNNER_TEMP/lekalo-ajv-8.20.0/node_modules" node --test --test-concurrency=1 scripts/test-external-tool.mjs scripts/test-runtime-workspace.mjs scripts/test-external-runtime.mjs scripts/test-external-services.mjs

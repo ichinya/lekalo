@@ -7,17 +7,7 @@ import {root,jobs,assertRuntimeGate,assertContractsGate,platformGraph,expandSetu
 import {checkPlatform} from './check-ci-platform.mjs';
 const caller=readFileSync(join(root,'.github/workflows/ci.yml'),'utf8').replaceAll('\r\n','\n');
 const callee=readFileSync(join(root,'.github/workflows/ci-platform.yml'),'utf8').replaceAll('\r\n','\n');
-test('all 91 original gates have one owner with preserved semantics',()=>assert.deepEqual(checkPlatform(),{ok:true,gates:91,platforms:3,jobsPerPlatform:12}));
-test('Mago lint cleanup only renames the intentionally discarded platform field',()=>{
- const job=jobs(caller)['mago-real'].raw;
- assert.equal(job.split('read -r _PLATFORM ARCHIVE WANT_SHA <<EOF').length,2);
- const original=job.replace('read -r _PLATFORM ARCHIVE WANT_SHA <<EOF','read -r PLATFORM ARCHIVE WANT_SHA <<EOF');
- // Preserve the source job byte for byte apart from this one identifier.
- assert.equal(createHash('sha256').update(original).digest('hex'),'af73a8ddcd9205b006bb518a3f29ab3ed486c73ac10bb61977e75b611acc513a');
- const changed=caller.replace('read -r _PLATFORM ARCHIVE WANT_SHA <<EOF','read -r _PLATFORM WANT_SHA ARCHIVE <<EOF');
- assert.notEqual(changed,caller);
- assert.throws(()=>checkPlatform({caller:changed}),/Unrelated job mago-real changed/);
-});
+test('host gates have one owner and preserve their commands',()=>assert.deepEqual(checkPlatform(),{ok:true,gates:46,platforms:3,jobsPerPlatform:8}));
 const mutations=[
  ['missing external service build',s=>s.replace('      - name: Build pinned external services\n        run: node scripts/external-tool.mjs --build-services\n','')],
  ['missing qualification prebuild',s=>s.replace('      - name: Build the core qualification test executable before its deadline\n        run: cargo test -p lekalo-core --lib --no-run --locked\n','')],
@@ -38,11 +28,10 @@ const mutations=[
  ['optional Rust',s=>s.replace('  rust:\n','  rust:\n    if: false\n')],
  ['different gate arguments',s=>s.replace('node scripts/run-golden.mjs --verify','node scripts/run-golden.mjs --update')],
  ['missing gate',s=>s.replace('node scripts/test-classification-cli.mjs','echo skipped')],
- ['missing runtime provision',s=>s.replaceAll('uses: shivammathur/setup-php@v2','uses: actions/setup-node@v7')],
+ ['missing runtime provision',s=>s.replaceAll('uses: actions/setup-node@v7','uses: actions/checkout@v7')],
  ['weaker timeout',s=>s.replace('timeout-minutes: 3','timeout-minutes: 30')],
  ['disabled assertions',s=>s.replace('CARGO_PROFILE_DEV_DEBUG_ASSERTIONS: "true"','CARGO_PROFILE_DEV_DEBUG_ASSERTIONS: "false"')],
- ['overwriting verified CLI from cache',s=>s.replace('cache-targets: false','cache-targets: true')],
- ['missing producer binary',s=>s.replace('          cargo build -p lekalo-core --example typescript-native-contract --locked\n','')],
+ ['missing producer binary',s=>s.replace('          cargo build -p lekalo-cli --bin lekalo --locked\n','')],
  ['rerun name collision',s=>s.replace('runtime-debug-${{ inputs.os }}-${{ github.run_attempt }}','runtime-debug-${{ inputs.os }}')],
  ['shortened retention',s=>s.replace('retention-days: 7','retention-days: 1')],
  ['uncompressed runtime uploads',s=>s.replace('compression-level: 6','compression-level: 0')],
@@ -54,18 +43,6 @@ test('caller cannot change event/fork policy or remove an OS',()=>{
  assert.throws(()=>checkPlatform({caller:caller.replace('pull_request:', 'pull_request_target:')}));
 });
 
-for(const owner of ['python','sdk'])test(`${owner} cache restoration cannot remove an installed runtime`,()=>{
- const start=callee.indexOf(`  ${owner}:\n`);
- assert(start>=0,'Negative control needs the consumer job');
- const next=/\n  [\w-]+:\n/.exec(callee.slice(start+1)),end=next?start+1+next.index:callee.length;
- const block=callee.slice(start,end);
- const cache=`      - uses: Swatinem/rust-cache@v2\n        with:\n          shared-key: ci-platform-${owner}\n          cache-targets: false\n`;
- const verify='          node scripts/ci-runtime-artifacts.mjs verify "$RUNNER_TEMP/runtime-debug"\n';
- assert(block.includes(cache)&&block.includes(verify),'Negative control needs both cache and runtime installation');
- const changed=block.replace(cache,'').replace(verify,verify+cache);
- assert.notEqual(changed,block);
- assert.throws(()=>checkPlatform({callee:callee.slice(0,start)+changed+callee.slice(end)}),new RegExp(`${owner}: Rust cache must run before verified runtime installation`));
-});
 test('live structural guards resolve the called workflow and pinned handoff',()=>{
  for(const script of ['test-privacy-evaluator-parity.mjs','test-privacy-runtime-cli.mjs','test-privacy-leak-corpus.mjs'])assertRuntimeGate(script);
  assertContractsGate('test-mcp-contracts.mjs');assertContractsGate('test-mcp-boundaries.mjs');
@@ -77,11 +54,4 @@ test('unsupported aliases, duplicate anchors and overrides fail closed',()=>{
  assert.throws(()=>expandSetupSteps('      - *ci-unknown'),/Unknown/);
  assert.throws(()=>expandSetupSteps('      - &ci-one\n        run: true\n      - &ci-one\n        run: true'),/Duplicate/);
  assert.throws(()=>expandSetupSteps('      - &ci-one\n        run: true\n      - *ci-one\n        if: false'),/override/);
-});
-test('docs replay requires its own Go toolchain for the UI checked join',()=>{
- const start=callee.indexOf('  docs:'),end=callee.indexOf('  mcp:',start);
- assert(start>=0&&end>start);
- const block=callee.slice(start,end),missing=block.replace('      - *ci-setup-90\n','');
- assert.notEqual(block,missing,'Docs must explicitly provision Go/gofmt');
- assert.throws(()=>checkPlatform({callee:callee.slice(0,start)+missing+callee.slice(end)}),/docs: missing or altered prerequisite/);
 });

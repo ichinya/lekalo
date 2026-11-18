@@ -3958,7 +3958,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "scripts/test-php-operations-contracts.mjs",
+          "gate": "tests/external/lekalo-php-laravel/host-tests/scripts/test-php-operations-contracts.mjs",
           "note": "invalid join vectors"
         }
       ]
@@ -3971,7 +3971,7 @@
       "testWitness": [
         {
           "gate": "crates/lekalo-core/src/orchestration/generate.rs",
-          "note": "the unregistered php-routes result resolves to the registered rule; exercised by scripts/test-php-laravel-routes.mjs"
+          "note": "the unregistered php-routes result resolves to the registered rule; exercised by tests/external/lekalo-php-laravel/host-tests/scripts/test-php-laravel-routes.mjs"
         }
       ]
     },
@@ -4234,7 +4234,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "scripts/test-node-scenario-tests.mjs",
+          "gate": "tests/external/lekalo-typescript/scripts/test-node-scenario-tests.mjs",
           "note": "failing assertion rows record the outcome"
         }
       ]
@@ -4294,7 +4294,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "scripts/test-node-scenario-tests.mjs",
+          "gate": "tests/external/lekalo-typescript/scripts/test-node-scenario-tests.mjs",
           "note": "infrastructure rows record the outcome"
         }
       ]
@@ -4390,7 +4390,7 @@
       "evidence": "test-witness",
       "testWitness": [
         {
-          "gate": "scripts/test-node-scenario-tests.mjs",
+          "gate": "tests/external/lekalo-typescript/scripts/test-node-scenario-tests.mjs",
           "note": "the concurrency case records unsupported rows only"
         }
       ]

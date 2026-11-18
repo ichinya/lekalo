@@ -7,7 +7,13 @@
     },
     "lekalo-typescript": {
       "repository": "https://github.com/ichinya/lekalo-typescript.git",
-      "commit": "67d197ba27b4ff1cecbb6e77dc9f33f317ed0d2c"
+      "commit": "11932d05a6b1b42403a0f35efa2ea5e9dc7d73a1",
+      "testFixtures": [
+        "tests/fixtures/client-sdk",
+        "tests/fixtures/node-native-tools",
+        "tests/fixtures/pilot/brownfield-ts",
+        "tests/fixtures/public-typescript-scan"
+      ]
     },
     "lekalo-typescript-hono": {
       "repository": "https://github.com/ichinya/lekalo-typescript-hono.git",
@@ -35,7 +41,11 @@
     },
     "lekalo-python": {
       "repository": "https://github.com/ichinya/lekalo-python.git",
-      "commit": "8d74ee31eb46324988b74babfda474944e483c1b"
+      "commit": "d1ce48debd7d98893662fdd3835cf93c80db0c12",
+      "testFixtures": [
+        "tests/fixtures/python-scan/model",
+        "tests/fixtures/python-scan/standalone"
+      ]
     },
     "lekalo-hlv": {
       "repository": "https://github.com/ichinya/lekalo-hlv.git",
@@ -47,11 +57,18 @@
     },
     "lekalo-php": {
       "repository": "https://github.com/ichinya/lekalo-php.git",
-      "commit": "87256bf5f277e3690641e745e7d374f8badebd15"
+      "commit": "6afccc8b74e7f10c013886a64d9c9e9f22dce0c5",
+      "testFixtures": [
+        "tests/fixtures/mago"
+      ]
     },
     "lekalo-php-laravel": {
       "repository": "https://github.com/ichinya/lekalo-php-laravel.git",
-      "commit": "ef62474884a37d2392c7cd764a2a1dfea36b7a2e"
+      "commit": "da19054702a6773f2f51854f5372997b04eb0c80",
+      "testFixtures": [
+        "tests/fixtures/laravel-migrations",
+        "tests/fixtures/php-laravel"
+      ]
     },
     "lekalo-php-symfony": {
       "repository": "https://github.com/ichinya/lekalo-php-symfony.git",
@@ -59,7 +76,10 @@
     },
     "lekalo-python-fastapi": {
       "repository": "https://github.com/ichinya/lekalo-python-fastapi.git",
-      "commit": "0e6541b1e803cc25f18a4f0f313182b5fe1f31f3"
+      "commit": "d5496f7e04dada047ab315d1c9b23d69a2d8cc73",
+      "testFixtures": [
+        "tests/fixtures/python-scan/fastapi"
+      ]
     },
     "lekalo-python-fastmcp": {
       "repository": "https://github.com/ichinya/lekalo-python-fastmcp.git",

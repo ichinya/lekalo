@@ -62,7 +62,8 @@ export function provisionPhp() {
   const runtime = linkCheckout('lekalo-php');
   const rules = linkCheckout('lekalo-php-laravel');
   const directory = join(hostRoot, 'adapters', 'php-laravel');
-  const manifest = JSON.parse(readFileSync(join(directory, 'adapter.manifest.json'), 'utf8'));
+  const manifestSource = join(rules, 'host-tests', 'adapters', 'php-laravel', 'adapter.manifest.json');
+  const manifest = JSON.parse(readFileSync(manifestSource, 'utf8'));
   const entry = manifest.integrity.files.find(file => file.path === 'adapter.php');
   const source = join(rules, 'compat', 'adapter.php');
   const destination = join(directory, entry.path);
@@ -78,6 +79,7 @@ export function provisionPhp() {
   if (!existsSync(destination)) copyFileSync(source, destination, constants.COPYFILE_EXCL);
   verify(destination);
   const fixtures = {
+    "host-tests/adapters/php-laravel/adapter.manifest.json": "adapters/php-laravel/adapter.manifest.json",
     "compat/build.php": "adapters/php-laravel/build.php",
     "compat/main.php": "adapters/php-laravel/main.php",
     "compat/packages.php": "adapters/php-laravel/packages.php",
@@ -100,9 +102,28 @@ export function provisionPhp() {
   if (process.env.GITHUB_ENV) appendFileSync(process.env.GITHUB_ENV, `LEKALO_PHP_SRC=${join(runtime,'src')}\n`);
 }
 
+// Some host regressions consume example inputs maintained alongside the adapter.
+function provisionTestFixtures(name, paths) {
+  if (!paths?.length) return;
+  const owner = externalRoot(name);
+  const prefix = 'host-tests/';
+  for (const path of paths) {
+    if (!/^tests\/fixtures\/[\w/-]+$/.test(path) || path.includes('..')) throw Error('Invalid fixture directory: ' + path);
+    const entries = execFileSync('git', ['-C', owner, 'ls-files', '-z', '--', prefix + path + '/'], {encoding:'utf8'}).split('\0').filter(Boolean);
+    if (!entries.length) throw Error('Missing package fixtures: ' + path);
+    for (const entry of entries) {
+      const destination = join(hostRoot, entry.slice(prefix.length));
+      const source = join(owner, entry);
+      mkdirSync(dirname(destination), {recursive:true});
+      if (!existsSync(destination)) copyFileSync(source, destination, constants.COPYFILE_EXCL);
+      else if (!lstatSync(destination).isFile() || !readFileSync(source).equals(readFileSync(destination))) throw Error('Host fixture differs from its pinned package: ' + destination);
+    }
+  }
+}
 export function provision() {
   provisionPhp();
-  for (const name of Object.keys(JSON.parse(readFileSync(join(hostRoot,'external-tools.lock.json'))).packages)) {
+  for (const [name, pin] of Object.entries(JSON.parse(readFileSync(join(hostRoot,'external-tools.lock.json'))).packages)) {
+    provisionTestFixtures(name, pin.testFixtures);
     if (name !== 'lekalo-php' && name !== 'lekalo-php-laravel') linkCheckout(name);
   }
   if (process.env.GITHUB_ENV) {

@@ -27,6 +27,8 @@ The curl commands above use Bash quoting. Use `curl.exe` in Windows PowerShell w
 
 ## Conformance
 
+The package-owned test commands below run in the integration checkout prepared by the [Laravel reference-project workflow](https://github.com/ichinya/lekalo-php-laravel/blob/main/.github/workflows/reference-projects.yml).
+
 Read-only source/lock check, with no database or installed application dependencies:
 
 ```sh

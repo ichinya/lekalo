@@ -1,5 +1,0 @@
-<?php
-
-use Illuminate\Foundation\Application;
-
-$app = new Application(dirname(__DIR__));

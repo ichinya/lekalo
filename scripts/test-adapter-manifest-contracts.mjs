@@ -10,8 +10,7 @@
  * 2. checks every valid fixture for schema validity and duplicate JSON
  *    keys,
  * 3. refuses every adversarial fixture with the schema violation its name
- *    promises (the schema↔Rust parity guard lives in
- *    adapter_package::manifest::committed_exemplar_tests).
+ *    promises.
  *
  * Exit protocol: 0 with a one-line JSON status on success, 1 with a JSON
  * failure report on stderr otherwise.
@@ -80,19 +79,13 @@ const duplicateKeys = (text) => {
   }
 };
 
-  // The shipped exemplar is always part of the valid set.
-  const exemplar = JSON.parse(
-    readFileSync(join(root, "tests", "external", "lekalo-typescript", "adapters", "node-typescript", "adapter.manifest.json"), "utf8"),
-  );
-  check("valid:shipped-exemplar", validateSuccessor(exemplar), validateSuccessor.errors);
-  const phpExemplar = JSON.parse(readFileSync(join(root, "adapters/php-laravel/adapter.manifest.json"), "utf8"));
-  check("valid:shipped-php-exemplar", validateSuccessor(phpExemplar), validateSuccessor.errors);
-
 for (const name of readdirSync(validDir)) {
   const text = readFileSync(join(validDir, name), "utf8");
   const value = JSON.parse(text);
   const ok = validate(value);
   check(`valid:${name}`, ok, validate.errors);
+  const successor = { ...value, schemaVersion: "lekalo/adapter-manifest/v0.6.4", identity: "dev.lekalo.adapter-manifest@0.6.4" };
+  check(`valid:successor:${name}`, validateSuccessor(successor), validateSuccessor.errors);
   const dups = duplicateKeys(text);
   check(`valid:${name}:duplicate-keys`, dups.length === 0, dups);
 }

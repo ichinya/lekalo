@@ -10,7 +10,7 @@ import { ROOT, P0, text, safePath, sha, binary, fences } from "./lib/docs-mainte
 import { fixtureGit, fixtureGitEnv } from "./lib/fixture-git.mjs";
 
 const args = process.argv.slice(2);
-assert.ok(args.length === 0 || args.join(" ") === "--static" || (args.length === 2 && args[0] === "--lane" && ["portable","planner","mysql"].includes(args[1])), "unknown docs gate arguments");
+assert.ok(args.length === 0 || args.join(" ") === "--static" || (args.length === 2 && args[0] === "--lane" && args[1] === "portable"), "unknown docs gate arguments");
 const lane = args[1] ?? "portable";
 const registry = JSON.parse(text("tests/fixtures/docs/examples.json"));
 const CHECKS = new Set(["ir","validation","init","inspect","impact","context","contract-update","contract-coverage-missing","contract-check","contract-attach","native-tests","lock","generate-check","verify","trace-validate","trace-export","provider","authority","privacy","provenance","planner-chain","mysql-observed","laravel-vue","typescript","http","mysql"]);
@@ -29,7 +29,7 @@ function validateRegistry(value) {
   for (const row of value.examples) {
     exact(row,["id","document","fixture","lane","write","commands"]);
     assert.ok(P0.includes(row.document),"unknown example page");
-    assert.ok(["portable","planner","mysql"].includes(row.lane),"unknown lane");
+    assert.ok(["portable","planner","observed","mysql"].includes(row.lane),"unknown lane");
     assert.equal(typeof row.write,"boolean");
     if(!["empty","repository"].includes(row.fixture)) assert.ok(statSync(safePath(row.fixture)).isDirectory(),"missing fixture");
     assert.ok(Array.isArray(row.commands) && row.commands.length > 0);
@@ -87,15 +87,6 @@ function validatePlannerWalkthrough(value, read = text) {
 validateRegistry(registry);
 validateBlocks(registry);
 validatePlannerWalkthrough(registry);
-// Scanner declarations are explicit authored inputs, never missing-import
-// substitutions. Runtime checking must exclude all of them.
-const mysqlFixture="tests/fixtures/pilot/brownfield-mysql";
-for(const packageName of ["api","data"]) {
-  const config=JSON.parse(text(`${mysqlFixture}/packages/${packageName}/tsconfig.json`));
-  for(const paths of Object.values(config.compilerOptions.paths)) for(const path of paths) assert.ok(existsSync(safePath(`${mysqlFixture}/packages/${packageName}/${path}`)),"missing authored scanner declaration");
-}
-assert.deepEqual(JSON.parse(text(`${mysqlFixture}/tsconfig.runtime.json`)).exclude,["packages/*/types"]);
-// Metadata mutation controls exercise the actual validators; they never repair input.
 const duplicate = structuredClone(registry); duplicate.examples.push(duplicate.examples[0]);
 assert.throws(()=>validateRegistry(duplicate));
 const changed = structuredClone(registry); changed.examples[0].commands[0].line += " --invented";
@@ -149,11 +140,7 @@ function inventory(base, logicalBase=relative(ROOT,base).replaceAll("\\","/")) {
   walk(base);
   return result;
 }
-const repositoryInputs = registry.examples.some(row => row.lane === lane && row.fixture === "repository")
-  ? ["external-tools.lock.json", "tests/external/lekalo-typescript"]
-  : [];
-if (lane === "planner") repositoryInputs.push("tests/external/lekalo-php", "tests/external/lekalo-php-laravel");
-const INPUTS=["scripts","adapters",...repositoryInputs,"contracts","tests/fixtures","docs","README.md","Cargo.toml","Cargo.lock","crates",".gitattributes"];
+const INPUTS=["scripts","adapters","contracts","tests/fixtures","docs","README.md","Cargo.toml","Cargo.lock","crates",".gitattributes"];
 const sourceBefore = INPUTS.map(path=>statSync(safePath(path)).isDirectory()?inventory(safePath(path)):sha(readFileSync(safePath(path))));
 const root=realpathSync.native(mkdtempSync(join(tmpdir(),"lekalo-docs-105-")));
 const owned = path => assert.ok(resolve(path).startsWith(root+sep),"temporary path escapes owned replay root");
@@ -163,31 +150,11 @@ function copy(from,to) {
 }
 const temp=join(root,"tmp"); mkdirSync(temp);
 const childEnv={...fixtureGitEnv(),TMPDIR:temp,TEMP:temp,TMP:temp};
-// Limit MySQL to the fixture's fixed synthetic database/user and loopback.
-if(lane==="mysql") {
-  assert.match(childEnv.LEKALO_DOCS_MYSQL_PORT ?? "",/^[0-9]{1,5}$/,"mysql-port-missing");
-  assert.ok(Number(childEnv.LEKALO_DOCS_MYSQL_PORT)>0 && Number(childEnv.LEKALO_DOCS_MYSQL_PORT)<=65535);
-}
 let repository=null;
 function repositoryCopy() {
   if(repository) return repository;
   repository=join(root,"repository"); mkdirSync(repository);
   for(const path of INPUTS) copy(safePath(path),join(repository,path));
-  // Authoring examples explicitly use the original native API outside the
-  // product sandbox. Prepare its pinned dependencies before replay; project
-  // commands never install packages and deployed adapters need no node_modules.
-  const adapterRoot=safePath("tests/external/lekalo-typescript/adapters/node-typescript");
-  const compilerPins=JSON.parse(readFileSync(join(adapterRoot,"compiler-resources.json"),"utf8"));
-  const native=compilerPins.resources.find(row=>row.platform===`${process.platform}-${process.arch}`);
-  assert.ok(native,"qualified authoring compiler platform required");
-  for(const name of ["typescript",native.package]) {
-    const source=join(adapterRoot,"node_modules",name);
-    assert.equal(JSON.parse(readFileSync(join(source,"package.json"),"utf8")).version,compilerPins.typescript,"authoring compiler pin mismatch");
-  }
-  // Source-level tutorial imports also use the pinned external framework
-  // packages. Reuse the complete npm-ci result; never install during replay.
-  const authoringModules=join(repository,"tests/external/lekalo-typescript/adapters/node-typescript/node_modules"); owned(authoringModules);
-  cpSync(join(adapterRoot,"node_modules"),authoringModules,{recursive:true,dereference:true});
   const copiedBin=join(repository,"target/debug",basename(bin)); mkdirSync(dirname(copiedBin),{recursive:true}); cpSync(bin,copiedBin);
   // The M8 provenance gate verifies binary fixtures through Git's actual
   // clean filter. Give the disposable replay its own index and the exact
@@ -198,28 +165,7 @@ function repositoryCopy() {
     // construction has its own bounded budget, separate from per-file hashes.
     fixtureGit(repository,argv,argv[0]==="init"?"replay-init":"replay-add",childEnv,120000);
   }
-  if(lane==="planner") {
-    const vendor=safePath("tests/fixtures/php-laravel/planner/vendor");
-    assert.ok(existsSync(join(vendor,"autoload.php")),"planner-vendor-missing: explicit composer install from lock required");
-    cpSync(vendor,join(repository,"tests/fixtures/php-laravel/planner/vendor"),{recursive:true});
-    const installed=JSON.parse(readFileSync(join(vendor,"composer/installed.json"),"utf8")).packages;
-    const lock=JSON.parse(text("tests/fixtures/php-laravel/planner/composer.lock"));
-    for(const pkg of [...lock.packages,...lock["packages-dev"]]) assert.ok(installed.some(x=>x.name===pkg.name && x.version===pkg.version),"Composer lock/installed version mismatch");
-    for(const [name,version] of [["typescript","5.9.3"],["@vue/compiler-sfc","3.4.38"]]) assert.equal(require(`${name}/package.json`).version,version,"planner dependency pin mismatch");
-  }
   return repository;
-}
-function mysqlDependencies(destination) {
-  const source=safePath("tests/fixtures/pilot/brownfield-mysql");
-  const pkg=JSON.parse(readFileSync(join(source,"package.json"),"utf8"));
-  const lock=JSON.parse(readFileSync(join(source,"package-lock.json"),"utf8"));
-  assert.deepEqual(lock.packages[""].dependencies,pkg.dependencies,"npm lock drift");
-  assert.deepEqual(lock.packages[""].devDependencies,pkg.devDependencies,"npm dev lock drift");
-  for(const [name,version] of Object.entries({...pkg.dependencies,...pkg.devDependencies})) {
-    assert.equal(JSON.parse(readFileSync(join(source,"node_modules",name,"package.json"),"utf8")).version,version,"installed MySQL fixture dependency differs from lock");
-  }
-  owned(destination);
-  cpSync(join(source,"node_modules"),join(destination,"node_modules"),{recursive:true,dereference:true});
 }
 function run(cwd,line,expected=0,stream="stdout") {
   const [program,...argv]=line.split(" ");
@@ -244,23 +190,8 @@ function receipt(output) {
   throw new Error("missing structured receipt");
 }
 function check(kind,output,cwd) {
-  if(kind==="typescript") {assert.equal(output,""); return;}
-  if(kind==="http" || kind==="mysql") {assert.match(output,/# pass 1\b/); assert.match(output,/# fail 0\b/); return;}
   if(kind==="native-tests") {assert.match(output,/# pass 2\b/); assert.match(output,/# fail 0\b/); return;}
   if(kind==="authority") {assert.match(output,/authority contract dev\.lekalo\.authority-matrix@0\.3\.2@sha256:[0-9a-f]{64}: PASS/); return;}
-  if(kind==="mysql-observed") {
-    assert.match(output,/PILOT GREEN .*20 ok \/ 0 failed/);
-    const metrics=JSON.parse(readFileSync(join(temp,"lekalo-pilot-brownfield-ts/metrics.json"),"utf8"));
-    exact(metrics,["schema","consumer","mode","disposition","steps","totals","projections"]);
-    assert.equal(metrics.schema,"lekalo/pilot-brownfield-ts-metrics/v0.1.0");
-    assert.equal(metrics.mode,"copy"); assert.equal(metrics.disposition,"public-fixture");
-    assert.equal(metrics.totals.failed,0);
-    for(const step of ["adopt-dry-run","observe-update","bind-use-case","confirm-handler-binding","inspect","impact","context","baseline","controlled-change"]) assert.equal(metrics.steps.find(x=>x.step===step)?.status,"ok","missing pilot stage");
-    const scan=metrics.steps.find(x=>x.step==="scan-wire"); assert.equal(typeof scan.used,"boolean");
-    const raw=JSON.stringify(metrics);
-    assert.ok(!raw.includes(root) && !raw.includes(ROOT),"raw path in pilot metrics");
-    return;
-  }
   const value=receipt(output);
   if(kind==="contract-coverage-missing") {
     assert.equal(value.status,"invalid");
@@ -280,18 +211,13 @@ function check(kind,output,cwd) {
     for(const component of ["native.gates","scenarios.execution"]) assert.equal(value.components.find(x=>x.id===component)?.state,"unsupported");
     return;
   }
-  if(["provenance","planner-chain","laravel-vue"].includes(kind)) {
+  if(["provenance","planner-chain"].includes(kind)) {
     assert.equal(value.ok,true);
     if(kind==="provenance") {assert.equal(value.evidenceBacked,0); assert.ok(value.binaryFixtures>0,"private replay index must exercise binary custody");}
     if(kind==="planner-chain") {
-      assert.equal(value.stages,6);
-      assert.deepEqual(value.stageNames,["materialize-shared-planner-project","load-and-validate-project","graph-and-query-projections","semantic-diff-mutation","scenario-lane-compile-and-run","trace-manifest-chain"]);
+      assert.equal(value.stages,5);
+      assert.deepEqual(value.stageNames,["materialize-shared-planner-project","load-and-validate-project","graph-and-query-projections","semantic-diff-mutation","trace-manifest-chain"]);
       assert.ok(value.stageDetails.every(x=>x.ok));
-    }
-    if(kind==="laravel-vue") {
-      assert.ok(value.legs===9 || value.legs===10);
-      assert.ok(value.results.every(x=>x.ok));
-      for(const leg of ["php-laravel-ui","php-laravel-scenario-tests","php-laravel-parity"]) assert.equal(value.results.find(x=>x.leg===leg)?.ok,true);
     }
     return;
   }
@@ -347,7 +273,6 @@ try {
     else {
       cwd=join(root,row.id); mkdirSync(cwd);
       if(row.fixture!=="empty") copy(safePath(row.fixture),cwd);
-      if(lane==="mysql") mysqlDependencies(cwd);
     }
     const logicalBase=row.fixture==="repository"?"":row.fixture==="empty"?"empty":row.fixture;
     const before=inventory(cwd,logicalBase);
