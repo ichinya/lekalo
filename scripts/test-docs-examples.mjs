@@ -149,7 +149,10 @@ function inventory(base, logicalBase=relative(ROOT,base).replaceAll("\\","/")) {
   walk(base);
   return result;
 }
-const repositoryInputs=registry.examples.some(row=>row.lane===lane && row.fixture==="repository") ? ["external-tools.lock.json","tests/external/lekalo-typescript"] : [];
+const repositoryInputs = registry.examples.some(row => row.lane === lane && row.fixture === "repository")
+  ? ["external-tools.lock.json", "tests/external/lekalo-typescript"]
+  : [];
+if (lane === "planner") repositoryInputs.push("tests/external/lekalo-php", "tests/external/lekalo-php-laravel");
 const INPUTS=["scripts","adapters",...repositoryInputs,"contracts","tests/fixtures","docs","README.md","Cargo.toml","Cargo.lock","crates",".gitattributes"];
 const sourceBefore = INPUTS.map(path=>statSync(safePath(path)).isDirectory()?inventory(safePath(path)):sha(readFileSync(safePath(path))));
 const root=realpathSync.native(mkdtempSync(join(tmpdir(),"lekalo-docs-105-")));
