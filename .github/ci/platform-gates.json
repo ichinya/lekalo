@@ -1511,10 +1511,10 @@
     },
     {
       "index": 35,
-      "raw": "      - name: Provision ripgrep for the Windows search comparison\n        if: runner.os == 'Windows'\n        shell: pwsh\n        run: |\n          choco install ripgrep --yes --no-progress\n          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n          rg --version",
+      "raw": "      - name: Provision ripgrep for the Windows search comparison\n        if: runner.os == 'Windows'\n        shell: pwsh\n        run: ./.github/ci/install-ripgrep.ps1",
       "name": "Provision ripgrep for the Windows search comparison",
       "uses": null,
-      "run": "choco install ripgrep --yes --no-progress\nif ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\nrg --version",
+      "run": "./.github/ci/install-ripgrep.ps1",
       "condition": "runner.os == 'Windows'",
       "timeout": null,
       "workingDirectory": null,

@@ -202,10 +202,7 @@ jobs:
         name: Provision ripgrep for the Windows search comparison
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          choco install ripgrep --yes --no-progress
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          rg --version
+        run: ./.github/ci/install-ripgrep.ps1
       - &ci-setup-36
         name: Provision ripgrep for the macOS search comparison
         if: runner.os == 'macOS'
