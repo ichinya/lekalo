@@ -56,7 +56,7 @@ not become a second SQL planner.
    `laravel-migration-input` document — plan, effective gate, rename
    map, rollback classification, engine pin, and the digests of every
    input — closed by contract
-   `contracts/laravel-migration-input.schema.v0.4.0.json` and
+   [`laravel-migration-input.schema.v0.4.0.json`](https://github.com/ichinya/lekalo-php-laravel/blob/827cbc31b88dc7cf71a6ae705093ed3880e819a5/contracts/laravel-migration-input.schema.v0.4.0.json) and
    rendered with the same byte-sorted canonical JSON discipline as
    the engine plan. No credentials, hosts, or URLs.
 7. **Append-only published migrations.** Generated artifacts live
