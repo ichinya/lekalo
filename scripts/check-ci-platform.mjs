@@ -114,7 +114,18 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
   }
  }
  for(const [command,count] of commands)assert.equal(Object.values(graph).flatMap(j=>j.steps).filter(s=>s.run===command).length,count,'Unexpected repeated gate command');
- for(const [id,hash] of Object.entries(inventory.unchangedJobs))assert.equal(digest(originalLocations(parent[id]?.raw??'')),hash,`Unrelated job ${id} changed`);
+ // Normalize only the reviewed opt-in; retain the frozen jobs and fork policy.
+ const selfHostedOptIn="vars.LEKALO_USE_SELF_HOSTED == 'true' && ";
+ const selectableLinuxJobs=new Set(['clippy','contracts','contracts-rust','fmt','msrv','runtime-packages']);
+ for(const [id,hash] of Object.entries(inventory.unchangedJobs)) {
+  const job=parent[id];
+  let raw=job?.raw??'';
+  if(selectableLinuxJobs.has(id)) {
+   assert(job?.runner.includes(selfHostedOptIn),`${id}: private runners must be opt-in`);
+   raw=raw.replace(`runs-on: ${job.runner}`,`runs-on: ${job.runner.replace(selfHostedOptIn,'')}`);
+  }
+  assert.equal(digest(originalLocations(raw)),hash,`Unrelated job ${id} changed`);
+ }
  assert.deepEqual(Object.keys(parent).sort(),['platform',...Object.keys(inventory.unchangedJobs)].sort());
  assert.equal(digest(caller.slice(0,caller.indexOf('\njobs:'))),inventory.callerPreambleSha256,'Event/env/permission policy changed');
  assert.equal(digest(read('.github/workflows/release.yml')),inventory.releaseSha256,'Release policy changed');
