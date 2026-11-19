@@ -46,7 +46,7 @@ jobs:
 
   contracts-rust:
     name: Contracts Rust producer
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LEKALO_USE_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     env:
       RUSTUP_TOOLCHAIN: stable
       RUSTUP_AUTO_INSTALL: "0"
@@ -98,7 +98,7 @@ jobs:
   contracts:
     name: Contracts (Node ${{ matrix.node-version }})
     needs: contracts-rust
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LEKALO_USE_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -239,7 +239,7 @@ jobs:
 
   fmt:
     name: Rustfmt
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LEKALO_USE_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -253,7 +253,7 @@ jobs:
 
   clippy:
     name: Clippy (${{ matrix.os }})
-    runs-on: ${{ startsWith(matrix.os, 'ubuntu-') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || matrix.os }}
+    runs-on: ${{ startsWith(matrix.os, 'ubuntu-') && vars.LEKALO_USE_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -271,7 +271,7 @@ jobs:
 
   msrv:
     name: Rust 1.89.0 MSRV (${{ matrix.os }})
-    runs-on: ${{ startsWith(matrix.os, 'ubuntu-') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || matrix.os }}
+    runs-on: ${{ startsWith(matrix.os, 'ubuntu-') && vars.LEKALO_USE_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -301,7 +301,7 @@ jobs:
   runtime-packages:
     name: External protocol and workspace contracts
     needs: contracts-rust
-    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.LEKALO_USE_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted","linux","x64","videos5-lekalo"]') || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
