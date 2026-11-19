@@ -14,6 +14,7 @@ use super::index::read_fingerprint;
 use super::types::ObservedIndex;
 
 const CONFIG: &str = "lekalo.evidence.json";
+pub(super) const PINS_FLAG: &str = "--lekalo-evidence-pins-json";
 type Result<T> = std::result::Result<T, &'static str>;
 
 #[derive(Deserialize)]
@@ -32,6 +33,7 @@ struct Selection {
     program_digest: String,
     entry_digest: String,
     families: BTreeMap<String, Pin>,
+    http_projection: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -52,6 +54,7 @@ pub(super) struct Policy {
     producer: wire::AdapterIdentity,
     pub(super) launcher: LaunchPin,
     families: BTreeMap<String, Provider>,
+    pub(super) http_projection: Option<String>,
 }
 
 fn valid_producer(producer: &wire::AdapterIdentity) -> bool {
@@ -82,6 +85,9 @@ impl Policy {
                     || !wire::is_sha256_digest(&s.program_digest)
                     || !wire::is_sha256_digest(&s.entry_digest)
                     || !scopes.insert((&s.target, &s.profile))
+                    || s.http_projection
+                        .as_ref()
+                        .is_some_and(|f| !s.families.contains_key(f))
                     || s.families.is_empty()
                     || s.families.len() > scan_evidence::MAX_GROUPS
                     || s.families.iter().any(|(family, pin)| {
@@ -119,7 +125,25 @@ impl Policy {
                 entry_digest: selection.entry_digest,
             },
             families,
+            http_projection: selection.http_projection,
         }))
+    }
+
+    pub(super) fn launch_pins(&self) -> String {
+        let pins: BTreeMap<_, _> = self
+            .families
+            .iter()
+            .map(|(family, p)| {
+                (
+                    family,
+                    serde_json::json!({
+                        "package_digest": p.pin.package_digest,
+                        "schema_digest": p.pin.schema_digest,
+                    }),
+                )
+            })
+            .collect();
+        serde_json::to_string(&pins).expect("evidence digests serialize")
     }
 
     pub(super) fn authorize(&self, protocol: &str, producer: &wire::AdapterIdentity) -> Result<()> {
@@ -171,7 +195,56 @@ pub struct GroupRecord {
 }
 
 /// Only admission bound to a live adapter exchange can construct this value.
-pub(super) struct Admitted(Vec<GroupRecord>);
+pub(super) struct Admitted {
+    groups: Vec<GroupRecord>,
+    pub(super) http_projection: Option<String>,
+}
+
+impl Admitted {
+    pub(super) fn http_coverage(&self) -> Option<Coverage> {
+        let family = self.http_projection.as_ref()?;
+        self.groups
+            .iter()
+            .find(|g| &g.family == family)
+            .map(|g| g.coverage)
+    }
+
+    /// Project the admitted HTTP family into the legacy endpoint view.
+    pub(super) fn http_routes(
+        &self,
+    ) -> Result<BTreeMap<String, Vec<crate::http_routes::HttpRouteEvidence>>> {
+        let Some(family) = self.http_projection.as_ref() else {
+            return Ok(BTreeMap::new());
+        };
+        let group = self
+            .groups
+            .iter()
+            .find(|g| &g.family == family)
+            .filter(|g| g.coverage != Coverage::Unassessed)
+            .ok_or("http-projection-unassessed")?;
+        let mut routes = BTreeMap::<String, Vec<_>>::new();
+        for record in &group.facts {
+            let fact = &record.fact;
+            let route: crate::http_routes::HttpRouteEvidence =
+                serde_json::from_value(fact.payload.clone())
+                    .map_err(|_| "http-projection-payload")?;
+            if !route.valid()
+                || route.handler_native != fact.subject
+                || fact.references.len() != 1
+                || fact.references.get("application") != Some(&route.application_native)
+                || !route
+                    .sources
+                    .iter()
+                    .map(|s| (&s.path, &s.source_digest))
+                    .eq(fact.sources.iter().map(|s| (&s.path, &s.source_digest)))
+            {
+                return Err("http-projection-custody");
+            }
+            routes.entry(fact.subject.clone()).or_default().push(route);
+        }
+        Ok(routes)
+    }
+}
 
 fn native_paths(nodes: &[NativeSymbol]) -> BTreeMap<&str, &str> {
     nodes
@@ -291,7 +364,10 @@ pub(super) fn admit(
                 .or_insert_with(|| unassessed(family));
         }
     }
-    Ok(Some(Admitted(admitted.into_values().collect())))
+    Ok(Some(Admitted {
+        groups: admitted.into_values().collect(),
+        http_projection: policy.and_then(|p| p.http_projection.clone()),
+    }))
 }
 
 fn unassessed(family: &str) -> GroupRecord {
@@ -314,14 +390,20 @@ fn sources_current(fact: &Fact, fs: &Fs, cache: &mut BTreeMap<String, Option<Str
 
 impl Admitted {
     pub(super) fn revision_digest(&self) -> String {
-        runtime::digest(&serde_json::to_vec(&self.0).expect("admitted evidence serializes"))
+        runtime::digest(
+            &serde_json::to_vec(&(&self.groups, &self.http_projection))
+                .expect("admitted evidence serializes"),
+        )
     }
 
     pub(super) fn merge(self, root: &Path, previous: &[GroupRecord]) -> Result<Vec<GroupRecord>> {
         let fs = Fs::open(root).map_err(|_| "evidence-root-unreadable")?;
         let mut cache = BTreeMap::new();
-        let mut groups: BTreeMap<_, _> =
-            self.0.into_iter().map(|g| (g.family.clone(), g)).collect();
+        let mut groups: BTreeMap<_, _> = self
+            .groups
+            .into_iter()
+            .map(|g| (g.family.clone(), g))
+            .collect();
         for old in previous {
             let group = groups
                 .entry(old.family.clone())
@@ -378,7 +460,13 @@ pub(super) fn valid_index(index: &ObservedIndex) -> bool {
         index.profile.as_deref(),
     );
     let nodes = native_paths(&index.native_symbols);
-    groups.len() <= scan_evidence::MAX_GROUPS
+    let projection_valid = index.http_projection.as_ref().is_none_or(|family| {
+        groups
+            .iter()
+            .any(|g| &g.family == family && g.coverage != Coverage::Unassessed)
+    });
+    projection_valid
+        && groups.len() <= scan_evidence::MAX_GROUPS
         && groups.iter().map(|g| g.facts.len()).sum::<usize>() <= scan_evidence::MAX_FACTS
         && groups
             .windows(2)

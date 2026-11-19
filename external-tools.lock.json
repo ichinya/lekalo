@@ -41,7 +41,7 @@
     },
     "lekalo-python": {
       "repository": "https://github.com/ichinya/lekalo-python.git",
-      "commit": "d1ce48debd7d98893662fdd3835cf93c80db0c12",
+      "commit": "d7a37ef2a6a7734ce7a9e8212889d8d7734b6760",
       "testFixtures": [
         "tests/fixtures/python-scan/model",
         "tests/fixtures/python-scan/standalone"
@@ -76,14 +76,14 @@
     },
     "lekalo-python-fastapi": {
       "repository": "https://github.com/ichinya/lekalo-python-fastapi.git",
-      "commit": "d5496f7e04dada047ab315d1c9b23d69a2d8cc73",
+      "commit": "e04dab54a768c47fdba9bc41a5f5f51b8a61a420",
       "testFixtures": [
         "tests/fixtures/python-scan/fastapi"
       ]
     },
     "lekalo-python-fastmcp": {
       "repository": "https://github.com/ichinya/lekalo-python-fastmcp.git",
-      "commit": "12fb48b7b28bd0dc25d05dff433b50e56af40634"
+      "commit": "cca239c5bd4fcd1a76f6f292d8b75f8ccdfcb2be"
     },
     "lekalo-ruby": {
       "repository": "https://github.com/ichinya/lekalo-ruby.git",

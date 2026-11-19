@@ -130,10 +130,11 @@ pub fn parse_index(bytes: &[u8]) -> Result<ObservedIndex, DiagnosticSet> {
     }
     let index: ObservedIndex =
         serde_json::from_slice(bytes).map_err(|_| diagnostic::index_io_set("index-malformed"))?;
-    let http_inventory = index.schema_version == version::HTTP_INDEX_SCHEMA_VERSION
+    let legacy_http = index.schema_version == version::HTTP_INDEX_SCHEMA_VERSION
         && index.identity == version::HTTP_INDEX_IDENTITY;
     let generic_inventory = index.schema_version == version::EVIDENCE_INDEX_SCHEMA_VERSION
         && index.identity == version::EVIDENCE_INDEX_IDENTITY;
+    let http_inventory = legacy_http || (generic_inventory && index.http_projection.is_some());
     let native_inventory = http_inventory
         || generic_inventory
         || (index.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION
@@ -143,7 +144,8 @@ pub fn parse_index(bytes: &[u8]) -> Result<ObservedIndex, DiagnosticSet> {
     if (!native_inventory && !predecessor)
         || index.mode != version::MODE
         || (generic_inventory && !super::evidence::valid_index(&index))
-        || (!generic_inventory && index.evidence_groups.is_some())
+        || (!generic_inventory
+            && (index.evidence_groups.is_some() || index.http_projection.is_some()))
         || (predecessor
             && (!index.native_symbols.is_empty()
                 || !index.binding_evidence.is_empty()
@@ -308,11 +310,26 @@ fn merge_index(
                 ));
             }
         }
-        if evidence.is_some() && existing.schema_version == version::HTTP_INDEX_SCHEMA_VERSION {
-            return Err(diagnostic::scan_invalid_set(
-                "evidence-http-migration-required",
-                None,
-            ));
+        if let Some(evidence) = &evidence {
+            if existing.schema_version == version::HTTP_INDEX_SCHEMA_VERSION
+                && (evidence.http_coverage()
+                    != Some(crate::target_protocol::scan_evidence::Coverage::Complete)
+                    || existing.target != scan.target
+                    || existing.profile != scan.profile)
+            {
+                return Err(diagnostic::scan_invalid_set(
+                    "evidence-http-migration-required",
+                    None,
+                ));
+            }
+            if existing.http_projection.is_some()
+                && existing.http_projection != evidence.http_projection
+            {
+                return Err(diagnostic::scan_invalid_set(
+                    "http-projection-downgrade",
+                    None,
+                ));
+            }
         }
         if existing.project != scan.project {
             return Err(diagnostic::scan_invalid_set("project-mismatch", None));
@@ -484,6 +501,7 @@ fn merge_index(
     if let Some(evidence) = evidence {
         index.schema_version = version::EVIDENCE_INDEX_SCHEMA_VERSION.to_owned();
         index.identity = version::EVIDENCE_INDEX_IDENTITY.to_owned();
+        index.http_projection = evidence.http_projection.clone();
         index.evidence_groups = Some(
             evidence
                 .merge(

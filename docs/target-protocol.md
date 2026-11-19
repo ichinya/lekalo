@@ -406,8 +406,13 @@ retains omitted facts as unassessed or stale. An omitted family is unassessed.
 The index refuses predecessor updates once it adopts generic evidence.
 `lekalo observe update` accepts legacy scan documents and requires
 `lekalo scan` for new evidence. Existing HTTP indexes continue to use 1.2.0
-until their provider supports migration. Generic facts are admitted by the
-standalone scan path. Watch partitions continue to use their native inventory.
+until the project selects a compatible projection. A FastAPI project sets
+`"http_projection": "fastapi-http"` in the scan selection and pins that family
+from the provider's `evidence/` package. The first generic scan must report
+complete coverage and use the existing target and profile. It preserves
+the HTTP endpoint view, stable route IDs, and source-based binding checks.
+The host sends the selected family digests to the adapter using
+`--lekalo-evidence-pins-json`. Generic facts are admitted by the standalone scan path. Watch partitions continue to use their native inventory.
 
 ## Failure classification and integration
 

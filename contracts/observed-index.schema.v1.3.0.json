@@ -89,6 +89,10 @@
       "items": {
         "$ref": "#/$defs/evidenceGroup"
       }
+    },
+    "http_projection": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
     }
   },
   "$defs": {
@@ -552,17 +556,23 @@
             "POST",
             "PUT",
             "PATCH",
-            "DELETE"
+            "DELETE",
+            "HEAD",
+            "OPTIONS",
+            "TRACE"
           ]
         },
         "path": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 512,
-          "pattern": "^(/[a-z0-9:_{}-]+)+$"
+          "maxLength": 2048,
+          "pattern": "^/[^\\u0000-\\u001f\\u007f-\\u009f]*$"
         },
         "symbol": {
           "$ref": "#/$defs/semanticId"
+        },
+        "http_evidence": {
+          "$ref": "#/$defs/httpRouteEvidence"
         }
       }
     },
@@ -815,7 +825,10 @@
           "maxLength": 512
         },
         "kind": {
-          "const": "any-surface"
+          "enum": [
+            "any-surface",
+            "framework-route"
+          ]
         },
         "detail": {
           "type": "string",
@@ -914,7 +927,7 @@
         "sources": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 32,
+          "maxItems": 64,
           "items": {
             "$ref": "#/$defs/scanFactSource"
           }
@@ -1033,7 +1046,7 @@
         "facts": {
           "type": "array",
           "minItems": 0,
-          "maxItems": 1024,
+          "maxItems": 2048,
           "items": {
             "$ref": "#/$defs/evidenceRecord"
           }
@@ -1096,6 +1109,122 @@
           }
         }
       ]
+    },
+    "httpRouteEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "rules_revision",
+        "policy_digest",
+        "method",
+        "path",
+        "application_native",
+        "handler_native",
+        "registration_path",
+        "registration_line",
+        "sources",
+        "confidence"
+      ],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "rules_revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "policy_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "HEAD",
+            "OPTIONS",
+            "TRACE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^/[^\\u0000-\\u001f\\u007f-\\u009f]*$"
+        },
+        "application_native": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "handler_native": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "registration_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "registration_line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/httpRouteSource"
+          }
+        },
+        "confidence": {
+          "enum": [
+            "exact",
+            "high",
+            "medium",
+            "low",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "httpRouteSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "source_digest"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "source_digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
     }
   }
 }

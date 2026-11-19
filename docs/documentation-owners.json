@@ -4660,7 +4660,7 @@
       "id": "contract:contracts/observed-index.schema.v1.3.0.json",
       "kind": "contract",
       "source": "contracts/observed-index.schema.v1.3.0.json",
-      "sourceDigest": "sha256:40c618d75134496e92c25715bd2120fe382c1f9aece9521c8f1c1fc9dce2b723",
+      "sourceDigest": "sha256:d5bdb3fe43c51f52aa585c31a1231e9f981e52c9e7c81bed93481be7c24aee51",
       "owner": "docs/observed-mode.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -5335,7 +5335,7 @@
       "id": "contract:contracts/target-protocol.schema.v1.4.0.json",
       "kind": "contract",
       "source": "contracts/target-protocol.schema.v1.4.0.json",
-      "sourceDigest": "sha256:dc69223e5dfd9699f2fc3b730200d3ce09235205eda3092173f948b64a1c154a",
+      "sourceDigest": "sha256:89a45de3567939c15a79c64885083cf7a5d754f4d409b726f90f3bed98a88bb7",
       "owner": "docs/target-protocol.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
