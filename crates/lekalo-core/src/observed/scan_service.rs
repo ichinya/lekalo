@@ -25,7 +25,7 @@ use crate::diagnostics::DiagnosticSet;
 use crate::result::{DomainResult, Status};
 use crate::target_protocol::transport::AdapterCommand;
 use crate::target_protocol::{
-    discovery::Discovery, selection, wire, CallOutcome, CallRequest, TargetClient, TargetFailure,
+    discovery::Discovery, selection, wire, CallRequest, TargetClient, TargetFailure,
 };
 
 /// The capability every scanner must declare `full` (issue #28).
@@ -360,8 +360,17 @@ pub fn run(
         .as_ref()
         .and_then(|result| result.entries.as_deref())
         .unwrap_or(&[]);
-    let (document, admitted) =
-        build_document(ctx, &outcome, entries, &project, request, policy.as_ref())?;
+    let (document, admitted) = build_document(
+        ctx,
+        &outcome.response,
+        entries,
+        &project,
+        request,
+        EvidenceAdmission::Standalone {
+            policy: policy.as_ref(),
+            read_scopes: &outcome.confinement.effective.read_scopes,
+        },
+    )?;
 
     // 5. Merge the native scan and any live-admitted evidence atomically.
     // Raw observe updates have no authority to submit the latter.
@@ -406,7 +415,7 @@ pub fn run(
 /// decoder, without loading/updating an index or publishing any receipt.
 pub(crate) fn validate_ephemeral(
     ctx: &super::ObservedContext,
-    outcome: &CallOutcome,
+    response: &wire::ResponseEnvelope,
     target: &str,
     profile: Option<&str>,
     command: &AdapterCommand,
@@ -416,8 +425,7 @@ pub(crate) fn validate_ephemeral(
         .project
         .as_ref()
         .ok_or_else(|| invalid_set("project-missing"))?;
-    let entries = outcome
-        .response
+    let entries = response
         .result
         .as_ref()
         .and_then(|result| result.entries.as_deref())
@@ -429,7 +437,14 @@ pub(crate) fn validate_ephemeral(
         limits: crate::target_protocol::transport::TransportLimits::default(),
     };
     // Watch partitions have no standalone scan package or launch selection.
-    let (document, _) = build_document(ctx, outcome, entries, &project.id, &request, None)?;
+    let (document, _) = build_document(
+        ctx,
+        response,
+        entries,
+        &project.id,
+        &request,
+        EvidenceAdmission::Ephemeral,
+    )?;
     let bytes = serde_json::to_vec(&document).map_err(|_| invalid_set("document-shape"))?;
     super::wire::parse_scan(&bytes, ctx.model.model_version).map_err(DomainResult::invalid)?;
     Ok(())
@@ -582,6 +597,14 @@ fn file_fingerprint(fs: &crate::project_fs::Fs, path: &str) -> Option<String> {
     Some(format!("sha256:{}", crate::digest::sha256_hex(&bytes)))
 }
 
+enum EvidenceAdmission<'a> {
+    Standalone {
+        policy: Option<&'a super::evidence::Policy>,
+        read_scopes: &'a [String],
+    },
+    Ephemeral,
+}
+
 /// Assemble the observed-scan document from the adapter response. Every
 //  entry contributes one candidate for its proposed semantic id; a
 //  semantic id proposed by several entries produces ONE binding whose
@@ -589,11 +612,11 @@ fn file_fingerprint(fs: &crate::project_fs::Fs, path: &str) -> Option<String> {
 //  a first match. Fingerprints are computed here, from the real tree.
 fn build_document(
     ctx: &super::ObservedContext,
-    outcome: &CallOutcome,
+    response: &wire::ResponseEnvelope,
     entries: &[wire::ScanEntry],
     project: &str,
     request: &ScanRequest<'_>,
-    policy: Option<&super::evidence::Policy>,
+    admission: EvidenceAdmission<'_>,
 ) -> Result<(Json, Option<super::evidence::Admitted>), DomainResult> {
     let fs = crate::project_fs::Fs::open(&ctx.root).map_err(|_| {
         DomainResult::from(&TargetFailure::RequestInvalid {
@@ -644,17 +667,23 @@ fn build_document(
     // Pass two: one observed-scan symbol per semantic id. Fingerprints
     // come from the real tree, so the freshness evidence is byte-truth.
     let native_inventory =
-        crate::target_protocol::version::supports_native_scan(&outcome.response.protocol_version);
+        crate::target_protocol::version::supports_native_scan(&response.protocol_version);
     let legacy_http =
-        outcome.response.protocol_version == crate::target_protocol::version::HTTP_SCAN_VERSION;
-    let http_inventory = legacy_http || policy.is_some_and(|p| p.http_projection.is_some());
-    let native_uncertainty = outcome
-        .response
+        response.protocol_version == crate::target_protocol::version::HTTP_SCAN_VERSION;
+    let http_inventory = legacy_http
+        || matches!(&admission, EvidenceAdmission::Standalone { policy: Some(policy), .. }
+            if policy.http_projection.is_some());
+    let ephemeral_generic = matches!(&admission, EvidenceAdmission::Ephemeral)
+        && response.protocol_version == crate::target_protocol::version::EVIDENCE_SCAN_VERSION;
+    let native_uncertainty = response
         .evidence
         .native_uncertainty
         .as_deref()
         .unwrap_or_default();
-    if !crate::native_symbols::valid_uncertainty_for(native_uncertainty, http_inventory) {
+    if !crate::native_symbols::valid_uncertainty_for(
+        native_uncertainty,
+        http_inventory || ephemeral_generic,
+    ) {
         return Err(invalid_set("native-uncertainty"));
     }
     for uncertainty in native_uncertainty {
@@ -804,23 +833,23 @@ fn build_document(
 
     // The scan revision binds the adapter identity and the exact
     // response id: one exchange is one revision, deterministically.
-    let adapter = &outcome.response.evidence.adapter;
+    let adapter = &response.evidence.adapter;
     let revision_payload = (
         adapter.id.as_str(),
         adapter.version.as_str(),
         adapter.digest.as_str(),
-        outcome.response.request_id.as_str(),
+        response.request_id.as_str(),
     );
     // Preserve predecessor revision bytes. The explicitly negotiated
     // successor also binds the exact normalized launch policy, including
     // exclusions and provenance, rather than merely the profile id.
-    let revision_bytes = if let Some(runtime) = &outcome.response.evidence.compiler_runtime {
+    let revision_bytes = if let Some(runtime) = &response.evidence.compiler_runtime {
         serde_json::to_vec(&(
             revision_payload,
-            &outcome.response.evidence.scan_profile_digest,
+            &response.evidence.scan_profile_digest,
             runtime,
         ))
-    } else if let Some(profile_digest) = &outcome.response.evidence.scan_profile_digest {
+    } else if let Some(profile_digest) = &response.evidence.scan_profile_digest {
         serde_json::to_vec(&(revision_payload, profile_digest))
     } else {
         serde_json::to_vec(&revision_payload)
@@ -830,15 +859,21 @@ fn build_document(
     if native_inventory && !crate::native_symbols::valid(&native_symbols) {
         return Err(invalid_set("native-inventory"));
     }
-    let admitted = super::evidence::admit(
-        policy,
-        &outcome.response,
-        (project, request.target, request.profile),
-        entries,
-        &native_symbols,
-        &outcome.confinement.effective.read_scopes,
-    )
-    .map_err(invalid_set)?;
+    let admitted = match admission {
+        EvidenceAdmission::Standalone {
+            policy,
+            read_scopes,
+        } => super::evidence::admit(
+            policy,
+            response,
+            (project, request.target, request.profile),
+            entries,
+            &native_symbols,
+            read_scopes,
+        )
+        .map_err(invalid_set)?,
+        EvidenceAdmission::Ephemeral => None,
+    };
     let revision = if let Some(ref evidence) = admitted {
         crate::runtime::digest(
             &serde_json::to_vec(&(revision_bytes, evidence.revision_digest()))
@@ -883,6 +918,10 @@ fn build_document(
                 .cmp(&(b["symbol"].as_str(), b["native"].as_str()))
         });
         document.insert("bindingEvidence".to_owned(), Json::Array(binding_evidence));
+        let native_uncertainty: Vec<_> = native_uncertainty
+            .iter()
+            .filter(|row| !ephemeral_generic || row.kind != "framework-route")
+            .collect();
         document.insert(
             "nativeUncertainty".to_owned(),
             serde_json::to_value(native_uncertainty)
@@ -966,6 +1005,98 @@ fn build_document(
 #[cfg(test)]
 mod envelope_tests {
     use super::*;
+
+    #[test]
+    fn ephemeral_scan_validates_inventory_with_unselected_generic_evidence() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures/observed/task-domain");
+        let model = crate::loader::normalize_captured_root(&root).unwrap();
+        let ctx = crate::observed::ObservedContext { root, model };
+        let path = "src/tasks.ts";
+        let digest = crate::runtime::digest(&std::fs::read(ctx.root.join(path)).unwrap());
+        let detail = serde_json::json!({"s":"taskboard.task","n":"root","l":1}).to_string();
+        let mut response: wire::ResponseEnvelope = serde_json::from_value(serde_json::json!({
+            "protocol": crate::target_protocol::version::PROTOCOL_TOKEN,
+            "protocol_version": crate::target_protocol::version::EVIDENCE_SCAN_VERSION,
+            "request_id": digest, "operation": "scan", "status": "ok",
+            "evidence": {
+                "adapter": {"id": "example-scanner", "version": "1.0.0", "digest": digest},
+                "scan_profile_digest": digest, "native_uncertainty": []
+            },
+            "result": {
+                "entries": [{
+                    "path": path, "kind": "entity", "detail": detail,
+                    "evidence": {
+                        "source_digest": digest, "signature": digest,
+                        "native_symbols": [{
+                            "native": "root", "qualified_name": "root", "family": "interface",
+                            "path": path, "line": 1, "end_line": 1, "slot": "static",
+                            "declaration_only": true, "signature": digest
+                        }]
+                    }
+                }],
+                "evidence_groups": [{
+                    "family": "example", "coverage": "complete",
+                    "package_digest": digest, "schema_digest": digest,
+                    "facts": [{
+                        "subject": "root", "key": "example", "references": {},
+                        "sources": [{"path": path, "source_digest": digest}], "payload": 1
+                    }]
+                }]
+            }
+        }))
+        .unwrap();
+        let request = ScanRequest {
+            target: "example",
+            profile: None,
+            command: AdapterCommand {
+                program: "unused".into(),
+                args: Vec::new(),
+            },
+            limits: Default::default(),
+        };
+        validate_ephemeral(&ctx, &response, request.target, None, &request.command).unwrap();
+
+        let entries = response.result.as_ref().unwrap().entries.as_ref().unwrap();
+        let refused = build_document(
+            &ctx,
+            &response,
+            entries,
+            "taskboard",
+            &request,
+            EvidenceAdmission::Standalone {
+                policy: None,
+                read_scopes: &["src/**".into()],
+            },
+        );
+        assert!(refused
+            .err()
+            .unwrap()
+            .to_json_string()
+            .contains("evidence-family-disabled"));
+
+        response.evidence.native_uncertainty.as_mut().unwrap().push(
+            crate::native_symbols::NativeUncertainty {
+                path: path.into(),
+                kind: "framework-route".into(),
+                detail: "dynamic-registration".into(),
+                line: Some(1),
+                source_digest: digest,
+            },
+        );
+        validate_ephemeral(&ctx, &response, request.target, None, &request.command).unwrap();
+
+        response.result.as_mut().unwrap().entries.as_mut().unwrap()[0]
+            .evidence
+            .as_mut()
+            .unwrap()
+            .source_digest = Some(crate::runtime::digest(b"wrong"));
+        let refused = validate_ephemeral(&ctx, &response, request.target, None, &request.command);
+        assert!(refused
+            .unwrap_err()
+            .to_json_string()
+            .contains("entry-custody"));
+    }
 
     fn receipt(class: Option<Vec<&str>>) -> ScanReceipt {
         ScanReceipt {

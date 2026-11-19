@@ -86,12 +86,12 @@ jobs:
       # Protocol semantic vectors belong to core-lib in Build and test on all
       # three OSes. Do not compile that full unit-test executable again here.
       - name: Package the CLI with its checkout SHA and content digest
-        run: node scripts/ci-contracts-cli.mjs prepare target/contracts-cli --strip
+        run: node scripts/ci-contracts-cli.mjs prepare "$RUNNER_TEMP/contracts-cli" --strip
       - name: Share the verified Contracts CLI
         uses: actions/upload-artifact@v7
         with:
           name: contracts-cli
-          path: target/contracts-cli/
+          path: ${{ runner.temp }}/contracts-cli/
           if-no-files-found: error
           retention-days: 1
 

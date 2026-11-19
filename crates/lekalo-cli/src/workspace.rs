@@ -7,7 +7,7 @@ use lekalo_core::{
     runtime,
 };
 use runtime::{config, error, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
@@ -142,7 +142,7 @@ fn child_root(root: &Path, relative: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn publish(root: &Path, spec: &Export, name: &str) -> Result<Value> {
+fn publish(root: &Path, selector: &str, spec: &Export, name: &str) -> Result<Bundle> {
     let (kind, body, digest) = match spec {
         Export::Fact {
             component,
@@ -156,26 +156,30 @@ fn publish(root: &Path, spec: &Export, name: &str) -> Result<Value> {
             (
                 "runtime-fact",
                 doc["contract"].clone(),
-                doc["digest"].clone(),
+                doc["digest"]
+                    .as_str()
+                    .ok_or_else(|| error("workspace-export-rule-failed"))?
+                    .to_owned(),
             )
         }
         Export::Module { api, module } => {
-            let bundle = crate::module_api::public_contract(
-                root.to_str().ok_or_else(|| error("workspace-root"))?,
-                api,
-                module,
-            )
-            .map_err(|_| error("workspace-module-export-invalid"))?;
-            let digest = json!(bundle.digest);
+            let bundle = crate::module_api::public_contract(selector, api, module)
+                .map_err(|_| error("workspace-module-export-invalid"))?;
+            let digest = bundle.digest.clone();
             ("module-api", json!(bundle), digest)
         }
     };
-    Ok(
-        json!({"schema":PUBLIC, "status":"valid", "name":name,"kind":kind,"contract":body,"digest":digest}),
-    )
+    Ok(Bundle {
+        schema: PUBLIC.into(),
+        status: "valid".into(),
+        name: name.into(),
+        kind: kind.into(),
+        contract: body,
+        digest,
+    })
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Bundle {
     schema: String,
@@ -186,7 +190,7 @@ struct Bundle {
     digest: String,
 }
 
-fn accepted(root: &Path, spec: &Import) -> Result<()> {
+fn accepted(root: &Path, spec: &Import) -> Result<Bundle> {
     let bytes = runtime::read(root, &spec.bundle, 8 * 1024 * 1024)?;
     let b: Bundle = serde_json::from_value(config::value(&bytes)?)
         .map_err(|_| error("workspace-bundle-invalid"))?;
@@ -227,7 +231,28 @@ fn accepted(root: &Path, spec: &Import) -> Result<()> {
     if digest != b.digest {
         return Err(error("workspace-pin-mismatch"));
     }
-    Ok(())
+    Ok(b)
+}
+
+fn compatibility(pinned: &Bundle, candidate: &Bundle) -> &'static str {
+    if pinned.kind != candidate.kind {
+        return "kind-changed";
+    }
+    if pinned.kind != "module-api" {
+        return "unknown";
+    }
+    let before = serde_json::to_vec(&pinned.contract).expect("public bundle serializes");
+    let after = serde_json::to_vec(&candidate.contract).expect("public bundle serializes");
+    match module_api::compare_public(&before, &after, None, None) {
+        Ok((report, _)) => match report.verdict.as_str() {
+            "breaking" => "breaking",
+            "compatible" => "compatible",
+            "policy-denied" => "policy-denied",
+            _ => "unknown",
+        },
+        // Two valid module bundles can identify different producers.
+        Err(_) => "unknown",
+    }
 }
 
 fn fail(detail: &str) -> DomainResult {
@@ -250,7 +275,7 @@ pub fn run(command: Command, no_cache: bool) -> DomainResult {
                     .exports
                     .get(&name)
                     .ok_or_else(|| error("workspace-export-unknown"))?;
-                publish(root, spec, &name)
+                publish(root, &project, spec, &name).map(|bundle| json!(bundle))
             });
             runtime::outcome(result)
         }
@@ -265,7 +290,8 @@ pub fn validate(
     api: Option<String>,
     lock: Option<String>,
 ) -> DomainResult {
-    let path = Path::new(project.as_deref().unwrap_or("."));
+    let selector = project.as_deref().unwrap_or(".");
+    let path = Path::new(selector);
     let m = match manifest(path) {
         Ok(None) => return crate::validate_project(project, module, strict, no_cache, api, lock),
         Ok(Some(m)) => m,
@@ -290,7 +316,7 @@ pub fn validate(
             local = Some(result);
         }
     }
-    let result = check_members(&root, &m, strict, no_cache);
+    let result = check_members(&root, selector, &m, strict, no_cache);
     match result {
         Ok((_, errors)) if !errors.is_empty() => {
             let diagnostics = errors
@@ -313,6 +339,7 @@ pub fn validate(
 
 fn check_members(
     root: &Path,
+    selector: &str,
     m: &Manifest,
     strict: bool,
     no_cache: bool,
@@ -326,7 +353,7 @@ fn check_members(
     let mut members = BTreeMap::new();
     let mut roots: Vec<PathBuf> = Vec::new();
     let mut published = BTreeMap::new();
-    let mut imports = Vec::new();
+    let mut imports: BTreeMap<_, Vec<_>> = BTreeMap::new();
     for (name, relative) in &m.children {
         let path = child_root(root, relative)?;
         if roots
@@ -340,11 +367,10 @@ fn check_members(
         if child.as_ref().is_some_and(|c| !c.children.is_empty()) {
             return Err(error("workspace-nested-members"));
         }
-        let project = Some(
-            path.to_str()
-                .ok_or_else(|| error("workspace-root"))?
-                .to_owned(),
-        );
+        // Model commands accept invocation-relative selectors. Keep the
+        // confined absolute path for workspace and runtime file reads.
+        let child_selector = format!("{}/{relative}", selector.trim_end_matches('/'));
+        let project = Some(child_selector.clone());
         if !crate::runtime_config::configured(project.as_deref())
             && !path.join("lekalo/project.yaml").is_file()
         {
@@ -365,37 +391,50 @@ fn check_members(
         }
         if let Some(c) = child {
             for (alias, spec) in c.imports {
-                if let Err(e) = accepted(&path, &spec) {
-                    errors.push(format!("{}/{name}/{alias}", e.detail));
-                }
-                imports.push((name, alias, spec));
+                imports
+                    .entry((spec.from.clone(), spec.export.clone()))
+                    .or_default()
+                    .push((name, alias, spec, path.clone()));
             }
-            published.insert(name, (path, c.exports, valid));
+            published.insert(name, (path, child_selector, c.exports, valid));
         }
     }
-    let mut candidates = BTreeMap::new();
     let mut dependencies = Vec::new();
-    for (consumer, alias, import) in imports {
-        let key = (import.from.clone(), import.export.clone());
-        let digest = candidates.entry(key).or_insert_with(|| {
-            let (path, exports, valid) = published.get(&import.from)?;
-            if !valid {
-                return None;
-            }
-            let doc = publish(path, exports.get(&import.export)?, &import.export).ok()?;
-            doc["digest"].as_str().map(str::to_owned)
-        });
-        if digest.as_ref() == Some(&import.digest) {
-            dependencies.push(json!({"consumer":consumer,"import":alias,"producer":import.from,"export":import.export,"digest":import.digest}));
-        } else {
-            let reason = if digest.is_some() {
-                "workspace-contract-changed"
-            } else {
-                "workspace-export-unavailable"
+    for ((producer, export), consumers) in imports {
+        let candidate = std::cell::OnceCell::new();
+        for (consumer, alias, import, root) in consumers {
+            let pinned = match accepted(&root, &import) {
+                Ok(bundle) => bundle,
+                Err(e) => {
+                    errors.push(format!("{}/{consumer}/{alias}", e.detail));
+                    continue;
+                }
             };
-            errors.push(format!("{reason}/{consumer}/{alias}/{}", import.from));
+            let candidate = candidate.get_or_init(|| {
+                let (path, selector, exports, valid) = published.get(&producer)?;
+                if !valid {
+                    return None;
+                }
+                publish(path, selector, exports.get(&export)?, &export).ok()
+            });
+            match candidate {
+                Some(bundle) if bundle.kind == pinned.kind && bundle.digest == pinned.digest => {
+                    dependencies.push((consumer, alias, import));
+                }
+                Some(bundle) => errors.push(format!(
+                    "workspace-contract-changed/{consumer}/{alias}/{producer}/{}",
+                    compatibility(&pinned, bundle)
+                )),
+                None => errors.push(format!(
+                    "workspace-export-unavailable/{consumer}/{alias}/{producer}"
+                )),
+            }
         }
     }
+    dependencies.sort_by(|left, right| (left.0, &left.1).cmp(&(right.0, &right.1)));
+    let dependencies: Vec<_> = dependencies.into_iter().map(|(consumer, alias, spec)| {
+        json!({"consumer":consumer,"import":alias,"producer":spec.from,"export":spec.export,"digest":spec.digest})
+    }).collect();
     Ok((
         json!({"schema":"lekalo/workspace-check/v1","status":"valid","children":members,"local_imports":m.imports.len(),"dependencies":dependencies}),
         errors,

@@ -91,7 +91,7 @@ test('parent validation identifies the consumer of a changed runtime contract', 
   renameSync(api, join(tmp, 'separate-api-checkout'));
   run(web, validate);
   renameSync(join(tmp, 'separate-api-checkout'), api);
-  assert.match(JSON.stringify(run(parent, validate, 1)), /workspace-contract-changed.web.routes.api/);
+  assert.match(JSON.stringify(run(parent, validate, 1)), /workspace-contract-changed\/web\/routes\/api\/unknown/);
   assert.deepEqual(JSON.parse(readFileSync(join(web, 'routes.json'))), bundle);
 
   apiRoutes('/orders');
@@ -127,4 +127,61 @@ test('configured runtimes preserve module API validation, public digest and cons
   const published = run(root, ['workspace', 'export', 'tasks']);
   const standalone = run(root, ['module', 'api', 'export', 'tasks', '--api', 'module-api.json']);
   assert.equal(published.digest, standalone.modulePublicContract.digest);
+});
+
+test('a parent classifies module API changes against the web project’s accepted bundle', t => {
+  const {tmp, run} = fixture(t);
+  const parent = join(tmp, 'workspace');
+  const api = join(parent, 'api');
+  const web = join(parent, 'web');
+  cpSync(resolve('tests/fixtures/module-api/reference/tasks'), api, {recursive:true});
+  mkdirSync(join(web, 'src'), {recursive:true});
+  const zen = join(tmp, 'zen.mjs');
+  writeFileSync(zen, independentRuntime);
+  write(join(web, 'lekalo.yaml'), {
+    schema:'lekalo/runtime-config/v1', components:{app:{path:'src',runtime:{command:[process.execPath,zen]}}},
+  });
+  run(web, ['runtime', 'lock']);
+  workspace(parent, {children:{api:'api', web:'web'}});
+  workspace(api, {exports:{tasks:{kind:'module-api', api:'module-api.json', module:'tasks'}}});
+
+  const bundlePath = join(web, 'tasks.json');
+  function accept() {
+    const bundle = run(api, ['workspace', 'export', 'tasks']);
+    write(bundlePath, bundle);
+    workspace(web, {imports:{tasks:{from:'api', export:'tasks', bundle:'tasks.json', digest:bundle.digest}}});
+    return bundle;
+  }
+  accept();
+  const check = ['workspace', 'check', '--project', 'workspace'];
+  run(tmp, check);
+
+  const specPath = join(api, 'module-api.json');
+  const spec = JSON.parse(readFileSync(specPath));
+  const tasks = spec.modules[0];
+  const declarations = join(api, 'lekalo/modules/tasks/entities.yaml');
+  const previous = readFileSync(declarations, 'utf8');
+  writeFileSync(declarations, previous.trimEnd() + `
+  - id: tasks.reference
+    kind: scalar
+    version: 1
+    description: "External task reference"
+    base: uuid
+    visibility: project
+`);
+  tasks.apiVersion = '1.3.0';
+  tasks.exports.push({export:'tasks.reference',kind:'scalar',since:'1.3.0',aliasOf:null});
+  write(specPath, spec);
+  assert.match(JSON.stringify(run(tmp, check, 1)), /workspace-contract-changed\/web\/tasks\/api\/compatible/);
+  const additive = accept();
+  run(tmp, check);
+
+  tasks.apiVersion = '2.0.0';
+  tasks.exports.pop();
+  write(specPath, spec);
+  renameSync(api, join(tmp, 'separate-api-checkout'));
+  run(web, ['validate', '--strict']);
+  renameSync(join(tmp, 'separate-api-checkout'), api);
+  assert.match(JSON.stringify(run(tmp, check, 1)), /workspace-contract-changed\/web\/tasks\/api\/breaking/);
+  assert.deepEqual(JSON.parse(readFileSync(bundlePath)), additive);
 });

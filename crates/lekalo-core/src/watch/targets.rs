@@ -744,7 +744,7 @@ fn execute_partition<'a>(
             model: model.clone(),
             root: scratch.to_owned(),
         },
-        &scanned,
+        &scanned.response,
         target,
         profile,
         &supply.command,
