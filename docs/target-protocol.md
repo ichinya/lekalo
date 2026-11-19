@@ -365,7 +365,7 @@ Use `lekalo.evidence.json` at the selected project root to enable families for
 one target and optional profile. Omitting `profile` selects a scan invoked
 without `--profile`. For example:
 
-```json
+```text illustrative
 {
   "schema": "lekalo/evidence-config/v1",
   "scans": [
