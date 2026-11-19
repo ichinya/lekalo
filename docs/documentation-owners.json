@@ -4126,15 +4126,6 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
-      "id": "contract:contracts/laravel-migration-input.schema.v0.4.0.json",
-      "kind": "contract",
-      "source": "contracts/laravel-migration-input.schema.v0.4.0.json",
-      "sourceDigest": "sha256:ac714743feeb4f7cb4f1df5640d00f2e2e865cb53562c7519b2ebe6998172af3",
-      "owner": "docs/laravel-migrations.md",
-      "status": "implemented",
-      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
-    },
-    {
       "id": "contract:contracts/lock.schema.v0.3.2.json",
       "kind": "contract",
       "source": "contracts/lock.schema.v0.3.2.json",
@@ -4779,87 +4770,6 @@
       "source": "contracts/ownership-verification.schema.v1.0.0.json",
       "sourceDigest": "sha256:5c16ba3ed09cc03948a2e85abca19448b85563fdccfdf8eda5bcc7aa2adb910b",
       "owner": "docs/ownership-transitions.md",
-      "status": "implemented",
-      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
-    },
-    {
-      "id": "contract:contracts/php-operations-evidence.schema.v0.4.0.json",
-      "kind": "contract",
-      "source": "contracts/php-operations-evidence.schema.v0.4.0.json",
-      "sourceDigest": "sha256:a4eb9a2df19323ca6e1a7b6fbbfe02f60064fd7f7193cc126e12886f9eafeb95",
-      "owner": "docs/php-laravel-operations.md",
-      "status": "implemented",
-      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
-    },
-    {
-      "id": "contract:contracts/php-operations-input.schema.v0.4.0.json",
-      "kind": "contract",
-      "source": "contracts/php-operations-input.schema.v0.4.0.json",
-      "sourceDigest": "sha256:743ad62fd611ac21d4bdeab3588ee9c98eab302980cd0f73a167793435050fef",
-      "owner": "docs/php-laravel-operations.md",
-      "status": "implemented",
-      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
-    },
-    {
-      "id": "contract:contracts/php-operations-map.schema.v0.4.0.json",
-      "kind": "contract",
-      "source": "contracts/php-operations-map.schema.v0.4.0.json",
-      "sourceDigest": "sha256:2890e1032e5c3f66cbb414351324c4dac17fb3ec54dcde2f06cbb5f58b4c3393",
-      "owner": "docs/php-laravel-operations.md",
-      "status": "implemented",
-      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
-    },
-    {
-      "id": "contract:contracts/php-routes-evidence.schema.v0.4.0.json",
-      "kind": "contract",
-      "source": "contracts/php-routes-evidence.schema.v0.4.0.json",
-      "sourceDigest": "sha256:692d1c245ae34429aeb0e18a13889263c3ac02a1cded6465a1b8c0328025da60",
-      "owner": "adapters/php-laravel/README.md",
-      "status": "implemented",
-      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
-    },
-    {
-      "id": "contract:contracts/php-routes-input.schema.v0.4.0.json",
-      "kind": "contract",
-      "source": "contracts/php-routes-input.schema.v0.4.0.json",
-      "sourceDigest": "sha256:c5130674664dc9f7432e7a076697ff10664a70cf062d323449ff4fb4e5aa6426",
-      "owner": "adapters/php-laravel/README.md",
-      "status": "implemented",
-      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
-    },
-    {
-      "id": "contract:contracts/php-routes-map.schema.v0.4.0.json",
-      "kind": "contract",
-      "source": "contracts/php-routes-map.schema.v0.4.0.json",
-      "sourceDigest": "sha256:236fbd72f96b2b7f1e0ed1d42d07c408a822eb7d18657ce898fab969fcb390df",
-      "owner": "adapters/php-laravel/README.md",
-      "status": "implemented",
-      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
-    },
-    {
-      "id": "contract:contracts/php-types-evidence.schema.v0.4.0.json",
-      "kind": "contract",
-      "source": "contracts/php-types-evidence.schema.v0.4.0.json",
-      "sourceDigest": "sha256:e990dc5d47091dd6d6d7f156aa1e3156073a24f41c92f5f1c4da9bcdd141b55d",
-      "owner": "adapters/php-laravel/README.md",
-      "status": "implemented",
-      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
-    },
-    {
-      "id": "contract:contracts/php-types-input.schema.v0.4.0.json",
-      "kind": "contract",
-      "source": "contracts/php-types-input.schema.v0.4.0.json",
-      "sourceDigest": "sha256:cf50a5b1994cdaf5221c0218eef3bd5d9dbea4ee15ce9bbc4938ddb8aec44053",
-      "owner": "adapters/php-laravel/README.md",
-      "status": "implemented",
-      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
-    },
-    {
-      "id": "contract:contracts/php-types-map.schema.v0.4.0.json",
-      "kind": "contract",
-      "source": "contracts/php-types-map.schema.v0.4.0.json",
-      "sourceDigest": "sha256:daab17787839136b336e2a23deeb19a346342bb6249889971b656ddf96f1769c",
-      "owner": "adapters/php-laravel/README.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
