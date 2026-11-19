@@ -252,6 +252,10 @@ For a Model module, declare an export with `kind: module-api`, `api:
 module-api.json` and `module: tasks`. It uses the same certified public bundle
 and digest as `lekalo module api export`. Model validation with
 `--module-api` and `--module-api-lock` also checks configured runtimes.
+When a pinned export changes, the parent appends the public API comparator's
+`compatible`, `breaking` or `policy-denied` verdict to the drift diagnostic.
+Runtime fact changes have compatibility `unknown`. Even a compatible change
+requires the consumer to review and accept the candidate digest.
 
 The PHP target-protocol adapter retains its scan/generate/verify interface in
 the external packages. Other language providers are at different stages of
@@ -261,10 +265,11 @@ process services. See [external services](external-services.md).
 Run the process and workspace examples against a built CLI:
 
 ```sh
-node scripts/external-tool.mjs --provision-php
-node --test scripts/test-external-runtime.mjs scripts/test-portable-laravel.mjs
+node --test scripts/test-external-runtime.mjs scripts/test-runtime-workspace.mjs
 ```
 
+The Laravel package runs its portable-rule integration tests against the CLI in
+its [host CI workflow](https://github.com/ichinya/lekalo-php-laravel/blob/main/.github/workflows/host.yml).
 
 ## Official packages
 

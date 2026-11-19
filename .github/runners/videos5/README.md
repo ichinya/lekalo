@@ -1,7 +1,9 @@
 # videos5 Linux runner pool
 
 Four registrations, `videos5-lekalo-01` through `videos5-lekalo-04`, share the
-custom label `videos5-lekalo`. PHP 8.3 and Composer 2 are installed in the
+custom label `videos5-lekalo`. Set the repository Actions variable
+`LEKALO_USE_SELF_HOSTED=true` after confirming the pool is online. Remove it or
+set it to `false` before maintenance so new jobs use GitHub-hosted Ubuntu. PHP 8.3 and Composer 2 are installed in the
 image, including `php-config` required by setup-php, so the visible setup
 steps avoid cold release downloads. Each listener
 has a separate Ubuntu 24.04

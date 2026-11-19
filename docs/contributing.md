@@ -193,6 +193,12 @@ executable permission. A missing or mismatched artifact fails the job; consumers
 do not fall back to a second Cargo build. This artifact is never used for SDK
 oracle builds or the release-native gates.
 
+Linux jobs that can use the private `videos5-lekalo` pool use GitHub-hosted
+Ubuntu by default. Set the repository Actions variable `LEKALO_USE_SELF_HOSTED`
+to `true` only while the private pool is online. Fork pull requests always use
+GitHub-hosted runners. The Contracts producer and its consumers use the same
+runner pool. A workflow already queued for an unavailable runner needs a new run.
+
 On trusted self-hosted workers, the producer uses the stable toolchain already
 installed in the runner image, logs its Rust/Cargo versions and fails if it is
 missing. It does not update or auto-install a compiler during artifact creation.
