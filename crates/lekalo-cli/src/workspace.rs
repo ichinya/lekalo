@@ -142,7 +142,7 @@ fn child_root(root: &Path, relative: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-fn publish(root: &Path, spec: &Export, name: &str) -> Result<Bundle> {
+fn publish(root: &Path, selector: &str, spec: &Export, name: &str) -> Result<Bundle> {
     let (kind, body, digest) = match spec {
         Export::Fact {
             component,
@@ -163,12 +163,8 @@ fn publish(root: &Path, spec: &Export, name: &str) -> Result<Bundle> {
             )
         }
         Export::Module { api, module } => {
-            let bundle = crate::module_api::public_contract(
-                root.to_str().ok_or_else(|| error("workspace-root"))?,
-                api,
-                module,
-            )
-            .map_err(|_| error("workspace-module-export-invalid"))?;
+            let bundle = crate::module_api::public_contract(selector, api, module)
+                .map_err(|_| error("workspace-module-export-invalid"))?;
             let digest = bundle.digest.clone();
             ("module-api", json!(bundle), digest)
         }
@@ -279,7 +275,7 @@ pub fn run(command: Command, no_cache: bool) -> DomainResult {
                     .exports
                     .get(&name)
                     .ok_or_else(|| error("workspace-export-unknown"))?;
-                publish(root, spec, &name).map(|bundle| json!(bundle))
+                publish(root, &project, spec, &name).map(|bundle| json!(bundle))
             });
             runtime::outcome(result)
         }
@@ -294,7 +290,8 @@ pub fn validate(
     api: Option<String>,
     lock: Option<String>,
 ) -> DomainResult {
-    let path = Path::new(project.as_deref().unwrap_or("."));
+    let selector = project.as_deref().unwrap_or(".");
+    let path = Path::new(selector);
     let m = match manifest(path) {
         Ok(None) => return crate::validate_project(project, module, strict, no_cache, api, lock),
         Ok(Some(m)) => m,
@@ -319,7 +316,7 @@ pub fn validate(
             local = Some(result);
         }
     }
-    let result = check_members(&root, &m, strict, no_cache);
+    let result = check_members(&root, selector, &m, strict, no_cache);
     match result {
         Ok((_, errors)) if !errors.is_empty() => {
             let diagnostics = errors
@@ -342,6 +339,7 @@ pub fn validate(
 
 fn check_members(
     root: &Path,
+    selector: &str,
     m: &Manifest,
     strict: bool,
     no_cache: bool,
@@ -369,11 +367,10 @@ fn check_members(
         if child.as_ref().is_some_and(|c| !c.children.is_empty()) {
             return Err(error("workspace-nested-members"));
         }
-        let project = Some(
-            path.to_str()
-                .ok_or_else(|| error("workspace-root"))?
-                .to_owned(),
-        );
+        // Model commands accept invocation-relative selectors. Keep the
+        // confined absolute path for workspace and runtime file reads.
+        let child_selector = format!("{}/{relative}", selector.trim_end_matches('/'));
+        let project = Some(child_selector.clone());
         if !crate::runtime_config::configured(project.as_deref())
             && !path.join("lekalo/project.yaml").is_file()
         {
@@ -399,7 +396,7 @@ fn check_members(
                     .or_default()
                     .push((name, alias, spec, path.clone()));
             }
-            published.insert(name, (path, c.exports, valid));
+            published.insert(name, (path, child_selector, c.exports, valid));
         }
     }
     let mut dependencies = Vec::new();
@@ -414,11 +411,11 @@ fn check_members(
                 }
             };
             let candidate = candidate.get_or_init(|| {
-                let (path, exports, valid) = published.get(&producer)?;
+                let (path, selector, exports, valid) = published.get(&producer)?;
                 if !valid {
                     return None;
                 }
-                publish(path, exports.get(&export)?, &export).ok()
+                publish(path, selector, exports.get(&export)?, &export).ok()
             });
             match candidate {
                 Some(bundle) if bundle.kind == pinned.kind && bundle.digest == pinned.digest => {

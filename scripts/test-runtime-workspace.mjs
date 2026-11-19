@@ -131,8 +131,9 @@ test('configured runtimes preserve module API validation, public digest and cons
 
 test('a parent classifies module API changes against the web project’s accepted bundle', t => {
   const {tmp, run} = fixture(t);
-  const api = join(tmp, 'api');
-  const web = join(tmp, 'web');
+  const parent = join(tmp, 'workspace');
+  const api = join(parent, 'api');
+  const web = join(parent, 'web');
   cpSync(resolve('tests/fixtures/module-api/reference/tasks'), api, {recursive:true});
   mkdirSync(join(web, 'src'), {recursive:true});
   const zen = join(tmp, 'zen.mjs');
@@ -141,7 +142,7 @@ test('a parent classifies module API changes against the web project’s accepte
     schema:'lekalo/runtime-config/v1', components:{app:{path:'src',runtime:{command:[process.execPath,zen]}}},
   });
   run(web, ['runtime', 'lock']);
-  workspace(tmp, {children:{api:'api', web:'web'}});
+  workspace(parent, {children:{api:'api', web:'web'}});
   workspace(api, {exports:{tasks:{kind:'module-api', api:'module-api.json', module:'tasks'}}});
 
   const bundlePath = join(web, 'tasks.json');
@@ -152,7 +153,8 @@ test('a parent classifies module API changes against the web project’s accepte
     return bundle;
   }
   accept();
-  run(tmp, ['workspace', 'check']);
+  const check = ['workspace', 'check', '--project', 'workspace'];
+  run(tmp, check);
 
   const specPath = join(api, 'module-api.json');
   const spec = JSON.parse(readFileSync(specPath));
@@ -170,9 +172,9 @@ test('a parent classifies module API changes against the web project’s accepte
   tasks.apiVersion = '1.3.0';
   tasks.exports.push({export:'tasks.reference',kind:'scalar',since:'1.3.0',aliasOf:null});
   write(specPath, spec);
-  assert.match(JSON.stringify(run(tmp, ['workspace', 'check'], 1)), /workspace-contract-changed\/web\/tasks\/api\/compatible/);
+  assert.match(JSON.stringify(run(tmp, check, 1)), /workspace-contract-changed\/web\/tasks\/api\/compatible/);
   const additive = accept();
-  run(tmp, ['workspace', 'check']);
+  run(tmp, check);
 
   tasks.apiVersion = '2.0.0';
   tasks.exports.pop();
@@ -180,6 +182,6 @@ test('a parent classifies module API changes against the web project’s accepte
   renameSync(api, join(tmp, 'separate-api-checkout'));
   run(web, ['validate', '--strict']);
   renameSync(join(tmp, 'separate-api-checkout'), api);
-  assert.match(JSON.stringify(run(tmp, ['workspace', 'check'], 1)), /workspace-contract-changed\/web\/tasks\/api\/breaking/);
+  assert.match(JSON.stringify(run(tmp, check, 1)), /workspace-contract-changed\/web\/tasks\/api\/breaking/);
   assert.deepEqual(JSON.parse(readFileSync(bundlePath)), additive);
 });
