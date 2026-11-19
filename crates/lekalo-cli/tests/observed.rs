@@ -530,6 +530,54 @@ fn evidence_package(project: &Path, id: &str, schema: Value) -> Value {
 }
 
 #[test]
+fn validate_checks_every_evidence_package_without_an_adapter() {
+    use serde_json::json;
+    let sandbox = Sandbox::new("validate-evidence");
+    let project = sandbox.root.join("proj");
+    let config_path = project.join("lekalo.evidence.json");
+    let validate = || sandbox.run(&["--json", "validate", "--strict", "--project", "proj"]);
+    let baseline = validate();
+    assert_eq!(exit_code(&baseline), 0, "{}", stderr_text(&baseline));
+
+    let pin = evidence_package(&project, "example-provider", json!({"type":"string"}));
+    let digest = lekalo_core::runtime::digest(b"no adapter needed for validate");
+    let selection = |profile, pin: &Value| {
+        json!({
+            "target":"example", "profile":profile,
+            "producer":{"id":"not-installed","version":"1.0.0","digest":digest},
+            "entry_digest":digest, "program_digest":digest, "families":{"example":pin},
+        })
+    };
+    let mut config = json!({
+        "schema":"lekalo/evidence-config/v1", "scans":[selection("primary", &pin), selection("secondary", &pin)],
+    });
+    let write_config = |config: &Value| {
+        std::fs::write(&config_path, serde_json::to_vec(config).unwrap()).unwrap();
+    };
+    write_config(&config);
+    let valid = validate();
+    assert_eq!(exit_code(&valid), 0, "{}", stderr_text(&valid));
+    assert_eq!(stdout_text(&valid), stdout_text(&baseline));
+
+    config["scans"][1]["families"]["example"]["schema_digest"] = json!(digest);
+    write_config(&config);
+    let stale = validate();
+    assert_eq!(exit_code(&stale), 1, "{}", stderr_text(&stale));
+    assert!(stderr_text(&stale).contains("evidence-package-invalid"));
+
+    let invalid = evidence_package(
+        &project,
+        "invalid-provider",
+        json!({"$ref":"https://example.invalid/schema"}),
+    );
+    config["scans"][1] = selection("secondary", &invalid);
+    write_config(&config);
+    let malformed = validate();
+    assert_eq!(exit_code(&malformed), 1, "{}", stderr_text(&malformed));
+    assert!(stderr_text(&malformed).contains("evidence-schema-invalid"));
+}
+
+#[test]
 fn generic_scan_uses_pinned_provider_schemas_through_the_public_cli() {
     use serde_json::json;
     let sandbox = Sandbox::new("generic-evidence");

@@ -63,49 +63,62 @@ fn valid_producer(producer: &wire::AdapterIdentity) -> bool {
         && wire::is_sha256_digest(&producer.digest)
 }
 
+fn selections(root: &Path) -> Result<Vec<Selection>> {
+    let fs = Fs::open(root).map_err(|_| "evidence-config-unreadable")?;
+    let bytes = match fs.read_file_opt("", CONFIG, 64 * 1024) {
+        Ok(Some(bytes)) => bytes,
+        Ok(None) | Err(FsErrorKind::NotFound) => return Ok(Vec::new()),
+        Err(_) => return Err("evidence-config-unreadable"),
+    };
+    let config: Config = serde_json::from_value(
+        runtime::config::value(&bytes).map_err(|_| "evidence-config-invalid")?,
+    )
+    .map_err(|_| "evidence-config-invalid")?;
+    let mut scopes = BTreeSet::new();
+    if config.schema != "lekalo/evidence-config/v1"
+        || config.scans.len() > 32
+        || config.scans.iter().any(|s| {
+            !scopes::is_token(&s.target)
+                || s.profile.as_deref().is_some_and(|p| !scopes::is_token(p))
+                || !valid_producer(&s.producer)
+                || !wire::is_sha256_digest(&s.program_digest)
+                || !wire::is_sha256_digest(&s.entry_digest)
+                || !scopes.insert((&s.target, &s.profile))
+                || s.http_projection
+                    .as_ref()
+                    .is_some_and(|f| !s.families.contains_key(f))
+                || s.families.is_empty()
+                || s.families.len() > scan_evidence::MAX_GROUPS
+                || s.families.iter().any(|(family, pin)| {
+                    !scopes::is_token(family)
+                        || !wire::is_sha256_digest(&pin.package_digest)
+                        || !wire::is_sha256_digest(&pin.schema_digest)
+                })
+        })
+    {
+        return Err("evidence-config-invalid");
+    }
+    Ok(config.scans)
+}
+
+/// Verify all configured provider schemas and their project-local pins offline.
+pub fn verify_config(root: &Path) -> Result<()> {
+    for selection in selections(root)? {
+        Policy::from_selection(root, selection)?;
+    }
+    Ok(())
+}
+
 impl Policy {
     pub(super) fn load(root: &Path, target: &str, profile: Option<&str>) -> Result<Option<Self>> {
-        let fs = Fs::open(root).map_err(|_| "evidence-config-unreadable")?;
-        let bytes = match fs.read_file_opt("", CONFIG, 64 * 1024) {
-            Ok(Some(bytes)) => bytes,
-            Ok(None) | Err(FsErrorKind::NotFound) => return Ok(None),
-            Err(_) => return Err("evidence-config-unreadable"),
-        };
-        let config: Config = serde_json::from_value(
-            runtime::config::value(&bytes).map_err(|_| "evidence-config-invalid")?,
-        )
-        .map_err(|_| "evidence-config-invalid")?;
-        let mut scopes = BTreeSet::new();
-        if config.schema != "lekalo/evidence-config/v1"
-            || config.scans.len() > 32
-            || config.scans.iter().any(|s| {
-                !scopes::is_token(&s.target)
-                    || s.profile.as_deref().is_some_and(|p| !scopes::is_token(p))
-                    || !valid_producer(&s.producer)
-                    || !wire::is_sha256_digest(&s.program_digest)
-                    || !wire::is_sha256_digest(&s.entry_digest)
-                    || !scopes.insert((&s.target, &s.profile))
-                    || s.http_projection
-                        .as_ref()
-                        .is_some_and(|f| !s.families.contains_key(f))
-                    || s.families.is_empty()
-                    || s.families.len() > scan_evidence::MAX_GROUPS
-                    || s.families.iter().any(|(family, pin)| {
-                        !scopes::is_token(family)
-                            || !wire::is_sha256_digest(&pin.package_digest)
-                            || !wire::is_sha256_digest(&pin.schema_digest)
-                    })
-            })
-        {
-            return Err("evidence-config-invalid");
-        }
-        let Some(selection) = config
-            .scans
+        selections(root)?
             .into_iter()
             .find(|s| s.target == target && s.profile.as_deref() == profile)
-        else {
-            return Ok(None);
-        };
+            .map(|selection| Self::from_selection(root, selection))
+            .transpose()
+    }
+
+    fn from_selection(root: &Path, selection: Selection) -> Result<Self> {
         let mut families = BTreeMap::new();
         for (family, pin) in selection.families {
             let (id, schema) = runtime::package::evidence_schema(
@@ -118,7 +131,7 @@ impl Policy {
             let validator = runtime::schema(&schema).map_err(|_| "evidence-schema-invalid")?;
             families.insert(family, Provider { id, pin, validator });
         }
-        Ok(Some(Self {
+        Ok(Self {
             producer: selection.producer,
             launcher: LaunchPin {
                 program_digest: selection.program_digest,
@@ -126,7 +139,7 @@ impl Policy {
             },
             families,
             http_projection: selection.http_projection,
-        }))
+        })
     }
 
     pub(super) fn launch_pins(&self) -> String {
