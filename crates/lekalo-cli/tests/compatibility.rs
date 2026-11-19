@@ -76,12 +76,14 @@ fn the_projection_reports_exactly_the_three_families_in_order() {
     assert_eq!(families[1]["current"], "0.8.0");
     assert_eq!(families[2]["family"], "protocol");
     assert_eq!(families[2]["current"], "0.3.2");
-    assert_eq!(families[2]["versions"].as_array().map(Vec::len), Some(7));
+    assert_eq!(families[2]["versions"].as_array().map(Vec::len), Some(9));
     assert_eq!(families[2]["versions"][0]["version"], "0.3.2");
     assert_eq!(families[2]["versions"][1]["version"], "0.6.4");
     assert_eq!(families[2]["versions"][2]["version"], "0.8.0");
     assert_eq!(families[2]["versions"][3]["version"], "0.9.0");
     assert_eq!(families[2]["versions"][4]["version"], "0.9.1");
     assert_eq!(families[2]["versions"][5]["version"], "1.1.0");
-    assert_eq!(families[2]["versions"][6]["version"], "1.3.0");
+    assert_eq!(families[2]["versions"][6]["version"], "1.2.0");
+    assert_eq!(families[2]["versions"][7]["version"], "1.3.0");
+    assert_eq!(families[2]["versions"][8]["version"], "1.4.0");
 }

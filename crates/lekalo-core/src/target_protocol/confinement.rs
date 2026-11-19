@@ -427,6 +427,7 @@ pub(super) struct Sandbox {
     /// The honest per-dimension enforcement record.
     pub(super) report: ConfinementReport,
     runtime_provenance: std::sync::Mutex<Option<wire::CompilerRuntime>>,
+    launch_pin: Option<super::LaunchPin>,
 }
 
 fn refusal(detail: &'static str) -> TargetFailure {
@@ -758,6 +759,7 @@ impl Sandbox {
             write_scopes: writes.to_vec(),
             report: ConfinementReport::compute(policy),
             runtime_provenance: std::sync::Mutex::new(None),
+            launch_pin: None,
             policy,
         })
     }
@@ -781,6 +783,11 @@ impl Sandbox {
             report.components = 2;
         }
         report
+    }
+
+    pub(super) fn with_launch_pin(mut self, pin: Option<super::LaunchPin>) -> Self {
+        self.launch_pin = pin;
+        self
     }
 
     pub(super) fn project_root(&self) -> &Path {
@@ -855,7 +862,10 @@ impl Sandbox {
                     .as_ref()
                     .zip(std::fs::canonicalize(self.owned.path().join("node_modules")).ok())
                     .is_some_and(|(script, root)| script.starts_with(root));
-            if script.is_file() && !in_project && !in_assets && !script.starts_with(&self.runtime) {
+            if script.is_file()
+                && (self.launch_pin.is_some() || (!in_project && !in_assets))
+                && !script.starts_with(&self.runtime)
+            {
                 let script_name = script
                     .file_name()
                     .ok_or_else(|| refusal("sandbox-runtime"))?;
@@ -867,6 +877,22 @@ impl Sandbox {
                     std::fs::copy(script, &target).map_err(|_| refusal("sandbox-runtime"))?;
                 }
                 *first = target.to_string_lossy().into_owned();
+            }
+        }
+        if let Some(pin) = &self.launch_pin {
+            let program_digest = bounded_launch_digest(&destination);
+            let entry = args
+                .first()
+                .map(Path::new)
+                .filter(|p| p.starts_with(&self.runtime) && p.is_file());
+            let entry_digest = match entry {
+                Some(path) => bounded_launch_digest(path),
+                None => program_digest.clone(),
+            };
+            if program_digest.as_ref() != Some(&pin.program_digest)
+                || entry_digest.as_ref() != Some(&pin.entry_digest)
+            {
+                return Err(refusal("evidence-producer"));
             }
         }
         // Node otherwise walks every host ancestor of an absolute main
@@ -1218,6 +1244,28 @@ fn checked_destination(
         }
     }
     Ok(current)
+}
+
+fn bounded_launch_digest(path: &Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    const LIMIT: u64 = 256 * 1024 * 1024;
+    let mut input = std::fs::File::open(path).ok()?.take(LIMIT + 1);
+    let mut digest = Sha256::new();
+    let mut buffer = [0; 64 * 1024];
+    let mut total = 0;
+    loop {
+        let read = input.read(&mut buffer).ok()?;
+        if read == 0 {
+            break;
+        }
+        total += read as u64;
+        if total > LIMIT {
+            return None;
+        }
+        digest.update(&buffer[..read]);
+    }
+    Some(format!("sha256:{}", crate::digest::hex(&digest.finalize())))
 }
 
 fn resolve_program(program: &Path) -> Option<PathBuf> {

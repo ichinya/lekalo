@@ -506,3 +506,226 @@ fn clean_never_deletes_observed_files() {
         .join("proj/.lekalo/import/observed/index.json")
         .is_file());
 }
+
+fn evidence_package(project: &Path, id: &str, schema: Value) -> Value {
+    let directory = project.join(id);
+    std::fs::create_dir_all(&directory).unwrap();
+    let manifest = serde_json::to_vec(&serde_json::json!({
+        "schema":"lekalo/package/v1", "id":id, "version":"1.0.0",
+        "kind":"evidence", "files":["payload.schema.json"]
+    }))
+    .unwrap();
+    let schema = serde_json::to_vec(&schema).unwrap();
+    std::fs::write(directory.join("lekalo.package.json"), &manifest).unwrap();
+    std::fs::write(directory.join("payload.schema.json"), &schema).unwrap();
+    let schema_digest = lekalo_core::runtime::digest(&schema);
+    let inventory = serde_json::json!({
+        "lekalo.package.json":lekalo_core::runtime::digest(&manifest),
+        "payload.schema.json":schema_digest,
+    });
+    serde_json::json!({
+        "source":format!("path:{id}"), "schema_digest":schema_digest,
+        "package_digest":lekalo_core::runtime::digest(&serde_json::to_vec(&inventory).unwrap()),
+    })
+}
+
+#[test]
+fn generic_scan_uses_pinned_provider_schemas_through_the_public_cli() {
+    use serde_json::json;
+    let sandbox = Sandbox::new("generic-evidence");
+    let project = sandbox.root.join("proj");
+    let config_path = project.join("lekalo.evidence.json");
+    let index_path = project.join(".lekalo/import/observed/index.json");
+    let node = std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
+        .map(|path| path.join(if cfg!(windows) { "node.exe" } else { "node" }))
+        .find(|path| path.is_file())
+        .expect("Node.js available for the protocol fixture");
+    let adapter_path = sandbox.root.join("evidence-adapter.cjs");
+    let adapter = include_bytes!("../../../tests/fixtures/target-protocol/evidence-adapter.cjs");
+    std::fs::write(&adapter_path, adapter).unwrap();
+    let producer = json!({"id":"evidence-demo","version":"1.0.0",
+        "digest":lekalo_core::runtime::digest(b"demo producer")});
+    let entry_digest = lekalo_core::runtime::digest(adapter);
+    let program_digest = lekalo_core::runtime::digest(&std::fs::read(&node).unwrap());
+    let strings = evidence_package(&project, "labels-provider", json!({"type":"string"}));
+    let numbers = evidence_package(&project, "counts-provider", json!({"type":"integer"}));
+    let mut config = json!({"schema":"lekalo/evidence-config/v1","scans":[{
+        "target":"evidence-demo", "producer":producer, "entry_digest":entry_digest, "program_digest":program_digest,
+        "families":{"labels":strings, "counts":numbers}
+    }]});
+    let write_config = |config: &Value| {
+        std::fs::write(&config_path, serde_json::to_vec(config).unwrap()).unwrap();
+    };
+    let scan = |version: &str, groups: &Value| {
+        let wire = json!({"producer":producer, "groups":groups}).to_string();
+        sandbox.run(&[
+            "--json",
+            "scan",
+            "--target",
+            "evidence-demo",
+            "--project",
+            "proj",
+            node.to_str().unwrap(),
+            alias_free_path(&adapter_path).to_str().unwrap(),
+            &wire,
+            version,
+        ])
+    };
+    let accepted = |version, groups: &Value| {
+        let out = scan(version, groups);
+        assert_eq!(
+            exit_code(&out),
+            0,
+            "{}",
+            stdout_text(&out) + &stderr_text(&out)
+        );
+        std::fs::read(&index_path).unwrap()
+    };
+    let source = |path: &str| json!({"path":path,"source_digest":lekalo_core::runtime::digest(&std::fs::read(project.join(path)).unwrap())});
+    let group = |family, pin: &Value, payload| {
+        json!({
+            "family":family, "coverage":"complete", "package_digest":pin["package_digest"],
+            "schema_digest":pin["schema_digest"], "facts":[{
+                "subject":"root", "key":"example", "references":{"dependency":"dependency"},
+                "sources":[source("src/tasks.ts"), source("src/ids.ts")], "payload":payload,
+            }]
+        })
+    };
+    let labels = group("labels", &strings, json!("ready"));
+    let counts = group("counts", &numbers, json!(7));
+    let groups = json!([labels, counts]);
+
+    let native = accepted("1.1.0", &json!([]));
+    assert!(String::from_utf8_lossy(&native).contains("observed-index/v1.1.0"));
+    write_config(&config);
+    let observed = accepted("1.4.0", &groups);
+    let index: Value = serde_json::from_slice(&observed).unwrap();
+    let rows = &index["evidence_groups"];
+    assert_eq!(rows[0]["facts"][0]["fact"]["payload"], 7);
+    assert_eq!(rows[1]["facts"][0]["fact"]["payload"], "ready");
+    let label_id = rows[1]["facts"][0]["id"].clone();
+    assert_eq!(accepted("1.4.0", &json!([counts, labels])), observed);
+    assert!(lekalo_core::observed::parse_index(&observed).is_ok());
+
+    let refused = |version, groups: &Value, detail| {
+        assert_scan_refusal(&scan(version, groups), detail);
+        assert_eq!(std::fs::read(&index_path).unwrap(), observed);
+    };
+    let mut invalid = labels.clone();
+    invalid["family"] = json!("unknown");
+    refused("1.4.0", &json!([invalid]), "evidence-family-disabled");
+    let mut invalid = labels.clone();
+    invalid["facts"][0]["payload"] = json!(7);
+    refused("1.4.0", &json!([invalid]), "evidence-payload");
+    let mut invalid = labels.clone();
+    invalid["facts"][0]["references"]["dependency"] = json!("unknown");
+    refused("1.4.0", &json!([invalid]), "evidence-source-custody");
+    let mut invalid = labels.clone();
+    invalid["facts"][0]["sources"][1]["source_digest"] = json!(entry_digest);
+    refused("1.4.0", &json!([invalid]), "evidence-source-custody");
+    let mut invalid = labels.clone();
+    invalid["schema_digest"] = numbers["schema_digest"].clone();
+    refused("1.4.0", &json!([invalid]), "evidence-package-pin");
+    std::fs::write(
+        project.join("labels-provider/payload.schema.json"),
+        br#"{"type":"array"}"#,
+    )
+    .unwrap();
+    refused("1.4.0", &groups, "evidence-package-invalid");
+    assert_eq!(
+        evidence_package(&project, "labels-provider", json!({"type":"string"})),
+        strings,
+    );
+    config["scans"][0]["entry_digest"] = json!(producer["digest"]);
+    write_config(&config);
+    refused("1.4.0", &groups, "evidence-producer");
+    config["scans"][0]["entry_digest"] = json!(entry_digest);
+    write_config(&config);
+    config["scans"][0]["producer"]["id"] = json!("another-scanner");
+    write_config(&config);
+    refused("1.4.0", &groups, "evidence-producer");
+    config["scans"][0]["producer"] = producer.clone();
+    write_config(&config);
+    refused("1.1.0", &json!([]), "evidence-protocol-required");
+
+    std::fs::write(sandbox.root.join("generic.json"), &observed).unwrap();
+    assert_scan_refusal(
+        &sandbox.run(&[
+            "--json",
+            "observe",
+            "update",
+            "--scan",
+            "generic.json",
+            "--project",
+            "proj",
+        ]),
+        "evidence-requires-target-scan",
+    );
+    assert_scan_refusal(
+        &sandbox.run(&[
+            "--json",
+            "observe",
+            "update",
+            "--scan",
+            INITIAL_SCAN,
+            "--project",
+            "proj",
+        ]),
+        "evidence-inventory-downgrade",
+    );
+    assert_eq!(std::fs::read(&index_path).unwrap(), observed);
+
+    let mut partial_counts = counts.clone();
+    partial_counts["coverage"] = json!("partial");
+    partial_counts["facts"] = json!([]);
+    let partial: Value =
+        serde_json::from_slice(&accepted("1.4.0", &json!([labels, partial_counts]))).unwrap();
+    assert_eq!(partial["evidence_groups"][0]["coverage"], "partial");
+    assert_eq!(
+        partial["evidence_groups"][0]["facts"][0]["state"],
+        "unassessed"
+    );
+
+    let replacement = evidence_package(
+        &project,
+        "labels-provider",
+        json!({"type":"string","minLength":1}),
+    );
+    config["scans"][0]["families"]["labels"] = replacement.clone();
+    write_config(&config);
+    let migrated = group("labels", &replacement, json!("updated"));
+    let next: Value = serde_json::from_slice(&accepted("1.4.0", &json!([migrated]))).unwrap();
+    assert_eq!(next["evidence_groups"][1]["facts"][0]["id"], label_id);
+    assert_eq!(next["evidence_groups"][0]["coverage"], "unassessed");
+    assert_eq!(
+        next["evidence_groups"][0]["facts"][0]["state"],
+        "unassessed"
+    );
+    std::fs::write(project.join("src/ids.ts"), "// dependency changed\n").unwrap();
+    assert_scan_refusal(
+        &sandbox.run(&["--json", "observe", "check", "--project", "proj"]),
+        "evidence-source-stale",
+    );
+    let empty_labels = json!({"family":"labels", "coverage":"complete",
+        "package_digest":replacement["package_digest"], "schema_digest":replacement["schema_digest"],
+        "facts":[]});
+    let next: Value = serde_json::from_slice(&accepted("1.4.0", &json!([empty_labels]))).unwrap();
+    assert_eq!(next["evidence_groups"][1]["facts"], json!([]));
+    assert_eq!(next["evidence_groups"][0]["facts"][0]["state"], "stale");
+
+    std::fs::remove_file(&config_path).unwrap();
+    std::fs::remove_file(&index_path).unwrap();
+    let http = accepted("1.2.0", &json!([]));
+    assert!(String::from_utf8_lossy(&http).contains("observed-index/v1.2.0"));
+    assert_scan_refusal(
+        &scan("1.4.0", &json!([])),
+        "evidence-http-migration-required",
+    );
+    assert_eq!(std::fs::read(&index_path).unwrap(), http);
+}
+
+fn assert_scan_refusal(output: &Output, detail: &str) {
+    assert_ne!(exit_code(output), 0);
+    let rendered = stdout_text(output) + &stderr_text(output);
+    assert!(rendered.contains(detail), "{detail}: {rendered}");
+}

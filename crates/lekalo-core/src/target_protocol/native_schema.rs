@@ -29,6 +29,7 @@ pub(super) fn valid(bytes: &[u8]) -> bool {
     static LEGACY: OnceLock<Result<Validator, ()>> = OnceLock::new();
     static NATIVE: OnceLock<Result<Validator, ()>> = OnceLock::new();
     static HTTP: OnceLock<Result<Validator, ()>> = OnceLock::new();
+    static GENERIC: OnceLock<Result<Validator, ()>> = OnceLock::new();
     static COMPILER: OnceLock<Result<Validator, ()>> = OnceLock::new();
     let native = value
         .as_ref()
@@ -45,7 +46,20 @@ pub(super) fn valid(bytes: &[u8]) -> bool {
         .and_then(|v| v.get("protocol_version"))
         .and_then(Value::as_str)
         == Some(super::version::COMPILER_RUNTIME_VERSION);
-    let validator = if compiler {
+    let generic = value
+        .as_ref()
+        .and_then(|v| v.get("protocol_version"))
+        .and_then(Value::as_str)
+        == Some(super::version::EVIDENCE_SCAN_VERSION);
+    let validator = if generic {
+        GENERIC.get_or_init(|| {
+            let schema = serde_json::from_slice(include_bytes!(
+                "../../../../contracts/target-protocol.schema.v1.4.0.json"
+            ))
+            .map_err(|_| ())?;
+            compile(&schema)
+        })
+    } else if compiler {
         COMPILER.get_or_init(|| {
             let schema = serde_json::from_slice(include_bytes!(
                 "../../../../contracts/target-protocol.schema.v1.3.0.json"

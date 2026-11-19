@@ -73,6 +73,7 @@ pub fn validate_request(request: &RequestEnvelope) -> Result<(), super::TargetFa
                 | super::version::EXEC_VERSION
                 | super::version::NATIVE_SCAN_VERSION
                 | super::version::COMPILER_RUNTIME_VERSION
+                | super::version::EVIDENCE_SCAN_VERSION
                 | super::version::HTTP_SCAN_VERSION
         ) || request.target.is_none()
             || request.profile.is_some()
@@ -337,7 +338,7 @@ fn bounded(value: &str, limit: usize) -> bool {
     value.chars().count() <= limit
 }
 
-fn contract_version(value: &str) -> bool {
+pub(crate) fn contract_version(value: &str) -> bool {
     value.len() <= 32
         && value.split('.').count() == 3
         && value
@@ -388,13 +389,36 @@ fn constraints_bounded(constraints: Option<&AdapterConstraints>) -> bool {
 fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity> {
     let invalid = Err(ResponseInvalidity::Shape);
     if response.evidence.compiler_runtime.is_some()
-        && response.protocol_version != super::version::COMPILER_RUNTIME_VERSION
+        && !super::version::supports_compiler_runtime(&response.protocol_version)
     {
         return invalid;
     }
     let public_scan = super::version::supports_scan_custody(&response.protocol_version)
         && response.operation == Operation::Scan
         && response.status == ResponseStatus::Ok;
+    let evidence_groups = response
+        .result
+        .as_ref()
+        .and_then(|r| r.evidence_groups.as_ref());
+    if public_scan && response.protocol_version == super::version::EVIDENCE_SCAN_VERSION {
+        if evidence_groups.is_none_or(|groups| !super::scan_evidence::valid_groups(groups)) {
+            return invalid;
+        }
+        if response
+            .result
+            .as_ref()
+            .is_some_and(|r| r.truncated == Some(true))
+            && evidence_groups.is_some_and(|groups| {
+                groups
+                    .iter()
+                    .any(|group| group.coverage == super::scan_evidence::Coverage::Complete)
+            })
+        {
+            return invalid;
+        }
+    } else if evidence_groups.is_some() {
+        return invalid;
+    }
     if public_scan {
         if response
             .evidence
@@ -481,6 +505,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                 | super::version::EXEC_VERSION
                 | super::version::NATIVE_SCAN_VERSION
                 | super::version::COMPILER_RUNTIME_VERSION
+                | super::version::EVIDENCE_SCAN_VERSION
                 | super::version::HTTP_SCAN_VERSION
         ) || response.operation != Operation::Lint)
     {
@@ -531,6 +556,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                         | super::version::EXEC_VERSION
                         | super::version::NATIVE_SCAN_VERSION
                         | super::version::COMPILER_RUNTIME_VERSION
+                        | super::version::EVIDENCE_SCAN_VERSION
                         | super::version::HTTP_SCAN_VERSION
                 ) {
                     10
@@ -546,6 +572,7 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
                     | super::version::EXEC_VERSION
                     | super::version::NATIVE_SCAN_VERSION
                     | super::version::COMPILER_RUNTIME_VERSION
+                    | super::version::EVIDENCE_SCAN_VERSION
                     | super::version::HTTP_SCAN_VERSION
             ) && c.operations.contains(&Operation::Lint))
             || !unique(&c.transports, 1, 2)
@@ -1266,6 +1293,12 @@ pub struct OperationResult {
         skip_serializing_if = "Option::is_none"
     )]
     pub lint_evidence: Option<crate::ai_lint::Evidence>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub evidence_groups: Option<Vec<super::scan_evidence::Group>>,
 }
 
 /// The closed adapter error class set of an in-envelope operation error.

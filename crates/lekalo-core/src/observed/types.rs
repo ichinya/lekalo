@@ -584,6 +584,9 @@ pub struct ObservedIndex {
     pub binding_evidence: Vec<BindingEvidence>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub native_uncertainty: Vec<crate::native_symbols::NativeUncertainty>,
+    /// Provider-defined facts are only present in the generic index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_groups: Option<Vec<super::EvidenceGroup>>,
 }
 
 impl ObservedIndex {
@@ -605,6 +608,7 @@ impl ObservedIndex {
             native_symbols: Vec::new(),
             binding_evidence: Vec::new(),
             native_uncertainty: Vec::new(),
+            evidence_groups: None,
         }
     }
 

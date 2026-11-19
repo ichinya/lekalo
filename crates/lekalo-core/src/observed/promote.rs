@@ -152,6 +152,7 @@ pub fn apply(
     selection: &PromotionSelection,
     plan_id: &str,
 ) -> Result<PromotionApplyReceipt, DiagnosticSet> {
+    let _guard = index::lock_index(ctx)?;
     let expected = plan(ctx, selection)?;
     if expected.plan != plan_id {
         return Err(diagnostic::promotion_plan_mismatch_set("plan-id"));

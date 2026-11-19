@@ -62,7 +62,10 @@ fn manifest(bytes: &[u8], kind: &str) -> Result<Manifest> {
         || !config::token(&m.id)
         || semver::Version::parse(&m.version).is_err()
         || m.kind != kind
-        || !matches!(m.kind.as_str(), "runtime" | "rules" | "library")
+        || !matches!(
+            m.kind.as_str(),
+            "runtime" | "rules" | "library" | "evidence"
+        )
         || m.libraries.len() > 8
         || m.libraries.iter().any(|(mount, source)| {
             !mount
@@ -96,6 +99,15 @@ fn manifest(bytes: &[u8], kind: &str) -> Result<Manifest> {
     match kind {
         "runtime" if m.command.is_empty() || m.command.len() > 16 || m.rules.is_some() => {
             return Err(error("runtime-entry-missing"))
+        }
+        "evidence"
+            if !m.command.is_empty()
+                || m.rules.is_some()
+                || !m.libraries.is_empty()
+                || m.files.len() != 1
+                || m.files[0] != "payload.schema.json" =>
+        {
+            return Err(error("package-manifest-invalid"))
         }
         "library" if !m.command.is_empty() || m.rules.is_some() => {
             return Err(error("package-manifest-invalid"))
@@ -174,6 +186,38 @@ fn coordinate(source: &str) -> Result<(String, String)> {
         return Err(error("source-invalid"));
     };
     Ok((url, reference.to_owned()))
+}
+
+/// Read an explicitly selected project-local data package. Use the same
+/// inventory digest as the runtime package store without populating the cache.
+pub(crate) fn evidence_schema(
+    project: &Path,
+    source: &str,
+    package_digest: &str,
+    schema_digest: &str,
+) -> Result<(String, serde_json::Value)> {
+    let dir = source
+        .strip_prefix("path:")
+        .filter(|path| config::relative(path) && crate::project_fs::path_violation(path).is_none())
+        .ok_or_else(|| error("evidence-package-source"))?;
+    let manifest_path = "lekalo.package.json";
+    let schema_path = "payload.schema.json";
+    let manifest_bytes = read(project, &format!("{dir}/{manifest_path}"), 16 * 1024)?;
+    let manifest = manifest(&manifest_bytes, "evidence")?;
+    let schema_bytes = read(project, &format!("{dir}/{schema_path}"), 64 * 1024)?;
+    let inventory = BTreeMap::from([
+        (manifest_path.to_owned(), digest(&manifest_bytes)),
+        (schema_path.to_owned(), digest(&schema_bytes)),
+    ]);
+    if inventory_digest(&inventory) != package_digest || inventory[schema_path] != schema_digest {
+        return Err(error("evidence-package-pin"));
+    }
+    let schema = config::value(&schema_bytes)?;
+    Ok((manifest.id, schema))
+}
+
+fn inventory_digest(files: &BTreeMap<String, String>) -> String {
+    digest(&serde_json::to_vec(files).expect("string inventory serializes"))
 }
 
 pub fn resolve(project: &Path, source: &str, kind: &str, offline: bool) -> Result<Package> {
@@ -298,7 +342,7 @@ fn resolve_inner(
         .iter()
         .map(|(p, b)| (p.clone(), digest(b)))
         .collect();
-    let hash = digest(&serde_json::to_vec(&files).unwrap());
+    let hash = inventory_digest(&files);
     let p = Package {
         source: source.to_owned(),
         revision,
@@ -360,7 +404,7 @@ pub fn restore(project: &Path, p: &Package) -> Result<()> {
 }
 
 pub fn verify(package: &Package) -> Result<()> {
-    if digest(&serde_json::to_vec(&package.files).unwrap()) != package.digest {
+    if inventory_digest(&package.files) != package.digest {
         return Err(error("package-lock-invalid"));
     }
     let root = root(package)?;

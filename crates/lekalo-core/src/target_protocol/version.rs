@@ -38,7 +38,9 @@ pub const NATIVE_SCAN_VERSION: &str = "1.1.0";
 /// Source-bound opt-in HTTP registration facts and framework uncertainty.
 pub const HTTP_SCAN_VERSION: &str = "1.2.0";
 pub const COMPILER_RUNTIME_VERSION: &str = "1.3.0";
-pub const SUPPORTED_VERSIONS: [&str; 8] = [
+/// Source-bound facts with independently supplied family schemas.
+pub const EVIDENCE_SCAN_VERSION: &str = "1.4.0";
+pub const SUPPORTED_VERSIONS: [&str; 9] = [
     "0.3.2",
     LINT_VERSION,
     WATCH_VERSION,
@@ -47,6 +49,7 @@ pub const SUPPORTED_VERSIONS: [&str; 8] = [
     NATIVE_SCAN_VERSION,
     HTTP_SCAN_VERSION,
     COMPILER_RUNTIME_VERSION,
+    EVIDENCE_SCAN_VERSION,
 ];
 
 pub fn supports_watch(protocol: &str) -> bool {
@@ -58,6 +61,7 @@ pub fn supports_watch(protocol: &str) -> bool {
             | NATIVE_SCAN_VERSION
             | HTTP_SCAN_VERSION
             | COMPILER_RUNTIME_VERSION
+            | EVIDENCE_SCAN_VERSION
     )
 }
 
@@ -69,13 +73,14 @@ pub fn supports_scan_custody(protocol: &str) -> bool {
             | NATIVE_SCAN_VERSION
             | HTTP_SCAN_VERSION
             | COMPILER_RUNTIME_VERSION
+            | EVIDENCE_SCAN_VERSION
     )
 }
 
 pub fn supports_native_scan(protocol: &str) -> bool {
     matches!(
         protocol,
-        NATIVE_SCAN_VERSION | HTTP_SCAN_VERSION | COMPILER_RUNTIME_VERSION
+        NATIVE_SCAN_VERSION | HTTP_SCAN_VERSION | COMPILER_RUNTIME_VERSION | EVIDENCE_SCAN_VERSION
     )
 }
 
@@ -83,8 +88,16 @@ pub fn supports_native_scan(protocol: &str) -> bool {
 pub fn supports_complete_native_plan(protocol: &str) -> bool {
     matches!(
         protocol,
-        EXEC_VERSION | NATIVE_SCAN_VERSION | HTTP_SCAN_VERSION | COMPILER_RUNTIME_VERSION
+        EXEC_VERSION
+            | NATIVE_SCAN_VERSION
+            | HTTP_SCAN_VERSION
+            | COMPILER_RUNTIME_VERSION
+            | EVIDENCE_SCAN_VERSION
     )
+}
+
+pub fn supports_compiler_runtime(protocol: &str) -> bool {
+    matches!(protocol, COMPILER_RUNTIME_VERSION | EVIDENCE_SCAN_VERSION)
 }
 
 pub fn scan_detail_limit(protocol: &str, operation: super::wire::Operation) -> usize {
