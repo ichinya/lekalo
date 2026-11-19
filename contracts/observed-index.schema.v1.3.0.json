@@ -1046,7 +1046,8 @@
               "coverage": {
                 "const": "complete"
               }
-            }
+            },
+            "type": "object"
           },
           "then": {
             "properties": {
@@ -1056,10 +1057,13 @@
                     "state": {
                       "const": "current"
                     }
-                  }
-                }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
               }
-            }
+            },
+            "type": "object"
           }
         },
         {
@@ -1068,7 +1072,8 @@
               "coverage": {
                 "const": "unassessed"
               }
-            }
+            },
+            "type": "object"
           },
           "then": {
             "properties": {
@@ -1081,10 +1086,13 @@
                         "stale"
                       ]
                     }
-                  }
-                }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
               }
-            }
+            },
+            "type": "object"
           }
         }
       ]

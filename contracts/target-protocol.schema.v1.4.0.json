@@ -1247,7 +1247,8 @@
                     "truncated": {
                       "const": true
                     }
-                  }
+                  },
+                  "type": "object"
                 },
                 "then": {
                   "properties": {
@@ -1257,13 +1258,21 @@
                           "coverage": {
                             "const": "partial"
                           }
-                        }
-                      }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
                     }
-                  }
+                  },
+                  "type": "object"
+                },
+                "type": "object",
+                "properties": {
+                  "evidence_groups": {}
                 }
               }
-            }
+            },
+            "type": "object"
           },
           "else": {
             "properties": {
@@ -1271,10 +1280,16 @@
                 "not": {
                   "required": [
                     "evidence_groups"
-                  ]
-                }
+                  ],
+                  "type": "object",
+                  "properties": {
+                    "evidence_groups": {}
+                  }
+                },
+                "type": "object"
               }
-            }
+            },
+            "type": "object"
           }
         }
       ]
