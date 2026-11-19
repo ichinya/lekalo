@@ -444,7 +444,10 @@ fn validate_bounds(response: &ResponseEnvelope) -> Result<(), ResponseInvalidity
             .is_none_or(|rows| {
                 !crate::native_symbols::valid_uncertainty_for(
                     rows,
-                    response.protocol_version == super::version::HTTP_SCAN_VERSION,
+                    matches!(
+                        response.protocol_version.as_str(),
+                        super::version::HTTP_SCAN_VERSION | super::version::EVIDENCE_SCAN_VERSION
+                    ),
                 )
             })
         {

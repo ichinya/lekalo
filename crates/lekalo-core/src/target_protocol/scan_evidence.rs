@@ -4,8 +4,8 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) const MAX_GROUPS: usize = 16;
-pub(crate) const MAX_FACTS: usize = 1024;
-const MAX_PAYLOAD_BYTES: usize = 16 * 1024;
+pub(crate) const MAX_FACTS: usize = 2048;
+const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -69,7 +69,7 @@ impl Fact {
                 .references
                 .iter()
                 .all(|(role, native)| super::scopes::is_token(role) && key(native))
-            && (1..=32).contains(&self.sources.len())
+            && (1..=64).contains(&self.sources.len())
             && self.sources.iter().all(|s| {
                 super::scopes::is_logical_path(&s.path)
                     && super::wire::is_sha256_digest(&s.source_digest)

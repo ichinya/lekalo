@@ -587,6 +587,8 @@ pub struct ObservedIndex {
     /// Provider-defined facts are only present in the generic index.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence_groups: Option<Vec<super::EvidenceGroup>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_projection: Option<String>,
 }
 
 impl ObservedIndex {
@@ -609,6 +611,7 @@ impl ObservedIndex {
             binding_evidence: Vec::new(),
             native_uncertainty: Vec::new(),
             evidence_groups: None,
+            http_projection: None,
         }
     }
 

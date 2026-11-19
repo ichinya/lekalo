@@ -5178,7 +5178,10 @@
           "$ref": "#/$defs/logicalPath"
         },
         "kind": {
-          "const": "any-surface"
+          "enum": [
+            "any-surface",
+            "framework-route"
+          ]
         },
         "detail": {
           "type": "string",
@@ -5293,7 +5296,7 @@
         "sources": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 32,
+          "maxItems": 64,
           "items": {
             "$ref": "#/$defs/scanFactSource"
           }
@@ -5331,7 +5334,7 @@
         "facts": {
           "type": "array",
           "minItems": 0,
-          "maxItems": 1024,
+          "maxItems": 2048,
           "items": {
             "$ref": "#/$defs/scanFact"
           }

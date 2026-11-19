@@ -165,6 +165,26 @@ pub fn run(
 
     let policy = super::evidence::Policy::load(&ctx.root, request.target, request.profile)
         .map_err(invalid_set)?;
+    if request
+        .command
+        .args
+        .iter()
+        .any(|arg| arg == super::evidence::PINS_FLAG)
+    {
+        return Err(invalid_set("evidence-pins-host-owned"));
+    }
+    let mut command = request.command.clone();
+    if let Some(policy) = &policy {
+        command
+            .args
+            .extend([super::evidence::PINS_FLAG.to_owned(), policy.launch_pins()]);
+    }
+    let request = &ScanRequest {
+        command,
+        target: request.target,
+        profile: request.profile,
+        limits: request.limits,
+    };
     // 0. The issue #32 resolution gate: the launched entry passes the
     // integrity/trust/revocation gates before any child process exists.
     // A real manifest beside the entry is preferred (the same manifested-
@@ -625,14 +645,18 @@ fn build_document(
     // come from the real tree, so the freshness evidence is byte-truth.
     let native_inventory =
         crate::target_protocol::version::supports_native_scan(&outcome.response.protocol_version);
-    let http_inventory =
+    let legacy_http =
         outcome.response.protocol_version == crate::target_protocol::version::HTTP_SCAN_VERSION;
+    let http_inventory = legacy_http || policy.is_some_and(|p| p.http_projection.is_some());
     let native_uncertainty = outcome
         .response
         .evidence
         .native_uncertainty
         .as_deref()
         .unwrap_or_default();
+    if !crate::native_symbols::valid_uncertainty_for(native_uncertainty, http_inventory) {
+        return Err(invalid_set("native-uncertainty"));
+    }
     for uncertainty in native_uncertainty {
         if file_fingerprint(&fs, &uncertainty.path).as_ref() != Some(&uncertainty.source_digest) {
             return Err(invalid_set("native-uncertainty-custody"));
@@ -866,12 +890,26 @@ fn build_document(
         );
     }
     if http_inventory {
+        let mut projected = admitted
+            .as_ref()
+            .map(super::evidence::Admitted::http_routes)
+            .transpose()
+            .map_err(invalid_set)?
+            .unwrap_or_default();
         let mut endpoints = Vec::new();
         for entry in entries {
-            let Some(routes) = entry.evidence.as_ref().and_then(|e| e.http_routes.as_ref()) else {
+            let detail = parse_detail(entry)?;
+            let routes = if legacy_http {
+                entry.evidence.as_ref().and_then(|e| e.http_routes.clone())
+            } else {
+                projected.remove(&detail.native)
+            };
+            let Some(routes) = routes else {
                 continue;
             };
-            let detail = parse_detail(entry)?;
+            if entry.kind != "endpoint" || routes.len() > 64 {
+                return Err(invalid_set("http-projection-carrier"));
+            }
             for route in routes {
                 if !crate::http_routes::authorized_policy(
                     &request.command.args,
@@ -908,6 +946,9 @@ fn build_document(
                     return Err(invalid_set("http-route-bound"));
                 }
             }
+        }
+        if !projected.is_empty() {
+            return Err(invalid_set("http-projection-carrier"));
         }
         endpoints.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
         document.insert("endpoints".to_owned(), Json::Array(endpoints));

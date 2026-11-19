@@ -607,7 +607,8 @@ pub fn audit(ctx: &super::ObservedContext) -> Result<AuditReceipt, DiagnosticSet
         }
         // HTTP registration can disappear in another file while the handler
         // bytes remain unchanged. Preserve the recorded semantic staleness.
-        if index.schema_version == version::HTTP_INDEX_SCHEMA_VERSION
+        if (index.schema_version == version::HTTP_INDEX_SCHEMA_VERSION
+            || index.http_projection.is_some())
             && record.state == BindingState::Stale
         {
             failures.push((record.id.clone(), "state-stale"));
