@@ -20,7 +20,7 @@ Python and FastAPI consume the Rust SDK from its owner repository through an imm
 Go, Rust, TypeScript and Python discovery are standalone executables in their language repositories. HLV mapping policy and OpenSpec requirements parsing are standalone executables in `lekalo-hlv` and `lekalo-openspec`. All seven remaining snapshots, including the Python runtime, have been removed from core; there is no `packages/`, `adapters/python/`, or source snapshot sync script. See [service configuration and installation](external-services.md).
 
 The published [PHP types, operations, and routes schemas](https://github.com/ichinya/lekalo-php/tree/f22d578d432a16a256127349486f90333c8a0ddb/contracts) live in `lekalo-php`. The
-[`laravel-migration-input.schema.v0.4.0.json`](https://github.com/ichinya/lekalo-php-laravel/blob/10e491e26899acb56d1dfd59bb644924e6b41f0c/contracts/laravel-migration-input.schema.v0.4.0.json) lives in `lekalo-php-laravel`. The development lock selects exact
+[`laravel-migration-input.schema.v0.4.0.json`](https://github.com/ichinya/lekalo-php-laravel/blob/827cbc31b88dc7cf71a6ae705093ed3880e819a5/contracts/laravel-migration-input.schema.v0.4.0.json) lives in `lekalo-php-laravel`. The development lock selects exact
 package revisions for the contract gates.
 
 ## Development and integration tests

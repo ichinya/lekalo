@@ -64,7 +64,7 @@
     },
     "lekalo-php-laravel": {
       "repository": "https://github.com/ichinya/lekalo-php-laravel.git",
-      "commit": "10e491e26899acb56d1dfd59bb644924e6b41f0c",
+      "commit": "827cbc31b88dc7cf71a6ae705093ed3880e819a5",
       "testFixtures": [
         "tests/fixtures/laravel-migrations",
         "tests/fixtures/php-laravel"
