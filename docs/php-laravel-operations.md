@@ -10,7 +10,7 @@ use-case algorithm; no facade or service locator appears in portable core.
 
 Author `lekalo/operations/<project>.operations.json`
 (`dev.lekalo.php-operations-input@0.4.0`; schema
-`contracts/php-operations-input.schema.v0.4.0.json`). The document pins
+[`php-operations-input.schema.v0.4.0.json`](https://github.com/ichinya/lekalo-php/blob/f22d578d432a16a256127349486f90333c8a0ddb/contracts/php-operations-input.schema.v0.4.0.json)). The document pins
 the exact staged IR evidence digest and the digest of the bound
 `lekalo/types/<project>.types.json`; the #58 types family is a required
 dependency and the composed generate run plans missing managed types and
@@ -95,7 +95,7 @@ The routes family binds the endpoint contracts to the Laravel HTTP
 kernel without placing business logic in controllers. The authored input
 is `lekalo/routes/<project>.routes.json`
 (`dev.lekalo.php-routes-input@0.4.0`; schema
-`contracts/php-routes-input.schema.v0.4.0.json`): one record per
+[`php-routes-input.schema.v0.4.0.json`](https://github.com/ichinya/lekalo-php/blob/f22d578d432a16a256127349486f90333c8a0ddb/contracts/php-routes-input.schema.v0.4.0.json)): one record per
 governed route naming the Model endpoint symbol, the invoked operation,
 and the custody mode — it never restates wire facts. Method, path,
 parameters, body, success/error projections, security, headers, and

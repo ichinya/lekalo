@@ -1009,7 +1009,10 @@ mod envelope_tests {
     #[test]
     fn ephemeral_scan_validates_inventory_with_unselected_generic_evidence() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures/observed/task-domain");
+            .ancestors()
+            .nth(2)
+            .unwrap()
+            .join("tests/fixtures/observed/task-domain");
         let model = crate::loader::normalize_captured_root(&root).unwrap();
         let ctx = crate::observed::ObservedContext { root, model };
         let path = "src/tasks.ts";
