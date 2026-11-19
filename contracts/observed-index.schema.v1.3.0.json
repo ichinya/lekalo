@@ -1,0 +1,1093 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dev.lekalo/observed-index.schema.v1.3.0.json",
+  "title": "Lekalo observed index 1.3.0",
+  "description": "Canonical native observed index with durable coverage and source provenance for provider-defined scan evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "identity",
+    "project",
+    "mode",
+    "adapter",
+    "revision",
+    "symbols",
+    "endpoints",
+    "schemas",
+    "target",
+    "evidence_groups"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "lekalo/observed-index/v1.3.0"
+    },
+    "identity": {
+      "const": "dev.lekalo.observed-index@1.3.0"
+    },
+    "project": {
+      "$ref": "#/$defs/moduleId"
+    },
+    "mode": {
+      "const": "observed"
+    },
+    "adapter": {
+      "$ref": "#/$defs/adapter"
+    },
+    "revision": {
+      "$ref": "#/$defs/sha256"
+    },
+    "symbols": {
+      "$ref": "#/$defs/symbols"
+    },
+    "endpoints": {
+      "$ref": "#/$defs/endpoints"
+    },
+    "schemas": {
+      "$ref": "#/$defs/schemas"
+    },
+    "target": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$"
+    },
+    "profile": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "test_bindings": {
+      "$ref": "#/$defs/testBindings"
+    },
+    "native_symbols": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/nativeSymbol"
+      }
+    },
+    "binding_evidence": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/bindingEvidence"
+      }
+    },
+    "native_uncertainty": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "$ref": "#/$defs/nativeUncertainty"
+      }
+    },
+    "evidence_groups": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/evidenceGroup"
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "moduleId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9_][a-z0-9._-]*(/[a-z0-9_][a-z0-9._-]*)*$"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        }
+      }
+    },
+    "confidence": {
+      "enum": [
+        "exact",
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ]
+    },
+    "origin": {
+      "enum": [
+        "declared",
+        "observed",
+        "inferred"
+      ]
+    },
+    "bindingStatus": {
+      "enum": [
+        "explicit",
+        "confirmed",
+        "inferred"
+      ]
+    },
+    "bindingState": {
+      "enum": [
+        "current",
+        "stale",
+        "unknown"
+      ]
+    },
+    "symbolKind": {
+      "enum": [
+        "scalar",
+        "enum",
+        "value-object",
+        "entity",
+        "command",
+        "query",
+        "event",
+        "policy",
+        "effect",
+        "endpoint"
+      ]
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "role",
+        "confidence"
+      ],
+      "properties": {
+        "target": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "role": {
+          "$ref": "#/$defs/role"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "role": {
+      "enum": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "emit",
+        "call",
+        "reference"
+      ]
+    },
+    "semanticId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,191}$"
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "type": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 192,
+          "pattern": "^[A-Za-z0-9_.?<>]{1,192}$"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      }
+    },
+    "value": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "description": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\"\\\\\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "signature": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "references": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/reference"
+          }
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/field"
+          }
+        },
+        "base": {
+          "oneOf": [
+            {
+              "enum": [
+                "string",
+                "number",
+                "boolean",
+                "date",
+                "datetime",
+                "uuid",
+                "uri"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "values": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/value"
+          }
+        },
+        "identity_fields": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$"
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "origin",
+        "confidence",
+        "adapter",
+        "revision"
+      ],
+      "properties": {
+        "origin": {
+          "$ref": "#/$defs/origin"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "revision": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "historyEvent": {
+      "enum": [
+        "recorded",
+        "bound",
+        "confirmed",
+        "moved",
+        "staled",
+        "promoted",
+        "attached"
+      ]
+    },
+    "promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan",
+        "revision",
+        "adapter"
+      ],
+      "properties": {
+        "plan": {
+          "$ref": "#/$defs/sha256"
+        },
+        "revision": {
+          "$ref": "#/$defs/sha256"
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        }
+      }
+    },
+    "externalId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "stable_key",
+        "location",
+        "fingerprint",
+        "status",
+        "state",
+        "promoted",
+        "promotion",
+        "evidence",
+        "provenance",
+        "native_tests",
+        "gates",
+        "history"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "$ref": "#/$defs/symbolKind"
+        },
+        "location": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024,
+                  "pattern": "^[a-z0-9_][a-z0-9._-]*(/[a-z0-9_][a-z0-9._-]*)*$"
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000000
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "state": {
+          "$ref": "#/$defs/bindingState"
+        },
+        "promoted": {
+          "type": "boolean"
+        },
+        "promotion": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/promotion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "gates": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/externalId"
+          }
+        },
+        "history": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/historyEntry"
+          }
+        },
+        "stable_key": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\"\\\\\\u0000-\\u001f\\u007f]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "native_tests": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/externalId"
+          }
+        },
+        "status": {
+          "$ref": "#/$defs/bindingStatus"
+        },
+        "candidates": {
+          "$ref": "#/$defs/candidates"
+        }
+      }
+    },
+    "symbols": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/symbol"
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "method",
+        "path",
+        "symbol"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(/[a-z0-9:_{}-]+)+$"
+        },
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        }
+      }
+    },
+    "endpoints": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "$ref": "#/$defs/endpoint"
+      }
+    },
+    "schemaKind": {
+      "enum": [
+        "input",
+        "output",
+        "payload"
+      ]
+    },
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "symbol"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "kind": {
+          "$ref": "#/$defs/schemaKind"
+        },
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "digest": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "schemas": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": {
+        "$ref": "#/$defs/schema"
+      }
+    },
+    "historyEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "revision"
+      ],
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/historyEvent"
+        },
+        "revision": {
+          "$ref": "#/$defs/sha256"
+        },
+        "from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9_][a-z0-9._-]*(/[a-z0-9_][a-z0-9._-]*)*$"
+        },
+        "to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9_][a-z0-9._-]*(/[a-z0-9_][a-z0-9._-]*)*$"
+        }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "native",
+        "path",
+        "confidence"
+      ],
+      "properties": {
+        "native": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9_][a-z0-9._-]*(/[a-z0-9_][a-z0-9._-]*)*$"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/candidate"
+      }
+    },
+    "testBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "symbol",
+        "path"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/externalId"
+        },
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^[a-z0-9_][a-z0-9._-]*(/[a-z0-9_][a-z0-9._-]*)*$"
+        },
+        "fingerprint": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "testBindings": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": {
+        "$ref": "#/$defs/testBinding"
+      }
+    },
+    "nativeSymbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "native",
+        "qualified_name",
+        "family",
+        "path",
+        "line",
+        "end_line",
+        "slot",
+        "declaration_only"
+      ],
+      "properties": {
+        "native": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "qualified_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "family": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^(class|interface|enum|type-alias|function|method|variable|property|module|symbol)(\\+(class|interface|enum|type-alias|function|method|variable|property|module|symbol))*$"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "slot": {
+          "enum": [
+            "static",
+            "instance"
+          ]
+        },
+        "declaration_only": {
+          "type": "boolean"
+        },
+        "member_of": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "signature": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "nativeUncertainty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "kind",
+        "detail",
+        "source_digest"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "kind": {
+          "const": "any-surface"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "source_digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "bindingEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol",
+        "native",
+        "evidence"
+      ],
+      "properties": {
+        "symbol": {
+          "$ref": "#/$defs/semanticId"
+        },
+        "native": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidence"
+        }
+      }
+    },
+    "scanFactSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "source_digest"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "source_digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "scanFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "key",
+        "references",
+        "sources",
+        "payload"
+      ],
+      "properties": {
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^\\S(?:[^\\x00-\\x1f\\x7f]*\\S)?$"
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^\\S(?:[^\\x00-\\x1f\\x7f]*\\S)?$"
+        },
+        "references": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^\\S(?:[^\\x00-\\x1f\\x7f]*\\S)?$"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/scanFactSource"
+          }
+        },
+        "payload": {}
+      }
+    },
+    "evidenceProducer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "evidenceProvenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "entry_digest",
+        "package_digest",
+        "schema_digest",
+        "scan_profile_digest",
+        "program_digest"
+      ],
+      "properties": {
+        "producer": {
+          "$ref": "#/$defs/evidenceProducer"
+        },
+        "entry_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "package_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "schema_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "scan_profile_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "program_digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "evidenceRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "state",
+        "provider",
+        "provenance",
+        "fact"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "state": {
+          "enum": [
+            "current",
+            "unassessed",
+            "stale"
+          ]
+        },
+        "provider": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9._/@-]{1,128}$"
+        },
+        "provenance": {
+          "$ref": "#/$defs/evidenceProvenance"
+        },
+        "fact": {
+          "$ref": "#/$defs/scanFact"
+        }
+      }
+    },
+    "evidenceGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "coverage",
+        "facts"
+      ],
+      "properties": {
+        "family": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "coverage": {
+          "enum": [
+            "complete",
+            "partial",
+            "unassessed"
+          ]
+        },
+        "facts": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/evidenceRecord"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "coverage": {
+                "const": "complete"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "facts": {
+                "items": {
+                  "properties": {
+                    "state": {
+                      "const": "current"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "coverage": {
+                "const": "unassessed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "facts": {
+                "items": {
+                  "properties": {
+                    "state": {
+                      "enum": [
+                        "unassessed",
+                        "stale"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -6,7 +6,7 @@ The exact [current schema](../contracts/target-protocol.schema.v0.3.2.json) and 
 
 ## Version negotiation and capability discovery
 
-This checkout probes at **exactly `0.3.2`** (`BASE_VERSION`/`VERSION`) and upgrades only to a supported version the adapter explicitly declares and proves through a second describe at that exact version. The ascending `SUPPORTED_VERSIONS` set in `crates/lekalo-core/src/target_protocol/version.rs` admits 0.3.2, 0.6.4, 0.8.0, 0.9.0, 0.9.1 and 1.1.0. The frozen predecessor schemas retain their exact members and bytes; arbitrary newer/older strings are refused.
+This checkout probes at **exactly `0.3.2`** (`BASE_VERSION`/`VERSION`) and upgrades only to a supported version the adapter explicitly declares and proves through a second describe at that exact version. The ascending `SUPPORTED_VERSIONS` set in `crates/lekalo-core/src/target_protocol/version.rs` admits 0.3.2, 0.6.4, 0.8.0, 0.9.0, 0.9.1, 1.1.0, 1.2.0, 1.3.0 and 1.4.0. The frozen predecessor schemas retain their exact members and bytes; arbitrary newer/older strings are refused.
 
 Protocol `0.9.0` retains the `0.8.0` wire surface and adds exact
 source/profile custody for successful scans, with scan detail capacity of
@@ -343,6 +343,71 @@ unknown registrations in other files. Predecessor schemas and admission remain
 frozen and reject HTTP fields. An accepted HTTP index cannot be downgraded by
 a predecessor scan. The [FastAPI guide](public-fastapi-scan.md) owns opt-in
 configuration, static rules, freshness and the public acceptance gate.
+
+## Provider-defined scan evidence (1.4.0)
+
+The [1.4.0 wire contract](../contracts/target-protocol.schema.v1.4.0.json)
+adds `result.evidence_groups` to successful scans and retains the native
+inventory and compiler runtime provenance. Every group names a family, the
+exact package and payload-schema digests, coverage (`complete` or `partial`)
+and an array of facts. A successful scan with no groups sends an empty array.
+
+A fact supplies a `subject` from that scan's native inventory, an opaque
+semantic `key` for that subject, role-named native `references`, source
+paths and their exact digests in `sources`, and a schema-validated `payload`.
+The source list includes every subject and reference file. The host checks it
+against the admitted scan entries and effective read scopes, then rechecks
+the source digests before publishing. Facts with the same family, provider,
+subject and key within one project, target and profile have the same ID
+across schema revisions.
+
+Use `lekalo.evidence.json` at the selected project root to enable families for
+one target and optional profile. Omitting `profile` selects a scan invoked
+without `--profile`. For example:
+
+```json
+{
+  "schema": "lekalo/evidence-config/v1",
+  "scans": [
+    {
+      "target": "example",
+      "producer": {
+        "id": "example-scanner",
+        "version": "1.0.0",
+        "digest": "<adapter's declared sha256 digest>"
+      },
+      "program_digest": "<sha256 of the launched executable or interpreter>",
+      "entry_digest": "<sha256 of the script or standalone executable>",
+      "families": {
+        "handlers": {
+          "source": "path:providers/handlers",
+          "package_digest": "<sha256 of the package inventory>",
+          "schema_digest": "<sha256 of payload.schema.json>"
+        }
+      }
+    }
+  ]
+}
+```
+
+The scan verifies both pinned launch files in the sandbox before starting the
+adapter. The provider owns `lekalo.package.json` and `payload.schema.json`. Use
+`lekalo/package/v1` with a stable `id`, a semantic `version`, `kind: "evidence"`
+and `files: ["payload.schema.json"]`. The package digest is the SHA-256 of
+the compact lexically sorted JSON object mapping each filename, including
+`lekalo.package.json`, to the SHA-256 of its exact file bytes. The host reads
+the selected local package offline and validates payloads against draft
+2020-12 with same-document references.
+
+The [observed index 1.3.0](../contracts/observed-index.schema.v1.3.0.json)
+records facts and their digest-bound provenance. Complete coverage replaces
+the family's prior facts, including when the result is empty. Partial coverage
+retains omitted facts as unassessed or stale. An omitted family is unassessed.
+The index refuses predecessor updates once it adopts generic evidence.
+`lekalo observe update` accepts legacy scan documents and requires
+`lekalo scan` for new evidence. Existing HTTP indexes continue to use 1.2.0
+until their provider supports migration. Generic facts are admitted by the
+standalone scan path. Watch partitions continue to use their native inventory.
 
 ## Failure classification and integration
 

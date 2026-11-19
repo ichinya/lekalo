@@ -1,6 +1,6 @@
 //! External runtimes and portable contract rules. No language registry.
 pub mod config;
-mod package;
+pub(crate) mod package;
 pub mod services;
 
 use serde::{Deserialize, Serialize};
@@ -216,7 +216,7 @@ fn rules(package: &package::Package) -> Result<Rules> {
     Ok(rules)
 }
 
-fn schema(value: &Value) -> Result<jsonschema::Validator> {
+pub(crate) fn schema(value: &Value) -> Result<jsonschema::Validator> {
     fn admit(value: &Value) -> bool {
         match value {
             Value::Object(map) => map.iter().all(|(key, value)| {

@@ -34,6 +34,7 @@ mod native_host;
 mod native_schema;
 pub mod plan;
 pub(crate) mod runtime_bundle;
+pub mod scan_evidence;
 pub mod scopes;
 pub mod selection;
 pub mod transport;
@@ -247,6 +248,13 @@ pub struct TargetClient {
     /// Watch opts into resource controls on every exchange (including
     /// macOS' honestly degraded sampled supervisor, not a hard cap).
     bounded_read_only: bool,
+    launch_pin: Option<LaunchPin>,
+}
+
+#[derive(Clone)]
+pub(crate) struct LaunchPin {
+    pub program_digest: String,
+    pub entry_digest: String,
 }
 
 impl Default for TargetClient {
@@ -274,7 +282,12 @@ impl TargetClient {
             binding: None,
             budget: SessionBudget::strict_implicit(),
             bounded_read_only: false,
+            launch_pin: None,
         }
+    }
+
+    pub(crate) fn set_launch_pin(&mut self, pin: LaunchPin) {
+        self.launch_pin = Some(pin);
     }
 
     pub(crate) fn require_bounded_read_only(&mut self) {
@@ -376,7 +389,8 @@ impl TargetClient {
             &[],
             false,
             confinement::SandboxPolicy::strict().with_bounded_resources(self.bounded_read_only),
-        )?;
+        )?
+        .with_launch_pin(self.launch_pin.clone());
         // Safe discovery discloses nothing but the request bytes: the
         // handshake runs with empty scopes and an empty environment
         // regardless of the session budget (issue #89).
@@ -672,7 +686,8 @@ impl TargetClient {
             applying,
             confinement::SandboxPolicy::from_budget(&self.budget)
                 .with_bounded_resources(self.bounded_read_only),
-        )?;
+        )?
+        .with_launch_pin(self.launch_pin.clone());
         let stage_fs = Fs::open(&sandbox.project).map_err(|_| TargetFailure::TransportFailed {
             detail: "sandbox-view",
         })?;
@@ -823,7 +838,7 @@ impl TargetClient {
                 return Err(TargetFailure::crash_or_invalid(success.exit_code, detail));
             }
         };
-        let expected_runtime = if response.protocol_version == version::COMPILER_RUNTIME_VERSION {
+        let expected_runtime = if version::supports_compiler_runtime(&response.protocol_version) {
             runtime
         } else {
             None

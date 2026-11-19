@@ -433,6 +433,7 @@ pub fn confirm(
     proposal_id: &str,
     candidate: Option<&str>,
 ) -> Result<ConfirmReceipt, DiagnosticSet> {
+    let _guard = index::lock_index(ctx)?;
     let index = index::load_index(ctx)?.ok_or_else(diagnostic::missing_index_set)?;
     let proposals = proposals_of(&index);
     let proposal = proposals
@@ -515,6 +516,7 @@ pub fn confirm_batch(
     ctx: &super::ObservedContext,
     plan_id: Option<&str>,
 ) -> Result<BatchReceipt, DiagnosticSet> {
+    let _guard = plan_id.map(|_| index::lock_index(ctx)).transpose()?;
     let mut index = index::load_index(ctx)?.ok_or_else(diagnostic::missing_index_set)?;
     let proposals = proposals_of(&index);
     let entries = confirmable(&proposals, &index);

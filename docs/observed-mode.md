@@ -127,6 +127,14 @@ normative contract is [bindings.md](bindings.md) and
 [ADR-0035](adr/0035-bindings-registry.md); the additive 0.2.16 wire is
 published next to the frozen 0.2.16 schemas.
 
+## Provider-defined evidence
+
+Projects that enable evidence families through the [target scan configuration](target-protocol.md#provider-defined-scan-evidence-140)
+store their source-bound facts in the [observed index 1.3.0](../contracts/observed-index.schema.v1.3.0.json).
+Each family records its latest coverage. A partial or omitted family preserves
+historical facts with their original provenance, and `lekalo observe check`
+refuses when a source of a current fact has changed.
+
 ## The pilot recipe (issue #49)
 
 The `taskhub` pilot (`tests/fixtures/pilot/taskhub/`, exercised end to

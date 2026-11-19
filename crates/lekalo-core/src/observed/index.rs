@@ -132,13 +132,18 @@ pub fn parse_index(bytes: &[u8]) -> Result<ObservedIndex, DiagnosticSet> {
         serde_json::from_slice(bytes).map_err(|_| diagnostic::index_io_set("index-malformed"))?;
     let http_inventory = index.schema_version == version::HTTP_INDEX_SCHEMA_VERSION
         && index.identity == version::HTTP_INDEX_IDENTITY;
+    let generic_inventory = index.schema_version == version::EVIDENCE_INDEX_SCHEMA_VERSION
+        && index.identity == version::EVIDENCE_INDEX_IDENTITY;
     let native_inventory = http_inventory
+        || generic_inventory
         || (index.schema_version == version::NATIVE_INDEX_SCHEMA_VERSION
             && index.identity == version::NATIVE_INDEX_IDENTITY);
     let predecessor = index.schema_version == version::SCHEMA_VERSION
         && index.identity == version::INDEX_IDENTITY;
     if (!native_inventory && !predecessor)
         || index.mode != version::MODE
+        || (generic_inventory && !super::evidence::valid_index(&index))
+        || (!generic_inventory && index.evidence_groups.is_some())
         || (predecessor
             && (!index.native_symbols.is_empty()
                 || !index.binding_evidence.is_empty()
@@ -255,6 +260,30 @@ pub fn update_index(
     scan_bytes: &[u8],
 ) -> Result<UpdateReceipt, DiagnosticSet> {
     let scan = wire::parse_scan(scan_bytes, ctx.model.model_version)?;
+    merge_index(ctx, scan, None)
+}
+
+pub(super) fn update_admitted(
+    ctx: &super::ObservedContext,
+    scan_bytes: &[u8],
+    evidence: super::evidence::Admitted,
+) -> Result<UpdateReceipt, DiagnosticSet> {
+    let scan = wire::parse_scan(scan_bytes, ctx.model.model_version)?;
+    merge_index(ctx, scan, Some(evidence))
+}
+
+pub(super) fn lock_index(
+    ctx: &super::ObservedContext,
+) -> Result<crate::project_writer::WriterLock, DiagnosticSet> {
+    crate::project_writer::WriterLock::acquire(&ctx.root)
+        .map_err(|_| diagnostic::index_io_set("writer-lock-held"))
+}
+
+fn merge_index(
+    ctx: &super::ObservedContext,
+    scan: super::types::ScanDocument,
+    evidence: Option<super::evidence::Admitted>,
+) -> Result<UpdateReceipt, DiagnosticSet> {
     let modules = model_modules(ctx);
     for symbol in &scan.symbols {
         let module = ObservedModule::of(&symbol.id);
@@ -262,8 +291,29 @@ pub fn update_index(
             return Err(diagnostic::unknown_module_set(&module));
         }
     }
+    let _guard = lock_index(ctx)?;
     let previous = load_index(ctx)?;
     if let Some(existing) = &previous {
+        if existing.evidence_groups.is_some() {
+            if evidence.is_none() {
+                return Err(diagnostic::scan_invalid_set(
+                    "evidence-inventory-downgrade",
+                    None,
+                ));
+            }
+            if existing.target != scan.target || existing.profile != scan.profile {
+                return Err(diagnostic::scan_invalid_set(
+                    "evidence-scope-mismatch",
+                    None,
+                ));
+            }
+        }
+        if evidence.is_some() && existing.schema_version == version::HTTP_INDEX_SCHEMA_VERSION {
+            return Err(diagnostic::scan_invalid_set(
+                "evidence-http-migration-required",
+                None,
+            ));
+        }
         if existing.project != scan.project {
             return Err(diagnostic::scan_invalid_set("project-mismatch", None));
         }
@@ -431,6 +481,24 @@ pub fn update_index(
         .test_bindings
         .sort_by(|left, right| (&left.id, &left.symbol).cmp(&(&right.id, &right.symbol)));
 
+    if let Some(evidence) = evidence {
+        index.schema_version = version::EVIDENCE_INDEX_SCHEMA_VERSION.to_owned();
+        index.identity = version::EVIDENCE_INDEX_IDENTITY.to_owned();
+        index.evidence_groups = Some(
+            evidence
+                .merge(
+                    &ctx.root,
+                    previous
+                        .as_ref()
+                        .and_then(|i| i.evidence_groups.as_deref())
+                        .unwrap_or_default(),
+                )
+                .map_err(|detail| diagnostic::scan_invalid_set(detail, None))?,
+        );
+        if !super::evidence::valid_index(&index) {
+            return Err(diagnostic::scan_invalid_set("evidence-index-invalid", None));
+        }
+    }
     save_index(ctx, &index)?;
     Ok(receipt_of(
         &index,
@@ -587,6 +655,7 @@ pub fn bind_explicit(
     path: &str,
     line: Option<u64>,
 ) -> Result<BindReceipt, DiagnosticSet> {
+    let _guard = lock_index(ctx)?;
     let mut index = require_index(ctx)?;
     let position = index
         .symbols
@@ -681,6 +750,7 @@ pub fn confirm_binding(
     ctx: &super::ObservedContext,
     symbol_id: &str,
 ) -> Result<ConfirmReceipt, DiagnosticSet> {
+    let _guard = lock_index(ctx)?;
     let mut index = require_index(ctx)?;
     let position = index
         .symbols
@@ -732,6 +802,7 @@ pub fn attach(
     native_tests: &[String],
     gates: &[String],
 ) -> Result<AttachReceipt, DiagnosticSet> {
+    let _guard = lock_index(ctx)?;
     let mut index = require_index(ctx)?;
     let position = index
         .symbols
@@ -793,6 +864,9 @@ pub fn attach(
 pub fn staleness(ctx: &super::ObservedContext) -> Result<StalenessReceipt, DiagnosticSet> {
     let index = require_index(ctx)?;
     let fs = Fs::open(&ctx.root).map_err(|_| diagnostic::index_io_set("root-unreadable"))?;
+    if !super::evidence::check_sources(&index, &fs) {
+        return Err(diagnostic::scan_invalid_set("evidence-source-stale", None));
+    }
     let mut current = 0usize;
     let mut unknown = 0usize;
     let mut failures: Vec<(String, &'static str)> = Vec::new();

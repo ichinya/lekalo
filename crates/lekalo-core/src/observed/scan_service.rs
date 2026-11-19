@@ -163,6 +163,8 @@ pub fn run(
         return Err(DomainResult::usage_error());
     }
 
+    let policy = super::evidence::Policy::load(&ctx.root, request.target, request.profile)
+        .map_err(invalid_set)?;
     // 0. The issue #32 resolution gate: the launched entry passes the
     // integrity/trust/revocation gates before any child process exists.
     // A real manifest beside the entry is preferred (the same manifested-
@@ -217,6 +219,9 @@ pub fn run(
     // synthesized implicit descriptor arms the strict default.
     let (gate_manifest, synthesized) = gate_manifest;
     let mut client = TargetClient::new(request.limits);
+    if let Some(policy) = &policy {
+        client.set_launch_pin(policy.launcher.clone());
+    }
     client.set_budget(
         SessionBudget::budget_for(if synthesized {
             None
@@ -226,6 +231,11 @@ pub fn run(
         .map_err(|failure| crate::adapter_package::diagnostic::domain_result(&failure))?,
     );
     let discovered = Discovery::run(&mut client, &request.command, &ctx.root)?;
+    if let Some(policy) = &policy {
+        policy
+            .authorize(discovered.negotiated_version, &discovered.adapter)
+            .map_err(invalid_set)?;
+    }
     if !synthesized {
         crate::adapter_package::consistency::check(&gate_manifest, &discovered).map_err(
             |mismatch| {
@@ -330,12 +340,17 @@ pub fn run(
         .as_ref()
         .and_then(|result| result.entries.as_deref())
         .unwrap_or(&[]);
-    let document = build_document(ctx, &outcome, entries, &project, request)?;
+    let (document, admitted) =
+        build_document(ctx, &outcome, entries, &project, request, policy.as_ref())?;
 
-    // 5. Merge through the accepted seam: the wire validation and merge
-    // rules are exactly the ones `observe update` uses.
+    // 5. Merge the native scan and any live-admitted evidence atomically.
+    // Raw observe updates have no authority to submit the latter.
     let bytes = serde_json::to_vec(&document).map_err(|_| invalid_set("document-shape"))?;
-    let receipt = super::update_index(ctx, &bytes).map_err(DomainResult::invalid)?;
+    let receipt = match admitted {
+        Some(evidence) => super::index::update_admitted(ctx, &bytes, evidence),
+        None => super::update_index(ctx, &bytes),
+    }
+    .map_err(DomainResult::invalid)?;
     let test_bindings = super::load_index(ctx)
         .map_err(DomainResult::invalid)?
         .map(|index| index.test_bindings.len())
@@ -393,7 +408,8 @@ pub(crate) fn validate_ephemeral(
         command: command.clone(),
         limits: crate::target_protocol::transport::TransportLimits::default(),
     };
-    let document = build_document(ctx, outcome, entries, &project.id, &request)?;
+    // Watch partitions have no standalone scan package or launch selection.
+    let (document, _) = build_document(ctx, outcome, entries, &project.id, &request, None)?;
     let bytes = serde_json::to_vec(&document).map_err(|_| invalid_set("document-shape"))?;
     super::wire::parse_scan(&bytes, ctx.model.model_version).map_err(DomainResult::invalid)?;
     Ok(())
@@ -557,7 +573,8 @@ fn build_document(
     entries: &[wire::ScanEntry],
     project: &str,
     request: &ScanRequest<'_>,
-) -> Result<Json, DomainResult> {
+    policy: Option<&super::evidence::Policy>,
+) -> Result<(Json, Option<super::evidence::Admitted>), DomainResult> {
     let fs = crate::project_fs::Fs::open(&ctx.root).map_err(|_| {
         DomainResult::from(&TargetFailure::RequestInvalid {
             detail: "project-root",
@@ -785,7 +802,27 @@ fn build_document(
         serde_json::to_vec(&revision_payload)
     }
     .map_err(|_| invalid_set("document-shape"))?;
-    let revision = format!("sha256:{}", crate::digest::sha256_hex(&revision_bytes));
+    native_symbols.sort_by(|a, b| a.native.cmp(&b.native));
+    if native_inventory && !crate::native_symbols::valid(&native_symbols) {
+        return Err(invalid_set("native-inventory"));
+    }
+    let admitted = super::evidence::admit(
+        policy,
+        &outcome.response,
+        (project, request.target, request.profile),
+        entries,
+        &native_symbols,
+        &outcome.confinement.effective.read_scopes,
+    )
+    .map_err(invalid_set)?;
+    let revision = if let Some(ref evidence) = admitted {
+        crate::runtime::digest(
+            &serde_json::to_vec(&(revision_bytes, evidence.revision_digest()))
+                .map_err(|_| invalid_set("document-shape"))?,
+        )
+    } else {
+        crate::runtime::digest(&revision_bytes)
+    };
 
     let mut document = serde_json::Map::new();
     document.insert(
@@ -813,10 +850,6 @@ fn build_document(
     document.insert("revision".to_owned(), Json::String(revision));
     document.insert("symbols".to_owned(), Json::Array(symbols));
     if native_inventory {
-        native_symbols.sort_by(|a, b| a.native.cmp(&b.native));
-        if !crate::native_symbols::valid(&native_symbols) {
-            return Err(invalid_set("native-inventory"));
-        }
         document.insert(
             "nativeSymbols".to_owned(),
             serde_json::to_value(native_symbols).map_err(|_| invalid_set("native-inventory"))?,
@@ -886,7 +919,7 @@ fn build_document(
     if !test_bindings.is_empty() {
         document.insert("testBindings".to_owned(), Json::Array(test_bindings));
     }
-    Ok(Json::Object(document))
+    Ok((Json::Object(document), admitted))
 }
 
 #[cfg(test)]

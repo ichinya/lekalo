@@ -32,10 +32,13 @@ pub const HTTP_INDEX_SCHEMA_VERSION: &str = "lekalo/observed-index/v1.2.0";
 pub const HTTP_INDEX_IDENTITY: &str = "dev.lekalo.observed-index@1.2.0";
 pub const HTTP_SCAN_SCHEMA_VERSION: &str = "lekalo/observed-scan/v1.2.0";
 
+pub const EVIDENCE_INDEX_SCHEMA_VERSION: &str = "lekalo/observed-index/v1.3.0";
+pub const EVIDENCE_INDEX_IDENTITY: &str = "dev.lekalo.observed-index@1.3.0";
+
 pub fn native_index(schema: &str) -> bool {
     matches!(
         schema,
-        NATIVE_INDEX_SCHEMA_VERSION | HTTP_INDEX_SCHEMA_VERSION
+        NATIVE_INDEX_SCHEMA_VERSION | HTTP_INDEX_SCHEMA_VERSION | EVIDENCE_INDEX_SCHEMA_VERSION
     )
 }
 

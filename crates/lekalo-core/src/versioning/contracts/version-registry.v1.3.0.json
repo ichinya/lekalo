@@ -81,10 +81,22 @@
           "reason": "Source-bound native declaration forests preserve nested and local TypeScript symbols through public scan. Frozen predecessors retain their inventory bounds and refusal semantics."
         },
         {
+          "version": "1.2.0",
+          "state": "supported",
+          "classification": "additive",
+          "reason": "Opt-in HTTP registration evidence for source-bound native scans."
+        },
+        {
           "version": "1.3.0",
           "state": "supported",
           "classification": "additive",
           "reason": "Explicit supervised compiler runtime provenance, bound to scan revision; independent strict compiler and producer sandboxes. Native scan surface remains 1.1.0."
+        },
+        {
+          "version": "1.4.0",
+          "state": "supported",
+          "classification": "additive",
+          "reason": "Issue #198 adds source-bound scan facts using payload schemas pinned by each project."
         }
       ],
       "migrations": []

@@ -1,0 +1,417 @@
+//! Project admission and persistence of provider-defined scan facts.
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
+
+use crate::native_symbols::NativeSymbol;
+use crate::project_fs::{Fs, FsErrorKind};
+use crate::runtime;
+use crate::target_protocol::scan_evidence::{self, Coverage, Fact};
+use crate::target_protocol::{scopes, version, wire, LaunchPin};
+
+use super::index::read_fingerprint;
+use super::types::ObservedIndex;
+
+const CONFIG: &str = "lekalo.evidence.json";
+type Result<T> = std::result::Result<T, &'static str>;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Config {
+    schema: String,
+    scans: Vec<Selection>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Selection {
+    target: String,
+    profile: Option<String>,
+    producer: wire::AdapterIdentity,
+    program_digest: String,
+    entry_digest: String,
+    families: BTreeMap<String, Pin>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Pin {
+    source: String,
+    package_digest: String,
+    schema_digest: String,
+}
+
+struct Provider {
+    id: String,
+    pin: Pin,
+    validator: jsonschema::Validator,
+}
+
+pub(super) struct Policy {
+    producer: wire::AdapterIdentity,
+    pub(super) launcher: LaunchPin,
+    families: BTreeMap<String, Provider>,
+}
+
+fn valid_producer(producer: &wire::AdapterIdentity) -> bool {
+    scopes::is_token(&producer.id)
+        && wire::contract_version(&producer.version)
+        && wire::is_sha256_digest(&producer.digest)
+}
+
+impl Policy {
+    pub(super) fn load(root: &Path, target: &str, profile: Option<&str>) -> Result<Option<Self>> {
+        let fs = Fs::open(root).map_err(|_| "evidence-config-unreadable")?;
+        let bytes = match fs.read_file_opt("", CONFIG, 64 * 1024) {
+            Ok(Some(bytes)) => bytes,
+            Ok(None) | Err(FsErrorKind::NotFound) => return Ok(None),
+            Err(_) => return Err("evidence-config-unreadable"),
+        };
+        let config: Config = serde_json::from_value(
+            runtime::config::value(&bytes).map_err(|_| "evidence-config-invalid")?,
+        )
+        .map_err(|_| "evidence-config-invalid")?;
+        let mut scopes = BTreeSet::new();
+        if config.schema != "lekalo/evidence-config/v1"
+            || config.scans.len() > 32
+            || config.scans.iter().any(|s| {
+                !scopes::is_token(&s.target)
+                    || s.profile.as_deref().is_some_and(|p| !scopes::is_token(p))
+                    || !valid_producer(&s.producer)
+                    || !wire::is_sha256_digest(&s.program_digest)
+                    || !wire::is_sha256_digest(&s.entry_digest)
+                    || !scopes.insert((&s.target, &s.profile))
+                    || s.families.is_empty()
+                    || s.families.len() > scan_evidence::MAX_GROUPS
+                    || s.families.iter().any(|(family, pin)| {
+                        !scopes::is_token(family)
+                            || !wire::is_sha256_digest(&pin.package_digest)
+                            || !wire::is_sha256_digest(&pin.schema_digest)
+                    })
+            })
+        {
+            return Err("evidence-config-invalid");
+        }
+        let Some(selection) = config
+            .scans
+            .into_iter()
+            .find(|s| s.target == target && s.profile.as_deref() == profile)
+        else {
+            return Ok(None);
+        };
+        let mut families = BTreeMap::new();
+        for (family, pin) in selection.families {
+            let (id, schema) = runtime::package::evidence_schema(
+                root,
+                &pin.source,
+                &pin.package_digest,
+                &pin.schema_digest,
+            )
+            .map_err(|_| "evidence-package-invalid")?;
+            let validator = runtime::schema(&schema).map_err(|_| "evidence-schema-invalid")?;
+            families.insert(family, Provider { id, pin, validator });
+        }
+        Ok(Some(Self {
+            producer: selection.producer,
+            launcher: LaunchPin {
+                program_digest: selection.program_digest,
+                entry_digest: selection.entry_digest,
+            },
+            families,
+        }))
+    }
+
+    pub(super) fn authorize(&self, protocol: &str, producer: &wire::AdapterIdentity) -> Result<()> {
+        if protocol != version::EVIDENCE_SCAN_VERSION {
+            return Err("evidence-protocol-required");
+        }
+        if &self.producer != producer {
+            return Err("evidence-producer");
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Provenance {
+    producer: wire::AdapterIdentity,
+    program_digest: String,
+    entry_digest: String,
+    package_digest: String,
+    schema_digest: String,
+    scan_profile_digest: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum State {
+    Current,
+    Unassessed,
+    Stale,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Record {
+    id: String,
+    state: State,
+    provider: String,
+    provenance: Provenance,
+    fact: Fact,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroupRecord {
+    family: String,
+    coverage: Coverage,
+    facts: Vec<Record>,
+}
+
+/// Only admission bound to a live adapter exchange can construct this value.
+pub(super) struct Admitted(Vec<GroupRecord>);
+
+fn native_paths(nodes: &[NativeSymbol]) -> BTreeMap<&str, &str> {
+    nodes
+        .iter()
+        .map(|n| (n.native.as_str(), n.path.as_str()))
+        .collect()
+}
+
+fn fact_id(scope: (&str, &str, Option<&str>), family: &str, provider: &str, fact: &Fact) -> String {
+    runtime::digest(
+        &serde_json::to_vec(&(scope, family, provider, &fact.subject, &fact.key))
+            .expect("fact identity serializes"),
+    )
+}
+
+pub(super) fn admit(
+    policy: Option<&Policy>,
+    response: &wire::ResponseEnvelope,
+    scope: (&str, &str, Option<&str>),
+    entries: &[wire::ScanEntry],
+    nodes: &[NativeSymbol],
+    read_scopes: &[String],
+) -> Result<Option<Admitted>> {
+    if response.protocol_version != version::EVIDENCE_SCAN_VERSION {
+        return if policy.is_some() {
+            Err("evidence-protocol-required")
+        } else {
+            Ok(None)
+        };
+    }
+    let groups = response
+        .result
+        .as_ref()
+        .and_then(|r| r.evidence_groups.as_ref())
+        .ok_or("evidence-groups-missing")?;
+    let profile_digest = response
+        .evidence
+        .scan_profile_digest
+        .as_ref()
+        .ok_or("evidence-scan-profile-missing")?;
+    let nodes = native_paths(nodes);
+    // Each entry digest has already been checked against the real source.
+    let sources: BTreeSet<_> = entries
+        .iter()
+        .filter_map(|entry| {
+            if !read_scopes
+                .iter()
+                .any(|scope| scopes::scope_covers(scope, &entry.path))
+            {
+                return None;
+            }
+            let digest = entry.evidence.as_ref()?.source_digest.as_deref()?;
+            Some((entry.path.as_str(), digest))
+        })
+        .collect();
+    let mut admitted = BTreeMap::new();
+    for group in groups {
+        let policy = policy.ok_or("evidence-family-disabled")?;
+        let provider = policy
+            .families
+            .get(&group.family)
+            .ok_or("evidence-family-disabled")?;
+        if group.package_digest != provider.pin.package_digest
+            || group.schema_digest != provider.pin.schema_digest
+        {
+            return Err("evidence-package-pin");
+        }
+        let mut facts = Vec::new();
+        let mut ids = BTreeSet::new();
+        for fact in &group.facts {
+            if !fact.anchors_match(&nodes)
+                || fact
+                    .sources
+                    .iter()
+                    .any(|s| !sources.contains(&(s.path.as_str(), s.source_digest.as_str())))
+            {
+                return Err("evidence-source-custody");
+            }
+            if !provider.validator.is_valid(&fact.payload) {
+                return Err("evidence-payload");
+            }
+            let id = fact_id(scope, &group.family, &provider.id, fact);
+            if !ids.insert(id.clone()) {
+                return Err("evidence-duplicate-fact");
+            }
+            let mut fact = fact.clone();
+            fact.sources.sort_by(|a, b| a.path.cmp(&b.path));
+            facts.push(Record {
+                id,
+                state: State::Current,
+                provider: provider.id.clone(),
+                provenance: Provenance {
+                    producer: policy.producer.clone(),
+                    program_digest: policy.launcher.program_digest.clone(),
+                    entry_digest: policy.launcher.entry_digest.clone(),
+                    package_digest: group.package_digest.clone(),
+                    schema_digest: group.schema_digest.clone(),
+                    scan_profile_digest: profile_digest.clone(),
+                },
+                fact,
+            });
+        }
+        facts.sort_by(|a, b| a.id.cmp(&b.id));
+        admitted.insert(
+            group.family.clone(),
+            GroupRecord {
+                family: group.family.clone(),
+                coverage: group.coverage,
+                facts,
+            },
+        );
+    }
+    if let Some(policy) = policy {
+        for family in policy.families.keys() {
+            admitted
+                .entry(family.clone())
+                .or_insert_with(|| unassessed(family));
+        }
+    }
+    Ok(Some(Admitted(admitted.into_values().collect())))
+}
+
+fn unassessed(family: &str) -> GroupRecord {
+    GroupRecord {
+        family: family.to_owned(),
+        coverage: Coverage::Unassessed,
+        facts: Vec::new(),
+    }
+}
+
+fn sources_current(fact: &Fact, fs: &Fs, cache: &mut BTreeMap<String, Option<String>>) -> bool {
+    fact.sources.iter().all(|source| {
+        cache
+            .entry(source.path.clone())
+            .or_insert_with(|| read_fingerprint(fs, &source.path).ok().flatten())
+            .as_deref()
+            == Some(source.source_digest.as_str())
+    })
+}
+
+impl Admitted {
+    pub(super) fn revision_digest(&self) -> String {
+        runtime::digest(&serde_json::to_vec(&self.0).expect("admitted evidence serializes"))
+    }
+
+    pub(super) fn merge(self, root: &Path, previous: &[GroupRecord]) -> Result<Vec<GroupRecord>> {
+        let fs = Fs::open(root).map_err(|_| "evidence-root-unreadable")?;
+        let mut cache = BTreeMap::new();
+        let mut groups: BTreeMap<_, _> =
+            self.0.into_iter().map(|g| (g.family.clone(), g)).collect();
+        for old in previous {
+            let group = groups
+                .entry(old.family.clone())
+                .or_insert_with(|| unassessed(&old.family));
+            if group.coverage == Coverage::Complete {
+                continue;
+            }
+            let newest: BTreeSet<_> = group.facts.iter().map(|r| r.id.clone()).collect();
+            for mut retained in old
+                .facts
+                .iter()
+                .filter(|r| !newest.contains(&r.id))
+                .cloned()
+            {
+                retained.state = if sources_current(&retained.fact, &fs, &mut cache) {
+                    State::Unassessed
+                } else {
+                    State::Stale
+                };
+                group.facts.push(retained);
+            }
+        }
+        let mut groups: Vec<_> = groups.into_values().collect();
+        for group in &mut groups {
+            group.facts.sort_by(|a, b| a.id.cmp(&b.id));
+            for record in group.facts.iter().filter(|r| r.state == State::Current) {
+                if !sources_current(&record.fact, &fs, &mut cache) {
+                    return Err("evidence-source-custody");
+                }
+            }
+        }
+        Ok(groups)
+    }
+}
+
+pub(super) fn check_sources(index: &ObservedIndex, fs: &Fs) -> bool {
+    let mut cache = BTreeMap::new();
+    index
+        .evidence_groups
+        .iter()
+        .flatten()
+        .flat_map(|g| &g.facts)
+        .filter(|r| r.state == State::Current)
+        .all(|r| sources_current(&r.fact, fs, &mut cache))
+}
+
+pub(super) fn valid_index(index: &ObservedIndex) -> bool {
+    let (Some(groups), Some(target)) = (&index.evidence_groups, &index.target) else {
+        return false;
+    };
+    let scope = (
+        index.project.as_str(),
+        target.as_str(),
+        index.profile.as_deref(),
+    );
+    let nodes = native_paths(&index.native_symbols);
+    groups.len() <= scan_evidence::MAX_GROUPS
+        && groups.iter().map(|g| g.facts.len()).sum::<usize>() <= scan_evidence::MAX_FACTS
+        && groups
+            .windows(2)
+            .all(|pair| pair[0].family < pair[1].family)
+        && groups.iter().all(|g| {
+            scopes::is_token(&g.family)
+                && g.facts.windows(2).all(|pair| pair[0].id < pair[1].id)
+                && g.facts.iter().all(|r| {
+                    runtime::config::token(&r.provider)
+                        && valid_producer(&r.provenance.producer)
+                        && [
+                            &r.provenance.program_digest,
+                            &r.provenance.entry_digest,
+                            &r.provenance.package_digest,
+                            &r.provenance.schema_digest,
+                            &r.provenance.scan_profile_digest,
+                        ]
+                        .iter()
+                        .all(|digest| wire::is_sha256_digest(digest))
+                        && r.fact.valid()
+                        && r.fact.sources.windows(2).all(|p| p[0].path < p[1].path)
+                        && r.id == fact_id(scope, &g.family, &r.provider, &r.fact)
+                        && match r.state {
+                            State::Current => {
+                                g.coverage != Coverage::Unassessed
+                                    && r.fact.anchors_match(&nodes)
+                                    && r.provenance.producer.id == index.adapter.id
+                                    && r.provenance.producer.version == index.adapter.version
+                                    && Some(&r.provenance.producer.digest)
+                                        == index.adapter.digest.as_ref()
+                            }
+                            _ => g.coverage != Coverage::Complete,
+                        }
+                })
+        })
+}

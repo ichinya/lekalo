@@ -106,6 +106,18 @@ pub(super) fn parse_scan(
     let value: Json = serde_json::from_str(text)
         .map_err(|_| diagnostic::scan_invalid_set("invalid-json", None))?;
     let map = as_object(&value, "document")?;
+    if map.get("protocol_version").and_then(Json::as_str)
+        == Some(crate::target_protocol::version::EVIDENCE_SCAN_VERSION)
+        || map.get("schema_version").and_then(Json::as_str)
+            == Some(version::EVIDENCE_INDEX_SCHEMA_VERSION)
+        || map.contains_key("evidenceGroups")
+        || map.contains_key("evidence_groups")
+    {
+        return Err(diagnostic::scan_invalid_set(
+            "evidence-requires-target-scan",
+            None,
+        ));
+    }
     let schema_version = string_member(map, "schemaVersion")?;
     if !version::SCAN_SCHEMA_VERSIONS.contains(&schema_version.as_str()) {
         return Err(diagnostic::scan_invalid_set("schema-version", None));
