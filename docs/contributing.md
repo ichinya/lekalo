@@ -193,6 +193,9 @@ executable permission. A missing or mismatched artifact fails the job; consumers
 do not fall back to a second Cargo build. This artifact is never used for SDK
 oracle builds or the release-native gates.
 
+The producer writes the handoff under `RUNNER_TEMP` so restored Cargo entries
+cannot replay an artifact from a different checkout.
+
 Linux jobs that can use the private `videos5-lekalo` pool use GitHub-hosted
 Ubuntu by default. Set the repository Actions variable `LEKALO_USE_SELF_HOSTED`
 to `true` only while the private pool is online. Fork pull requests always use
