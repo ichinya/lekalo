@@ -124,6 +124,14 @@ export function checkPlatform({caller=read('.github/workflows/ci.yml'),callee=re
    assert(job?.runner.includes(selfHostedOptIn),`${id}: private runners must be opt-in`);
    raw=raw.replace(`runs-on: ${job.runner}`,`runs-on: ${job.runner.replace(selfHostedOptIn,'')}`);
   }
+  if(id==='contracts-rust') {
+   const prepare='node scripts/ci-contracts-cli.mjs prepare "$RUNNER_TEMP/contracts-cli" --strip';
+   const upload=job.steps.find(step=>step.uses==='actions/upload-artifact@v7');
+   assert(job.steps.some(step=>step.run===prepare),'Contracts CLI handoff must be outside Cargo cache');
+   assert.equal(field(upload.raw,'path',10),`${expr('runner.temp')}/contracts-cli/`);
+   raw=raw.replace(prepare,'node scripts/ci-contracts-cli.mjs prepare target/contracts-cli --strip')
+    .replace(`path: ${expr('runner.temp')}/contracts-cli/`,'path: target/contracts-cli/');
+  }
   assert.equal(digest(originalLocations(raw)),hash,`Unrelated job ${id} changed`);
  }
  assert.deepEqual(Object.keys(parent).sort(),['platform',...Object.keys(inventory.unchangedJobs)].sort());
