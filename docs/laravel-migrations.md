@@ -36,8 +36,9 @@ lekalo storage laravel-plan BASE CANDIDATE --profile PROFILE \
 ```
 
 `laravel-plan` is a dry run: it prints the bounded input document the
-PHP adapter consumes. It never writes artifacts and never connects to
-a database. The migration filename's timestamp base is declared
+PHP adapter consumes. The [`laravel-migration-input.schema.v0.4.0.json`](https://github.com/ichinya/lekalo-php-laravel/blob/10e491e26899acb56d1dfd59bb644924e6b41f0c/contracts/laravel-migration-input.schema.v0.4.0.json) is
+published with the adapter. The command never writes artifacts or connects
+to a database. The migration filename's timestamp base is declared
 adapter policy (recorded in every ledger entry's `timestampBase`),
 never a CLI flag and never the wall clock.
 

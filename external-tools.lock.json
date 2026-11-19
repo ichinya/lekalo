@@ -57,14 +57,14 @@
     },
     "lekalo-php": {
       "repository": "https://github.com/ichinya/lekalo-php.git",
-      "commit": "6afccc8b74e7f10c013886a64d9c9e9f22dce0c5",
+      "commit": "f22d578d432a16a256127349486f90333c8a0ddb",
       "testFixtures": [
         "tests/fixtures/mago"
       ]
     },
     "lekalo-php-laravel": {
       "repository": "https://github.com/ichinya/lekalo-php-laravel.git",
-      "commit": "da19054702a6773f2f51854f5372997b04eb0c80",
+      "commit": "10e491e26899acb56d1dfd59bb644924e6b41f0c",
       "testFixtures": [
         "tests/fixtures/laravel-migrations",
         "tests/fixtures/php-laravel"
