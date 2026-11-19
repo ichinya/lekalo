@@ -16,7 +16,7 @@ publish = false
 [workspace.dependencies]
 clap = { version = "4.6", features = ["derive"] }
 lekalo-core = { path = "crates/lekalo-core" }
-rusqlite = { version = "0.42", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 saphyr-parser = "0.3"
