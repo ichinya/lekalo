@@ -278,3 +278,48 @@ fn validation_never_mutates_the_project() {
     assert_eq!(before, after, "no file appeared, disappeared, or changed");
     std::fs::remove_dir_all(&dir).expect("cleanup");
 }
+
+#[test]
+fn strict_validation_checks_project_schema_pin_drift() {
+    let target = workspace_path("target");
+    std::fs::create_dir_all(&target).unwrap();
+    let root = tempfile::Builder::new()
+        .prefix("project-schema-validation-")
+        .tempdir_in(target)
+        .unwrap();
+    copy_dir(
+        &workspace_path("tests/fixtures/validation/valid/base"),
+        root.path(),
+    );
+    let dir = root.path();
+    let validate = || lekalo_in(dir, &["--json", "validate", "--strict"]);
+    let baseline = validate();
+    assert_eq!(baseline.status.code(), Some(0), "{baseline:?}");
+    let lock_file = dir.join("lekalo.lock");
+    std::fs::write(&lock_file, b"invalid legacy lock").unwrap();
+    assert_eq!(validate().stdout, baseline.stdout);
+    std::fs::remove_file(lock_file).unwrap();
+
+    let directory = dir.join("lekalo/contracts/action");
+    std::fs::create_dir_all(&directory).unwrap();
+    let schema = directory.join("1.0.0.schema.json");
+    std::fs::write(&schema, b"true").unwrap();
+    let missing = validate();
+    assert_eq!(missing.status.code(), Some(1));
+    assert!(stderr_text(&missing).contains("lock.missing"));
+
+    let locked = lekalo_in(dir, &["lock"]);
+    assert_eq!(locked.status.code(), Some(0), "{locked:?}");
+    let checked = validate();
+    assert_eq!(checked.status.code(), Some(0), "{checked:?}");
+    assert_eq!(checked.stdout, baseline.stdout);
+    std::fs::write(&schema, b"false").unwrap();
+    let stale = validate();
+    assert_eq!(stale.status.code(), Some(3));
+    assert!(stdout_text(&stale).contains("lock.digest-mismatch"));
+
+    std::fs::remove_dir_all(dir.join("lekalo/contracts")).unwrap();
+    let removed = validate();
+    assert_eq!(removed.status.code(), Some(3));
+    assert!(stdout_text(&removed).contains("lock.digest-mismatch"));
+}

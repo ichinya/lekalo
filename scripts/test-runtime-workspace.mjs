@@ -185,3 +185,25 @@ test('a parent classifies module API changes against the web project’s accepte
   assert.match(JSON.stringify(run(tmp, check, 1)), /workspace-contract-changed\/web\/tasks\/api\/breaking/);
   assert.deepEqual(JSON.parse(readFileSync(bundlePath)), additive);
 });
+
+test('strict parent validation reports a child schema lock mismatch', t => {
+  const {tmp, run} = fixture(t);
+  const parent = join(tmp, 'workspace');
+  const api = join(parent, 'api');
+  cpSync(resolve('tests/fixtures/validation/valid/base'), api, {recursive: true});
+  workspace(parent, {children: {api: 'api'}});
+
+  const schemas = join(api, 'lekalo/contracts/action');
+  mkdirSync(schemas, {recursive: true});
+  const schema = join(schemas, '1.0.0.schema.json');
+  write(schema, true);
+  run(api, ['lock', '--offline']);
+  const lockPath = join(api, 'lekalo.lock');
+  const acceptedLock = readFileSync(lockPath);
+  run(parent, ['validate', '--strict']);
+
+  write(schema, false);
+  const failure = run(parent, ['validate', '--strict'], 1);
+  assert.match(JSON.stringify(failure), /workspace-child-invalid\/api\/lock\.digest-mismatch/);
+  assert.deepEqual(readFileSync(lockPath), acceptedLock);
+});

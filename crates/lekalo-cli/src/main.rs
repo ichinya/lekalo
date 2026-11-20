@@ -3123,6 +3123,11 @@ fn validate_project(
             Err(result) => return result,
         }
     };
+    if strict {
+        if let Err(failure) = LockService::check_project_schemas_at(&evidence_root) {
+            return DomainResult::from(&failure);
+        }
+    }
     if let Err(detail) = lekalo_core::observed::verify_evidence_config(&evidence_root) {
         return lekalo_core::runtime::outcome(Err(lekalo_core::runtime::error(detail)));
     }
