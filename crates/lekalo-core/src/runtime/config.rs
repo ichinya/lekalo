@@ -65,35 +65,7 @@ pub fn relative(s: &str) -> bool {
 /// Use the existing strict YAML/JSON frontends (including duplicate-key and
 /// alias rejection), then deserialize the same closed data model.
 pub fn value(bytes: &[u8]) -> Result<Value> {
-    use crate::loader::frontends::{self, Node, Parsed, Scalar, Value as NodeValue};
-    fn convert(node: Node) -> Result<Value> {
-        Ok(match node.value {
-            NodeValue::Scalar(s) => match s {
-                Scalar::Null => Value::Null,
-                Scalar::Bool(v) => Value::Bool(v),
-                Scalar::Str(v) => Value::String(v),
-                Scalar::Int(v) => Value::Number(match i64::try_from(v) {
-                    Ok(v) => v.into(),
-                    Err(_) => u64::try_from(v)
-                        .map_err(|_| error("document-number"))?
-                        .into(),
-                }),
-                Scalar::Float(v) => Value::Number(
-                    serde_json::Number::from_f64(v).ok_or_else(|| error("document-number"))?,
-                ),
-            },
-            NodeValue::Seq(items) => {
-                Value::Array(items.into_iter().map(convert).collect::<Result<_>>()?)
-            }
-            NodeValue::Map(items) => {
-                let mut out = Map::new();
-                for item in items {
-                    out.insert(item.key, convert(item.value)?);
-                }
-                Value::Object(out)
-            }
-        })
-    }
+    use crate::loader::frontends::{self, Parsed};
     if bytes.len() > 8 * 1024 * 1024 {
         return Err(error("document-limit"));
     }
@@ -101,9 +73,42 @@ pub fn value(bytes: &[u8]) -> Result<Value> {
     match frontends::parse_document(text, &crate::loader::source::LineIndex::new(text))
         .map_err(|_| error("document-invalid"))?
     {
-        Parsed::Root(root) => convert(*root),
+        Parsed::Root(root) => value_from_node(*root),
         Parsed::Empty => Err(error("document-empty")),
     }
+}
+
+pub(crate) fn value_from_node(node: crate::loader::frontends::Node) -> Result<Value> {
+    use crate::loader::frontends::{Scalar, Value as NodeValue};
+    Ok(match node.value {
+        NodeValue::Scalar(s) => match s {
+            Scalar::Null => Value::Null,
+            Scalar::Bool(v) => Value::Bool(v),
+            Scalar::Str(v) => Value::String(v),
+            Scalar::Int(v) => Value::Number(match i64::try_from(v) {
+                Ok(v) => v.into(),
+                Err(_) => u64::try_from(v)
+                    .map_err(|_| error("document-number"))?
+                    .into(),
+            }),
+            Scalar::Float(v) => Value::Number(
+                serde_json::Number::from_f64(v).ok_or_else(|| error("document-number"))?,
+            ),
+        },
+        NodeValue::Seq(items) => Value::Array(
+            items
+                .into_iter()
+                .map(value_from_node)
+                .collect::<Result<_>>()?,
+        ),
+        NodeValue::Map(items) => {
+            let mut out = Map::new();
+            for item in items {
+                out.insert(item.key, value_from_node(item.value)?);
+            }
+            Value::Object(out)
+        }
+    })
 }
 
 pub fn decode(bytes: &[u8]) -> Result<Config> {

@@ -24,6 +24,9 @@ the checker.
     ownership.json
     ownership-state.json
     change-history.json
+    contracts/
+      <name>/
+        <version>.schema.json
     modules/
       <module>/
         module.yaml
@@ -130,6 +133,8 @@ in every home and denies historical/wrong placements such as
 `.lekalo/cache.sqlite`, `.lekalo/ir/**` and misspelled consumer/privacy homes.
 This is placement validation only; privacy disposition and authority actions
 remain governed by their published contracts.
+
+[Project JSON Schemas](project-schemas.md) describes the optional contracts directory.
 
 ## Root discovery and selection
 
