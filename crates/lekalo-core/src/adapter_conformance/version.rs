@@ -12,6 +12,10 @@ pub const SCHEMA_VERSION: &str = "lekalo/adapter-conformance/v0.2.16";
 
 /// The published suite identity.
 pub const IDENTITY: &str = "dev.lekalo.adapter-conformance@0.2.16";
+/// Report identities for sessions whose catalog includes the evidence envelope.
+pub const EVIDENCE_SCHEMA_VERSION: &str = "lekalo/adapter-conformance/v1.3.0";
+pub const EVIDENCE_IDENTITY: &str = "dev.lekalo.adapter-conformance@1.3.0";
+
 /// Default per-exchange adapter deadline. The suite bounds every child
 /// exchange far below the protocol's 600 s default so a hung adapter is
 /// classified in seconds, not minutes.
