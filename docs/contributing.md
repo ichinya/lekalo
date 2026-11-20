@@ -82,7 +82,8 @@ attempt, OS, architecture, runner label, hosted `ImageOS` family, profile,
 byte sizes and SHA-256 digests. A rolling label moving to another image family
 requires a new producer; patch updates within that family remain compatible.
 Runtime uploads use compression level 6 to reduce storage and repeated download
-traffic without changing the executable bytes or the seven-day rerun window.
+traffic while preserving the executable bytes. GitHub retains the build
+handoff artifacts for three days.
 Consumers download by producer output artifact ID and validate every file
 before installing executables. A missing or unsuitable artifact fails the job;
 privacy, brownfield and SDK gates cannot hide it with a Cargo fallback in CI.
@@ -102,7 +103,7 @@ The two Rust lanes compile their own workspace/test prerequisites and use
 separate Cargo cache keys. This is test compilation, not an additional runtime
 publisher. Neither Rust lane waits for producers or for the other Rust lane.
 
-For a consumer-only rerun within seven days, rerun the individual job and retain
+For a consumer-only rerun within three days, rerun the individual job and retain
 the successful producer's artifact ID, manifest digest and producer attempt.
 Do not derive an artifact name from the consumer's current `run_attempt`.
 Rerunning a producer creates a new attempt-qualified artifact; dependent jobs
