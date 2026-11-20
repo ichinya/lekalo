@@ -107,6 +107,8 @@ pub enum LockFailure {
     Missing,
     /// The lock file is not a valid v1 wire document (`exit 1`).
     SchemaInvalid,
+    /// Project-owned schema registry admission or pin verification failed.
+    ProjectSchema(crate::project_schema::RegistryError),
     /// The wire carries a future schema discriminator (`exit 5`).
     UnsupportedSchemaVersion {
         /// The exact rejected discriminator spelling.
@@ -198,6 +200,18 @@ pub enum LockFailure {
     },
 }
 
+fn project_schema_rule(error: crate::project_schema::RegistryError) -> &'static str {
+    use crate::project_schema::RegistryError;
+    match error {
+        RegistryError::Path | RegistryError::Reference => reasons::PATH_DENIED,
+        RegistryError::Limit => "loader.limit-exceeded",
+        RegistryError::Identifier => reasons::REFERENCE_INVALID,
+        RegistryError::Dialect | RegistryError::Invalid => reasons::SCHEMA_INVALID,
+        RegistryError::Missing => reasons::STALE,
+        RegistryError::DigestMismatch => reasons::DIGEST_MISMATCH,
+    }
+}
+
 impl LockFailure {
     /// The stable reason code; `None` for loader passthrough, which carries
     /// its own complete diagnostic envelope.
@@ -206,6 +220,7 @@ impl LockFailure {
             Self::Loader(_) => None,
             Self::Missing => Some(Cow::Borrowed(reasons::MISSING)),
             Self::SchemaInvalid => Some(Cow::Borrowed(reasons::SCHEMA_INVALID)),
+            Self::ProjectSchema(error) => Some(Cow::Borrowed(project_schema_rule(*error))),
             Self::UnsupportedSchemaVersion { .. } => {
                 Some(Cow::Borrowed(reasons::UNSUPPORTED_SCHEMA_VERSION))
             }
@@ -252,6 +267,11 @@ impl LockFailure {
     pub fn exit_code(&self) -> u8 {
         match self {
             Self::Loader(outcome) => outcome.exit_code(),
+            Self::ProjectSchema(
+                crate::project_schema::RegistryError::DigestMismatch
+                | crate::project_schema::RegistryError::Path
+                | crate::project_schema::RegistryError::Reference,
+            ) => 3,
             Self::PathDenied
             | Self::Structure { denied: true, .. }
             | Self::PrivateData { .. }
@@ -273,6 +293,11 @@ impl LockFailure {
     pub fn status(&self) -> &'static str {
         match self {
             Self::Loader(outcome) => outcome.status().as_str(),
+            Self::ProjectSchema(
+                crate::project_schema::RegistryError::DigestMismatch
+                | crate::project_schema::RegistryError::Path
+                | crate::project_schema::RegistryError::Reference,
+            ) => "denied",
             Self::PathDenied
             | Self::Structure { denied: true, .. }
             | Self::PrivateData { .. }

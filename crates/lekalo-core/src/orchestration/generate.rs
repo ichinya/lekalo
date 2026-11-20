@@ -848,7 +848,8 @@ fn update_manifest(
         .collect::<Option<Vec<_>>>()
         .ok_or(ArtifactFailure::ReferenceInvalid)?;
     let stale = prepared.manifest().is_some_and(|manifest| {
-        manifest.lock_ref().digest().as_str() != lock.digest().as_str()
+        manifest.lock_ref().schema_version() != lock.schema_version()
+            || manifest.lock_ref().digest().as_str() != lock.digest().as_str()
             || manifest.model() != prepared.inputs().model()
             || manifest.ir() != prepared.inputs().ir()
     });
@@ -925,7 +926,10 @@ fn update_manifest(
     let build = |digest: Sha256Digest| {
         ArtifactManifest::new(
             project.clone(),
-            crate::artifacts::types::LockRevision::new(lock.digest().clone()),
+            crate::artifacts::types::LockRevision::new(
+                lock.schema_version(),
+                lock.digest().clone(),
+            ),
             prepared.inputs().model().clone(),
             prepared.inputs().ir().clone(),
             keep.clone(),

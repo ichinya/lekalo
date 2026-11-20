@@ -14,7 +14,7 @@ use serde::Deserialize;
 use super::types::{
     ArtifactPin, CapabilityId, CatalogRef, ComponentId, ComponentRef, ContractPin, Platform,
     ProviderKind, ResolvedAdapter, ResolvedCapability, ResolvedGenerator, ResolvedProfile, SemVer,
-    Sha256Digest, SourceKind, SourceRef, Support, SCHEMA_VERSION,
+    Sha256Digest, SourceKind, SourceRef, Support, SCHEMA_REGISTRY_VERSION, SCHEMA_VERSION,
 };
 use super::{canonical, LockDigest, LockFailure, Lockfile};
 
@@ -60,13 +60,18 @@ impl Lockfile {
             Some(serde_json::Value::String(text)) => text.clone(),
             _ => return Err(LockFailure::SchemaInvalid),
         };
-        if raw != SCHEMA_VERSION {
+        if raw != SCHEMA_VERSION && raw != SCHEMA_REGISTRY_VERSION {
             let future = raw.starts_with("lekalo/lock/v");
             return Err(if future {
                 LockFailure::UnsupportedSchemaVersion { found: raw }
             } else {
                 LockFailure::SchemaInvalid
             });
+        }
+        match (raw.as_str(), value.get("project_schemas")) {
+            (SCHEMA_VERSION, None)
+            | (SCHEMA_REGISTRY_VERSION, Some(serde_json::Value::Array(_))) => {}
+            _ => return Err(LockFailure::SchemaInvalid),
         }
         let parsed: RawLock =
             serde_json::from_value(value).map_err(|_| LockFailure::SchemaInvalid)?;
@@ -104,8 +109,24 @@ fn contract_pin(raw: &RawPin) -> Result<ContractPin, LockFailure> {
 }
 
 fn build(raw: RawLock) -> Result<Lockfile, LockFailure> {
-    if raw.schema_version != SCHEMA_VERSION {
+    let pins = raw.project_schemas.unwrap_or_default();
+    if pins.len() > crate::project_schema::MAX_SCHEMAS
+        || (raw.schema_version == SCHEMA_REGISTRY_VERSION && pins.is_empty())
+    {
         return Err(LockFailure::SchemaInvalid);
+    }
+    let pins = pins
+        .into_iter()
+        .map(|pin| {
+            crate::project_schema::Pin::parse(&pin.name, &pin.version, &pin.digest)
+                .map_err(|_| LockFailure::SchemaInvalid)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if pins
+        .windows(2)
+        .any(|pair| pair[0].identity >= pair[1].identity)
+    {
+        return Err(LockFailure::ReferenceInvalid);
     }
     // Wire sort order is part of the closed v1 format: the canonical
     // serializer emits these arrays in exactly this order.
@@ -264,7 +285,8 @@ fn build(raw: RawLock) -> Result<Lockfile, LockFailure> {
         generators,
         profiles,
         capabilities,
-    );
+    )
+    .with_project_schemas(pins);
     validate_references(&lock)?;
     Ok(lock)
 }
@@ -368,6 +390,7 @@ fn sorted_unique<'a>(ids: impl Iterator<Item = &'a str>) -> Result<(), LockFailu
 #[serde(deny_unknown_fields)]
 struct RawLock {
     schema_version: String,
+    project_schemas: Option<Vec<RawProjectSchema>>,
     resolver: RawResolver,
     core: RawCore,
     contracts: RawContracts,
@@ -375,6 +398,14 @@ struct RawLock {
     generators: Vec<RawGenerator>,
     profiles: Vec<RawProfile>,
     capabilities: Vec<RawCapability>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawProjectSchema {
+    name: String,
+    version: String,
+    digest: String,
 }
 
 #[derive(Deserialize)]

@@ -217,17 +217,43 @@ fn rules(package: &package::Package) -> Result<Rules> {
 }
 
 pub(crate) fn schema(value: &Value) -> Result<jsonschema::Validator> {
-    fn admit(value: &Value) -> bool {
+    compile_schema(value).map_err(|reason| match reason {
+        SchemaError::Invalid => error("rules-schema-invalid"),
+        _ => error("rules-schema-reference"),
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SchemaError {
+    Identifier,
+    Reference,
+    Dialect,
+    KeywordShape,
+    Invalid,
+}
+
+pub(crate) fn compile_schema(
+    value: &Value,
+) -> std::result::Result<jsonschema::Validator, SchemaError> {
+    use std::result::Result;
+    fn admit(value: &Value) -> Result<(), SchemaError> {
         match value {
-            Value::Object(map) => map.iter().all(|(key, value)| {
+            Value::Object(map) => map.iter().try_for_each(|(key, value)| {
                 if matches!(key.as_str(), "$ref" | "$dynamicRef" | "$recursiveRef") {
-                    value
-                        .as_str()
-                        .is_some_and(|s| s == "#" || s.starts_with("#/"))
+                    match value.as_str() {
+                        Some(reference) if reference == "#" || reference.starts_with("#/") => {
+                            Ok(())
+                        }
+                        _ => Err(SchemaError::Reference),
+                    }
                 } else if key == "$schema" {
-                    value.as_str() == Some("https://json-schema.org/draft/2020-12/schema")
+                    if value.as_str() == Some("https://json-schema.org/draft/2020-12/schema") {
+                        Ok(())
+                    } else {
+                        Err(SchemaError::Dialect)
+                    }
                 } else if key == "$id" {
-                    false
+                    Err(SchemaError::Identifier)
                 } else if matches!(
                     key.as_str(),
                     "properties"
@@ -236,11 +262,17 @@ pub(crate) fn schema(value: &Value) -> Result<jsonschema::Validator> {
                         | "definitions"
                         | "dependentSchemas"
                 ) {
-                    value.as_object().is_some_and(|map| map.values().all(admit))
+                    value
+                        .as_object()
+                        .ok_or(SchemaError::KeywordShape)?
+                        .values()
+                        .try_for_each(admit)
                 } else if matches!(key.as_str(), "allOf" | "anyOf" | "oneOf" | "prefixItems") {
                     value
                         .as_array()
-                        .is_some_and(|items| items.iter().all(admit))
+                        .ok_or(SchemaError::KeywordShape)?
+                        .iter()
+                        .try_for_each(admit)
                 } else if matches!(
                     key.as_str(),
                     "not"
@@ -257,17 +289,28 @@ pub(crate) fn schema(value: &Value) -> Result<jsonschema::Validator> {
                 ) {
                     admit(value)
                 } else {
-                    true
+                    Ok(())
                 }
             }),
-            Value::Array(items) => items.iter().all(admit),
-            _ => true,
+            Value::Array(items) => items.iter().try_for_each(admit),
+            _ => Ok(()),
         }
     }
-    if !admit(value) {
-        return Err(error("rules-schema-reference"));
+    struct ProjectOnly;
+    impl jsonschema::Retrieve for ProjectOnly {
+        fn retrieve(
+            &self,
+            _: &jsonschema::Uri<String>,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            Err("external schema retrieval is forbidden".into())
+        }
     }
-    jsonschema::draft202012::new(value).map_err(|_| error("rules-schema-invalid"))
+
+    admit(value)?;
+    jsonschema::draft202012::options()
+        .with_retriever(ProjectOnly)
+        .build(value)
+        .map_err(|_| SchemaError::Invalid)
 }
 
 fn executable(project: &Path, name: &str) -> Result<PathBuf> {

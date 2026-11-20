@@ -14,8 +14,11 @@ use std::fmt;
 
 use super::LockFailure;
 
-/// The closed wire discriminator of the only supported lock schema.
+/// The lock schema for projects without external JSON Schemas.
 pub const SCHEMA_VERSION: &str = "lekalo/lock/v0.3.2";
+
+/// The lock schema for projects with external JSON Schemas.
+pub const SCHEMA_REGISTRY_VERSION: &str = "lekalo/lock/v1.3.0";
 
 /// The contract identity of the published lock schema artifact.
 pub const LOCK_IDENTITY: &str = "dev.lekalo.lock@0.3.2";
@@ -938,6 +941,7 @@ impl ResolvedCapability {
 /// [`super::Lockfile::canonical_bytes`].
 #[derive(Clone, Debug)]
 pub struct Lockfile {
+    project_schemas: Vec<crate::project_schema::Pin>,
     resolver_version: SemVer,
     request_digest: Sha256Digest,
     catalogs: Vec<CatalogRef>,
@@ -995,6 +999,7 @@ impl Lockfile {
                 ))
         });
         Self {
+            project_schemas: Vec::new(),
             resolver_version,
             request_digest,
             catalogs,
@@ -1007,6 +1012,25 @@ impl Lockfile {
             generators,
             profiles,
             capabilities,
+        }
+    }
+
+    pub(crate) fn with_project_schemas(mut self, pins: Vec<crate::project_schema::Pin>) -> Self {
+        self.project_schemas = pins;
+        self
+    }
+
+    /// Exact project-owned schema references and digests in resolution order.
+    pub fn project_schemas(&self) -> &[crate::project_schema::Pin] {
+        &self.project_schemas
+    }
+
+    /// The wire discriminator corresponding to this lock's fields.
+    pub fn schema_version(&self) -> &'static str {
+        if self.project_schemas.is_empty() {
+            SCHEMA_VERSION
+        } else {
+            SCHEMA_REGISTRY_VERSION
         }
     }
 

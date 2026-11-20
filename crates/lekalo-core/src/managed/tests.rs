@@ -158,6 +158,7 @@ fn test_authority() -> super::authority::Authority {
         // The canonical digest of the committed fixture lock (its exact
         // payload bytes): unit tests that write a project lock carry the
         // same bytes, so the destination-lock compatibility check holds.
+        lock_schema: crate::lockfile::types::SCHEMA_VERSION,
         lock_digest: "sha256:7ef11bfe5df256991ea482c2831f4c99ec45db5bce63d76bffe5e47ff1113062"
             .to_owned(),
         lock_protocol: Some(PROTOCOL.to_owned()),
@@ -2947,6 +2948,7 @@ fn projection_to_renames_are_model_refused() {
     let authority = super::authority::Authority {
         model_digest: PIN_A.to_owned(),
         ir_digest: PIN_B.to_owned(),
+        lock_schema: crate::lockfile::types::SCHEMA_VERSION,
         lock_digest: PIN_A.to_owned(),
         lock_protocol: Some(PROTOCOL.to_owned()),
         model_version: "0.2.16".to_owned(),

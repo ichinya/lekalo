@@ -168,9 +168,13 @@ pub fn publish(
         ir_semver.clone(),
         Sha256Digest::parse(authority.ir_digest.as_str()).map_err(|_| invalid("authority"))?,
     );
-    let lock = LockRevision::new(crate::lockfile::LockDigest::new(
-        Sha256Digest::parse(authority.lock_digest.as_str()).map_err(|_| invalid("lock-digest"))?,
-    ));
+    let lock = LockRevision::new(
+        authority.lock_schema,
+        crate::lockfile::LockDigest::new(
+            Sha256Digest::parse(authority.lock_digest.as_str())
+                .map_err(|_| invalid("lock-digest"))?,
+        ),
+    );
     let revision = inputs_revision(&model_pin, &ir_pin);
     // Whole-project custody (finding 7): the previously published manifest
     // donates every entry and source map the scoped generation does not
@@ -181,9 +185,7 @@ pub fn publish(
     if let Some(previous) = &previous {
         // Only a manifest of the same governed project and lock revision
         // may donate entries: anything else is a foreign custody statement.
-        if previous.project().as_str() == project.as_str()
-            && previous.lock_ref().digest().as_str() == lock.digest().as_str()
-        {
+        if previous.project().as_str() == project.as_str() && previous.lock_ref() == &lock {
             carried_entries.extend(previous.artifacts().iter().cloned());
             carried_maps.extend(previous.source_maps().iter().cloned());
         }

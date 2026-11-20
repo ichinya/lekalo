@@ -14,7 +14,7 @@ const fixturesDir = join(root, "tests", "fixtures", "structure");
 const KIND_FILES = ["entities", "commands", "queries", "policies", "events", "scenarios", "bindings"];
 const MODULE_FILES = new Set(["module", ...KIND_FILES]);
 const CANONICAL_ROOT_ENTRIES = new Set([
-  "project.yaml", "modules", "targets", "authorization.yaml",
+  "project.yaml", "modules", "targets", "contracts", "authorization.yaml",
   "transport.yaml", "scenarios", "test-port.json",
   "classification.json", "classification-policy.json",
   // Issue #72: the conventional query-model home (optional).
@@ -292,7 +292,7 @@ export async function validateProject(projectRoot) {
     if (entry.name === "error-registry.json" && !entry.isFile()) return invalid(["structure.document-missing", "lekalo/error-registry.json"]);
     if (entry.name === "ownership.json" && !entry.isFile()) return invalid(["structure.document-missing", "lekalo/ownership.json"]);
     if (entry.name === "ownership-state.json" && !entry.isFile()) return invalid(["structure.document-missing", "lekalo/ownership-state.json"]);
-    if (["modules", "targets"].includes(entry.name) && !entry.isDirectory()) return invalid(["structure.directory-required", `lekalo/${entry.name}`]);
+    if (["modules", "targets", "contracts"].includes(entry.name) && !entry.isDirectory()) return invalid(["structure.directory-required", `lekalo/${entry.name}`]);
   }
 
   const modulesDir = join(lekaloDir, "modules");

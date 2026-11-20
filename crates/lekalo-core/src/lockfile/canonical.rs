@@ -84,8 +84,8 @@ impl Canon {
 
 /// The canonical wire representation of one parsed lock.
 pub(crate) fn lock_canon(lock: &Lockfile) -> Canon {
-    Canon::object(vec![
-        ("schema_version", Canon::str(super::types::SCHEMA_VERSION)),
+    let mut fields = vec![
+        ("schema_version", Canon::str(lock.schema_version())),
         (
             "resolver",
             Canon::object(vec![
@@ -283,7 +283,25 @@ pub(crate) fn lock_canon(lock: &Lockfile) -> Canon {
                     .collect(),
             ),
         ),
-    ])
+    ];
+    if !lock.project_schemas().is_empty() {
+        fields.push((
+            "project_schemas",
+            Canon::array(
+                lock.project_schemas()
+                    .iter()
+                    .map(|pin| {
+                        Canon::object(vec![
+                            ("name", Canon::str(pin.identity.id().as_str())),
+                            ("version", Canon::str(pin.identity.version().as_str())),
+                            ("digest", Canon::str(pin.digest.as_str())),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ));
+    }
+    Canon::object(fields)
 }
 
 fn component_ref_canon(reference: &super::types::ComponentRef) -> Canon {
