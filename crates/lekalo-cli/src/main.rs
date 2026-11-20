@@ -3113,7 +3113,10 @@ fn validate_project(
         other => other,
     };
     let evidence_root = if runtime {
-        root.to_owned()
+        match runtime_config::resolve_root(root) {
+            Ok(root) => root,
+            Err(error) => return lekalo_core::runtime::outcome(Err(error)),
+        }
     } else {
         match lekalo_core::loader::resolve_selection_root(&selection_for(project)) {
             Ok(root) => root,
@@ -3124,7 +3127,8 @@ fn validate_project(
         return lekalo_core::runtime::outcome(Err(lekalo_core::runtime::error(detail)));
     }
     if runtime {
-        let result = runtime_config::check(project.as_deref());
+        let result =
+            lekalo_core::runtime::outcome(lekalo_core::runtime::check(&evidence_root, None));
         if !preserve_model
             || model.is_none()
             || result.status() != lekalo_core::result::Status::Valid
