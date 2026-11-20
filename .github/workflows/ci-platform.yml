@@ -60,7 +60,7 @@ jobs:
           path: ${{ runner.temp }}/runtime-debug/
           if-no-files-found: error
           compression-level: 6
-          retention-days: 7
+          retention-days: 3
 
   build-release:
     name: "build-release"
@@ -103,7 +103,7 @@ jobs:
           path: ${{ runner.temp }}/runtime-release/
           if-no-files-found: error
           compression-level: 6
-          retention-days: 7
+          retention-days: 3
 
   cli-core:
     name: "cli-core"
