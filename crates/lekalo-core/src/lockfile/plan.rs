@@ -26,6 +26,7 @@ use super::{
     canonical, ChangeEntry, LockFailure, LockReceipt, LockState, UpdateReceipt, VersionDigest,
 };
 use crate::loader::LoadSelection;
+use crate::project_schema::{Pin, Registry, RegistryError};
 use crate::versioning::registry::VersionRegistry;
 
 /// The single-file concurrency guard under the runtime cache; distinct
@@ -59,6 +60,7 @@ pub struct PreparedLockUpdate {
     root: PathBuf,
     before: Option<Sha256Digest>,
     after_bytes: Vec<u8>,
+    project_schemas: Vec<Pin>,
     after_digest: LockDigest,
     plan_id: String,
     resolver_version: String,
@@ -124,8 +126,9 @@ impl LockService {
         create_if_absent: bool,
     ) -> Result<LockReceipt, LockFailure> {
         let root = crate::loader::root_for_selection(selection).map_err(LockFailure::Loader)?;
-        match Self::read_state_at(&root)? {
+        match Self::read_unchecked_state_at(&root)? {
             LockState::Present(lock) => {
+                verify_project_schemas(&root, lock.project_schemas())?;
                 let registry = embedded_registry()?;
                 // The verification request is the caller's request merged
                 // with the component identities the lock itself pins: a
@@ -223,10 +226,12 @@ impl LockService {
                 read_raw_lock_at(&prepared.root)?.as_deref(),
                 prepared.before.as_ref(),
             )?;
+            verify_project_schemas(&prepared.root, &prepared.project_schemas)?;
             return Ok(receipt(&prepared, false));
         }
         let guard = acquire_guard(&prepared.root)?;
-        let outcome = Self::apply_locked(&prepared);
+        let outcome = verify_project_schemas(&prepared.root, &prepared.project_schemas)
+            .and_then(|()| Self::apply_locked(&prepared));
         drop(guard);
         outcome?;
         Ok(receipt(&prepared, true))
@@ -324,7 +329,9 @@ impl LockService {
         request: &ResolutionRequest,
         resolved: Lockfile,
     ) -> Result<PreparedLockUpdate, LockFailure> {
-        let existing = Self::read_state_at(root)?;
+        let existing = Self::read_unchecked_state_at(root)?;
+        let project_schemas = load_project_schemas(root)?;
+        let resolved = resolved.with_project_schemas(project_schemas.clone());
         let before = existing.as_lock().map(|lock| {
             Sha256Digest::from_hex(&crate::digest::sha256_hex(&canonical::payload_bytes(lock)))
         });
@@ -351,6 +358,7 @@ impl LockService {
             root: root.to_path_buf(),
             before,
             after_bytes,
+            project_schemas,
             after_digest,
             plan_id,
             resolver_version: resolved.resolver_version().as_str().to_owned(),
@@ -361,6 +369,13 @@ impl LockService {
 
     /// Read and fully validate the lock file at an already-selected root.
     pub fn read_state_at(root: &Path) -> Result<LockState, LockFailure> {
+        let state = Self::read_unchecked_state_at(root)?;
+        let schemas = state.as_lock().map_or(&[][..], Lockfile::project_schemas);
+        verify_project_schemas(root, schemas)?;
+        Ok(state)
+    }
+
+    fn read_unchecked_state_at(root: &Path) -> Result<LockState, LockFailure> {
         let fs = crate::project_fs::Fs::open(root).map_err(|_| LockFailure::Structure {
             code: "structure.root-unreadable".to_owned(),
             denied: false,
@@ -399,6 +414,20 @@ impl LockService {
             &bytes,
         )?)))
     }
+}
+
+fn load_project_schemas(root: &Path) -> Result<Vec<Pin>, LockFailure> {
+    Registry::load(root)
+        .map(|registry| registry.owned_pins())
+        .map_err(LockFailure::ProjectSchema)
+}
+
+fn verify_project_schemas(root: &Path, expected: &[Pin]) -> Result<(), LockFailure> {
+    let actual = load_project_schemas(root)?;
+    if actual != expected {
+        return Err(LockFailure::ProjectSchema(RegistryError::DigestMismatch));
+    }
+    Ok(())
 }
 
 fn request_for_model(
@@ -521,12 +550,23 @@ pub(crate) fn diff_opt(before: Option<&Lockfile>, after: &Lockfile) -> Vec<Chang
                 profile.digest().as_str().to_owned(),
             ));
         }
+        for pin in lock.project_schemas() {
+            let name = pin.identity.id().as_str();
+            let version = pin.identity.version().as_str();
+            items.push((
+                "project-schema".to_owned(),
+                format!("{name}@{version}"),
+                version.to_owned(),
+                pin.digest.as_str().to_owned(),
+            ));
+        }
         items
     }
     fn kind_of(kind: &str) -> &'static str {
         match kind {
             "adapter" => "adapter",
             "generator" => "generator",
+            "project-schema" => "project-schema",
             _ => "profile",
         }
     }

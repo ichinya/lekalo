@@ -847,10 +847,11 @@ impl Fs {
 }
 
 /// The closed set of canonical `lekalo/` root entries.
-pub(crate) const CANONICAL_ROOT_ENTRIES: [&str; 17] = [
+pub(crate) const CANONICAL_ROOT_ENTRIES: [&str; 18] = [
     "project.yaml",
     "modules",
     "targets",
+    "contracts",
     "authorization.yaml",
     "transport.yaml",
     // Issue #47: the scenario IR home and the test-port contract are
@@ -1144,8 +1145,10 @@ impl Fs {
                     StructureReason::new("structure.document-missing").at("lekalo/project.yaml")
                 );
             }
-            if matches!(name.as_str(), "modules" | "targets" | "scenarios" | "types")
-                && entry_type != EntryType::Directory
+            if matches!(
+                name.as_str(),
+                "modules" | "targets" | "scenarios" | "types" | "contracts"
+            ) && entry_type != EntryType::Directory
             {
                 return Err(StructureReason::new("structure.directory-required")
                     .at(format!("lekalo/{name}")));

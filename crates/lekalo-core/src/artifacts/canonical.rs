@@ -17,7 +17,7 @@ use serde::Deserialize;
 use super::types::{
     AdapterRef, ArtifactEntry, ArtifactKey, ArtifactKind, ArtifactManifest, ArtifactPath,
     Lifecycle, LockRevision, ProjectRef, RegenerationPolicy, SemanticOwnerId, SourceMapBinding,
-    SourceRange, IDENTITY, SCHEMA_VERSION,
+    SourceRange, IDENTITY, REGISTRY_IDENTITY, REGISTRY_SCHEMA_VERSION, SCHEMA_VERSION,
 };
 use super::ArtifactFailure;
 use crate::digest::sha256_hex;
@@ -42,7 +42,7 @@ impl ArtifactManifest {
             Some(serde_json::Value::String(text)) => text.clone(),
             _ => return Err(ArtifactFailure::ManifestInvalid),
         };
-        if raw_schema != SCHEMA_VERSION {
+        if raw_schema != SCHEMA_VERSION && raw_schema != REGISTRY_SCHEMA_VERSION {
             let future = raw_schema.starts_with("lekalo/artifact-manifest/v");
             return Err(if future {
                 ArtifactFailure::UnsupportedSchemaVersion { found: raw_schema }
@@ -100,9 +100,15 @@ fn object(fields: Vec<(&'static str, Canonical)>) -> Canonical {
 }
 
 fn manifest_canon(manifest: &ArtifactManifest, with_digest: bool) -> Canonical {
+    let lock_schema = manifest.lock_ref().schema_version();
+    let (schema, identity) = if lock_schema == crate::lockfile::types::SCHEMA_REGISTRY_VERSION {
+        (REGISTRY_SCHEMA_VERSION, REGISTRY_IDENTITY)
+    } else {
+        (SCHEMA_VERSION, IDENTITY)
+    };
     let mut fields = vec![
-        ("schema_version", Canonical::Str(SCHEMA_VERSION.to_owned())),
-        ("identity", Canonical::Str(IDENTITY.to_owned())),
+        ("schema_version", Canonical::Str(schema.to_owned())),
+        ("identity", Canonical::Str(identity.to_owned())),
         (
             "project_ref",
             Canonical::Str(manifest.project().as_str().to_owned()),
@@ -110,10 +116,7 @@ fn manifest_canon(manifest: &ArtifactManifest, with_digest: bool) -> Canonical {
         (
             "lock_ref",
             object(vec![
-                (
-                    "schema_version",
-                    Canonical::Str(crate::lockfile::types::SCHEMA_VERSION.to_owned()),
-                ),
+                ("schema_version", Canonical::Str(lock_schema.to_owned())),
                 (
                     "digest",
                     Canonical::Str(manifest.lock_ref().digest().as_str().to_owned()),
@@ -392,18 +395,22 @@ struct RawRange {
 }
 
 fn build(raw: RawManifest) -> Result<ArtifactManifest, ArtifactFailure> {
-    if raw.schema_version != SCHEMA_VERSION || raw.identity != IDENTITY {
-        return Err(ArtifactFailure::ManifestInvalid);
-    }
+    let lock_schema = match (raw.schema_version.as_str(), raw.identity.as_str()) {
+        (SCHEMA_VERSION, IDENTITY) => crate::lockfile::types::SCHEMA_VERSION,
+        (REGISTRY_SCHEMA_VERSION, REGISTRY_IDENTITY) => {
+            crate::lockfile::types::SCHEMA_REGISTRY_VERSION
+        }
+        _ => return Err(ArtifactFailure::ManifestInvalid),
+    };
     let model_pin = pin(&raw.inputs.model)?;
     let ir_pin = pin(&raw.inputs.ir)?;
     let grammar_version = model_version(raw.inputs.model.version.as_str())?;
     let project = ProjectRef::parse(&raw.project_ref, grammar_version)
         .ok_or(ArtifactFailure::ManifestInvalid)?;
-    if raw.lock_ref.schema_version != crate::lockfile::types::SCHEMA_VERSION {
+    if raw.lock_ref.schema_version != lock_schema {
         return Err(ArtifactFailure::ManifestInvalid);
     }
-    let lock_ref = LockRevision::new(LockDigest::new(digest(&raw.lock_ref.digest)?));
+    let lock_ref = LockRevision::new(lock_schema, LockDigest::new(digest(&raw.lock_ref.digest)?));
 
     if raw.artifacts.len() > 65536 || raw.source_maps.len() > 65536 {
         return Err(ArtifactFailure::ManifestInvalid);

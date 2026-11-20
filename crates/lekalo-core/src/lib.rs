@@ -55,6 +55,7 @@ pub mod ownership;
 pub mod portability;
 pub mod privacy;
 pub mod project_fs;
+pub mod project_schema;
 mod project_writer;
 pub mod provider;
 pub mod query_model;

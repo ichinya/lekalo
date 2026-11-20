@@ -32,13 +32,14 @@ pub(crate) fn prepare(
         SemVer::parse(crate::ir::version::VERSION).map_err(|_| fail("ownership-ir-version"))?,
         pin(&authority.ir_digest)?,
     );
-    let lock = LockRevision::new(crate::lockfile::LockDigest::new(pin(
-        &authority.lock_digest
-    )?));
-    if previous.as_ref().is_some_and(|old| {
-        old.project().as_str() != project.as_str()
-            || old.lock_ref().digest().as_str() != lock.digest().as_str()
-    }) {
+    let lock = LockRevision::new(
+        authority.lock_schema,
+        crate::lockfile::LockDigest::new(pin(&authority.lock_digest)?),
+    );
+    if previous
+        .as_ref()
+        .is_some_and(|old| old.project().as_str() != project.as_str() || old.lock_ref() != &lock)
+    {
         return Err(fail("ownership-manifest-authority"));
     }
     let mut entries = previous

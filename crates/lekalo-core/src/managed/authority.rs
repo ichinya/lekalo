@@ -25,6 +25,8 @@ pub struct Authority {
     pub ir_digest: String,
     /// `sha256:` pin over the exact lock file bytes.
     pub lock_digest: String,
+    /// The discriminator of the bound lock schema.
+    pub lock_schema: &'static str,
     /// The pinned target protocol of the lock, when published.
     pub lock_protocol: Option<String>,
     /// The compiled Model contract version (e.g. `0.2.16`).
@@ -355,6 +357,7 @@ pub(crate) fn derive_loaded(
         lock_digest: crate::lockfile::canonical::lock_digest(&lock)
             .as_str()
             .to_owned(),
+        lock_schema: lock.schema_version(),
         lock_protocol: lock
             .target_protocol()
             .map(|pin| pin.version().as_str().to_owned()),

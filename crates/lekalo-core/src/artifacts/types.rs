@@ -16,6 +16,10 @@ use crate::project_fs;
 
 /// The closed v1 discriminator.
 pub const SCHEMA_VERSION: &str = "lekalo/artifact-manifest/v0.2.16";
+/// Manifest wire discriminator when the generating lock includes project schemas.
+pub const REGISTRY_SCHEMA_VERSION: &str = "lekalo/artifact-manifest/v1.3.0";
+pub const REGISTRY_IDENTITY: &str = "dev.lekalo.artifact-manifest@1.3.0";
+
 /// The independent contract identity; unrelated to every other family.
 pub const IDENTITY: &str = "dev.lekalo.artifact-manifest@0.2.16";
 /// The exact derived-manifest home inside the reserved `.lekalo/generated`
@@ -480,12 +484,17 @@ impl ArtifactEntry {
 /// The exact lockfile revision a manifest was generated under.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LockRevision {
+    schema: &'static str,
     digest: LockDigest,
 }
 
 impl LockRevision {
-    pub(crate) fn new(digest: LockDigest) -> Self {
-        Self { digest }
+    pub(crate) fn new(schema: &'static str, digest: LockDigest) -> Self {
+        Self { schema, digest }
+    }
+
+    pub fn schema_version(&self) -> &'static str {
+        self.schema
     }
 
     pub fn digest(&self) -> &LockDigest {
