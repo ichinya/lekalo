@@ -19,7 +19,7 @@ pub mod baseline;
 pub mod bindings;
 pub mod diagnostic;
 mod evidence;
-pub use evidence::GroupRecord as EvidenceGroup;
+pub use evidence::{verify_config as verify_evidence_config, GroupRecord as EvidenceGroup};
 pub mod index;
 pub mod promote;
 pub mod scan_service;

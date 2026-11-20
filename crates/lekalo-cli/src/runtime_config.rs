@@ -66,11 +66,8 @@ pub fn configured(project: Option<&str>) -> bool {
         && runtime::load(root).is_ok_and(|c| c.components.is_empty() && c.services.is_empty()))
 }
 
-pub fn check(project: Option<&str>) -> lekalo_core::DomainResult {
-    let result = std::fs::canonicalize(project.unwrap_or("."))
-        .map_err(|_| runtime::error("project-missing"))
-        .and_then(|root| runtime::check(&root, None));
-    runtime::outcome(result)
+pub(crate) fn resolve_root(project: &Path) -> Result<PathBuf> {
+    std::fs::canonicalize(project).map_err(|_| runtime::error("project-missing"))
 }
 
 pub fn run(command: Command, json_output: bool) -> u8 {
@@ -81,9 +78,9 @@ pub fn run(command: Command, json_output: bool) -> u8 {
         | Command::Export { project, .. }
         | Command::Check { project, .. } => project,
     };
-    let root = match std::fs::canonicalize(project) {
+    let root = match resolve_root(project) {
         Ok(root) => root,
-        Err(_) => return emit(Err(runtime::error("project-missing")), json_output),
+        Err(error) => return emit(Err(error), json_output),
     };
     let result = match command {
         Command::Restore { .. } => {

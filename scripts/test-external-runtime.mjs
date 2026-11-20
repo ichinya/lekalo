@@ -73,6 +73,15 @@ for(const attempt of [()=>readHost(${JSON.stringify(secret)}),()=>writeHost(${JS
     const report=ok(run(project,['validate','--strict'],cache));
     assert.equal(report.components.length,2);
     assert(report.components.every(c=>c.status==='valid'));
+    if(process.platform!=='win32'){
+      symlinkSync(project,join(scratch,'linked-project'),'dir');
+      const validateLinked=()=>run(scratch,['validate','--strict','--project','linked-project'],cache);
+      assert.deepEqual(ok(validateLinked()),report);
+      const evidenceConfig=join(project,'lekalo.evidence.json');
+      emit(evidenceConfig,{schema:'lekalo/evidence-config/unknown',scans:[]});
+      refused(validateLinked(),'evidence-config-invalid');
+      rmSync(evidenceConfig);
+    }
     assert.equal(readFileSync(secret,'utf8'),'not granted to runtime');
     const cliDigest=()=>createHash('sha256').update(readFileSync(cli)).digest('hex');
     const initialCliDigest=cliDigest();
