@@ -104,8 +104,10 @@ fn manifest(bytes: &[u8], kind: &str) -> Result<Manifest> {
             if !m.command.is_empty()
                 || m.rules.is_some()
                 || !m.libraries.is_empty()
-                || m.files.len() != 1
-                || m.files[0] != "payload.schema.json" =>
+                || !m.files.iter().any(|path| path == "payload.schema.json")
+                || m.files.iter().any(|path| {
+                    !matches!(path.as_str(), "payload.schema.json" | "bindings.json")
+                }) =>
         {
             return Err(error("package-manifest-invalid"))
         }
@@ -188,6 +190,12 @@ fn coordinate(source: &str) -> Result<(String, String)> {
     Ok((url, reference.to_owned()))
 }
 
+pub(crate) struct EvidencePackage {
+    pub id: String,
+    pub payload: serde_json::Value,
+    pub bindings: Option<Vec<u8>>,
+}
+
 /// Read an explicitly selected project-local data package. Use the same
 /// inventory digest as the runtime package store without populating the cache.
 pub(crate) fn evidence_schema(
@@ -195,7 +203,7 @@ pub(crate) fn evidence_schema(
     source: &str,
     package_digest: &str,
     schema_digest: &str,
-) -> Result<(String, serde_json::Value)> {
+) -> Result<EvidencePackage> {
     let dir = source
         .strip_prefix("path:")
         .filter(|path| config::relative(path) && crate::project_fs::path_violation(path).is_none())
@@ -205,15 +213,25 @@ pub(crate) fn evidence_schema(
     let manifest_bytes = read(project, &format!("{dir}/{manifest_path}"), 16 * 1024)?;
     let manifest = manifest(&manifest_bytes, "evidence")?;
     let schema_bytes = read(project, &format!("{dir}/{schema_path}"), 64 * 1024)?;
-    let inventory = BTreeMap::from([
+    let mut inventory = BTreeMap::from([
         (manifest_path.to_owned(), digest(&manifest_bytes)),
         (schema_path.to_owned(), digest(&schema_bytes)),
     ]);
+    let bindings = if manifest.files.iter().any(|file| file == "bindings.json") {
+        let bytes = read(project, &format!("{dir}/bindings.json"), 16 * 1024)?;
+        inventory.insert("bindings.json".to_owned(), digest(&bytes));
+        Some(bytes)
+    } else {
+        None
+    };
     if inventory_digest(&inventory) != package_digest || inventory[schema_path] != schema_digest {
         return Err(error("evidence-package-pin"));
     }
-    let schema = config::value(&schema_bytes)?;
-    Ok((manifest.id, schema))
+    Ok(EvidencePackage {
+        id: manifest.id,
+        payload: config::value(&schema_bytes)?,
+        bindings,
+    })
 }
 
 fn inventory_digest(files: &BTreeMap<String, String>) -> String {

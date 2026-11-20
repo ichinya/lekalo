@@ -508,21 +508,39 @@ fn clean_never_deletes_observed_files() {
 }
 
 fn evidence_package(project: &Path, id: &str, schema: Value) -> Value {
+    evidence_package_with_binding(project, id, schema, None)
+}
+
+fn evidence_package_with_binding(
+    project: &Path,
+    id: &str,
+    schema: Value,
+    binding: Option<Value>,
+) -> Value {
     let directory = project.join(id);
     std::fs::create_dir_all(&directory).unwrap();
+    let mut files = vec!["payload.schema.json"];
+    if binding.is_some() {
+        files.push("bindings.json");
+    }
     let manifest = serde_json::to_vec(&serde_json::json!({
         "schema":"lekalo/package/v1", "id":id, "version":"1.0.0",
-        "kind":"evidence", "files":["payload.schema.json"]
+        "kind":"evidence", "files":files
     }))
     .unwrap();
     let schema = serde_json::to_vec(&schema).unwrap();
     std::fs::write(directory.join("lekalo.package.json"), &manifest).unwrap();
     std::fs::write(directory.join("payload.schema.json"), &schema).unwrap();
     let schema_digest = lekalo_core::runtime::digest(&schema);
-    let inventory = serde_json::json!({
+    let mut inventory = serde_json::json!({
         "lekalo.package.json":lekalo_core::runtime::digest(&manifest),
         "payload.schema.json":schema_digest,
     });
+    if let Some(binding) = binding {
+        let bytes = serde_json::to_vec(&binding).unwrap();
+        std::fs::write(directory.join("bindings.json"), &bytes).unwrap();
+        inventory["bindings.json"] = serde_json::json!(lekalo_core::runtime::digest(&bytes));
+    }
     serde_json::json!({
         "source":format!("path:{id}"), "schema_digest":schema_digest,
         "package_digest":lekalo_core::runtime::digest(&serde_json::to_vec(&inventory).unwrap()),
@@ -575,6 +593,65 @@ fn validate_checks_every_evidence_package_without_an_adapter() {
     let malformed = validate();
     assert_eq!(exit_code(&malformed), 1, "{}", stderr_text(&malformed));
     assert!(stderr_text(&malformed).contains("evidence-schema-invalid"));
+}
+
+#[test]
+fn validate_checks_pinned_evidence_binding_declarations() {
+    use serde_json::json;
+
+    let sandbox = Sandbox::new("validate-evidence-bindings");
+    let project = sandbox.root.join("proj");
+    let schema = json!({
+        "type":"object", "required":["id"], "properties":{"id":{"type":"string"}}
+    });
+    let rule = json!({
+        "schema":"lekalo/evidence-binding-rules/v1.3.0",
+        "kind":"command", "identity":["id"], "match":{"id":"id"},
+        "source_roles":["subject","dependency"]
+    });
+    let digest = lekalo_core::runtime::digest(b"fixture");
+    let validate = |rule: &Value| {
+        let pin = evidence_package_with_binding(
+            &project,
+            "binding-provider",
+            schema.clone(),
+            Some(rule.clone()),
+        );
+        let config = json!({
+            "schema":"lekalo/evidence-config/v1",
+            "scans":[{
+                "target":"example",
+                "producer":{"id":"example","version":"1.0.0","digest":digest},
+                "entry_digest":digest, "program_digest":digest,
+                "families":{"example":pin}
+            }]
+        });
+        std::fs::write(
+            project.join("lekalo.evidence.json"),
+            serde_json::to_vec(&config).unwrap(),
+        )
+        .unwrap();
+        sandbox.run(&["--json", "validate", "--strict", "--project", "proj"])
+    };
+    let valid = validate(&rule);
+    assert_eq!(exit_code(&valid), 0, "{}", stderr_text(&valid));
+
+    std::fs::write(project.join("binding-provider/bindings.json"), b"{}").unwrap();
+    let unpinned = sandbox.run(&["--json", "validate", "--project", "proj"]);
+    assert_eq!(exit_code(&unpinned), 1);
+    assert!(stderr_text(&unpinned).contains("evidence-package-invalid"));
+
+    let mut invalid = rule.clone();
+    invalid["identity"] = json!(["unknown"]);
+    let result = validate(&invalid);
+    assert_eq!(exit_code(&result), 1);
+    assert!(stderr_text(&result).contains("evidence-binding-payload-field"));
+
+    invalid = rule;
+    invalid["kind"] = json!("unsupported-kind");
+    let result = validate(&invalid);
+    assert_eq!(exit_code(&result), 1);
+    assert!(stderr_text(&result).contains("evidence-binding-rule-invalid"));
 }
 
 #[test]
@@ -760,6 +837,27 @@ fn generic_scan_uses_pinned_provider_schemas_through_the_public_cli() {
     let next: Value = serde_json::from_slice(&accepted("1.4.0", &json!([empty_labels]))).unwrap();
     assert_eq!(next["evidence_groups"][1]["facts"], json!([]));
     assert_eq!(next["evidence_groups"][0]["facts"][0]["state"], "stale");
+
+    let with_binding = evidence_package_with_binding(
+        &project,
+        "labels-provider",
+        json!({"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}),
+        Some(json!({
+            "schema":"lekalo/evidence-binding-rules/v1.3.0",
+            "kind":"command", "identity":["id"], "match":{"id":"id"},
+            "source_roles":["subject","dependency"]
+        })),
+    );
+    config["scans"][0]["families"]["labels"] = with_binding.clone();
+    write_config(&config);
+    let mut with_sources = group("labels", &with_binding, json!({"id":"taskboard.task"}));
+    let checked = accepted("1.4.0", &json!([with_sources]));
+    with_sources["facts"][0]["references"] = json!({});
+    assert_scan_refusal(
+        &scan("1.4.0", &json!([with_sources])),
+        "evidence-binding-source-role",
+    );
+    assert_eq!(std::fs::read(&index_path).unwrap(), checked);
 
     std::fs::remove_file(&config_path).unwrap();
     std::fs::remove_file(&index_path).unwrap();

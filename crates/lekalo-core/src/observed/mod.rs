@@ -16,6 +16,7 @@
 //! declared targets and profiles, and native test bindings.
 
 pub mod baseline;
+mod binding_rule;
 pub mod bindings;
 pub mod diagnostic;
 mod evidence;
