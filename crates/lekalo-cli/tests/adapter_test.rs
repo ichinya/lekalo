@@ -131,6 +131,7 @@ fn the_battery_checks_generic_evidence_from_the_synthetic_adapter() {
     let script = alias_free(path.to_str().unwrap());
     for (mode, expected_exit, expected_state) in [
         ("valid", 0, "pass"),
+        ("targetless", 0, "pass"),
         ("bad-digest", 4, "fail"),
         ("bad-subject", 4, "fail"),
         ("empty", 0, "skipped"),

@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const crypto = require("node:crypto");
 
 const request = JSON.parse(fs.readFileSync(0, "utf8"));
+const mode = process.argv[2];
 const digest = bytes => "sha256:" + crypto.createHash("sha256").update(bytes).digest("hex");
 const adapter = {id: "conformance-evidence", version: "1.0.0", digest: digest("conformance fixture")};
 const response = {
@@ -20,12 +21,14 @@ if (request.operation === "describe") {
     ir_versions: ["0.2.16", "0.8.0"],
     operations: ["describe", "scan"],
     transports: ["stdin"],
-    targets: ["conformance-evidence"],
+    targets: mode === "targetless" ? [] : ["conformance-evidence"],
     read_scopes: ["src/**"],
     capabilities: {"scan.symbols": "full"},
   };
 } else if (request.operation === "scan") {
-  const mode = process.argv[2];
+  if (mode === "targetless" && request.target != null) {
+    throw new Error("the fixture scan must omit its target");
+  }
   const path = "src/conformance-evidence.txt";
   const sourceDigest = digest(fs.readFileSync(path));
   const native = "conformance-marker";

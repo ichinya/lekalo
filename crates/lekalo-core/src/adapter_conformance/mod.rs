@@ -305,19 +305,10 @@ impl Runner {
             self.record(CheckOutcome::skipped(id, "operation-undeclared"));
             return;
         }
-        let Some(target) = self.first_target() else {
-            self.record(CheckOutcome::fail(
-                id,
-                CheckClass::Protocol,
-                "scan-target-missing",
-            ));
-            return;
-        };
-        let profile = self.selected_profile(None);
         let shape = CallShape {
             operation: Operation::Scan,
-            target: Some(target.clone()),
-            profile: profile.clone(),
+            target: self.first_target(),
+            profile: self.selected_profile(None),
             ..CallShape::default()
         };
         let exchange = match self.call(&shape) {
@@ -336,8 +327,8 @@ impl Runner {
             return;
         }
         let request = crate::observed::scan_service::ScanRequest {
-            target: &target,
-            profile: profile.as_deref(),
+            target: shape.target.as_deref().unwrap_or_default(),
+            profile: shape.profile.as_deref(),
             command: self.command.clone(),
             limits: TransportLimits::default(),
         };

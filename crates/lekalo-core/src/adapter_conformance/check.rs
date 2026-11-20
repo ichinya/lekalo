@@ -306,8 +306,8 @@ impl CheckOutcome {
     }
 }
 
-/// The full catalog in its fixed order.
-pub const CATALOG: [CheckId; 30] = [
+/// The predecessor report's catalog in its fixed order.
+pub const CATALOG: [CheckId; 29] = [
     CheckId::DescribeHandshake,
     CheckId::DescribeNegotiation,
     CheckId::CapabilityDeclaration,
@@ -337,14 +337,13 @@ pub const CATALOG: [CheckId; 30] = [
     CheckId::StorageMigrationGate,
     CheckId::StorageCollationUniqueness,
     CheckId::ClassificationPreservation,
-    CheckId::EvidenceEnvelope,
 ];
 
 pub(super) fn catalog(protocol: &str) -> impl Iterator<Item = CheckId> {
     let evidence = protocol == crate::target_protocol::version::EVIDENCE_SCAN_VERSION;
     CATALOG
         .into_iter()
-        .filter(move |id| evidence || *id != CheckId::EvidenceEnvelope)
+        .chain(evidence.then_some(CheckId::EvidenceEnvelope))
 }
 
 /// The aggregate verdict of one run, derived from the check outcomes.

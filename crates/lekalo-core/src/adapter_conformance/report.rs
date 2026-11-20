@@ -8,7 +8,7 @@
 
 use serde::Serialize;
 
-use super::check::{CheckId, CheckOutcome, CheckState, Verdict, CATALOG};
+use super::check::{catalog, CheckId, CheckOutcome, CheckState, Verdict};
 use super::version::{self, Profile};
 
 /// The verified-compatibility badge: issued only for the exact protocol
@@ -138,7 +138,7 @@ impl ConformanceReport {
                 ir: None,
             }
         };
-        let checks = super::check::catalog(session.protocol)
+        let checks = catalog(session.protocol)
             .map(|id| {
                 let not_run = CheckOutcome {
                     id,
@@ -322,9 +322,7 @@ impl ConformanceReport {
 impl CheckId {
     /// Resolve a report row id back to the catalog entry.
     pub fn from_report_id(text: &str) -> Self {
-        CATALOG
-            .iter()
-            .copied()
+        catalog(crate::target_protocol::version::EVIDENCE_SCAN_VERSION)
             .find(|id| id.as_str() == text)
             .unwrap_or(CheckId::DescribeHandshake)
     }
