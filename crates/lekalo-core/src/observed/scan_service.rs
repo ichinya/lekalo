@@ -361,7 +361,7 @@ pub fn run(
         .and_then(|result| result.entries.as_deref())
         .unwrap_or(&[]);
     let (document, admitted) = build_document(
-        ctx,
+        &ctx.root,
         &outcome.response,
         entries,
         &project,
@@ -438,7 +438,7 @@ pub(crate) fn validate_ephemeral(
     };
     // Watch partitions have no standalone scan package or launch selection.
     let (document, _) = build_document(
-        ctx,
+        &ctx.root,
         response,
         entries,
         &project.id,
@@ -448,6 +448,35 @@ pub(crate) fn validate_ephemeral(
     let bytes = serde_json::to_vec(&document).map_err(|_| invalid_set("document-shape"))?;
     super::wire::parse_scan(&bytes, ctx.model.model_version).map_err(DomainResult::invalid)?;
     Ok(())
+}
+
+/// Check the native inventory and evidence envelope from a live conformance exchange.
+pub(crate) fn validate_conformance_envelope(
+    root: &std::path::Path,
+    exchange: &crate::target_protocol::CallOutcome,
+    project: &str,
+    request: &ScanRequest<'_>,
+) -> Result<bool, DomainResult> {
+    let entries = exchange
+        .response
+        .result
+        .as_ref()
+        .and_then(|result| result.entries.as_deref())
+        .unwrap_or_default();
+    build_document(
+        root,
+        &exchange.response,
+        entries,
+        project,
+        request,
+        EvidenceAdmission::Conformance(&exchange.confinement.effective.read_scopes),
+    )?;
+    Ok(exchange
+        .response
+        .result
+        .as_ref()
+        .and_then(|result| result.evidence_groups.as_ref())
+        .is_some_and(|groups| groups.iter().any(|group| !group.facts.is_empty())))
 }
 
 /// The registered invalid set for a refused document, owned by the
@@ -603,6 +632,7 @@ enum EvidenceAdmission<'a> {
         read_scopes: &'a [String],
     },
     Ephemeral,
+    Conformance(&'a [String]),
 }
 
 /// Assemble the observed-scan document from the adapter response. Every
@@ -611,14 +641,14 @@ enum EvidenceAdmission<'a> {
 //  candidate set holds all of them — the core never collapses the set to
 //  a first match. Fingerprints are computed here, from the real tree.
 fn build_document(
-    ctx: &super::ObservedContext,
+    root: &std::path::Path,
     response: &wire::ResponseEnvelope,
     entries: &[wire::ScanEntry],
     project: &str,
     request: &ScanRequest<'_>,
     admission: EvidenceAdmission<'_>,
 ) -> Result<(Json, Option<super::evidence::Admitted>), DomainResult> {
-    let fs = crate::project_fs::Fs::open(&ctx.root).map_err(|_| {
+    let fs = crate::project_fs::Fs::open(root).map_err(|_| {
         DomainResult::from(&TargetFailure::RequestInvalid {
             detail: "project-root",
         })
@@ -673,8 +703,11 @@ fn build_document(
     let http_inventory = legacy_http
         || matches!(&admission, EvidenceAdmission::Standalone { policy: Some(policy), .. }
             if policy.http_projection.is_some());
-    let ephemeral_generic = matches!(&admission, EvidenceAdmission::Ephemeral)
-        && response.protocol_version == crate::target_protocol::version::EVIDENCE_SCAN_VERSION;
+    let ephemeral_generic = matches!(
+        &admission,
+        EvidenceAdmission::Ephemeral | EvidenceAdmission::Conformance(_)
+    ) && response.protocol_version
+        == crate::target_protocol::version::EVIDENCE_SCAN_VERSION;
     let native_uncertainty = response
         .evidence
         .native_uncertainty
@@ -873,6 +906,11 @@ fn build_document(
         )
         .map_err(invalid_set)?,
         EvidenceAdmission::Ephemeral => None,
+        EvidenceAdmission::Conformance(read_scopes) => {
+            super::evidence::verify_envelope(response, entries, &native_symbols, read_scopes)
+                .map_err(invalid_set)?;
+            None
+        }
     };
     let revision = if let Some(ref evidence) = admitted {
         crate::runtime::digest(
@@ -1062,7 +1100,7 @@ mod envelope_tests {
 
         let entries = response.result.as_ref().unwrap().entries.as_ref().unwrap();
         let refused = build_document(
-            &ctx,
+            &ctx.root,
             &response,
             entries,
             "taskboard",

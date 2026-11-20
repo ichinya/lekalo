@@ -138,18 +138,17 @@ impl ConformanceReport {
                 ir: None,
             }
         };
-        let checks = CATALOG
-            .iter()
+        let checks = super::check::catalog(session.protocol)
             .map(|id| {
                 let not_run = CheckOutcome {
-                    id: *id,
+                    id,
                     class: id.class(),
                     state: CheckState::Skipped,
                     detail: Some("not-run"),
                 };
                 let outcome = outcomes
                     .iter()
-                    .find(|candidate| candidate.id == *id)
+                    .find(|candidate| candidate.id == id)
                     .unwrap_or(&not_run);
                 ReportCheck {
                     id: id.as_str(),
@@ -173,10 +172,16 @@ impl ConformanceReport {
                 .filter(|outcome| outcome.state == CheckState::Skipped)
                 .count(),
         };
+        let (schema_version, suite_identity) =
+            if session.protocol == crate::target_protocol::version::EVIDENCE_SCAN_VERSION {
+                (version::EVIDENCE_SCHEMA_VERSION, version::EVIDENCE_IDENTITY)
+            } else {
+                (version::SCHEMA_VERSION, version::IDENTITY)
+            };
         Self {
-            schema_version: version::SCHEMA_VERSION,
+            schema_version,
             suite: SuiteSection {
-                identity: version::IDENTITY,
+                identity: suite_identity,
                 version: suite_version,
                 profile: profile.as_str(),
             },

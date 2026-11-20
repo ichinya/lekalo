@@ -123,3 +123,47 @@ fn the_junit_report_prints_for_failing_runs_too() {
     assert!(stdout.contains("<failure"));
     assert!(stdout.contains("<skipped"));
 }
+
+#[test]
+fn the_battery_checks_generic_evidence_from_the_synthetic_adapter() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/adapter-conformance/evidence-adapter.cjs");
+    let script = alias_free(path.to_str().unwrap());
+    for (mode, expected_exit, expected_state) in [
+        ("valid", 0, "pass"),
+        ("bad-digest", 4, "fail"),
+        ("bad-subject", 4, "fail"),
+        ("empty", 0, "skipped"),
+    ] {
+        let output = run_adapter(&[
+            "--report",
+            "json",
+            "--timeout-ms",
+            "30000",
+            "--repeats",
+            "2",
+            "node",
+            &script,
+            mode,
+        ]);
+        let document: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .unwrap_or_else(|failure| panic!("{mode}: {failure}: {}", stderr_text(&output)));
+        assert_eq!(exit_code(&output), expected_exit, "{mode}: {document}");
+        let report = &document["report"];
+        assert_eq!(
+            report["schema_version"],
+            "lekalo/adapter-conformance/v1.3.0"
+        );
+        assert_eq!(report["session"]["protocol"], "1.4.0");
+        let check = report["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == "evidence.envelope")
+            .expect("evidence check in report");
+        assert_eq!(check["state"], expected_state, "{mode}: {check}");
+        if expected_state != "pass" {
+            assert_eq!(report["badge"]["issued"], false);
+        }
+    }
+}

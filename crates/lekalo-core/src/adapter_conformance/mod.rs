@@ -267,7 +267,22 @@ impl Runner {
             return;
         }
         self.capability_phase();
+        if self.negotiated == Some(crate::target_protocol::version::EVIDENCE_SCAN_VERSION)
+            && std::fs::write(
+                self.root.join(fixture::EVIDENCE_PATH),
+                fixture::EVIDENCE_SOURCE,
+            )
+            .is_err()
+        {
+            self.record(CheckOutcome::fail(
+                CheckId::EvidenceEnvelope,
+                CheckClass::Process,
+                "fixture-write",
+            ));
+            return;
+        }
         self.confinement_baseline();
+        self.evidence_phase();
         self.input_phase();
         self.read_determinism_phase();
         self.generate_phase();
@@ -279,6 +294,64 @@ impl Runner {
         self.redaction_phase();
         self.storage_phase();
         self.classification_phase();
+    }
+
+    fn evidence_phase(&mut self) {
+        if self.negotiated != Some(crate::target_protocol::version::EVIDENCE_SCAN_VERSION) {
+            return;
+        }
+        let id = CheckId::EvidenceEnvelope;
+        if !self.declared(Operation::Scan) {
+            self.record(CheckOutcome::skipped(id, "operation-undeclared"));
+            return;
+        }
+        let Some(target) = self.first_target() else {
+            self.record(CheckOutcome::fail(
+                id,
+                CheckClass::Protocol,
+                "scan-target-missing",
+            ));
+            return;
+        };
+        let profile = self.selected_profile(None);
+        let shape = CallShape {
+            operation: Operation::Scan,
+            target: Some(target.clone()),
+            profile: profile.clone(),
+            ..CallShape::default()
+        };
+        let exchange = match self.call(&shape) {
+            Ok(exchange) => exchange,
+            Err(failure) => {
+                self.record_failure(id, &failure);
+                return;
+            }
+        };
+        if exchange.response.status != wire::ResponseStatus::Ok {
+            self.record(CheckOutcome::fail(
+                id,
+                CheckClass::Feature,
+                "scan-not-successful",
+            ));
+            return;
+        }
+        let request = crate::observed::scan_service::ScanRequest {
+            target: &target,
+            profile: profile.as_deref(),
+            command: self.command.clone(),
+            limits: TransportLimits::default(),
+        };
+        let result = crate::observed::scan_service::validate_conformance_envelope(
+            &self.root,
+            &exchange,
+            fixture::PROJECT_ID,
+            &request,
+        );
+        self.record(match result {
+            Ok(true) => CheckOutcome::pass(id),
+            Ok(false) => CheckOutcome::skipped(id, "no-evidence-observed"),
+            Err(_) => CheckOutcome::fail(id, CheckClass::Protocol, "evidence-envelope-invalid"),
+        });
     }
 
     /// The issue #117 storage checks. The core never contacts a
@@ -1661,32 +1734,37 @@ impl Runner {
 
     /// Mark every still-unrecorded check as not-run.
     fn skip_remaining(&mut self) {
-        for id in check::CATALOG {
+        for id in check::catalog(self.negotiated.unwrap_or_default()) {
             self.outcomes
                 .entry(id)
                 .or_insert_with(|| CheckOutcome::skipped(id, "not-run"));
         }
     }
 
-    fn exchange(&mut self, shape: &CallShape) -> Exchange {
-        let Ok(fs) = Fs::open(&self.root) else {
-            return Exchange::Failed(TargetFailure::RequestInvalid { detail: "root" });
-        };
-        match self.client.call(
+    fn call(
+        &mut self,
+        shape: &CallShape,
+    ) -> Result<crate::target_protocol::CallOutcome, TargetFailure> {
+        let fs =
+            Fs::open(&self.root).map_err(|_| TargetFailure::RequestInvalid { detail: "root" })?;
+        let outcome = self.client.call(
             &self.command,
             shape.to_call_request(),
             &self.root,
             &fs,
             None,
-        ) {
-            Ok(outcome) => {
-                let bytes = serde_json::to_string(&outcome.response).unwrap_or_default();
-                self.exchanges.push(bytes);
-                Exchange::Ok {
-                    response: Box::new(outcome.response),
-                    plan_id: outcome.plan_id,
-                }
-            }
+        )?;
+        self.exchanges
+            .push(serde_json::to_string(&outcome.response).unwrap_or_default());
+        Ok(outcome)
+    }
+
+    fn exchange(&mut self, shape: &CallShape) -> Exchange {
+        match self.call(shape) {
+            Ok(outcome) => Exchange::Ok {
+                response: Box::new(outcome.response),
+                plan_id: outcome.plan_id,
+            },
             Err(failure) => Exchange::Failed(failure),
         }
     }
@@ -1731,14 +1809,8 @@ impl Runner {
     /// Assemble the terminal outcome.
     fn finish(mut self) -> SuiteOutcome {
         self.skip_remaining();
-        let ordered: Vec<CheckOutcome> = check::CATALOG
-            .iter()
-            .map(|id| {
-                self.outcomes
-                    .get(id)
-                    .cloned()
-                    .unwrap_or_else(|| CheckOutcome::skipped(*id, "not-run"))
-            })
+        let ordered: Vec<CheckOutcome> = check::catalog(self.negotiated.unwrap_or_default())
+            .filter_map(|id| self.outcomes.remove(&id))
             .collect();
         let adapter = self
             .capabilities

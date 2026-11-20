@@ -17,10 +17,11 @@ Everything after the program path is passed to the adapter verbatim
 
 ## Checks and classes
 
-The closed catalog carries twenty-nine checks in fixed order (the
+The legacy catalog carries twenty-nine checks in fixed order (the
 five `transport.*` rows were added by issue #70, the five
 `storage.*` rows by issue #117, and `classification.preservation`
-by issue #87). Every check
+by issue #87). Protocol 1.4.0 sessions use report identity
+`lekalo/adapter-conformance/v1.3.0` and add `evidence.envelope`. Every check
 has one inherent failure class; a recorded failure carries the class of
 what actually failed, so a crash during a feature check is a
 process-class failure and a refusal during any exchange is a
@@ -56,12 +57,20 @@ security-class one:
 | `storage.introspection-checked` | security | declared scan surface answers a real read-only exchange; evidence grammar stays checked, read-only, credential-free (issue #117) |
 | `storage.migration-gate` | feature | destructive diff of the fixture produces an explicitly gated plan step (issue #117) |
 | `storage.collation-uniqueness` | feature | declared collation stays visible beside the derived unique index (issue #117) |
+| `evidence.envelope` (protocol 1.4.0) | protocol | scan groups bind to the native inventory and exact source bytes inside the effective read scopes |
 
 Skipped checks record a bounded reason (`operation-undeclared`,
 `legacy-session`, `no-ir-operations`, `default-profile`,
 `nothing-to-clean`, `no-error-observed`, `fixture-not-in-read-scopes`,
 `no-repeatable-probe`, `not-run`, `no-plan`, `capability-undeclared`). A
 skip is never a pass.
+
+The evidence check scans the embedded project, including
+`src/conformance-evidence.txt`. It uses the production wire decoder and checks
+native subjects and references, source digests, and duplicate fact identities.
+A successful scan with no facts records `no-evidence-observed`. Project-specific
+package pins and payload schemas are exercised by the configured project
+`lekalo scan` workflow.
 
 ## Verdict, hard failures, and the badge
 
