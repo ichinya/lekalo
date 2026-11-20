@@ -22,6 +22,8 @@ confirmation, applies a deterministic clean of orphaned generated files.
   model file, lockfile, cache database, report bundle, or release
   attestation, and never the sole copy of a semantic decision.
 
+A lock with project schema pins yields [artifact manifest 1.3.0](../contracts/artifact-manifest.schema.v1.3.0.json). Its `lock_ref` binds lock format 1.3.0 and the exact lock digest. Existing manifests retain format 0.2.16 and their original lock reference.
+
 ## Canonical form and digest domains
 
 - Compact UTF-8 JSON, no BOM, no comments, object keys in unsigned UTF-8

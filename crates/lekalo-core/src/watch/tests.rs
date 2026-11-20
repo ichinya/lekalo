@@ -47,6 +47,54 @@ fn edit_planner(root: &Path) {
     std::fs::write(path, text.replace("version: 1", "version: 2")).unwrap();
 }
 #[test]
+fn registry_lock_pins_select_the_matching_watch_result_and_event() {
+    use crate::lockfile::{plan::LockService, resolution::CandidateSet, LockRequirement};
+
+    let fixture = project();
+    let cwd = std::env::current_dir().unwrap();
+    let target = cwd.join("target");
+    std::fs::create_dir_all(&target).unwrap();
+    let root = tempfile::tempdir_in(target).unwrap();
+    materialize(
+        &snapshot::capture(fixture.path(), false).unwrap(),
+        root.path(),
+    )
+    .unwrap();
+    let directory = root.path().join("lekalo/contracts/action");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(directory.join("1.0.0.schema.json"), b"true").unwrap();
+    let relative = root.path().strip_prefix(&cwd).unwrap();
+    let receipt = LockService::lock(
+        &crate::loader::LoadSelection {
+            project: Some(relative.to_string_lossy().replace('\\', "/")),
+        },
+        CandidateSet::empty(),
+        LockRequirement::Optional,
+        true,
+    )
+    .unwrap();
+    let mut service = WatchService::new(WatchRequest::default()).unwrap();
+    let outcome = run(&mut service, root.path(), 1);
+    assert_eq!(
+        outcome.pins.revisions.lock_digest.as_deref(),
+        Some(receipt.lock_digest.as_str())
+    );
+    assert_eq!(outcome.pins.versions.lock, "lekalo/lock/v1.3.0");
+    assert_eq!(outcome.schema_version, "lekalo/watch-result/v1.3.0");
+    let event = WatchEvent::run_completed(
+        1,
+        "registry-test",
+        1,
+        0,
+        &outcome.source_revision.clone(),
+        outcome.status,
+        outcome,
+    );
+    assert_eq!(event.value()["schemaVersion"], "lekalo/watch-event/v1.3.0");
+    assert_eq!(WatchEvent::decode(&event.to_json_line()).unwrap(), event);
+}
+
+#[test]
 fn selective_subjects_and_parse_ir_work_are_measured_not_filtered() {
     let root = project();
     let mut service = WatchService::new(WatchRequest::default()).unwrap();

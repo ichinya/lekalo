@@ -144,12 +144,24 @@ fn adapter_bound_value(owner: &str, path: &str, content: &str) -> Value {
 /// Author the canonical manifest for one sandbox from the live inputs.
 fn author_manifest(sandbox: &Sandbox, artifacts: Vec<Value>, source_maps: Vec<Value>) {
     let inputs = GenerateService::inputs(&sandbox.selection()).expect("inputs receipt");
+    let lock = LockService::read_state_at(&sandbox.root).unwrap();
+    let lock_schema = lock.present().unwrap().schema_version();
+    let (schema, identity) = match lock_schema {
+        "lekalo/lock/v1.3.0" => (
+            "lekalo/artifact-manifest/v1.3.0",
+            "dev.lekalo.artifact-manifest@1.3.0",
+        ),
+        _ => (
+            "lekalo/artifact-manifest/v0.2.16",
+            "dev.lekalo.artifact-manifest@0.2.16",
+        ),
+    };
     let mut document = json!({
-        "schema_version": "lekalo/artifact-manifest/v0.2.16",
-        "identity": "dev.lekalo.artifact-manifest@0.2.16",
+        "schema_version": schema,
+        "identity": identity,
         "project_ref": "planner",
         "lock_ref": {
-            "schema_version": "lekalo/lock/v0.3.2",
+            "schema_version": lock_schema,
             "digest": inputs.lock_digest,
         },
         "inputs": {
@@ -269,6 +281,26 @@ fn valid_manifest_with_matching_bytes_checks_clean() {
         assert_eq!(receipt.counts.clean, 1);
         assert!(receipt.manifest_digest.as_deref().is_some());
         let _ = (content_digest, lock_digest);
+    });
+}
+
+#[test]
+fn manifests_bind_the_project_schema_lock_version() {
+    with_project(|sandbox| {
+        let directory = sandbox.root.join("lekalo/contracts/action");
+        std::fs::create_dir_all(&directory).unwrap();
+        let schema = directory.join("1.0.0.schema.json");
+        std::fs::write(&schema, b"true").unwrap();
+        sandbox.create_lock();
+        author_manifest(sandbox, vec![], vec![]);
+        let bytes = std::fs::read(sandbox.manifest_path()).unwrap();
+        let parsed = lekalo_core::artifacts::ArtifactManifest::parse_canonical(&bytes).unwrap();
+        assert_eq!(parsed.lock_ref().schema_version(), "lekalo/lock/v1.3.0");
+        let receipt = GenerateService::check(&sandbox.selection()).unwrap();
+        assert_eq!(receipt.verdict, "clean");
+
+        std::fs::write(schema, b"false").unwrap();
+        assert!(GenerateService::check(&sandbox.selection()).is_err());
     });
 }
 

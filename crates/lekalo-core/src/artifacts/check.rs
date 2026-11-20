@@ -345,7 +345,8 @@ pub(crate) fn run_check(prepared: &Prepared) -> Result<CheckReceipt, ArtifactFai
 
     // Exact bindings first: a manifest from another lock revision or other
     // inputs is stale as a whole; regenerate it, never patch it.
-    if manifest.lock_ref().digest().as_str() != prepared.lock.digest().as_str()
+    if manifest.lock_ref().schema_version() != prepared.lock.schema_version()
+        || manifest.lock_ref().digest().as_str() != prepared.lock.digest().as_str()
         || manifest.model() != prepared.inputs.model()
         || manifest.ir() != prepared.inputs.ir()
     {

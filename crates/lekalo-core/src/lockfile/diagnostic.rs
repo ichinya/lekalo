@@ -26,6 +26,29 @@ impl From<&LockFailure> for DomainResult {
             LockFailure::Loader(outcome) => return outcome.clone(),
             LockFailure::Missing => ("lock.missing", Status::Invalid),
             LockFailure::SchemaInvalid => ("lock.schema-invalid", Status::Invalid),
+            LockFailure::ProjectSchema(error) => {
+                use crate::project_schema::RegistryError;
+                let status = match error {
+                    RegistryError::Path
+                    | RegistryError::Reference
+                    | RegistryError::DigestMismatch => Status::Denied,
+                    _ => Status::Invalid,
+                };
+                match error {
+                    RegistryError::Limit => {
+                        data.insert("limit".to_owned(), token_value("project-schemas"));
+                    }
+                    RegistryError::DigestMismatch => {
+                        data.insert("domain".to_owned(), token_value("project-schemas"));
+                        data.insert(
+                            "identity".to_owned(),
+                            token_value("project-schema-registry"),
+                        );
+                    }
+                    _ => {}
+                }
+                (super::project_schema_rule(*error), status)
+            }
             LockFailure::UnsupportedSchemaVersion { found } => {
                 data.insert("found".to_owned(), token_value(found));
                 (

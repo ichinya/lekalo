@@ -971,3 +971,65 @@ fn revocation_store_semantics_cover_exact_and_wildcard_versions() {
     assert!(!reloaded.is_revoked("adapter-unrelated", "1.0.0"));
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn project_schemas_are_pinned_and_updates_recheck_the_selected_bytes() {
+    use lekalo_core::project_schema::{Registry, RegistryError};
+
+    with_project(|selection, root| {
+        let required = LockRequirement::Optional;
+        let lock = |create| LockService::lock(selection, CandidateSet::empty(), required, create);
+        let lock_path = root.join("lekalo.lock");
+        lock(true).expect("legacy lock");
+        let old_lock = std::fs::read(&lock_path).unwrap();
+        assert_eq!(
+            Lockfile::parse_canonical(&old_lock)
+                .unwrap()
+                .schema_version(),
+            "lekalo/lock/v0.3.2"
+        );
+
+        let schemas = root.join("lekalo/contracts/action");
+        std::fs::create_dir_all(&schemas).unwrap();
+        let schema_path = schemas.join("1.0.0.schema.json");
+        std::fs::write(&schema_path, br#"{"type":"string"}"#).unwrap();
+        assert_eq!(
+            lock(false).unwrap_err(),
+            LockFailure::ProjectSchema(RegistryError::DigestMismatch)
+        );
+        let planned = LockService::plan(selection, CandidateSet::empty()).unwrap();
+        let preview = LockService::preview(&planned);
+        assert_eq!(preview.changes.len(), 1);
+        assert_eq!(preview.changes[0].kind, "project-schema");
+        assert_eq!(preview.changes[0].id, "action@1.0.0");
+
+        std::fs::write(&schema_path, br#"{"type":"boolean"}"#).unwrap();
+        let plan_id = planned.plan_id().to_owned();
+        assert_eq!(
+            LockService::apply(planned, &plan_id).unwrap_err(),
+            LockFailure::ProjectSchema(RegistryError::DigestMismatch)
+        );
+        assert_eq!(std::fs::read(&lock_path).unwrap(), old_lock);
+
+        let planned = LockService::plan(selection, CandidateSet::empty()).unwrap();
+        let plan_id = planned.plan_id().to_owned();
+        LockService::apply(planned, &plan_id).expect("apply a fresh plan");
+        assert_eq!(lock(false).unwrap().mode, "check");
+
+        let state = LockService::read_state_at(root).unwrap();
+        let pinned = state.present().unwrap();
+        assert_eq!(pinned.schema_version(), "lekalo/lock/v1.3.0");
+        assert_eq!(pinned.project_schemas().len(), 1);
+        let pin = &pinned.project_schemas()[0];
+        let registry = Registry::load(root).unwrap();
+        let validator = registry.validator(&pin.identity, &pin.digest).unwrap();
+        assert!(validator.is_valid(&serde_json::json!(true)));
+        assert!(!validator.is_valid(&serde_json::json!("true")));
+
+        std::fs::remove_file(schema_path).unwrap();
+        assert!(matches!(
+            LockService::read_state_at(root),
+            Err(LockFailure::ProjectSchema(RegistryError::DigestMismatch))
+        ));
+    });
+}

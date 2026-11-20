@@ -3316,6 +3316,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/artifact-manifest.schema.v1.3.0.json",
+      "kind": "contract",
+      "source": "contracts/artifact-manifest.schema.v1.3.0.json",
+      "sourceDigest": "sha256:b54071f2ebe3bf08df1592acc286b8690848f6b46e1673c7c8c19947103575cf",
+      "owner": "docs/artifact-manifest.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/authority-contracts.manifest.json",
       "kind": "contract",
       "source": "contracts/authority-contracts.manifest.json",
@@ -4130,6 +4139,15 @@
       "kind": "contract",
       "source": "contracts/lock.schema.v0.3.2.json",
       "sourceDigest": "sha256:b322338b131db7b9c61ef91ea4457036aa001139f31877a229d9a49c80bca3d8",
+      "owner": "docs/lockfile.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/lock.schema.v1.3.0.json",
+      "kind": "contract",
+      "source": "contracts/lock.schema.v1.3.0.json",
+      "sourceDigest": "sha256:82cd48a2f11d140c498dcae441fad842fd3fcbf6fbb84cdc8af3db8726898fa7",
       "owner": "docs/lockfile.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
@@ -5557,6 +5575,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/watch-event.schema.v1.3.0.json",
+      "kind": "contract",
+      "source": "contracts/watch-event.schema.v1.3.0.json",
+      "sourceDigest": "sha256:71570865622edc063e520144871aa91c8a4671c5bdd8adc917e8e0a775ad2032",
+      "owner": "docs/cli.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/watch-result.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/watch-result.schema.v0.8.0.json",
@@ -5570,6 +5597,15 @@
       "kind": "contract",
       "source": "contracts/watch-result.schema.v0.8.14.json",
       "sourceDigest": "sha256:5957ea54062113a6476674ada28817ec95a4bd05c3715b9c4310673cfeaa2637",
+      "owner": "docs/cli.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/watch-result.schema.v1.3.0.json",
+      "kind": "contract",
+      "source": "contracts/watch-result.schema.v1.3.0.json",
+      "sourceDigest": "sha256:3bb53604c014544495b849525063fa280feff5799537ba6c487d0a12ae5d93e2",
       "owner": "docs/cli.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

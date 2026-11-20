@@ -5,7 +5,10 @@
 use serde_json::{json, Value};
 use std::sync::LazyLock;
 
-use super::version::{EVENT_IDENTITY, EVENT_SCHEMA_VERSION};
+use super::version::{
+    EVENT_IDENTITY, EVENT_SCHEMA_VERSION, REGISTRY_EVENT_IDENTITY, REGISTRY_EVENT_SCHEMA_VERSION,
+    REGISTRY_RESULT_SCHEMA_VERSION,
+};
 use crate::result::Status;
 
 pub const EVENTS: [&str; 6] = [
@@ -41,7 +44,7 @@ pub enum DecodeError {
     Limit,
 }
 
-fn validator() -> &'static jsonschema::Validator {
+fn validator(schema: &str) -> &'static jsonschema::Validator {
     static VALIDATOR: LazyLock<jsonschema::Validator> = LazyLock::new(|| {
         let schema: Value = serde_json::from_slice(include_bytes!(
             "../../../../contracts/watch-event.schema.v0.8.14.json"
@@ -49,7 +52,18 @@ fn validator() -> &'static jsonschema::Validator {
         .expect("embedded watch schema JSON");
         jsonschema::validator_for(&schema).expect("offline closed watch schema")
     });
-    &VALIDATOR
+    static REGISTRY_VALIDATOR: LazyLock<jsonschema::Validator> = LazyLock::new(|| {
+        let schema: Value = serde_json::from_slice(include_bytes!(
+            "../../../../contracts/watch-event.schema.v1.3.0.json"
+        ))
+        .expect("embedded watch registry schema JSON");
+        jsonschema::validator_for(&schema).expect("offline closed watch registry schema")
+    });
+    if schema == REGISTRY_EVENT_SCHEMA_VERSION {
+        &REGISTRY_VALIDATOR
+    } else {
+        &VALIDATOR
+    }
 }
 
 /// Draft 2020-12 integer semantics also accept JSON spellings such as
@@ -68,7 +82,13 @@ pub(crate) fn counter(value: &Value) -> Option<u64> {
 
 impl WatchEvent {
     fn new(sequence: u64, session_id: &str, event: &str, payload: Value) -> Self {
-        let mut value = json!({"schemaVersion":EVENT_SCHEMA_VERSION,"identity":EVENT_IDENTITY,"sequence":sequence,"sessionId":session_id,"event":event});
+        let (schema, identity) =
+            if payload["result"]["schemaVersion"] == REGISTRY_RESULT_SCHEMA_VERSION {
+                (REGISTRY_EVENT_SCHEMA_VERSION, REGISTRY_EVENT_IDENTITY)
+            } else {
+                (EVENT_SCHEMA_VERSION, EVENT_IDENTITY)
+            };
+        let mut value = json!({"schemaVersion":schema,"identity":identity,"sequence":sequence,"sessionId":session_id,"event":event});
         value
             .as_object_mut()
             .expect("object")
@@ -101,7 +121,9 @@ impl WatchEvent {
                 DecodeError::Malformed
             }
         })?;
-        if !validator().is_valid(&value) || !consistent(&value) {
+        if !validator(value["schemaVersion"].as_str().unwrap_or_default()).is_valid(&value)
+            || !consistent(&value)
+        {
             return Err(DecodeError::Malformed);
         }
         Ok(Self(value))

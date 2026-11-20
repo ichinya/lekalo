@@ -20,6 +20,12 @@ pub const RESULT_SCHEMA_VERSION: &str = "lekalo/watch-result/v0.8.14";
 /// The exact identity of the per-run watch result contract.
 pub const RESULT_IDENTITY: &str = "dev.lekalo.watch-result@0.8.14";
 
+/// Watch envelopes whose result pins an external schema registry.
+pub const REGISTRY_RESULT_SCHEMA_VERSION: &str = "lekalo/watch-result/v1.3.0";
+pub const REGISTRY_RESULT_IDENTITY: &str = "dev.lekalo.watch-result@1.3.0";
+pub const REGISTRY_EVENT_SCHEMA_VERSION: &str = "lekalo/watch-event/v1.3.0";
+pub const REGISTRY_EVENT_IDENTITY: &str = "dev.lekalo.watch-event@1.3.0";
+
 /// The successor registry the watch service emits through: the merged
 /// 0.8.0 union (format.* + adoption.* + watch.*) over the 0.6.5 chain.
 /// Identical family file as [`crate::diagnostics::registry::FORMAT_REGISTRY_BYTES`];

@@ -31,6 +31,8 @@ lock resolve the same components, byte for byte.
   far enough to classify it `lock.noncanonical` (exit 1). `lock --check` and
   every `--locked` path never rewrite it.
 
+Projects that register a schema use [lock schema 1.3.0](../contracts/lock.schema.v1.3.0.json). It adds `project_schemas`, ordered first by name and then by exact SemVer. The new array is part of the canonical lock payload and digest. The existing schema remains the wire format for projects without schema pins. [Project JSON Schemas](project-schemas.md) describes admission and updates.
+
 ## Closed sections
 
 Top-level keys, in wire (byte-sorted) order: `adapters`, `capabilities`,

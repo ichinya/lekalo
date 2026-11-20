@@ -11,7 +11,7 @@ use crate::runtime::{compile_schema, config, SchemaError};
 
 const DIRECTORY: &str = "lekalo/contracts";
 const SUFFIX: &str = ".schema.json";
-const MAX_SCHEMAS: usize = 32;
+pub(crate) const MAX_SCHEMAS: usize = 32;
 const MAX_BYTES: usize = 64 * 1024;
 const MAX_DEPTH: usize = 32;
 
@@ -42,6 +42,29 @@ impl RegistryError {
             Self::Missing => "project-schema.missing",
             Self::DigestMismatch => "project-schema.digest-mismatch",
         }
+    }
+}
+
+/// One schema identity and its exact file digest.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Pin {
+    pub identity: ComponentRef,
+    pub digest: Sha256Digest,
+}
+
+impl Pin {
+    pub(crate) fn parse(name: &str, version: &str, digest: &str) -> Result<Self> {
+        let logical = format!("{DIRECTORY}/{name}/{version}{SUFFIX}");
+        if name.contains('/') || version.contains('/') || path_violation(&logical).is_some() {
+            return Err(RegistryError::Path);
+        }
+        let id = ComponentId::parse(name).map_err(|_| RegistryError::Path)?;
+        let version = SemVer::parse(version).map_err(|_| RegistryError::Path)?;
+        let digest = Sha256Digest::parse(digest).map_err(|_| RegistryError::Invalid)?;
+        Ok(Self {
+            identity: ComponentRef::new(id, version),
+            digest,
+        })
     }
 }
 
@@ -125,6 +148,15 @@ impl Registry {
                 &schema.digest,
             )
         })
+    }
+
+    pub(crate) fn owned_pins(&self) -> Vec<Pin> {
+        self.pins()
+            .map(|(identity, digest)| Pin {
+                identity,
+                digest: digest.clone(),
+            })
+            .collect()
     }
 
     /// Select an exact version and check its digest before use.

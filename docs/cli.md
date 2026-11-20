@@ -50,6 +50,12 @@ settled revisions replace the complete effective diagnostic set. Cancelled
 runs cannot commit. The closed event/result schemas are
 `dev.lekalo.watch-event@0.8.14` and `dev.lekalo.watch-result@0.8.14`.
 
+When a settled revision has a [project schema lock](project-schemas.md), its
+`run-completed` event and nested result use
+[watch event 1.3.0](../contracts/watch-event.schema.v1.3.0.json) and
+[watch result 1.3.0](../contracts/watch-result.schema.v1.3.0.json). Select
+the schema from each envelope's discriminator.
+
 `--target` now runs ephemeral locked scan/validation against captured inputs,
 without an observed index or scan receipt. Legacy adapters receive the visible
 `adapter-full-scope` fallback. An adapter must explicitly advertise protocol

@@ -38,7 +38,10 @@ use crate::watch::changes::{diff, ChangeBatch, ChangeKind};
 use crate::watch::request::WatchRequest;
 use crate::watch::selection::{compute, AffectedSet, ModuleIndex};
 use crate::watch::snapshot::{materialize, CaptureError, FileRecord, InputSnapshot};
-use crate::watch::version::{RESULT_IDENTITY, RESULT_SCHEMA_VERSION, WATCH_REGISTRY_VERSION};
+use crate::watch::version::{
+    REGISTRY_RESULT_IDENTITY, REGISTRY_RESULT_SCHEMA_VERSION, RESULT_IDENTITY,
+    RESULT_SCHEMA_VERSION, WATCH_REGISTRY_VERSION,
+};
 
 pub use events::WatchEvent;
 pub use request::WatchBackend;
@@ -1129,9 +1132,22 @@ impl WatchService {
                 status
             };
         let input_hash = |bytes: &[u8]| format!("sha256:{}", crate::digest::sha256_hex(bytes));
+        let mut versions = VersionPins::for_model(model.model_version);
+        let mut result_identity = (RESULT_SCHEMA_VERSION, RESULT_IDENTITY);
+        let lock_digest = match crate::lockfile::plan::LockService::read_state_at(scratch) {
+            Ok(crate::lockfile::LockState::Present(lock)) => {
+                versions.lock = lock.schema_version();
+                if versions.lock == crate::lockfile::types::SCHEMA_REGISTRY_VERSION {
+                    versions.artifact_manifest = crate::artifacts::types::REGISTRY_SCHEMA_VERSION;
+                    result_identity = (REGISTRY_RESULT_SCHEMA_VERSION, REGISTRY_RESULT_IDENTITY);
+                }
+                Some(lock.digest().as_str().to_owned())
+            }
+            _ => None,
+        };
         let pins = ResultPins {
             model_version,
-            versions: VersionPins::for_model(model.model_version),
+            versions,
             adapters: adapter_pins,
             revisions: RevisionPins {
                 model_digest: Some(input_hash(
@@ -1146,12 +1162,7 @@ impl WatchService {
                     .ok()
                     .and_then(|g| g.to_canonical_json().ok())
                     .map(|json| input_hash(json.as_bytes())),
-                lock_digest: match crate::lockfile::plan::LockService::read_state_at(scratch) {
-                    Ok(crate::lockfile::LockState::Present(lock)) => {
-                        Some(lock.digest().as_str().to_owned())
-                    }
-                    _ => None,
-                },
+                lock_digest,
                 lock_input_digest: snapshot.files.get("lekalo.lock").map(|r| r.sha256.clone()),
                 profile_digest: Some(input_hash(if self.request.strict {
                     crate::validator::STRICT_PROFILE_BYTES
@@ -1166,8 +1177,8 @@ impl WatchService {
             ..ResultPins::default()
         };
         let mut result = WatchResult {
-            schema_version: RESULT_SCHEMA_VERSION,
-            identity: RESULT_IDENTITY,
+            schema_version: result_identity.0,
+            identity: result_identity.1,
             status,
             diagnostics_mode: "replace",
             source_revision: source_revision.clone(),
@@ -1778,7 +1789,20 @@ pub fn result_value_is_wellformed(value: &serde_json::Value) -> bool {
         .expect("watch result schema JSON");
         jsonschema::validator_for(&schema).expect("offline watch result schema")
     });
-    if !VALIDATOR.is_valid(value) {
+    static REGISTRY_VALIDATOR: std::sync::LazyLock<jsonschema::Validator> =
+        std::sync::LazyLock::new(|| {
+            let schema: serde_json::Value = serde_json::from_slice(include_bytes!(
+                "../../../../contracts/watch-result.schema.v1.3.0.json"
+            ))
+            .expect("watch registry result schema JSON");
+            jsonschema::validator_for(&schema).expect("offline watch registry result schema")
+        });
+    let validator = if value["schemaVersion"] == REGISTRY_RESULT_SCHEMA_VERSION {
+        &*REGISTRY_VALIDATOR
+    } else {
+        &*VALIDATOR
+    };
+    if !validator.is_valid(value) {
         return false;
     }
     let counts = &value["counts"];
@@ -1829,12 +1853,21 @@ pub fn result_value_is_wellformed(value: &serde_json::Value) -> bool {
             return false;
         }
     }
-    object.get("schemaVersion").and_then(|value| value.as_str()) == Some(RESULT_SCHEMA_VERSION)
-        && object.get("identity").and_then(|value| value.as_str()) == Some(RESULT_IDENTITY)
-        && object
-            .get("diagnosticsMode")
-            .and_then(|value| value.as_str())
-            == Some("replace")
+    let identity = (
+        object.get("schemaVersion").and_then(|value| value.as_str()),
+        object.get("identity").and_then(|value| value.as_str()),
+    );
+    matches!(
+        identity,
+        (Some(RESULT_SCHEMA_VERSION), Some(RESULT_IDENTITY))
+            | (
+                Some(REGISTRY_RESULT_SCHEMA_VERSION),
+                Some(REGISTRY_RESULT_IDENTITY)
+            )
+    ) && object
+        .get("diagnosticsMode")
+        .and_then(|value| value.as_str())
+        == Some("replace")
         && object
             .get("status")
             .and_then(|value| value.as_str())
