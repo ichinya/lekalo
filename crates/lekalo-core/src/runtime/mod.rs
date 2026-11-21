@@ -1139,13 +1139,15 @@ mod review_regressions {
             components: BTreeMap::new(),
             services: BTreeMap::new(),
         };
-        write_lock(root.path(), &lock).unwrap();
+        write_lock(root.path(), &LockDocument::Single(lock.clone())).unwrap();
         let bytes = read(root.path(), config::LOCK, LOCK_LIMIT).unwrap();
         let decoded: Lock = serde_json::from_value(config::value(&bytes).unwrap()).unwrap();
         assert_eq!(decoded.config_digest, lock.config_digest);
         lock.config_digest = "x".repeat(LOCK_LIMIT);
         assert_eq!(
-            write_lock(root.path(), &lock).unwrap_err().detail,
+            write_lock(root.path(), &LockDocument::Single(lock))
+                .unwrap_err()
+                .detail,
             "lock-limit"
         );
         assert_eq!(
