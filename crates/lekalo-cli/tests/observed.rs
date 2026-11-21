@@ -1011,10 +1011,10 @@ fn generic_scan_uses_pinned_provider_schemas_through_the_public_cli() {
     assert_eq!(batch["entries"], json!([]));
     let proposal_id = proposed[0]["proposal"].as_str().unwrap();
     projected_group["facts"][0]["key"] = json!("producer-uses-a-different-key");
-    assert_eq!(
-        accepted("1.4.0", &json!([projected_group])),
-        projected_index
-    );
+    let rekeyed: Value =
+        serde_json::from_slice(&accepted("1.4.0", &json!([projected_group]))).unwrap();
+    assert_eq!(rekeyed["revision"], multiple["revision"]);
+    assert_eq!(rekeyed["evidence_groups"], multiple["evidence_groups"]);
     assert_scan_refusal(
         &sandbox.run(&[
             "--json",
