@@ -1128,6 +1128,7 @@ mod envelope_tests {
             "taskboard",
             &request,
             EvidenceAdmission::Standalone {
+                model: &ctx.model,
                 policy: None,
                 read_scopes: &["src/**".into()],
             },
