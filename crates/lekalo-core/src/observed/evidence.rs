@@ -517,15 +517,36 @@ impl Admitted {
     }
 }
 
-pub(super) fn check_sources(index: &ObservedIndex, fs: &Fs) -> bool {
-    let mut cache = BTreeMap::new();
+fn current_facts(index: &ObservedIndex) -> impl Iterator<Item = &Fact> {
     index
         .evidence_groups
         .iter()
         .flatten()
-        .flat_map(|g| &g.facts)
-        .filter(|r| r.state == State::Current)
-        .all(|r| sources_current(&r.fact, fs, &mut cache))
+        .flat_map(|group| &group.facts)
+        .filter(|record| record.state == State::Current)
+        .map(|record| &record.fact)
+}
+
+pub(super) fn check_sources(index: &ObservedIndex, fs: &Fs) -> bool {
+    let mut cache = BTreeMap::new();
+    current_facts(index).all(|fact| sources_current(fact, fs, &mut cache))
+}
+
+/// Bind confirmation to the candidate's own admitted facts. Other native
+/// subjects can have stale facts without invalidating this candidate.
+pub(super) fn candidate_sources_current(index: &ObservedIndex, fs: &Fs, native: &str) -> bool {
+    let mut cache = BTreeMap::new();
+    current_facts(index)
+        .filter(|fact| fact.subject == native)
+        .all(|fact| sources_current(fact, fs, &mut cache))
+}
+
+pub(super) fn stale_subjects<'a>(index: &'a ObservedIndex, fs: &Fs) -> BTreeSet<&'a str> {
+    let mut cache = BTreeMap::new();
+    current_facts(index)
+        .filter(|fact| !sources_current(fact, fs, &mut cache))
+        .map(|fact| fact.subject.as_str())
+        .collect()
 }
 
 pub(super) fn valid_index(index: &ObservedIndex) -> bool {

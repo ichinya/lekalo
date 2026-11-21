@@ -367,7 +367,9 @@ fn check_candidate_source(
     candidate: &CandidateRecord,
 ) -> Result<(), DiagnosticSet> {
     let fs = crate::project_fs::Fs::open(&ctx.root).map_err(|_| diagnostic::missing_index_set())?;
-    if !index::route_sources_current(&fs, index, &candidate.native) {
+    if !index::route_sources_current(&fs, index, &candidate.native)
+        || !super::evidence::candidate_sources_current(index, &fs, &candidate.native)
+    {
         return Err(diagnostic::plan_mismatch_set("candidate-source-drift"));
     }
     if candidate.fingerprint.is_some()
@@ -601,8 +603,17 @@ pub fn audit(ctx: &super::ObservedContext) -> Result<AuditReceipt, DiagnosticSet
     let mut tests_current = 0usize;
     let mut tests_unknown = 0usize;
     let mut failures: Vec<(String, &'static str)> = Vec::new();
+    let stale_subjects = super::evidence::stale_subjects(&index, &fs);
     for record in &index.symbols {
         if record.promoted {
+            continue;
+        }
+        if record
+            .stable_key
+            .as_deref()
+            .is_some_and(|native| stale_subjects.contains(native))
+        {
+            failures.push((record.id.clone(), "fingerprint-mismatch"));
             continue;
         }
         // HTTP registration can disappear in another file while the handler
@@ -737,7 +748,20 @@ pub struct ListReceipt {
     pub tests: Vec<BindingRow>,
 }
 
-fn symbol_row(record: &SymbolRecord) -> BindingRow {
+fn symbol_row(
+    record: &SymbolRecord,
+    stale_subjects: &std::collections::BTreeSet<&str>,
+) -> BindingRow {
+    let state = if !record.promoted
+        && record
+            .stable_key
+            .as_deref()
+            .is_some_and(|native| stale_subjects.contains(native))
+    {
+        BindingState::Stale
+    } else {
+        record.state
+    };
     BindingRow {
         semantic: record.id.clone(),
         kind: record.kind.key().to_owned(),
@@ -748,7 +772,7 @@ fn symbol_row(record: &SymbolRecord) -> BindingRow {
         fingerprint: record.fingerprint.clone(),
         source: source_of(record),
         confidence: record.provenance.confidence.key().to_owned(),
-        state: record.state.key().to_owned(),
+        state: state.key().to_owned(),
         adapter: record.provenance.adapter.clone(),
         revision: record.provenance.revision.clone(),
         candidates: record.candidates.clone(),
@@ -757,11 +781,21 @@ fn symbol_row(record: &SymbolRecord) -> BindingRow {
 
 /// `bindings list`: the whole registry, projected. Symbol bindings
 /// implement, endpoint bindings expose, and native test bindings verify;
-/// every row carries the freshness state and provenance the registry
-/// recorded.
+/// reports live drift in the sources of admitted provider facts, without
+/// changing the recorded index.
 pub fn list(ctx: &super::ObservedContext) -> Result<ListReceipt, DiagnosticSet> {
     let index = index::load_index(ctx)?.ok_or_else(diagnostic::missing_index_set)?;
-    let bindings: Vec<BindingRow> = index.symbols.iter().map(symbol_row).collect();
+    let stale_subjects = if index.evidence_groups.is_some() {
+        let fs = Fs::open(&ctx.root).map_err(|_| diagnostic::index_io_set("root-unreadable"))?;
+        super::evidence::stale_subjects(&index, &fs)
+    } else {
+        Default::default()
+    };
+    let bindings: Vec<BindingRow> = index
+        .symbols
+        .iter()
+        .map(|record| symbol_row(record, &stale_subjects))
+        .collect();
     let endpoints: Vec<BindingRow> = index
         .endpoints
         .iter()
@@ -819,20 +853,17 @@ pub fn list(ctx: &super::ObservedContext) -> Result<ListReceipt, DiagnosticSet> 
             .iter()
             .filter(|r| r.status == BindingStatus::Inferred)
             .count(),
-        current: index
-            .symbols
+        current: bindings
             .iter()
-            .filter(|r| r.state == BindingState::Current)
+            .filter(|row| row.state == BindingState::Current.key())
             .count(),
-        stale: index
-            .symbols
+        stale: bindings
             .iter()
-            .filter(|r| r.state == BindingState::Stale)
+            .filter(|row| row.state == BindingState::Stale.key())
             .count(),
-        unknown: index
-            .symbols
+        unknown: bindings
             .iter()
-            .filter(|r| r.state == BindingState::Unknown)
+            .filter(|row| row.state == BindingState::Unknown.key())
             .count(),
     };
     Ok(ListReceipt {

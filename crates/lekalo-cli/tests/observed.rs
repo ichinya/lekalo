@@ -859,6 +859,88 @@ fn generic_scan_uses_pinned_provider_schemas_through_the_public_cli() {
     );
     assert_eq!(std::fs::read(&index_path).unwrap(), checked);
 
+    // The root declaration remains byte-for-byte unchanged. Only the
+    // source of the fact's named dependency changes after the proposal.
+    let proposals = sandbox.json(&["bindings", "propose", "--project", "proj"]);
+    let root_proposal = proposals["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|proposal| proposal["symbol"] == "taskboard.task")
+        .unwrap();
+    let proposal_id = root_proposal["proposal"].as_str().unwrap();
+    let batch = sandbox.json(&[
+        "bindings",
+        "confirm",
+        "--batch",
+        "--preview",
+        "--project",
+        "proj",
+    ]);
+    let plan_id = batch["plan"].as_str().unwrap();
+    let dependency = project.join("src/ids.ts");
+    let original = std::fs::read(&dependency).unwrap();
+    std::fs::write(&dependency, "// dependency edited after the proposal\n").unwrap();
+    assert_scan_refusal(
+        &sandbox.run(&[
+            "--json",
+            "bindings",
+            "confirm",
+            proposal_id,
+            "--project",
+            "proj",
+        ]),
+        "candidate-source-drift",
+    );
+    assert_scan_refusal(
+        &sandbox.run(&[
+            "--json",
+            "bindings",
+            "confirm",
+            "--batch",
+            "--confirm",
+            plan_id,
+            "--project",
+            "proj",
+        ]),
+        "candidate-source-drift",
+    );
+    assert_scan_refusal(
+        &sandbox.run(&[
+            "--json",
+            "observe",
+            "confirm",
+            "taskboard.task",
+            "--project",
+            "proj",
+        ]),
+        "candidate-source-drift",
+    );
+    let registry = sandbox.json(&["bindings", "list", "--project", "proj"]);
+    let root_binding = registry["bindings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|binding| binding["semantic"] == "taskboard.task")
+        .unwrap();
+    assert_eq!(root_binding["state"], "stale");
+    assert_eq!(registry["counts"]["stale"], 1);
+    let audit = sandbox.run(&["--json", "bindings", "audit", "--project", "proj"]);
+    assert_scan_refusal(&audit, "fingerprint-mismatch");
+    let audit: Value = serde_json::from_slice(&audit.stderr).unwrap();
+    assert!(audit["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|diagnostic| {
+            diagnostic["id"] == "observed.stale-binding"
+                && diagnostic["data"]["symbol"] == "taskboard.task"
+        }));
+    assert_eq!(std::fs::read(&index_path).unwrap(), checked);
+    std::fs::write(&dependency, original).unwrap();
+    let confirmed = sandbox.json(&["bindings", "confirm", proposal_id, "--project", "proj"]);
+    assert_eq!(confirmed["binding"], "confirmed");
+
     std::fs::remove_file(&config_path).unwrap();
     std::fs::remove_file(&index_path).unwrap();
     let http = accepted("1.2.0", &json!([]));

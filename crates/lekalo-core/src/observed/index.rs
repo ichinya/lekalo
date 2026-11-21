@@ -785,6 +785,13 @@ pub fn confirm_binding(
     {
         return Err(diagnostic::plan_mismatch_set("http-handler-source-drift"));
     }
+    if index.symbols[position]
+        .stable_key
+        .as_deref()
+        .is_some_and(|native| !super::evidence::candidate_sources_current(&index, &fs, native))
+    {
+        return Err(diagnostic::plan_mismatch_set("candidate-source-drift"));
+    }
     let revision = index.revision.clone();
     let record = &mut index.symbols[position];
     if record.status != BindingStatus::Inferred {

@@ -85,6 +85,12 @@ also name references carried by the fact.
 `lekalo validate` checks the declarations and package pins. A scan checks that
 each admitted fact supplies the selected fields and source roles. Binding
 proposals and confirmations continue to use the existing observed binding flow.
+Confirmation also checks the current facts for the chosen native declaration.
+An edit to a source cited by those facts invalidates confirmation even when
+the native declaration's own file is unchanged. `bindings audit` reports the
+affected binding as a fingerprint mismatch. `bindings list` reports the row
+as stale without rewriting the index. `verify` uses the same stale count for
+its optional binding registry check.
 
 ## Commands
 
