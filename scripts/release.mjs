@@ -90,8 +90,10 @@ export function createArchive(stage, output, tag, target) {
 export function extractArchive(archive, destination, target) {
   mkdirSync(destination, { recursive: true });
   if (targets[target].platform === 'win32') {
+    // Windows PowerShell's archive module can select an overload that its
+    // .NET Framework cannot provide. The destination is a fresh directory.
     run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-      '$ErrorActionPreference = "Stop"; Expand-Archive -LiteralPath $env:LEKALO_ARCHIVE_SOURCE -DestinationPath $env:LEKALO_ARCHIVE_DESTINATION'], {
+      '$ErrorActionPreference = "Stop"; Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory($env:LEKALO_ARCHIVE_SOURCE, $env:LEKALO_ARCHIVE_DESTINATION)'], {
       env: { ...process.env, LEKALO_ARCHIVE_SOURCE: resolve(archive), LEKALO_ARCHIVE_DESTINATION: resolve(destination) },
     });
   } else {
