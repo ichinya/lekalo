@@ -289,6 +289,73 @@ fn fact_id(scope: (&str, &str, Option<&str>), family: &str, provider: &str, fact
     )
 }
 
+struct FactCustody<'a> {
+    nodes: BTreeMap<&'a str, &'a str>,
+    sources: BTreeSet<(&'a str, &'a str)>,
+}
+
+impl<'a> FactCustody<'a> {
+    fn new(
+        entries: &'a [wire::ScanEntry],
+        nodes: &'a [NativeSymbol],
+        read_scopes: &[String],
+    ) -> Self {
+        let nodes = native_paths(nodes);
+        // Each entry digest has already been checked against the real source.
+        let sources: BTreeSet<_> = entries
+            .iter()
+            .filter_map(|entry| {
+                if !read_scopes
+                    .iter()
+                    .any(|scope| scopes::scope_covers(scope, &entry.path))
+                {
+                    return None;
+                }
+                let digest = entry.evidence.as_ref()?.source_digest.as_deref()?;
+                Some((entry.path.as_str(), digest))
+            })
+            .collect();
+        Self { nodes, sources }
+    }
+
+    fn check(&self, fact: &Fact) -> Result<()> {
+        if !fact.anchors_match(&self.nodes)
+            || fact.sources.iter().any(|source| {
+                !self
+                    .sources
+                    .contains(&(source.path.as_str(), source.source_digest.as_str()))
+            })
+        {
+            return Err("evidence-source-custody");
+        }
+        Ok(())
+    }
+}
+
+pub(super) fn verify_envelope(
+    response: &wire::ResponseEnvelope,
+    entries: &[wire::ScanEntry],
+    nodes: &[NativeSymbol],
+    read_scopes: &[String],
+) -> Result<()> {
+    let groups = response
+        .result
+        .as_ref()
+        .and_then(|result| result.evidence_groups.as_ref())
+        .ok_or("evidence-groups-missing")?;
+    let custody = FactCustody::new(entries, nodes, read_scopes);
+    for group in groups {
+        let mut identities = BTreeSet::new();
+        for fact in &group.facts {
+            custody.check(fact)?;
+            if !identities.insert((&fact.subject, &fact.key)) {
+                return Err("evidence-duplicate-fact");
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn admit(
     policy: Option<&Policy>,
     response: &wire::ResponseEnvelope,
@@ -314,21 +381,7 @@ pub(super) fn admit(
         .scan_profile_digest
         .as_ref()
         .ok_or("evidence-scan-profile-missing")?;
-    let nodes = native_paths(nodes);
-    // Each entry digest has already been checked against the real source.
-    let sources: BTreeSet<_> = entries
-        .iter()
-        .filter_map(|entry| {
-            if !read_scopes
-                .iter()
-                .any(|scope| scopes::scope_covers(scope, &entry.path))
-            {
-                return None;
-            }
-            let digest = entry.evidence.as_ref()?.source_digest.as_deref()?;
-            Some((entry.path.as_str(), digest))
-        })
-        .collect();
+    let custody = FactCustody::new(entries, nodes, read_scopes);
     let mut admitted = BTreeMap::new();
     for group in groups {
         let policy = policy.ok_or("evidence-family-disabled")?;
@@ -344,14 +397,7 @@ pub(super) fn admit(
         let mut facts = Vec::new();
         let mut ids = BTreeSet::new();
         for fact in &group.facts {
-            if !fact.anchors_match(&nodes)
-                || fact
-                    .sources
-                    .iter()
-                    .any(|s| !sources.contains(&(s.path.as_str(), s.source_digest.as_str())))
-            {
-                return Err("evidence-source-custody");
-            }
+            custody.check(fact)?;
             if !provider.validator.is_valid(&fact.payload) {
                 return Err("evidence-payload");
             }

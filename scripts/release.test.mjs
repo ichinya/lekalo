@@ -14,11 +14,13 @@ const temp = () => mkdtempSync(join(tmpdir(), 'lekalo-release-test-'));
 function releaseFixture() {
   const directory = temp();
   for (const target of Object.keys(targets)) {
-    const { archive, manifest } = assetNames(tag, target);
+    const { archive, manifest, executable } = assetNames(tag, target);
     writeFileSync(join(directory, archive), `archive fixture for ${target}`);
+    writeFileSync(join(directory, executable), `executable fixture for ${target}`);
     writeFileSync(join(directory, manifest), JSON.stringify({
       tag, version: '1.2.3', target, sourceCommit: commit,
-      archive, archiveSha256: sha256(join(directory, archive)), binarySha256: 'b'.repeat(64),
+      archive, archiveSha256: sha256(join(directory, archive)),
+      executable, binarySha256: sha256(join(directory, executable)),
     }));
   }
   return directory;
@@ -64,21 +66,24 @@ test('prerelease tags work and malformed or unsafe tags fail', () => {
 test('all five targets are required and every published file receives a checksum', () => {
   const directory = releaseFixture();
   const names = collectAssets(directory, tag, commit);
-  assert.equal(names.length, 11);
+  assert.equal(names.length, 16);
   const checksums = readFileSync(join(directory, 'SHA256SUMS.txt'), 'utf8');
-  assert.equal(checksums.split('\n').filter(Boolean).length, 10);
+  assert.equal(checksums.split('\n').filter(Boolean).length, 15);
   for (const name of names.filter(name => name !== 'SHA256SUMS.txt')) {
     assert.ok(checksums.includes(`${sha256(join(directory, name))}  ${name}\n`));
   }
   assert.deepEqual(collectAssets(directory, tag, commit), names, 'Collection is repeatable');
 });
 
-test('missing platform, corrupt archive and extra files block publication', () => {
+test('missing platform, corrupt files and extra files block publication', () => {
   const incomplete = temp();
   assert.throws(() => collectAssets(incomplete, tag, commit), /ENOENT/);
   const corrupt = releaseFixture();
   writeFileSync(join(corrupt, assetNames(tag, Object.keys(targets)[0]).archive), 'changed');
   assert.throws(() => collectAssets(corrupt, tag, commit), /checksum mismatch/);
+  const corruptExecutable = releaseFixture();
+  writeFileSync(join(corruptExecutable, assetNames(tag, Object.keys(targets)[0]).executable), 'changed');
+  assert.throws(() => collectAssets(corruptExecutable, tag, commit), /Executable checksum mismatch/);
   const extra = releaseFixture();
   writeFileSync(join(extra, 'credentials.txt'), 'must never be published');
   assert.throws(() => collectAssets(extra, tag, commit), /exactly all five/);
@@ -86,7 +91,7 @@ test('missing platform, corrupt archive and extra files block publication', () =
 
 test('mixed commits, versions, tags, targets and archive names block publication', () => {
   for (const [field, value] of Object.entries({
-    sourceCommit: 'c'.repeat(40), version: '1.2.2', tag: 'v1.2.2', target: 'unsupported', archive: '../other', binarySha256: 'bad',
+    sourceCommit: 'c'.repeat(40), version: '1.2.2', tag: 'v1.2.2', target: 'unsupported', archive: '../other', executable: '../other', binarySha256: 'bad',
   })) {
     const directory = releaseFixture();
     const manifest = join(directory, assetNames(tag, Object.keys(targets)[0]).manifest);

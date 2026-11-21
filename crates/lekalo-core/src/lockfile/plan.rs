@@ -375,6 +375,35 @@ impl LockService {
         Ok(state)
     }
 
+    /// Verify the project-schema pins for strict validation. The registry
+    /// or its lock discriminator opts a project into this check.
+    pub fn check_project_schemas_at(root: &Path) -> Result<(), LockFailure> {
+        let fs = crate::project_fs::Fs::open(root).map_err(|_| LockFailure::PathDenied)?;
+        let actual = if fs.entry_type("lekalo", "contracts").is_ok() {
+            load_project_schemas(root)?
+        } else {
+            Vec::new()
+        };
+        let raw = read_raw_lock_at(root);
+        let bytes = if actual.is_empty() {
+            let Ok(Some(bytes)) = raw else {
+                return Ok(());
+            };
+            let project_schema_lock = serde_json::from_slice::<serde_json::Value>(&bytes)
+                .is_ok_and(|object| {
+                    object["schema_version"] == super::types::SCHEMA_REGISTRY_VERSION
+                });
+            if !project_schema_lock {
+                return Ok(());
+            }
+            bytes
+        } else {
+            raw?.ok_or(LockFailure::Missing)?
+        };
+        let lock = Lockfile::parse_canonical(&bytes)?;
+        verify_schema_pins(&actual, lock.project_schemas())
+    }
+
     fn read_unchecked_state_at(root: &Path) -> Result<LockState, LockFailure> {
         let fs = crate::project_fs::Fs::open(root).map_err(|_| LockFailure::Structure {
             code: "structure.root-unreadable".to_owned(),
@@ -423,7 +452,10 @@ fn load_project_schemas(root: &Path) -> Result<Vec<Pin>, LockFailure> {
 }
 
 fn verify_project_schemas(root: &Path, expected: &[Pin]) -> Result<(), LockFailure> {
-    let actual = load_project_schemas(root)?;
+    verify_schema_pins(&load_project_schemas(root)?, expected)
+}
+
+fn verify_schema_pins(actual: &[Pin], expected: &[Pin]) -> Result<(), LockFailure> {
     if actual != expected {
         return Err(LockFailure::ProjectSchema(RegistryError::DigestMismatch));
     }

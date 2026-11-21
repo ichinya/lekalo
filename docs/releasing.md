@@ -14,7 +14,7 @@ Do not move an existing published tag to add later source changes. Choose a new 
 
 The workflow checks out source from the resolved tag commit and automation from the workflow commit. It runs locked release builds for the five [installation targets](releases.md), probes `--version` and `--help`, packages and extracts each archive, and probes the extracted executable. Compatibility is checked outside the source checkout.
 
-All platform builds must pass before upload. The job rejects version/title mismatches, dirty source, a moved tag, incomplete platforms or incorrect hashes. It writes `SHA256SUMS.txt` and per-archive `.build.json` metadata, then downloads the uploaded assets and compares them with the local files.
+All platform builds must pass before upload. The job rejects version/title mismatches, dirty source, a moved tag, incomplete platforms or incorrect hashes. It publishes the extracted executable alongside each archive, writes `SHA256SUMS.txt` and per-platform `.build.json` metadata, then downloads the uploaded assets and compares them with the local files.
 
 ## Existing published tags
 

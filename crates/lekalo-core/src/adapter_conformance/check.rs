@@ -103,6 +103,8 @@ pub enum CheckId {
     /// kind tokens, and an honest unsupported refusal never counts as
     /// a silent lowering.
     ClassificationPreservation,
+    /// Scan evidence refers to admitted native symbols and fixture source bytes.
+    EvidenceEnvelope,
 }
 
 impl CheckId {
@@ -138,6 +140,7 @@ impl CheckId {
             Self::StorageMigrationGate => "storage.migration-gate",
             Self::StorageCollationUniqueness => "storage.collation-uniqueness",
             Self::ClassificationPreservation => "classification.preservation",
+            Self::EvidenceEnvelope => "evidence.envelope",
         }
     }
 
@@ -173,6 +176,7 @@ impl CheckId {
             | Self::StorageCollationUniqueness => "lekalo.adapter.storage",
             Self::StorageIntrospectionChecked => "lekalo.adapter.storage-security",
             Self::ClassificationPreservation => "lekalo.adapter.classification",
+            Self::EvidenceEnvelope => "lekalo.adapter.evidence",
         }
     }
 
@@ -187,7 +191,8 @@ impl CheckId {
             Self::DescribeHandshake
             | Self::DescribeNegotiation
             | Self::CapabilityDeclaration
-            | Self::CapabilityIrDeclaration => CheckClass::Protocol,
+            | Self::CapabilityIrDeclaration
+            | Self::EvidenceEnvelope => CheckClass::Protocol,
             Self::ProcessCancellation => CheckClass::Process,
             Self::DeterminismRepeats => CheckClass::Determinism,
             _ => CheckClass::Feature,
@@ -301,7 +306,7 @@ impl CheckOutcome {
     }
 }
 
-/// The full catalog in its fixed order.
+/// The predecessor report's catalog in its fixed order.
 pub const CATALOG: [CheckId; 29] = [
     CheckId::DescribeHandshake,
     CheckId::DescribeNegotiation,
@@ -333,6 +338,13 @@ pub const CATALOG: [CheckId; 29] = [
     CheckId::StorageCollationUniqueness,
     CheckId::ClassificationPreservation,
 ];
+
+pub(super) fn catalog(protocol: &str) -> impl Iterator<Item = CheckId> {
+    let evidence = protocol == crate::target_protocol::version::EVIDENCE_SCAN_VERSION;
+    CATALOG
+        .into_iter()
+        .chain(evidence.then_some(CheckId::EvidenceEnvelope))
+}
 
 /// The aggregate verdict of one run, derived from the check outcomes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]

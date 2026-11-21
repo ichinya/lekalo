@@ -13,3 +13,8 @@ Run `lekalo lock` to pin the registry in a new project lock. For an existing loc
 Projects with schema pins use [lock schema 1.3.0](../contracts/lock.schema.v1.3.0.json). Existing projects without pins continue to use [lock schema 0.3.2](../contracts/lock.schema.v0.3.2.json). Lock reads refuse additions, deletions, and changes until an explicit update. The lock commands report missing or changed pins as `lock.digest-mismatch`, external references as `lock.path-denied`, limit violations as `loader.limit-exceeded`, and identifier conflicts as `lock.reference-invalid`.
 
 For application contracts between workspace members, use [module API bundles and consumer locks](module-api.md). A project schema update only accepts the schema bytes for the current project's lock.
+
+
+`lekalo validate --strict` also checks the project schema pins. It refuses a
+missing lock for a registry in use and a changed or deleted schema from an
+existing project schema lock.

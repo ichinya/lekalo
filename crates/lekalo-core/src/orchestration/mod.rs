@@ -23,7 +23,7 @@ mod receipt;
 mod verify;
 mod version;
 
-pub use catalog::{candidate_supply, AdapterSupply};
+pub use catalog::{discover_lock_candidate, AdapterSupply};
 pub use diagnostic::Failure;
 pub use generate::{generate, GenerateRequest};
 pub use receipt::{

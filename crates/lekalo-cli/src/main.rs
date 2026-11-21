@@ -3123,6 +3123,11 @@ fn validate_project(
             Err(result) => return result,
         }
     };
+    if strict {
+        if let Err(failure) = LockService::check_project_schemas_at(&evidence_root) {
+            return DomainResult::from(&failure);
+        }
+    }
     if let Err(detail) = lekalo_core::observed::verify_evidence_config(&evidence_root) {
         return lekalo_core::runtime::outcome(Err(lekalo_core::runtime::error(detail)));
     }
@@ -3686,47 +3691,22 @@ fn run_lock(project: Option<String>, check: bool, program_args: Vec<String>) -> 
         }
         None => None,
     };
-    let mut candidates;
+    let candidates;
     let request = match supply.as_ref() {
         Some(supply) => {
             let root =
                 lekalo_core::orchestration::project_root(&selection).expect("root resolved above");
             let mut client = lekalo_core::target_protocol::TargetClient::default();
-            let discovered = match lekalo_core::orchestration::catalog::discover(
-                &mut client,
-                supply,
-                &root,
-                lekalo_core::target_protocol::transport::TransportLimits::default(),
-            ) {
-                Ok(discovered) => discovered,
-                Err(failure) => return DomainResult::from(&failure),
-            };
-            candidates = match lekalo_core::orchestration::candidate_supply(&discovered, supply) {
-                Ok(candidates) => candidates,
-                Err(failure) => return DomainResult::from(&failure),
-            };
-            // Issue #32: when the discovered adapter is the selected
-            // installed store pin, emit the installed provenance (source
-            // kind installed, package manifest digest, pinned trust) into
-            // the lock instead of a plain project pin. A provenance
-            // refusal refuses the lock (fix round 2, devin F-8): a pin
-            // that cannot carry its custody evidence never commits.
-            if let Ok(inventory) = lekalo_core::adapter_package::Inventory::load(&root) {
-                if let Some(row) = inventory
-                    .selected(&discovered.adapter.id)
-                    .filter(|row| row.version == discovered.adapter.version)
-                {
-                    if let Err(failure) = candidates.with_installed_provenance(
-                        &row.version,
-                        &row.digest,
-                        &row.manifest_digest,
-                        row.trust.as_str(),
-                        row.install_plan_id.as_deref(),
-                    ) {
-                        return DomainResult::from(&failure);
-                    }
-                }
-            }
+            let (discovered, supply_candidates) =
+                match lekalo_core::orchestration::discover_lock_candidate(
+                    &mut client,
+                    supply,
+                    &root,
+                ) {
+                    Ok(discovery) => discovery,
+                    Err(failure) => return DomainResult::from(&failure),
+                };
+            candidates = supply_candidates;
             match LockService::load_request(&selection) {
                 Ok(request) => request,
                 Err(failure) => return DomainResult::from(&failure),

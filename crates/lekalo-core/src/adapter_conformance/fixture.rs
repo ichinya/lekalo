@@ -108,6 +108,13 @@ pub const FILES: [(&str, &str); 8] = [
     ("src/routes/.keep", ROUTES_KEEP),
 ];
 
+/// A source file for the protocol evidence conformance probe.
+pub(super) const EVIDENCE_PATH: &str = "src/conformance-evidence.txt";
+pub(super) const EVIDENCE_SOURCE: &[u8] = include_bytes!(
+    "../../../../tests/fixtures/adapter-conformance/project/src/conformance-evidence.txt"
+);
+pub(super) const PROJECT_ID: &str = "planner";
+
 /// The observed fixture root: logical path to content digest, using the
 /// protocol plan module's snapshot domain so `changed_paths` applies.
 pub type Observation = BTreeMap<String, String>;

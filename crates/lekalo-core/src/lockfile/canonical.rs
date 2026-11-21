@@ -156,7 +156,7 @@ pub(crate) fn lock_canon(lock: &Lockfile) -> Canon {
                 lock.adapters()
                     .iter()
                     .map(|adapter| {
-                        Canon::object(vec![
+                        let mut fields = vec![
                             ("id", Canon::str(adapter.id().as_str())),
                             ("version", Canon::str(adapter.version().as_str())),
                             ("digest", Canon::str(adapter.digest().as_str())),
@@ -190,7 +190,30 @@ pub(crate) fn lock_canon(lock: &Lockfile) -> Canon {
                                         .collect(),
                                 ),
                             ),
-                        ])
+                        ];
+                        if let Some(digest) = adapter.manifest_digest() {
+                            fields.push(("manifest_digest", Canon::str(digest.as_str())));
+                        }
+                        if let Some(trust) = adapter.trust() {
+                            fields.push(("trust", Canon::str(trust.as_str())));
+                        }
+                        if let Some(provenance) = adapter.provenance() {
+                            let source = provenance.source();
+                            let mut provenance_fields = vec![(
+                                "source",
+                                Canon::object(vec![
+                                    ("kind", Canon::str(source.kind().as_str())),
+                                    ("id", Canon::str(source.id())),
+                                    ("digest", Canon::str(source.digest().as_str())),
+                                ]),
+                            )];
+                            if let Some(plan) = provenance.install_plan_id() {
+                                provenance_fields
+                                    .push(("install_plan_id", Canon::str(plan.as_str())));
+                            }
+                            fields.push(("provenance", Canon::object(provenance_fields)));
+                        }
+                        Canon::object(fields)
                     })
                     .collect(),
             ),
