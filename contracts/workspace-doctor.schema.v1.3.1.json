@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lekalo.dev/contracts/workspace-doctor.schema.v1.3.1.json",
+  "title": "Read-only workspace diagnostics",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "schemaVersion", "identity", "verdict", "children", "contracts"],
+  "properties": {
+    "status": { "const": "valid" },
+    "schemaVersion": { "const": "lekalo/workspace-doctor/v1.3.1" },
+    "identity": { "const": "dev.lekalo.workspace-doctor@1.3.1" },
+    "verdict": { "enum": ["ready", "incomplete", "blocked"] },
+    "children": { "type": "object", "maxProperties": 32, "additionalProperties": { "$ref": "#/$defs/child" } },
+    "contracts": { "type": "array", "maxItems": 1056, "items": { "$ref": "#/$defs/edge" } }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "child": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "model", "runtime", "schemaPins"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "model": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "diagnostics"],
+          "properties": {
+            "state": { "enum": ["not-configured", "valid", "invalid", "denied", "unsupported", "unavailable", "unsupported-version"] },
+            "diagnostics": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "runtime": { "$ref": "#/$defs/runtime" },
+        "schemaPins": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "properties": {
+            "state": { "enum": ["valid", "invalid", "denied", "unsupported", "unavailable", "unsupported-version"] },
+            "diagnostics": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["pinned", "blocked", "not-configured"] },
+        "reason": { "type": "string" },
+        "sourceCheck": { "const": "not-run" },
+        "configDigest": { "$ref": "#/$defs/digest" },
+        "components": { "type": "object", "additionalProperties": { "$ref": "#/$defs/component" } },
+        "services": { "type": "object", "additionalProperties": { "$ref": "#/$defs/runtimePin" } }
+      },
+      "oneOf": [
+        { "properties": { "state": { "const": "pinned" }, "reason": false }, "required": ["sourceCheck", "configDigest", "components", "services"] },
+        { "properties": { "state": { "const": "blocked" }, "sourceCheck": false, "configDigest": false, "components": false, "services": false }, "required": ["reason"] },
+        { "properties": { "state": { "const": "not-configured" }, "reason": false, "sourceCheck": false, "configDigest": false, "components": false, "services": false } }
+      ]
+    },
+    "runtimePin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "executableDigest", "packageDigest"],
+      "properties": {
+        "id": { "type": "string" },
+        "version": { "type": "string" },
+        "executableDigest": { "$ref": "#/$defs/digest" },
+        "packageDigest": { "anyOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtime", "rules"],
+      "properties": {
+        "runtime": { "$ref": "#/$defs/runtimePin" },
+        "rules": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "version", "digest"],
+            "properties": {
+              "id": { "type": "string" },
+              "version": { "type": "string" },
+              "digest": { "$ref": "#/$defs/digest" }
+            }
+          }
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["consumer", "import", "producer", "export", "digest", "state", "detail"],
+      "properties": {
+        "consumer": { "type": ["string", "null"] },
+        "import": { "type": "string" },
+        "producer": { "type": "string" },
+        "export": { "type": "string" },
+        "digest": { "$ref": "#/$defs/digest" },
+        "state": { "enum": ["pinned", "not-checked", "current", "changed", "blocked"] },
+        "detail": { "type": "string" }
+      }
+    }
+  }
+}

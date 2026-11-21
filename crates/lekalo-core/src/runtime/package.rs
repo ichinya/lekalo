@@ -33,8 +33,8 @@ pub struct Package {
     pub dependencies: BTreeMap<String, Package>,
 }
 
-pub fn home() -> Result<PathBuf> {
-    let base = std::env::var_os("LEKALO_PACKAGE_HOME")
+fn home_path() -> Result<PathBuf> {
+    std::env::var_os("LEKALO_PACKAGE_HOME")
         .map(PathBuf::from)
         .or_else(|| {
             std::env::var_os("XDG_CACHE_HOME")
@@ -43,7 +43,11 @@ pub fn home() -> Result<PathBuf> {
                 .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".cache")))
                 .map(|p| p.join("lekalo/packages"))
         })
-        .ok_or_else(|| error("package-home-missing"))?;
+        .ok_or_else(|| error("package-home-missing"))
+}
+
+fn home() -> Result<PathBuf> {
+    let base = home_path()?;
     std::fs::create_dir_all(&base).map_err(|_| error("package-home-unavailable"))?;
     std::fs::canonicalize(base).map_err(|_| error("package-home-unavailable"))
 }
@@ -52,7 +56,9 @@ pub fn root(package: &Package) -> Result<PathBuf> {
     if !crate::target_protocol::wire::is_sha256_digest(&package.digest) {
         return Err(error("package-lock-invalid"));
     }
-    Ok(home()?.join(package.digest.trim_start_matches("sha256:")))
+    let base =
+        std::fs::canonicalize(home_path()?).map_err(|_| error("package-home-unavailable"))?;
+    Ok(base.join(package.digest.trim_start_matches("sha256:")))
 }
 
 fn manifest(bytes: &[u8], kind: &str) -> Result<Manifest> {
@@ -377,6 +383,7 @@ fn resolve_inner(
 
 /// Populate a fresh cache from the locked commit, or verify a local path package.
 pub fn restore(project: &Path, p: &Package) -> Result<()> {
+    home()?;
     if root(p)?.symlink_metadata().is_ok() {
         return verify(p);
     }

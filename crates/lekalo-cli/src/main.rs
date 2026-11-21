@@ -767,6 +767,9 @@ enum Commands {
         /// is ever repaired, installed, updated, or written.
         #[arg(long)]
         fix: bool,
+        /// Inspect child projects, runtime pins and contract imports without running adapters.
+        #[arg(long, conflicts_with_all = ["fix", "traces"])]
+        workspace: bool,
         /// Optional trace manifests supplying HLV/OpenSpec/AI Factory
         /// gate evidence (repeatable).
         #[arg(long = "trace", value_name = "PATH")]
@@ -2888,7 +2891,15 @@ fn runtime() -> u8 {
                 project,
                 fix,
                 traces,
-            } => run_doctor(project, fix, traces),
+                workspace,
+            } => {
+                if workspace {
+                    let selection = selection_for(&project);
+                    workspace::doctor(selection.project.as_deref().unwrap_or("."))
+                } else {
+                    run_doctor(project, fix, traces)
+                }
+            }
             Commands::Status { project, adoption } => run_status(project, adoption),
             Commands::Readiness {
                 phase,

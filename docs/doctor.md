@@ -39,6 +39,30 @@ panel onto the classified unavailable envelope (exit 4,
 report projection of the panel is documented in
 [ci-reports.md](ci-reports.md).
 
+## Workspace diagnostics
+
+```sh
+lekalo --json doctor --workspace --project pushhard
+```
+
+This read-only report inspects the declared child projects in
+`lekalo.workspace.yaml`. It includes each child ID and relative path, the
+Model validation result, schema pins, and the locked component, rules and service versions
+and digests. It verifies the pins against files already on disk. It does not
+fetch packages, create a cache, run adapters or mutate either project's lock.
+
+The report verifies the consumer's accepted bundle for each import. It also
+compares the current producer export for module API contracts and reports
+`current`, `changed`, or `blocked`, including compatibility when a digest
+changes. Exports that require runtime execution are `not-checked`. A verified
+runtime lock is reported as `pinned` with `sourceCheck: not-run`. Run
+`lekalo workspace check --strict` for the execution-backed result.
+
+A produced report exits 0 even when its verdict is `blocked` or `incomplete`.
+Missing or malformed manifests and invalid workspace membership fail the
+invocation. The [workspace doctor schema](../contracts/workspace-doctor.schema.v1.3.1.json)
+is separate from the ordinary doctor report.
+
 ## Checks
 
 Thirteen closed check ids form the full `doctor` panel; `status`

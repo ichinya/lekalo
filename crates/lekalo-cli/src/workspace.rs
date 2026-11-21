@@ -142,6 +142,45 @@ fn child_root(root: &Path, relative: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
+struct Member<'a> {
+    name: &'a str,
+    relative: &'a str,
+    path: PathBuf,
+    selector: String,
+    manifest: Option<Manifest>,
+}
+
+fn members<'a>(root: &Path, selector: &str, parent: &'a Manifest) -> Result<Vec<Member<'a>>> {
+    let mut members: Vec<Member<'a>> = Vec::new();
+    for (name, relative) in &parent.children {
+        let path = child_root(root, relative)?;
+        if members
+            .iter()
+            .any(|member| member.path.starts_with(&path) || path.starts_with(&member.path))
+        {
+            return Err(error("workspace-child-overlap"));
+        }
+        let child = manifest(&path)?;
+        if child
+            .as_ref()
+            .is_some_and(|manifest| !manifest.children.is_empty())
+        {
+            return Err(error("workspace-nested-members"));
+        }
+        // Model commands retain the invocation-relative selector. File reads
+        // use the separately confined absolute child root.
+        let selector = format!("{}/{relative}", selector.trim_end_matches('/'));
+        members.push(Member {
+            name,
+            relative,
+            path,
+            selector,
+            manifest: child,
+        });
+    }
+    Ok(members)
+}
+
 fn publish(root: &Path, selector: &str, spec: &Export, name: &str) -> Result<Bundle> {
     let (kind, body, digest) = match spec {
         Export::Fact {
@@ -350,26 +389,17 @@ fn check_members(
             errors.push(format!("{}/{}", e.detail, name));
         }
     }
-    let mut members = BTreeMap::new();
-    let mut roots: Vec<PathBuf> = Vec::new();
+    let mut checked_members = BTreeMap::new();
     let mut published = BTreeMap::new();
     let mut imports: BTreeMap<_, Vec<_>> = BTreeMap::new();
-    for (name, relative) in &m.children {
-        let path = child_root(root, relative)?;
-        if roots
-            .iter()
-            .any(|p| p.starts_with(&path) || path.starts_with(p))
-        {
-            return Err(error("workspace-child-overlap"));
-        }
-        roots.push(path.clone());
-        let child = manifest(&path)?;
-        if child.as_ref().is_some_and(|c| !c.children.is_empty()) {
-            return Err(error("workspace-nested-members"));
-        }
-        // Model commands accept invocation-relative selectors. Keep the
-        // confined absolute path for workspace and runtime file reads.
-        let child_selector = format!("{}/{relative}", selector.trim_end_matches('/'));
+    for Member {
+        name,
+        path,
+        selector: child_selector,
+        manifest: child,
+        ..
+    } in members(root, selector, m)?
+    {
         let project = Some(child_selector.clone());
         if !crate::runtime_config::configured(project.as_deref())
             && !path.join("lekalo/project.yaml").is_file()
@@ -378,7 +408,7 @@ fn check_members(
         }
         let checked = crate::validate_project(&project, &None, strict, no_cache, None, None);
         let valid = checked.status() == Status::Valid;
-        members.insert(name, checked.status().as_str());
+        checked_members.insert(name, checked.status().as_str());
         if !valid {
             errors.push(format!(
                 "workspace-child-invalid/{name}/{}",
@@ -411,7 +441,7 @@ fn check_members(
                 }
             };
             let candidate = candidate.get_or_init(|| {
-                let (path, selector, exports, valid) = published.get(&producer)?;
+                let (path, selector, exports, valid) = published.get(producer.as_str())?;
                 if !valid {
                     return None;
                 }
@@ -436,7 +466,176 @@ fn check_members(
         json!({"consumer":consumer,"import":alias,"producer":spec.from,"export":spec.export,"digest":spec.digest})
     }).collect();
     Ok((
-        json!({"schema":"lekalo/workspace-check/v1","status":"valid","children":members,"local_imports":m.imports.len(),"dependencies":dependencies}),
+        json!({"schema":"lekalo/workspace-check/v1","status":"valid","children":checked_members,"local_imports":m.imports.len(),"dependencies":dependencies}),
         errors,
     ))
+}
+
+/// Report pins and accepted bundles without running a runtime or restoring packages.
+pub fn doctor(selector: &str) -> DomainResult {
+    match inspect_workspace(selector) {
+        Ok(report) => {
+            let count = report["children"]
+                .as_object()
+                .map_or(0, |children| children.len());
+            let verdict = report["verdict"]
+                .as_str()
+                .expect("workspace doctor verdict");
+            let human = format!("workspace doctor {verdict} ({count} children)");
+            DomainResult::receipt(serde_json::to_string_pretty(&report).unwrap(), human)
+        }
+        Err(error) => runtime::outcome(Err(error)),
+    }
+}
+
+fn inspect_workspace(selector: &str) -> Result<Value> {
+    let root = crate::runtime_config::resolve_root(Path::new(selector))?;
+    let workspace = manifest(&root)?.ok_or_else(|| error("workspace-manifest-required"))?;
+    let members = members(&root, selector, &workspace)?;
+    let mut blocked = false;
+    let mut pending = false;
+    let mut children = BTreeMap::new();
+    let mut edges = Vec::new();
+    for (alias, import) in &workspace.imports {
+        let edge = inspect_import(&root, None, alias, import, &members);
+        blocked |= edge["state"] == "blocked";
+        edges.push(edge);
+    }
+    for member in &members {
+        let has_model = member
+            .path
+            .join("lekalo/project.yaml")
+            .symlink_metadata()
+            .is_ok();
+        let model = if has_model {
+            let result = crate::run_validate(Some(member.selector.clone()), None, false, true);
+            json!({"state":result.status().as_str(), "diagnostics":result.diagnostics().iter().map(|d| d.id()).collect::<Vec<_>>()})
+        } else {
+            json!({"state":"not-configured", "diagnostics":[]})
+        };
+        let configured = crate::runtime_config::configured(Some(&member.selector));
+        let runtime = if configured {
+            match runtime::check_lock(&member.path) {
+                Ok(lock) => runtime_inventory(&lock),
+                Err(error) => json!({"state":"blocked", "reason":error.detail}),
+            }
+        } else {
+            json!({"state":"not-configured"})
+        };
+        let schema_pins = match lekalo_core::lockfile::plan::LockService::check_project_schemas_at(
+            &member.path,
+        ) {
+            Ok(_) => json!({"state":"valid"}),
+            Err(failure) => {
+                let result = DomainResult::from(&failure);
+                blocked = true;
+                json!({"state":result.status().as_str(), "diagnostics":result.diagnostics().iter().map(|d| d.id()).collect::<Vec<_>>()})
+            }
+        };
+        blocked |= (!has_model && !configured)
+            || (has_model && model["state"] != "valid")
+            || runtime["state"] == "blocked";
+        pending |= runtime["state"] == "pinned";
+        children.insert(
+            member.name,
+            json!({"path":member.relative, "model":model, "runtime":runtime, "schemaPins":schema_pins}),
+        );
+        if let Some(child) = &member.manifest {
+            for (alias, import) in &child.imports {
+                let edge = inspect_import(&member.path, Some(member.name), alias, import, &members);
+                blocked |= matches!(edge["state"].as_str(), Some("blocked" | "changed"));
+                pending |= edge["state"] == "not-checked";
+                edges.push(edge);
+            }
+        }
+    }
+    let verdict = if blocked {
+        "blocked"
+    } else if pending {
+        "incomplete"
+    } else {
+        "ready"
+    };
+    Ok(json!({
+        "status":"valid",
+        "schemaVersion":"lekalo/workspace-doctor/v1.3.1",
+        "identity":"dev.lekalo.workspace-doctor@1.3.1",
+        "verdict":verdict,
+        "children":children,
+        "contracts":edges,
+    }))
+}
+
+fn runtime_inventory(lock: &runtime::Lock) -> Value {
+    let components: BTreeMap<_, _> =
+        lock.components
+            .iter()
+            .map(|(id, pin)| {
+                let rules: Vec<_> = pin.rules.iter().map(|rule| json!({
+            "id":rule.manifest.id, "version":rule.manifest.version, "digest":rule.digest
+        })).collect();
+                (
+                    id,
+                    json!({"runtime":runtime_pin(&pin.runtime), "rules":rules}),
+                )
+            })
+            .collect();
+    let services: BTreeMap<_, _> = lock
+        .services
+        .iter()
+        .map(|(id, pin)| (id, runtime_pin(pin)))
+        .collect();
+    json!({"state":"pinned", "sourceCheck":"not-run", "configDigest":lock.config_digest,
+        "components":components, "services":services})
+}
+
+fn runtime_pin(pin: &runtime::RuntimePin) -> Value {
+    json!({"id":pin.description.id, "version":pin.description.version,
+        "executableDigest":pin.files[&pin.command[0]],
+        "packageDigest":pin.package.as_ref().map(|package| &package.digest)})
+}
+
+fn inspect_import(
+    root: &Path,
+    consumer: Option<&str>,
+    alias: &str,
+    import: &Import,
+    members: &[Member<'_>],
+) -> Value {
+    let (state, detail) = match accepted(root, import) {
+        Err(error) => ("blocked", error.detail),
+        Ok(_) if consumer.is_none() => ("pinned", "accepted-bundle".into()),
+        Ok(pinned) => {
+            let export = members
+                .iter()
+                .find(|member| member.name == import.from)
+                .and_then(|member| {
+                    Some((
+                        member,
+                        member.manifest.as_ref()?.exports.get(&import.export)?,
+                    ))
+                });
+            match export {
+                Some((_, Export::Fact { .. })) if pinned.kind != "runtime-fact" => {
+                    ("changed", "kind-changed".into())
+                }
+                Some((_, Export::Fact { .. })) => ("not-checked", "runtime-export".into()),
+                Some((member, spec @ Export::Module { .. })) => {
+                    match publish(&member.path, &member.selector, spec, &import.export) {
+                        Ok(candidate)
+                            if pinned.kind == candidate.kind
+                                && pinned.digest == candidate.digest =>
+                        {
+                            ("current", "matching-export".into())
+                        }
+                        Ok(candidate) => ("changed", compatibility(&pinned, &candidate).into()),
+                        Err(error) => ("blocked", error.detail),
+                    }
+                }
+                None => ("blocked", "workspace-export-unavailable".into()),
+            }
+        }
+    };
+    json!({"consumer":consumer, "import":alias, "producer":import.from, "export":import.export,
+        "digest":import.digest, "state":state, "detail":detail})
 }

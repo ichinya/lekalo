@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "productVersion": "1.3.1",
-  "cliSourceDigest": "sha256:0f6587edb6f771bcad376c20aebd1de6964334e4f9b0c54bcb0a0f8a076321d7",
+  "cliSourceDigest": "sha256:207caa69693be91426379f4a577b4d1a4ec28a502e873b47a0c4e05ebf2f8a4c",
   "p0Pages": [
     {
       "page": "README.md",
@@ -920,7 +920,7 @@
       "kind": "command",
       "command": "doctor",
       "usage": "lekalo doctor [OPTIONS]",
-      "helpDigest": "sha256:7f4782ab0f51b5173e75c3dd869c1d074b80b63e61810f32ffc06d46eacc9f78",
+      "helpDigest": "sha256:c802ec253088100ed5e4a56d4db376652d16068946fb2aa29ce1614c2bc6fe69",
       "summary": "Diagnose project, model, adapters, artifacts, and integrations in one read-only readiness report",
       "leaf": true,
       "owner": "docs/doctor.md",
@@ -5625,6 +5625,15 @@
       "source": "contracts/worklog-changelog-pilot.schema.v0.8.0.json",
       "sourceDigest": "sha256:fcf2ba0b7bf8f6210a75f9821af993a88d4086933d0b5a5bb2c1858cd1333ae0",
       "owner": "docs/worklog-changelog.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/workspace-doctor.schema.v1.3.1.json",
+      "kind": "contract",
+      "source": "contracts/workspace-doctor.schema.v1.3.1.json",
+      "sourceDigest": "sha256:59a027c455f6ead55e3d83e27c811a1fd66481030db79b7a75a4a3bb240e206b",
+      "owner": "docs/doctor.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },

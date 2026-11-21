@@ -197,6 +197,9 @@ language. Changing the selected contract package changes its digest.
 
 ## Independent projects in a workspace
 
+Use [`doctor --workspace`](doctor.md#workspace-diagnostics) to inspect the child
+locks and contract links before running workspace checks.
+
 Keep each child's `lekalo.yaml` and `lekalo.runtime.lock` with the child.
 At the common parent, create `lekalo.workspace.yaml`:
 
