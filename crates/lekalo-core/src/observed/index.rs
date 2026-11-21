@@ -811,10 +811,7 @@ pub fn confirm_binding(
     {
         return Err(diagnostic::plan_mismatch_set("http-handler-source-drift"));
     }
-    if index.evidence_groups.is_some()
-        && index.symbols[position].stable_key.is_none()
-        && index.symbols[position].candidates.len() > 1
-    {
+    if index.evidence_groups.is_some() && index.symbols[position].candidates.len() > 1 {
         return Err(diagnostic::ambiguous_set(symbol_id, "ambiguous-candidates"));
     }
     if index.symbols[position]
@@ -931,6 +928,13 @@ pub fn staleness(ctx: &super::ObservedContext) -> Result<StalenessReceipt, Diagn
         if record.promoted {
             // Promoted symbols are canonical-owned; their observed
             // binding drift is history, not a gate failure.
+            continue;
+        }
+        if index.evidence_groups.is_some()
+            && record.status == BindingStatus::Confirmed
+            && record.state == BindingState::Stale
+        {
+            failures.push((record.id.clone(), "state-stale"));
             continue;
         }
         if index

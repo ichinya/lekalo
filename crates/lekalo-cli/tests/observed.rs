@@ -970,11 +970,27 @@ fn generic_scan_uses_pinned_provider_schemas_through_the_public_cli() {
     config["scans"][0]["families"]["labels"] = projected.clone();
     write_config(&config);
     let mut projected_group = group("labels", &projected, json!({"id":"taskboard.title"}));
+    let title = |index: &Value| {
+        index["symbols"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|symbol| symbol["id"] == "taskboard.title")
+            .unwrap()
+            .clone()
+    };
     let mut other = projected_group["facts"][0].clone();
     other["subject"] = json!("dependency");
     other["references"] = json!({"dependency":"root"});
+    other["payload"]["id"] = json!("taskboard.label");
     projected_group["facts"].as_array_mut().unwrap().push(other);
+    let single: Value =
+        serde_json::from_slice(&accepted("1.4.0", &json!([projected_group]))).unwrap();
+    assert_eq!(title(&single)["stable_key"], "root");
+    projected_group["facts"][1]["payload"]["id"] = json!("taskboard.title");
     let projected_index = accepted("1.4.0", &json!([projected_group]));
+    let multiple: Value = serde_json::from_slice(&projected_index).unwrap();
+    assert_eq!(title(&multiple)["stable_key"], "root");
     let proposals = sandbox.json(&["bindings", "propose", "--project", "proj"]);
     let proposed = proposals["proposals"].as_array().unwrap();
     assert_eq!(proposed.len(), 1);
@@ -1033,18 +1049,9 @@ fn generic_scan_uses_pinned_provider_schemas_through_the_public_cli() {
     assert_eq!(selected["native"], "root");
     let unchanged: Value =
         serde_json::from_slice(&accepted("1.4.0", &json!([projected_group]))).unwrap();
-    assert_eq!(unchanged["symbols"][0]["state"], "current");
-    assert_eq!(unchanged["symbols"][0]["status"], "confirmed");
+    assert_eq!(title(&unchanged)["state"], "current");
+    assert_eq!(title(&unchanged)["status"], "confirmed");
 
-    let title = |index: &Value| {
-        index["symbols"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|symbol| symbol["id"] == "taskboard.title")
-            .unwrap()
-            .clone()
-    };
     assert_eq!(
         title(&unchanged)["evidence"]["references"][0]["target"],
         "taskboard.title"
@@ -1056,6 +1063,10 @@ fn generic_scan_uses_pinned_provider_schemas_through_the_public_cli() {
         serde_json::from_slice(&accepted("1.4.0", &json!([projected_group]))).unwrap();
     assert_eq!(title(&remapped)["state"], "stale");
     assert_eq!(title(&remapped)["evidence"], title(&unchanged)["evidence"]);
+    assert_scan_refusal(
+        &sandbox.run(&["--json", "observe", "check", "--project", "proj"]),
+        "state-stale",
+    );
     let proposals = sandbox.json(&["bindings", "propose", "--project", "proj"]);
     let title_proposal = |proposals: &Value| {
         proposals["proposals"]
