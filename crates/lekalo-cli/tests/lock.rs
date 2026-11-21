@@ -88,6 +88,113 @@ fn project_dir(tag: &str) -> PathBuf {
 }
 
 #[test]
+fn lock_pins_the_verified_installed_package_and_its_entry_separately() {
+    use lekalo_core::adapter_package::ManifestDocument;
+    use lekalo_core::digest::sha256_hex;
+    use serde_json::{json, Value};
+
+    let project = project_dir("installed");
+    let adapter_dir = project.join("adapter");
+    std::fs::create_dir(&adapter_dir).unwrap();
+    let entry = "evidence-adapter.cjs";
+    let payload =
+        include_bytes!("../../../tests/fixtures/adapter-conformance/evidence-adapter.cjs");
+    std::fs::write(adapter_dir.join(entry), payload).unwrap();
+    let entry_digest = format!("sha256:{}", sha256_hex(payload));
+    let mut doc: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/adapter-manifest/valid/basic.json"
+    ))
+    .unwrap();
+    doc["adapter"]["id"] = json!("conformance-evidence");
+    doc["source"]["coordinate"] = json!("path:adapter");
+    doc["executable"] = json!({"entry": entry, "argvPreview":["node", entry]});
+    doc["compatibility"]["protocolVersions"] = json!(["0.3.2", "1.4.0"]);
+    doc["compatibility"]["irVersions"] = json!(["0.2.16", "0.8.0"]);
+    doc["capabilities"]["targets"] = json!(["conformance-evidence"]);
+    doc["capabilities"]["profiles"] = json!([]);
+    doc["integrity"]["files"] =
+        json!([{"path":entry, "digest":entry_digest, "bytes":payload.len()}]);
+    let manifest = ManifestDocument::from_value(doc.clone()).unwrap();
+    let mut package = Vec::new();
+    for (path, bytes) in [
+        (entry, payload.as_slice()),
+        ("adapter.manifest.json", &manifest.digest_domain_bytes()),
+    ] {
+        let mut part = path.as_bytes().to_vec();
+        part.push(0);
+        part.extend_from_slice(&(bytes.len() as u64).to_be_bytes());
+        part.push(0);
+        part.extend_from_slice(bytes);
+        package.extend_from_slice(&(part.len() as u64).to_be_bytes());
+        package.extend_from_slice(&part);
+    }
+    let package_digest = format!("sha256:{}", sha256_hex(&package));
+    assert_ne!(package_digest, entry_digest);
+    doc["integrity"]["packageDigest"] = json!(package_digest);
+    let manifest = ManifestDocument::from_value(doc).unwrap();
+    std::fs::write(
+        adapter_dir.join("adapter.manifest.json"),
+        manifest.stored_bytes(),
+    )
+    .unwrap();
+
+    let preview = lekalo_in(
+        &project,
+        &["adapter", "install", "path:adapter", "--dry-run", "--json"],
+    );
+    assert!(preview.status.success(), "{preview:?}");
+    let plan: Value = serde_json::from_slice(&preview.stdout).unwrap();
+    let plan_id = plan["planId"].as_str().unwrap();
+    let installed = lekalo_in(
+        &project,
+        &["adapter", "install", "path:adapter", "--confirm", plan_id],
+    );
+    assert!(installed.status.success(), "{installed:?}");
+
+    let lock_args = ["lock", "--", "node", "adapter/evidence-adapter.cjs"];
+    let store = lekalo_core::adapter_package::quarantine::package_path(
+        "conformance-evidence",
+        "1.0.0",
+        &package_digest,
+    );
+    let stored_entry = project.join(store).join(entry);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&stored_entry)
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_ne!(mode & 0o100, 0, "the installed entry is executable");
+    }
+    std::fs::write(&stored_entry, b"// changed installed file").unwrap();
+    let refused = lekalo_in(&project, &lock_args);
+    assert!(!refused.status.success(), "{refused:?}");
+    assert!(
+        format!("{}{}", stdout(&refused), stderr(&refused)).contains("adapter.checksum-mismatch")
+    );
+    assert!(!project.join("lekalo.lock").exists());
+    std::fs::write(stored_entry, payload).unwrap();
+
+    let created = lekalo_in(&project, &lock_args);
+    assert!(created.status.success(), "{created:?}");
+    let lock: Value =
+        serde_json::from_slice(&std::fs::read(project.join("lekalo.lock")).unwrap()).unwrap();
+    let adapter = &lock["adapters"][0];
+    assert_eq!(adapter["source"]["kind"], "installed");
+    assert_eq!(adapter["source"]["digest"], package_digest);
+    assert_eq!(adapter["digest"], package_digest);
+    assert_eq!(adapter["artifacts"][0]["digest"], entry_digest);
+    assert_eq!(adapter["trust"], "local-development");
+    assert_eq!(adapter["manifest_digest"], manifest.digest().as_str());
+    assert_eq!(adapter["provenance"]["source"], adapter["source"]);
+    assert_eq!(adapter["provenance"]["install_plan_id"], plan_id);
+    let checked = lekalo_in(&project, &["lock", "--check"]);
+    assert!(checked.status.success(), "{checked:?}");
+    std::fs::remove_dir_all(project).unwrap();
+}
+
+#[test]
 fn lock_create_then_check_produces_the_committed_golden_bytes() {
     let dir = project_dir("golden");
     let output = lekalo_in(&dir, &["lock"]);

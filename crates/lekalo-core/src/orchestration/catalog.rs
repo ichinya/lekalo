@@ -16,6 +16,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::adapter_package::budget::{ExpansionPolicy, SessionBudget};
+use crate::adapter_package::{self, Inventory, ManifestDocument, PackageFailure};
 use crate::lockfile::resolution::{CandidateAdapter, CandidateSet};
 use crate::lockfile::types::{
     ArtifactPin, ComponentId, Platform, SemVer, Sha256Digest, SourceKind, SourceRef,
@@ -123,6 +124,7 @@ pub(crate) fn discover_cancellable(
 ) -> Result<DiscoveredAdapter, Failure> {
     let _ = limits;
     discover_constrained(client, supply, root, policy, cancel, false)
+        .map(|(discovered, _)| discovered)
 }
 
 /// Watch requires bounded processes/memory and forbids implicit environment,
@@ -134,6 +136,7 @@ pub(crate) fn discover_watch_cancellable(
     cancel: Option<&std::sync::atomic::AtomicBool>,
 ) -> Result<DiscoveredAdapter, Failure> {
     discover_constrained(client, supply, root, ExpansionPolicy::Refuse, cancel, true)
+        .map(|(discovered, _)| discovered)
 }
 fn discover_constrained(
     client: &mut TargetClient,
@@ -142,7 +145,7 @@ fn discover_constrained(
     policy: ExpansionPolicy,
     cancel: Option<&std::sync::atomic::AtomicBool>,
     watch: bool,
-) -> Result<DiscoveredAdapter, Failure> {
+) -> Result<(DiscoveredAdapter, Option<ManifestDocument>), Failure> {
     let (manifest, synthesized) = gate_supply(supply, root)?;
     // A synthesized/implicit descriptor claims nothing: it gets the
     // strict default budget, not its synthesized manifest's empty
@@ -186,7 +189,7 @@ fn discover_constrained(
             })
         })?;
     }
-    Ok(discovered)
+    Ok((discovered, manifest.filter(|_| !synthesized)))
 }
 
 /// Whether the manifest-vs-describe consistency check applies: only a
@@ -295,15 +298,16 @@ pub(crate) fn binding_failure(
     }
 }
 
-/// Build the sealed `#10` candidate supply from one discovery outcome:
-/// the adapter package with a platform-neutral artifact pin and the
-/// typed compatibility manifest derived from the declared versions. The
-/// bridge pins adapter identity only; generator, profile, and catalog
-/// supply arrive with the provider milestones and stay out of v1.
-pub fn candidate_supply(
-    discovered: &DiscoveredAdapter,
+/// Discover and pin one explicit lock supply. Installed packages bind the
+/// inventory to the verified package, while the artifact pin still binds
+/// the exact bytes that ran the describe handshake.
+pub fn discover_lock_candidate(
+    client: &mut TargetClient,
     supply: &AdapterSupply,
-) -> Result<CandidateSet, Failure> {
+    root: &Path,
+) -> Result<(DiscoveredAdapter, CandidateSet), Failure> {
+    let (discovered, manifest) =
+        discover_constrained(client, supply, root, ExpansionPolicy::Refuse, None, false)?;
     let executable = discovered
         .executable_digest
         .as_deref()
@@ -311,21 +315,71 @@ pub fn candidate_supply(
         .transpose()
         .map_err(|_| Failure::AdapterSupplyRequired)?
         .ok_or(Failure::AdapterSupplyRequired)?;
-    let source = SourceRef::new(SourceKind::Project, &supply.source_id, executable.clone())
+    let inventory = Inventory::load(root).map_err(package_failure)?;
+    let installed = inventory
+        .selected(&discovered.adapter.id)
+        .filter(|row| row.version == discovered.adapter.version);
+    let digest = match installed {
+        Some(row) => {
+            let manifest = manifest
+                .as_ref()
+                .ok_or_else(|| package_failure(PackageFailure::SourceChanged))?;
+            let entry_matches = Path::new(&supply.source_id).file_name()
+                == Some(std::ffi::OsStr::new(manifest.entry()))
+                && manifest.files().iter().any(|file| {
+                    file.path() == manifest.entry() && file.digest().as_str() == executable.as_str()
+                });
+            if !entry_matches
+                || manifest.package_digest().as_str() != row.digest
+                || manifest.digest().as_str() != row.manifest_digest
+            {
+                return Err(package_failure(PackageFailure::SourceChanged));
+            }
+            let installed_path =
+                adapter_package::quarantine::package_path(&row.id, &row.version, &row.digest);
+            let [candidate]: [adapter_package::discovery::DiscoveryCandidate; 1] =
+                adapter_package::discover(
+                    &adapter_package::DiscoverySource::Path(root.join(installed_path)),
+                    Some(&root.to_path_buf()),
+                )
+                .map_err(package_failure)?
+                .try_into()
+                .map_err(|_| package_failure(PackageFailure::SourceChanged))?;
+            if candidate.manifest.digest().as_str() != row.manifest_digest {
+                return Err(package_failure(PackageFailure::SourceChanged));
+            }
+            adapter_package::verify_package(&candidate).map_err(package_failure)?;
+            manifest.package_digest().clone()
+        }
+        None => executable.clone(),
+    };
+    let source = SourceRef::new(SourceKind::Project, &supply.source_id, digest.clone())
         .map_err(Failure::Lock)?;
-    let manifest = compatibility_manifest(discovered)?;
+    let compatibility = compatibility_manifest(&discovered)?;
     let adapter = CandidateAdapter::new(
         ComponentId::parse(&discovered.adapter.id).map_err(Failure::Lock)?,
         SemVer::parse(&discovered.adapter.version).map_err(Failure::Lock)?,
-        executable.clone(),
+        digest,
         source,
         vec![ArtifactPin::new(
             Platform::parse("any").map_err(Failure::Lock)?,
             executable,
         )],
-        manifest,
+        compatibility,
     );
-    Ok(CandidateSet::empty().with_adapter(adapter))
+    let mut candidates = CandidateSet::empty().with_adapter(adapter);
+    if let Some(row) = installed {
+        candidates
+            .with_installed_provenance(
+                &row.version,
+                &row.digest,
+                &row.manifest_digest,
+                row.trust.as_str(),
+                row.install_plan_id.as_deref(),
+            )
+            .map_err(Failure::Lock)?;
+    }
+    Ok((discovered, candidates))
 }
 
 /// The typed `#9` compatibility manifest derived from the declared
