@@ -605,7 +605,7 @@ fn validate_checks_pinned_evidence_binding_declarations() {
         "type":"object", "required":["id"], "properties":{"id":{"type":"string"}}
     });
     let rule = json!({
-        "schema":"lekalo/evidence-binding-rules/v1.3.0",
+        "schema":"lekalo/evidence-binding-rules/v1.3.1",
         "kind":"command", "identity":["id"], "match":{"id":"id"},
         "source_roles":["subject","dependency"]
     });
@@ -843,7 +843,7 @@ fn generic_scan_uses_pinned_provider_schemas_through_the_public_cli() {
         "labels-provider",
         json!({"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}),
         Some(json!({
-            "schema":"lekalo/evidence-binding-rules/v1.3.0",
+            "schema":"lekalo/evidence-binding-rules/v1.3.1",
             "kind":"command", "identity":["id"], "match":{"id":"id"},
             "source_roles":["subject","dependency"]
         })),

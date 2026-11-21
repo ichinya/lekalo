@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "dev.lekalo.evidence-binding-rules@1.3.0",
+  "$id": "dev.lekalo.evidence-binding-rules@1.3.1",
   "title": "Declarative evidence binding rule",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "kind", "identity", "match", "source_roles"],
   "properties": {
-    "schema": {"const": "lekalo/evidence-binding-rules/v1.3.0"},
+    "schema": {"const": "lekalo/evidence-binding-rules/v1.3.1"},
     "kind": {
       "enum": ["scalar", "enum", "value-object", "entity", "command", "query", "event", "policy", "effect", "endpoint"]
     },

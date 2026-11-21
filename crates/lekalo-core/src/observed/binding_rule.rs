@@ -8,7 +8,7 @@ use crate::target_protocol::{scan_evidence::Fact, scopes};
 
 use super::types::SymbolKind;
 
-const VERSION: &str = "lekalo/evidence-binding-rules/v1.3.0";
+const VERSION: &str = "lekalo/evidence-binding-rules/v1.3.1";
 const INVALID: &str = "evidence-binding-rule-invalid";
 
 #[derive(Deserialize)]

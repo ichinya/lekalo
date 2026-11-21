@@ -74,7 +74,7 @@ An evidence package can include a `bindings.json` alongside
 `payload.schema.json`. List both files in `lekalo.package.json`. The exact
 rule bytes participate in the package digest selected by `lekalo.evidence.json`.
 
-A [binding rule](../contracts/evidence-binding-rules.schema.v1.3.0.json) declares
+A [binding rule](../contracts/evidence-binding-rules.schema.v1.3.1.json) declares
 a Model kind, an ordered list of payload fields for identity, a mapping from
 symbol attributes to payload fields, and the native roles whose files supply
 binding evidence. The available symbol attributes are `id`, plus `method`
