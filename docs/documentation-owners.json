@@ -5632,7 +5632,7 @@
       "id": "contract:contracts/workspace-doctor.schema.v1.3.1.json",
       "kind": "contract",
       "source": "contracts/workspace-doctor.schema.v1.3.1.json",
-      "sourceDigest": "sha256:59a027c455f6ead55e3d83e27c811a1fd66481030db79b7a75a4a3bb240e206b",
+      "sourceDigest": "sha256:08a62793df0deea32ddbbdf0fb60def54fc321f85a60d217aedcab1c269b74d3",
       "owner": "docs/doctor.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"

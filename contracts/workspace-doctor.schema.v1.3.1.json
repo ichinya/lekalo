@@ -43,21 +43,34 @@
       }
     },
     "runtime": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["state"],
-      "properties": {
-        "state": { "enum": ["pinned", "blocked", "not-configured"] },
-        "reason": { "type": "string" },
-        "sourceCheck": { "const": "not-run" },
-        "configDigest": { "$ref": "#/$defs/digest" },
-        "components": { "type": "object", "additionalProperties": { "$ref": "#/$defs/component" } },
-        "services": { "type": "object", "additionalProperties": { "$ref": "#/$defs/runtimePin" } }
-      },
       "oneOf": [
-        { "properties": { "state": { "const": "pinned" }, "reason": false }, "required": ["sourceCheck", "configDigest", "components", "services"] },
-        { "properties": { "state": { "const": "blocked" }, "sourceCheck": false, "configDigest": false, "components": false, "services": false }, "required": ["reason"] },
-        { "properties": { "state": { "const": "not-configured" }, "reason": false, "sourceCheck": false, "configDigest": false, "components": false, "services": false } }
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "sourceCheck", "configDigest", "components", "services"],
+          "properties": {
+            "state": { "const": "pinned" },
+            "sourceCheck": { "const": "not-run" },
+            "configDigest": { "$ref": "#/$defs/digest" },
+            "components": { "type": "object", "maxProperties": 64, "additionalProperties": { "$ref": "#/$defs/component" } },
+            "services": { "type": "object", "maxProperties": 32, "additionalProperties": { "$ref": "#/$defs/runtimePin" } }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "reason"],
+          "properties": {
+            "state": { "const": "blocked" },
+            "reason": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "properties": { "state": { "const": "not-configured" } }
+        }
       ]
     },
     "runtimePin": {
