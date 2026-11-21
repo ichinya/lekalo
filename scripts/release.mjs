@@ -48,7 +48,8 @@ export function assetNames(tag, target) {
   versionForTag(tag);
   assert.ok(Object.hasOwn(targets, target), 'Unsupported release target');
   const stem = `lekalo-${tag}-${target}`;
-  return { stem, archive: stem + targets[target].extension, manifest: stem + '.build.json' };
+  const executable = targets[target].platform === 'win32' ? stem + '.exe' : stem;
+  return { stem, archive: stem + targets[target].extension, manifest: stem + '.build.json', executable };
 }
 
 function sourceCommit(source) {
@@ -102,7 +103,7 @@ export function collectAssets(directory, tag, commit) {
   assert.match(commit ?? '', /^[0-9a-f]{40}$/, 'Expected the tagged commit SHA');
   const version = versionForTag(tag);
   const expected = Object.keys(targets).flatMap(target => {
-    const { archive, manifest } = assetNames(tag, target);
+    const { archive, manifest, executable } = assetNames(tag, target);
     const record = json(join(directory, manifest));
     assert.equal(record.tag, tag, 'Build tag mismatch');
     assert.equal(record.version, version, 'Build version mismatch');
@@ -110,10 +111,11 @@ export function collectAssets(directory, tag, commit) {
     assert.equal(record.target, target, 'Build target mismatch');
     assert.equal(record.archive, archive, 'Build archive name mismatch');
     assert.equal(record.archiveSha256, sha256(join(directory, archive)), 'Archive checksum mismatch');
-    assert.match(record.binarySha256, /^[0-9a-f]{64}$/, 'Missing executable checksum');
-    return [archive, manifest];
+    assert.equal(record.executable, executable, 'Build executable name mismatch');
+    assert.equal(record.binarySha256, sha256(join(directory, executable)), 'Executable checksum mismatch');
+    return [archive, manifest, executable];
   }).sort();
-  assert.deepEqual(readdirSync(directory).filter(name => name !== 'SHA256SUMS.txt').sort(), expected, 'Release must contain exactly all five archives and their build records');
+  assert.deepEqual(readdirSync(directory).filter(name => name !== 'SHA256SUMS.txt').sort(), expected, 'Release must contain exactly all five executables, archives and build records');
   const checksums = expected.map(name => `${sha256(join(directory, name))}  ${name}\n`).join('');
   writeFileSync(join(directory, 'SHA256SUMS.txt'), checksums);
   return [...expected, 'SHA256SUMS.txt'];
@@ -127,7 +129,7 @@ export function verifyDownloadedAssets(local, downloaded, names) {
 
 function packageBinary(source, output, tag, target, commit) {
   const version = versionForTag(tag);
-  const { stem, archive, manifest } = assetNames(tag, target);
+  const { stem, archive, manifest, executable } = assetNames(tag, target);
   assert.equal(process.platform, targets[target].platform, 'Build must run on the target OS');
   assert.equal(process.arch, targets[target].arch, 'Build must run on the target architecture');
   assert.equal(sourceCommit(source), commit, 'Source commit changed');
@@ -152,6 +154,7 @@ function packageBinary(source, output, tag, target, commit) {
   assert.equal(run(extractedBinary, ['--version'], { cwd: extracted }), `lekalo ${version}`, 'Extracted executable version mismatch');
   run(extractedBinary, ['--help'], { cwd: extracted });
   run(extractedBinary, ['compatibility'], { cwd: extracted });
+  copyFileSync(extractedBinary, join(output, executable));
   assert.equal(sourceCommit(source), commit, 'Build modified release source');
 
   writeFileSync(join(output, manifest), JSON.stringify({
@@ -160,7 +163,7 @@ function packageBinary(source, output, tag, target, commit) {
     buildRun: process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` : null,
     rustc: run('rustc', ['--version', '--verbose']),
     cargoLockSha256: sha256(join(source, 'Cargo.lock')),
-    binarySha256: sha256(binary), archive, archiveSha256: sha256(archivePath),
+    executable, binarySha256: sha256(binary), archive, archiveSha256: sha256(archivePath),
   }, null, 2) + '\n');
   console.log(`Verified ${archive}`);
 }
