@@ -132,7 +132,7 @@ jobs:
           pattern: release-*
           path: dist
           merge-multiple: true
-      - name: Verify all five archives and write SHA256SUMS.txt
+      - name: Verify all five executables and archives and write SHA256SUMS.txt
         run: node automation/scripts/release.mjs collect
       - name: Upload assets and verify the downloaded release files
         env:

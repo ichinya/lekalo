@@ -1,6 +1,6 @@
 # Install Lekalo CLI
 
-Download a platform archive and `SHA256SUMS.txt` from the same [GitHub Release](https://github.com/ichinya/lekalo/releases). A ready binary does not require Rust or Node to start; adapter operations and native checks have their own prerequisites.
+Download a platform executable or archive and `SHA256SUMS.txt` from the same [GitHub Release](https://github.com/ichinya/lekalo/releases). A ready binary does not require Rust or Node to start; adapter operations and native checks have their own prerequisites.
 
 | Platform | Target | Archive |
 | --- | --- | --- |
@@ -11,6 +11,8 @@ Download a platform archive and `SHA256SUMS.txt` from the same [GitHub Release](
 | macOS Apple Silicon | `aarch64-apple-darwin` | tar.gz with `lekalo` |
 
 Names follow `lekalo-v<VERSION>-<TARGET>.<EXTENSION>`. Each archive has one top-level directory containing the executable and README. Linux builds use glibc and are tested on Ubuntu 22.04; they are not musl binaries. [The release workflow](../.github/workflows/release.yml) records the build platforms.
+
+Starting with v1.3.1, the release also includes the executable directly as `lekalo-v<VERSION>-<TARGET>` with an extra `.exe` suffix on Windows. Use its own row in `SHA256SUMS.txt` to verify the download. On Linux and macOS, set execute permission with `chmod +x` or install the file with `install -m 755`.
 
 ## Verify and install
 
