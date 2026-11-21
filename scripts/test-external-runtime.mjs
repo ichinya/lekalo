@@ -190,12 +190,66 @@ test('init creates a reviewable config and refuses to overwrite it',()=>{
   }finally{rmSync(root,{recursive:true,force:true});}
 });
 
+test('a shared lock pins each platform independently',()=>{
+  const root=mkdtempSync(join(process.env.BB_THREAD_STORAGE??tmpdir(),'lekalo-platform-lock-'));
+  try{
+    const cache=join(root,'cache');
+    mkdirSync(join(root,'src'));
+    mkdirSync(join(root,'other'));
+    writeFileSync(join(root,'runtime.mjs'),runtime('multi-platform-runtime','[]'));
+    const config={schema:'lekalo/runtime-config/v1',components:{app:{path:'src',runtime:{command:['node','runtime.mjs']}}}};
+    const configFile=join(root,'lekalo.yaml'), lockFile=join(root,'lekalo.runtime.lock');
+    emit(configFile,config);
+    const legacy=ok(run(root,['runtime','lock'],cache)).lock;
+    const shared=ok(run(root,['runtime','lock','--platform'],cache)).lock;
+    assert.equal(shared.schema,'lekalo/runtime-lock/v3');
+    const [host]=Object.keys(shared.platforms);
+    assert.match(host,/^[a-z0-9_]+-[a-z0-9_]+$/);
+    assert.deepEqual(shared.platforms[host],legacy);
+    const foreign=host.startsWith('linux-')?'windows-x86_64':'linux-x86_64';
+    shared.platforms[foreign]=structuredClone(legacy);
+    shared.platforms[foreign].components.app.runtime.files['0']=`sha256:${'a'.repeat(64)}`;
+    emit(lockFile,shared);
+    ok(run(root,['runtime','check'],cache));
+    assert.deepEqual(ok(run(root,['runtime','lock','--offline'],cache)).lock,shared);
+    assert.deepEqual(ok(run(root,['runtime','restore'],cache)).lock,shared);
+    assert.deepEqual(ok(run(root,['runtime','lock'],cache)).lock,shared);
+
+    const missing=structuredClone(shared);
+    delete missing.platforms[host];
+    emit(lockFile,missing);
+    refused(run(root,['runtime','check'],cache),'lock-platform-unavailable');
+    assert.deepEqual(ok(run(root,['runtime','lock','--platform'],cache)).lock,shared);
+
+    const tampered=structuredClone(shared);
+    tampered.platforms[host].components.app.runtime.files['0']=`sha256:${'b'.repeat(64)}`;
+    emit(lockFile,tampered);
+    refused(run(root,['runtime','check'],cache),'runtime-changed');
+    emit(lockFile,shared);
+    const entry=join(root,'runtime.mjs');
+    const original=readFileSync(entry);
+    writeFileSync(entry,original.toString().replace("version:'1.0.0'","version:'2.0.0'"));
+    const priorComposition=readFileSync(lockFile);
+    refused(run(root,['runtime','lock','--platform'],cache),'lock-platform-composition-changed');
+    assert.deepEqual(readFileSync(lockFile),priorComposition);
+    writeFileSync(entry,original);
+    config.components.app.path='other';
+    emit(configFile,config);
+    const before=readFileSync(lockFile);
+    refused(run(root,['runtime','lock','--platform'],cache),'lock-platform-config-changed');
+    assert.deepEqual(readFileSync(lockFile),before);
+  }finally{rmSync(root,{recursive:true,force:true});}
+});
+
 test('published schema owns the open configuration and wire shapes',async()=>{
   const require=createRequire(import.meta.url);
   const {default:Ajv2020}=require('ajv/dist/2020');
   assert.equal(require('ajv/package.json').version,'8.20.0');
   const schema=JSON.parse(readFileSync(new URL('../contracts/external-runtime.schema.v1.json',import.meta.url),'utf8'));
   const ajv=new Ajv2020({strict:false,allErrors:true});
+  const platformSchema=JSON.parse(readFileSync(new URL('../contracts/runtime-platform-lock.schema.v1.3.1.json',import.meta.url),'utf8'));
+  const validatePlatform=new Ajv2020({strict:true}).compile(platformSchema);
+  assert(!validatePlatform({schema:'lekalo/runtime-lock/v3',config_digest:`sha256:${'a'.repeat(64)}`,platforms:{}}));
   ajv.addSchema(schema);
   const valid=(kind,value)=>ajv.validate(`${schema.$id}#/$defs/${kind}`,value);
   const config={schema:'lekalo/runtime-config/v1',components:{unknown:{path:'src',runtime:'gh/anybody/never-seen-language',rules:['gh/another/portable-rules']}}};

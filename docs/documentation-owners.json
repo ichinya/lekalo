@@ -2372,7 +2372,7 @@
       "kind": "command",
       "command": "runtime lock",
       "usage": "lekalo runtime lock [OPTIONS]",
-      "helpDigest": "sha256:3d70a86f6594e0f58bf3383e05992f99a60f8e82d5b066a2664032822f9ca8df",
+      "helpDigest": "sha256:50f4f7b35cbad51276e6e69549390f34cb04daaaae0b027bb1fe5c5327ea28d1",
       "summary": "Resolve sources, negotiate APIs, and pin the selected composition",
       "leaf": true,
       "owner": "docs/external-runtimes.md",
@@ -5103,6 +5103,15 @@
       "source": "contracts/run-record.schema.v0.4.0.json",
       "sourceDigest": "sha256:36b1e38217c59b232d0b243cbba07bd45b881b9a3834ad3cd3f6f5489c97bd43",
       "owner": "docs/run-history.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
+      "id": "contract:contracts/runtime-platform-lock.schema.v1.3.1.json",
+      "kind": "contract",
+      "source": "contracts/runtime-platform-lock.schema.v1.3.1.json",
+      "sourceDigest": "sha256:cbacdf1ae011b0a5619e687d6d869f0859bd867e2d1ad193bfc2f1adf27dfb3c",
+      "owner": "docs/external-runtimes.md",
       "status": "implemented",
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
