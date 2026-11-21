@@ -20,24 +20,32 @@ const refused = (r,detail) => {assert.notEqual(r.status,0);assert.equal(JSON.par
 // Both implement the same portable evidence contract; no shared scanner is used.
 function runtime(id,reader) {
   return `import{readFileSync}from'node:fs';
+import{createHash}from'node:crypto';
 const request=JSON.parse(readFileSync(0,'utf8'));
 const description={id:${JSON.stringify(id)},version:'1.0.0',rules_api:['lekalo/contract-rules/v1'],capabilities:['http.routes/v1'],operations:['check']};
 let result=description;
 if(request.operation==='check'){
+  for (const file of request.input.files) {
+    const hash = createHash('sha256').update(file.content).digest('hex');
+    if (file.digest !== 'sha256:' + hash) throw Error('source digest');
+  }
   const routes=${reader};
   const facts={};
   for(const pack of request.input.rules){facts[pack.id]={};for(const check of pack.rules.checks)facts[pack.id][check.id]={routes};}
   result={state:'complete',facts};
 }
+const envelope={protocol:request.protocol,request_id:request.request_id,result};
 if(request.operation==='check'){
-  const text=request.input.files.map(f=>f.content).join(' ');
+  const text=request.input.files.map(file=>file.content).join(' ');
   if(text.includes('MODE_PARTIAL'))result.state='partial';
   if(text.includes('MODE_MISSING'))result.facts={};
-  if(text.includes('MODE_WRONG_ID'))request.request_id='wrong';
-  if(text.includes('MODE_WRONG_VERSION'))request.protocol='lekalo/runtime/v99';
+  if(text.includes('MODE_WRONG_ID'))envelope.request_id='wrong';
+  if(text.includes('MODE_WRONG_VERSION'))envelope.protocol='lekalo/runtime/v99';
+  if(text.includes('MODE_EXTRA_ENVELOPE'))envelope.extra=true;
+  if(text.includes('MODE_EXTRA_RESULT'))result.extra=true;
   if(text.includes('MODE_YAML')){process.stdout.write('protocol: invalid');process.exit(0);}
 }
-process.stdout.write(JSON.stringify({protocol:request.protocol,request_id:request.request_id,result}));`;
+process.stdout.write(JSON.stringify(envelope));`;
 }
 
 test('unknown runtimes share portable rules, pins, confined inputs and offline Git packages',()=>{
@@ -94,7 +102,15 @@ for(const attempt of [()=>readHost(${JSON.stringify(secret)}),()=>writeHost(${JS
     assert.equal(JSON.parse(mismatch.stderr).diagnostics[0].data.rule,'route-contract');
     writeFileSync(join(project,'app','server.zen'),'route GET /health\n');
 
-    for (const [mode,detail] of [['PARTIAL','runtime-incomplete'],['MISSING','rules-result-missing'],['WRONG_ID','runtime-response-mismatch'],['WRONG_VERSION','runtime-response-mismatch'],['YAML','runtime-response-invalid']]) {
+    for (const [mode, detail] of [
+      ['PARTIAL', 'runtime-incomplete'],
+      ['MISSING', 'rules-result-missing'],
+      ['WRONG_ID', 'runtime-response-mismatch'],
+      ['WRONG_VERSION', 'runtime-response-mismatch'],
+      ['EXTRA_ENVELOPE', 'runtime-response-invalid'],
+      ['EXTRA_RESULT', 'runtime-result-invalid'],
+      ['YAML', 'runtime-response-invalid'],
+    ]) {
       writeFileSync(join(project,'app','server.zen'),`route GET /health\nMODE_${mode}\n`);
       refused(run(project,['runtime','check','--component','zen'],cache),detail);
     }
@@ -188,6 +204,43 @@ test('init creates a reviewable config and refuses to overwrite it',()=>{
     refused(run(root,['init','--runtime','gh/example/unknown'],cache),'config-exists');
     assert.deepEqual(readFileSync(join(root,'lekalo.yaml')),first);
   }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test('Lekalo checks its own Rust runtime response boundary', () => {
+  const scratch = mkdtempSync(join(process.env.BB_THREAD_STORAGE ?? tmpdir(), 'lekalo-self-runtime-'));
+  const project = join(scratch, 'project');
+  const cache = join(scratch, 'package-cache');
+  try {
+    mkdirSync(project);
+    const component = 'crates/lekalo-core/src/runtime';
+    cpSync('lekalo.yaml', join(project, 'lekalo.yaml'));
+    cpSync('lekalo/rules/runtime-protocol', join(project, 'lekalo/rules/runtime-protocol'), {recursive: true});
+    cpSync(component, join(project, component), {recursive: true});
+    const locked = ok(run(project, ['runtime', 'lock'], cache)).lock;
+    assert.equal(locked.components['runtime-protocol'].runtime.description.id, 'lekalo-rust');
+
+    const validate = () => run(project, ['validate', '--strict'], cache);
+    const report = ok(validate());
+    assert.equal(report.components[0].component, 'runtime-protocol');
+    assert.equal(report.components[0].status, 'valid');
+
+    const source = join(project, component, 'mod.rs');
+    const original = readFileSync(source, 'utf8');
+    for (const name of ['Response', 'ResultRecord']) {
+      const contract = new RegExp('#\\[serde\\(deny_unknown_fields\\)\\]\\s+(?=struct ' + name + '\\b)');
+      const changed = original.replace(contract, '');
+      assert.notEqual(changed, original, 'fixture must remove the constraint on ' + name);
+      writeFileSync(source, changed);
+      const failure = validate();
+      assert.equal(failure.status, 1, failure.stderr || failure.stdout);
+      assert(JSON.parse(failure.stderr).diagnostics.some(diagnostic =>
+        diagnostic.id === 'runtime.rule-failed'
+        && diagnostic.data.component === 'runtime-protocol'
+        && diagnostic.data.rule === 'strict-runtime-response'), failure.stderr);
+    }
+  } finally {
+    rmSync(scratch, {recursive: true, force: true});
+  }
 });
 
 test('published schema owns the open configuration and wire shapes',async()=>{

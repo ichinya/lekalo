@@ -50,6 +50,31 @@ Tag pushes do not use path filters. Reference projects has no automatic tag
 trigger; release asset builds use the separate Release binaries workflow.
 Fork PRs retain their GitHub-hosted runner routing and existing approval rules.
 
+### Check Lekalo's own runtime contracts
+
+The root `lekalo.yaml` selects a pinned `lekalo-rust` and the repository's
+[runtime protocol rules](../lekalo/rules/runtime-protocol/rules.json) for
+`crates/lekalo-core/src/runtime`. With Node 24 and Lekalo on PATH, run from the
+repository root:
+
+```sh
+lekalo runtime lock
+lekalo validate --strict
+```
+
+The lock pins the CI or developer machine's Node executable, along with the Git
+runtime and local rules. Regenerate the local lock after changing the rules or
+toolchain. The check uses the ordinary confined process protocol and works
+offline once locked.
+
+The Rust rule checks that the typed response envelope and check result both
+reject unknown fields. In the external runtime CI suite, the candidate CLI
+checks the real Rust source and refuses each copy with that constraint removed.
+The process tests also verify source digests on incoming requests and reject
+unknown output fields, wrong request identities and incomplete facts. The
+syntax queries operate on the selected source tree. They cover declarations,
+while the process tests exercise the behavior of the compiled CLI.
+
 ### Platform CI lanes
 
 The local [platform workflow](../.github/workflows/ci-platform.yml) is called

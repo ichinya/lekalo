@@ -1,0 +1,8 @@
+{
+  "schema": "lekalo/package/v1",
+  "id": "lekalo-runtime-protocol-contracts",
+  "version": "0.1.0",
+  "kind": "rules",
+  "files": ["rules.json"],
+  "rules": "rules.json"
+}
