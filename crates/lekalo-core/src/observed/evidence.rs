@@ -10,6 +10,7 @@ use crate::runtime;
 use crate::target_protocol::scan_evidence::{self, Coverage, Fact};
 use crate::target_protocol::{scopes, version, wire, LaunchPin};
 
+use super::binding_rule::Rule;
 use super::index::read_fingerprint;
 use super::types::ObservedIndex;
 
@@ -48,6 +49,7 @@ struct Provider {
     id: String,
     pin: Pin,
     validator: jsonschema::Validator,
+    binding: Option<Rule>,
 }
 
 pub(super) struct Policy {
@@ -121,15 +123,29 @@ impl Policy {
     fn from_selection(root: &Path, selection: Selection) -> Result<Self> {
         let mut families = BTreeMap::new();
         for (family, pin) in selection.families {
-            let (id, schema) = runtime::package::evidence_schema(
+            let package = runtime::package::evidence_schema(
                 root,
                 &pin.source,
                 &pin.package_digest,
                 &pin.schema_digest,
             )
             .map_err(|_| "evidence-package-invalid")?;
-            let validator = runtime::schema(&schema).map_err(|_| "evidence-schema-invalid")?;
-            families.insert(family, Provider { id, pin, validator });
+            let validator =
+                runtime::schema(&package.payload).map_err(|_| "evidence-schema-invalid")?;
+            let binding = package
+                .bindings
+                .as_deref()
+                .map(|bytes| Rule::parse(bytes, &package.payload))
+                .transpose()?;
+            families.insert(
+                family,
+                Provider {
+                    id: package.id,
+                    pin,
+                    validator,
+                    binding,
+                },
+            );
         }
         Ok(Self {
             producer: selection.producer,
@@ -385,6 +401,9 @@ pub(super) fn admit(
             if !provider.validator.is_valid(&fact.payload) {
                 return Err("evidence-payload");
             }
+            if let Some(binding) = &provider.binding {
+                binding.verify_fact(fact)?;
+            }
             let id = fact_id(scope, &group.family, &provider.id, fact);
             if !ids.insert(id.clone()) {
                 return Err("evidence-duplicate-fact");
@@ -498,15 +517,36 @@ impl Admitted {
     }
 }
 
-pub(super) fn check_sources(index: &ObservedIndex, fs: &Fs) -> bool {
-    let mut cache = BTreeMap::new();
+fn current_facts(index: &ObservedIndex) -> impl Iterator<Item = &Fact> {
     index
         .evidence_groups
         .iter()
         .flatten()
-        .flat_map(|g| &g.facts)
-        .filter(|r| r.state == State::Current)
-        .all(|r| sources_current(&r.fact, fs, &mut cache))
+        .flat_map(|group| &group.facts)
+        .filter(|record| record.state == State::Current)
+        .map(|record| &record.fact)
+}
+
+pub(super) fn check_sources(index: &ObservedIndex, fs: &Fs) -> bool {
+    let mut cache = BTreeMap::new();
+    current_facts(index).all(|fact| sources_current(fact, fs, &mut cache))
+}
+
+/// Bind confirmation to the candidate's own admitted facts. Other native
+/// subjects can have stale facts without invalidating this candidate.
+pub(super) fn candidate_sources_current(index: &ObservedIndex, fs: &Fs, native: &str) -> bool {
+    let mut cache = BTreeMap::new();
+    current_facts(index)
+        .filter(|fact| fact.subject == native)
+        .all(|fact| sources_current(fact, fs, &mut cache))
+}
+
+pub(super) fn stale_subjects<'a>(index: &'a ObservedIndex, fs: &Fs) -> BTreeSet<&'a str> {
+    let mut cache = BTreeMap::new();
+    current_facts(index)
+        .filter(|fact| !sources_current(fact, fs, &mut cache))
+        .map(|fact| fact.subject.as_str())
+        .collect()
 }
 
 pub(super) fn valid_index(index: &ObservedIndex) -> bool {

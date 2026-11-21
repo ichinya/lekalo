@@ -68,6 +68,7 @@ export function commandOwner(command) {
   return `docs/${commandOwners[top]}.md`;
 }
 const families = {
+  "evidence-binding-rules":"bindings",
   "ownership-transition-request":"ownership-transitions", "ownership-transition-plan":"ownership-transitions",
   "ownership-verification":"ownership-transitions", "ownership-transition-receipt":"ownership-transitions",
   "ownership-state":"ownership-transitions", "ownership-journal":"ownership-transitions", "ownership-rollback-plan":"ownership-transitions",

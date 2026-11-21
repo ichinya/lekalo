@@ -3802,6 +3802,15 @@
       "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
     },
     {
+      "id": "contract:contracts/evidence-binding-rules.schema.v1.3.1.json",
+      "kind": "contract",
+      "source": "contracts/evidence-binding-rules.schema.v1.3.1.json",
+      "sourceDigest": "sha256:d2f5bddc0d3296fe4af842b75a56ada7031f6696bdfd1d2c41433a56f99ac4f4",
+      "owner": "docs/bindings.md",
+      "status": "implemented",
+      "selection": "exact producer or accepted manifest reference; file presence is not current-version admission"
+    },
+    {
       "id": "contract:contracts/explain-catalog.schema.v0.8.0.json",
       "kind": "contract",
       "source": "contracts/explain-catalog.schema.v0.8.0.json",

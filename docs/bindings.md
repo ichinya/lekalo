@@ -68,6 +68,30 @@ Every registry row carries the closed issue vocabulary:
 - the confidence word, the adapter id, and the exact scan revision;
 - the freshness state (`current`/`stale`/`unknown`).
 
+## Binding rule declarations in evidence packages
+
+An evidence package can include a `bindings.json` alongside
+`payload.schema.json`. List both files in `lekalo.package.json`. The exact
+rule bytes participate in the package digest selected by `lekalo.evidence.json`.
+
+A [binding rule](../contracts/evidence-binding-rules.schema.v1.3.1.json) declares
+a Model kind, an ordered list of payload fields for identity, a mapping from
+symbol attributes to payload fields, and the native roles whose files supply
+binding evidence. The available symbol attributes are `id`, plus `method`
+and `path` for endpoints. Selectors name required top-level scalar properties
+in the package's payload schema. The source roles include `subject` and can
+also name references carried by the fact.
+
+`lekalo validate` checks the declarations and package pins. A scan checks that
+each admitted fact supplies the selected fields and source roles. Binding
+proposals and confirmations continue to use the existing observed binding flow.
+Confirmation also checks the current facts for the chosen native declaration.
+An edit to a source cited by those facts invalidates confirmation even when
+the native declaration's own file is unchanged. `bindings audit` reports the
+affected binding as a fingerprint mismatch. `bindings list` reports the row
+as stale without rewriting the index. `verify` uses the same stale count for
+its optional binding registry check.
+
 ## Commands
 
 ```text
