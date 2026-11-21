@@ -1,6 +1,7 @@
 //! External runtimes and portable contract rules. No language registry.
 pub mod config;
 pub(crate) mod package;
+mod platform_lock;
 pub mod services;
 
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 pub const PROTOCOL: &str = "lekalo/runtime/v1";
 pub const RULES_API: &str = "lekalo/contract-rules/v1";
+pub use platform_lock::LockDocument;
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Serialize)]
@@ -567,14 +569,13 @@ fn compatible(runtime: &Description, package: &package::Package) -> Result<Rules
     Ok(r)
 }
 
-pub fn lock(root: &Path, offline: bool) -> Result<Lock> {
+pub fn lock(root: &Path, offline: bool, per_platform: bool) -> Result<LockDocument> {
+    if offline {
+        return verify_selections(root, false).map(|(_, document)| document);
+    }
     let config = load(root)?;
     if config.components.is_empty() && config.services.is_empty() {
         return Err(error("components-empty"));
-    }
-    if offline {
-        check_lock(root)?;
-        return read_lock(root);
     }
     let mut components = BTreeMap::new();
     for (id, component) in &config.components {
@@ -641,11 +642,19 @@ pub fn lock(root: &Path, offline: bool) -> Result<Lock> {
     for (id, component) in &mut lock.components {
         make_portable(&mut component.runtime, &config.components[id].runtime)?;
     }
-    write_lock(root, &lock)?;
-    Ok(lock)
+    // All writers take the same project lock before reading the previous
+    // platform table or publishing a replacement. Readers see one whole file.
+    let _guard =
+        crate::project_writer::WriterLock::acquire(root).map_err(|_| error("writer-lock-held"))?;
+    if config_digest(&load(root)?) != lock.config_digest {
+        return Err(error("lock-config-changed"));
+    }
+    let document = platform_lock::replace(root, lock, per_platform)?;
+    write_lock(root, &document)?;
+    Ok(document)
 }
 
-fn write_lock(root: &Path, lock: &Lock) -> Result<()> {
+fn write_lock(root: &Path, lock: &LockDocument) -> Result<()> {
     use std::io::Write;
     // Never publish a lock that check_lock cannot read. Preserve an existing
     // usable lock when a composition exceeds the shared document budget.
@@ -669,13 +678,12 @@ fn write_lock(root: &Path, lock: &Lock) -> Result<()> {
 }
 
 pub fn check_lock(root: &Path) -> Result<Lock> {
-    verify_selections(root, false)
+    verify_selections(root, false).map(|(lock, _)| lock)
 }
 
 /// Restore only the snapshots selected by the committed lock.
-pub fn restore(root: &Path) -> Result<Lock> {
-    verify_selections(root, true)?;
-    read_lock(root)
+pub fn restore(root: &Path) -> Result<LockDocument> {
+    verify_selections(root, true).map(|(_, document)| document)
 }
 
 const LOCK_LIMIT: usize = 8 * 1024 * 1024;
@@ -733,17 +741,13 @@ fn locate_runtime(
     Ok(())
 }
 
-fn read_lock(root: &Path) -> Result<Lock> {
-    serde_json::from_value(config::value(&read(root, config::LOCK, LOCK_LIMIT)?)?)
-        .map_err(|_| error("lock-invalid"))
-}
-
-fn verify_selections(root: &Path, restore: bool) -> Result<Lock> {
+fn verify_selections(root: &Path, restore: bool) -> Result<(Lock, LockDocument)> {
     let config = load(root)?;
     if config.components.is_empty() && config.services.is_empty() {
         return Err(error("components-empty"));
     }
-    let mut lock = read_lock(root)?;
+    let document = platform_lock::read_document(root)?;
+    let mut lock = document.for_host()?.clone();
     let portable = lock.schema == "lekalo/runtime-lock/v2";
     if !(portable || lock.schema == "lekalo/runtime-lock/v1")
         || lock.config_digest != config_digest(&config)
@@ -785,7 +789,7 @@ fn verify_selections(root: &Path, restore: bool) -> Result<Lock> {
             compatible(&pin.runtime.description, p)?;
         }
     }
-    Ok(lock)
+    Ok((lock, document))
 }
 
 fn sources(root: &Path, component: &config::Component) -> Result<Vec<Value>> {

@@ -29,6 +29,9 @@ pub enum Command {
     Lock {
         #[arg(long)]
         offline: bool,
+        /// Add this host's OS and architecture to a shared platform lock.
+        #[arg(long, conflicts_with = "offline")]
+        platform: bool,
         #[arg(long, default_value = ".")]
         project: PathBuf,
     },
@@ -93,9 +96,10 @@ pub fn run(command: Command, json_output: bool) -> u8 {
             path,
             ..
         } => runtime::init(&root, source, target_version, rules, path),
-        Command::Lock { offline, .. } => {
-            runtime::lock(&root, offline).map(|lock| json!({"status":"valid","lock":lock}))
-        }
+        Command::Lock {
+            offline, platform, ..
+        } => runtime::lock(&root, offline, platform)
+            .map(|lock| json!({"status":"valid","lock":lock})),
         Command::Export {
             component,
             package,

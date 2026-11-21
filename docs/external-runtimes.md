@@ -65,6 +65,32 @@ Absolute paths explicitly declared by the project retain their meaning. Older
 v1 locks can still be checked on their original machine. An explicit online
 `runtime lock` writes the new format.
 
+### Share a lock across operating systems
+
+Run `lekalo runtime lock --platform` on each supported OS and architecture,
+using the same `lekalo.yaml` and the same package revisions. It pins this host's
+executable and entry bytes and adds a row to `lekalo.runtime.lock`. Use one
+command name available on each host, for example `command: [node, main.mjs]`.
+Windows resolves the executable suffix through the existing command lookup.
+
+```sh
+lekalo runtime lock --platform
+lekalo runtime restore
+lekalo runtime check
+```
+
+The [v3 table](../contracts/runtime-platform-lock.schema.v1.3.1.json) keys rows
+by OS and architecture, for example `linux-x86_64`, `windows-x86_64` and
+`macos-aarch64`. `check`, `restore`, `validate` and `lock --offline` verify the
+current host's row. A missing row returns `lock-platform-unavailable`. An
+ordinary online `runtime lock` also preserves existing platform rows.
+
+A platform lock describes one configuration and package composition. If either
+changes, regenerate the table from the new composition on each supported
+platform. Adding a row checks the pinned runtime IDs and versions and the
+package revisions and digests shared by the other rows. Commands rebuild an
+unlabelled v1/v2 lock on the current host when migrating to a platform table.
+
 `lekalo validate --strict` runs component checks when the selected root has
 `lekalo.yaml`. If `lekalo/project.yaml` also exists, its existing Model validation
 runs first; failure cannot be masked by runtime results. Model-specific module,
