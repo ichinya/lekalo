@@ -499,6 +499,8 @@ pub(crate) fn lock_facts(selection: &LoadSelection, root: &Path) -> LockFacts {
                 }
                 Ok(request) => request,
             };
+            let request =
+                crate::lockfile::plan::LockService::merge_locked_identities(&request, &lock);
             let digest = crate::lockfile::types::Lockfile::digest(&lock)
                 .as_str()
                 .to_owned();

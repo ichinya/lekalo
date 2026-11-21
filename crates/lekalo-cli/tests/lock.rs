@@ -191,6 +191,16 @@ fn lock_pins_the_verified_installed_package_and_its_entry_separately() {
     assert_eq!(adapter["provenance"]["install_plan_id"], plan_id);
     let checked = lekalo_in(&project, &["lock", "--check"]);
     assert!(checked.status.success(), "{checked:?}");
+    let doctor = lekalo_in(&project, &["doctor", "--json"]);
+    assert!(doctor.status.success(), "{doctor:?}");
+    let report: Value = serde_json::from_slice(&doctor.stdout).unwrap();
+    let lock_check = report["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|check| check["id"] == "lock.freshness")
+        .unwrap();
+    assert_eq!(lock_check["state"], "ok");
     std::fs::remove_dir_all(project).unwrap();
 }
 
