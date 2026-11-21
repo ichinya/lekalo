@@ -305,6 +305,9 @@ fn apply_staged(
     source_dir: &Path,
     journal: &mut Vec<PathBuf>,
 ) -> Result<(), ApplyRejection> {
+    #[cfg(unix)]
+    let manifest =
+        ManifestDocument::from_bytes(&plan.manifest_bytes).map_err(|_| recovery("stage"))?;
     for action in &plan.actions {
         if let InstallAction::Stage { path, digest } = action {
             let fs = crate::project_fs::Fs::open(source_dir).map_err(|_| conflict(path))?;
@@ -329,10 +332,18 @@ fn apply_staged(
             }
             std::fs::write(&to, &bytes).map_err(|_| recovery("stage"))?;
             #[cfg(unix)]
-            if path.starts_with("runtime/") && name == "tsc" {
+            {
                 use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o500))
-                    .map_err(|_| recovery("stage"))?;
+                if path.starts_with("runtime/") && name == "tsc" {
+                    std::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o500))
+                        .map_err(|_| recovery("stage"))?;
+                } else if path == manifest.entry() {
+                    let mut permissions = std::fs::metadata(&to)
+                        .map_err(|_| recovery("stage"))?
+                        .permissions();
+                    permissions.set_mode(permissions.mode() | 0o100);
+                    std::fs::set_permissions(&to, permissions).map_err(|_| recovery("stage"))?;
+                }
             }
         }
     }
