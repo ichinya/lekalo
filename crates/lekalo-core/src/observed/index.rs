@@ -424,6 +424,30 @@ fn merge_index(
     }
     for symbol in &scan.symbols {
         let previous_record = previous.as_ref().and_then(|index| index.symbol(&symbol.id));
+        if let (Some(evidence), Some(previous), Some(old)) = (&evidence, &previous, previous_record)
+        {
+            if old.status != BindingStatus::Inferred || old.promoted {
+                if let Some(unchanged) = evidence.owned_binding_current(previous, old, symbol) {
+                    let mut retained = old.clone();
+                    if old.status == BindingStatus::Confirmed && !old.promoted && !unchanged {
+                        retained.state = BindingState::Stale;
+                        retained.candidates = symbol.candidates.clone();
+                        if old.state != BindingState::Stale {
+                            retained.history.push(HistoryEntry {
+                                event: HistoryEvent::Staled,
+                                revision: scan.revision.clone(),
+                                from: old.location.as_ref().map(|location| location.path.clone()),
+                                to: None,
+                            });
+                            trim_history(&mut retained);
+                        }
+                        staled.push(old.id.clone());
+                    }
+                    index.symbols.push(retained);
+                    continue;
+                }
+            }
+        }
         if scan.http_inventory {
             if let Some(old) = previous_record
                 .filter(|old| old.status != BindingStatus::Inferred && old.kind != symbol.kind)
@@ -784,6 +808,12 @@ pub fn confirm_binding(
         .any(|route| !route_sources_current(&fs, &index, &route.handler_native))
     {
         return Err(diagnostic::plan_mismatch_set("http-handler-source-drift"));
+    }
+    if index.evidence_groups.is_some()
+        && index.symbols[position].stable_key.is_none()
+        && index.symbols[position].candidates.len() > 1
+    {
+        return Err(diagnostic::ambiguous_set(symbol_id, "ambiguous-candidates"));
     }
     if index.symbols[position]
         .stable_key

@@ -12,9 +12,10 @@ use crate::target_protocol::{scopes, version, wire, LaunchPin};
 
 use super::binding_rule::Rule;
 use super::index::read_fingerprint;
-use super::types::ObservedIndex;
+use super::types::{BindingState, ObservedIndex, ScanSymbol, SymbolKind, SymbolRecord};
 
 const CONFIG: &str = "lekalo.evidence.json";
+pub(super) const RULE_KEY_PREFIX: &str = "binding:sha256:";
 pub(super) const PINS_FLAG: &str = "--lekalo-evidence-pins-json";
 type Result<T> = std::result::Result<T, &'static str>;
 
@@ -227,9 +228,89 @@ pub struct GroupRecord {
 pub(super) struct Admitted {
     groups: Vec<GroupRecord>,
     pub(super) http_projection: Option<String>,
+    bindings: BTreeMap<String, (String, SymbolKind)>,
 }
 
 impl Admitted {
+    pub(super) fn resolve_bindings(
+        &mut self,
+        policy: &Policy,
+        model: &crate::loader::NormalizedModel,
+        roots: &BTreeSet<&str>,
+    ) -> Result<()> {
+        for group in &self.groups {
+            let Some(rule) = policy
+                .families
+                .get(&group.family)
+                .and_then(|family| family.binding.as_ref())
+            else {
+                continue;
+            };
+            let targets = rule.model_targets(&model.definitions);
+            for record in &group.facts {
+                let Some(symbol) = rule.matching_target(&targets, &record.fact)? else {
+                    continue;
+                };
+                let subject = &record.fact.subject;
+                if !roots.contains(subject.as_str()) {
+                    return Err("evidence-binding-subject");
+                }
+                let binding = (symbol.to_owned(), rule.kind());
+                if self
+                    .bindings
+                    .get(subject)
+                    .is_some_and(|other| other != &binding)
+                {
+                    return Err("evidence-binding-ambiguous-subject");
+                }
+                self.bindings.insert(subject.clone(), binding);
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn binding(&self, native: &str) -> Option<(&str, SymbolKind)> {
+        self.bindings
+            .get(native)
+            .map(|(id, kind)| (id.as_str(), *kind))
+    }
+
+    /// Existing confirmation refers to exact evidence. A rule-driven
+    /// rescan can offer new candidates, but cannot reapprove them.
+    pub(super) fn owned_binding_current(
+        &self,
+        previous: &ObservedIndex,
+        old: &SymbolRecord,
+        current: &ScanSymbol,
+    ) -> Option<bool> {
+        let native = old.stable_key.as_deref();
+        let prior = native
+            .map(|id| rule_facts(previous.evidence_groups.as_deref().unwrap_or_default(), id));
+        let projected = current
+            .candidates
+            .iter()
+            .any(|candidate| self.binding(&candidate.native).is_some());
+        if !projected && prior.as_ref().is_none_or(Vec::is_empty) {
+            return None;
+        }
+        let unchanged = native.is_some_and(|id| {
+            old.state == BindingState::Current
+                && current.kind == old.kind
+                && self.binding(id).is_some_and(|(symbol, _)| symbol == old.id)
+                && current.candidates.iter().any(|candidate| {
+                    candidate.native == id
+                        && old.location.as_ref().is_some_and(|location| {
+                            candidate.path == location.path && candidate.line == location.line
+                        })
+                        && candidate.fingerprint == old.fingerprint
+                })
+                && prior
+                    .as_ref()
+                    .is_some_and(|prior| *prior == rule_facts(&self.groups, id))
+        });
+        Some(unchanged)
+    }
+
     pub(super) fn http_coverage(&self) -> Option<Coverage> {
         let family = self.http_projection.as_ref()?;
         self.groups
@@ -273,6 +354,23 @@ impl Admitted {
         }
         Ok(routes)
     }
+}
+
+fn rule_facts<'a>(groups: &'a [GroupRecord], native: &str) -> Vec<(&'a str, &'a Record)> {
+    groups
+        .iter()
+        .flat_map(|group| {
+            group
+                .facts
+                .iter()
+                .filter(|record| {
+                    record.state == State::Current
+                        && record.fact.subject == native
+                        && record.fact.key.starts_with(RULE_KEY_PREFIX)
+                })
+                .map(|record| (group.family.as_str(), record))
+        })
+        .collect()
 }
 
 fn native_paths(nodes: &[NativeSymbol]) -> BTreeMap<&str, &str> {
@@ -401,14 +499,17 @@ pub(super) fn admit(
             if !provider.validator.is_valid(&fact.payload) {
                 return Err("evidence-payload");
             }
+            let mut fact = fact.clone();
             if let Some(binding) = &provider.binding {
-                binding.verify_fact(fact)?;
+                binding.verify_fact(&fact)?;
+                fact.key = binding.identity_key(&fact);
+            } else if fact.key.starts_with(RULE_KEY_PREFIX) {
+                return Err("evidence-binding-key-reserved");
             }
-            let id = fact_id(scope, &group.family, &provider.id, fact);
+            let id = fact_id(scope, &group.family, &provider.id, &fact);
             if !ids.insert(id.clone()) {
                 return Err("evidence-duplicate-fact");
             }
-            let mut fact = fact.clone();
             fact.sources.sort_by(|a, b| a.path.cmp(&b.path));
             facts.push(Record {
                 id,
@@ -445,6 +546,7 @@ pub(super) fn admit(
     Ok(Some(Admitted {
         groups: admitted.into_values().collect(),
         http_projection: policy.and_then(|p| p.http_projection.clone()),
+        bindings: BTreeMap::new(),
     }))
 }
 
@@ -468,10 +570,12 @@ fn sources_current(fact: &Fact, fs: &Fs, cache: &mut BTreeMap<String, Option<Str
 
 impl Admitted {
     pub(super) fn revision_digest(&self) -> String {
-        runtime::digest(
-            &serde_json::to_vec(&(&self.groups, &self.http_projection))
-                .expect("admitted evidence serializes"),
-        )
+        let bytes = if self.bindings.is_empty() {
+            serde_json::to_vec(&(&self.groups, &self.http_projection))
+        } else {
+            serde_json::to_vec(&(&self.groups, &self.http_projection, &self.bindings))
+        };
+        runtime::digest(&bytes.expect("admitted evidence serializes"))
     }
 
     pub(super) fn merge(self, root: &Path, previous: &[GroupRecord]) -> Result<Vec<GroupRecord>> {

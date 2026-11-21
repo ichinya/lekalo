@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::loader::NormalizedDefinition;
 use crate::target_protocol::{scan_evidence::Fact, scopes};
 
 use super::types::SymbolKind;
@@ -72,6 +73,74 @@ impl Rule {
             }
         }
         Ok(rule)
+    }
+
+    pub(super) fn identity_key(&self, fact: &Fact) -> String {
+        let identity: Vec<_> = self
+            .identity
+            .iter()
+            .map(|field| (field, &fact.payload[field]))
+            .collect();
+        let bytes =
+            serde_json::to_vec(&(self.kind, identity)).expect("binding identity serializes");
+        format!(
+            "{}{}",
+            super::evidence::RULE_KEY_PREFIX,
+            crate::digest::sha256_hex(&bytes)
+        )
+    }
+
+    pub(super) fn kind(&self) -> SymbolKind {
+        self.kind
+    }
+
+    /// Index the existing Model symbols once per rule, using the same
+    /// selector order for the Model attributes and for each fact's payload.
+    pub(super) fn model_targets<'a>(
+        &self,
+        definitions: &'a [NormalizedDefinition],
+    ) -> BTreeMap<Vec<&'a str>, Option<&'a str>> {
+        let mut targets = BTreeMap::new();
+        for definition in definitions {
+            if definition.node.get("kind").and_then(|node| node.as_str()) != Some(self.kind.key()) {
+                continue;
+            }
+            let key: Option<Vec<_>> = self
+                .fields
+                .keys()
+                .map(|field| {
+                    if field == "id" {
+                        Some(definition.id.as_str())
+                    } else {
+                        definition.node.get(field)?.as_str()
+                    }
+                })
+                .collect();
+            if let Some(key) = key {
+                targets
+                    .entry(key)
+                    .and_modify(|symbol| *symbol = None)
+                    .or_insert(Some(definition.id.as_str()));
+            }
+        }
+        targets
+    }
+
+    pub(super) fn matching_target<'a>(
+        &self,
+        targets: &BTreeMap<Vec<&'a str>, Option<&'a str>>,
+        fact: &Fact,
+    ) -> Result<Option<&'a str>, &'static str> {
+        let key: Option<Vec<_>> = self
+            .fields
+            .values()
+            .map(|field| fact.payload[field].as_str())
+            .collect();
+        match key.as_ref().and_then(|key| targets.get(key)) {
+            Some(Some(symbol)) => Ok(Some(symbol)),
+            Some(None) => Err("evidence-binding-ambiguous-model"),
+            None => Ok(None),
+        }
     }
 
     pub(super) fn verify_fact(&self, fact: &Fact) -> Result<(), &'static str> {
