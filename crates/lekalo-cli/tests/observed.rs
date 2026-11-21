@@ -941,6 +941,200 @@ fn generic_scan_uses_pinned_provider_schemas_through_the_public_cli() {
     let confirmed = sandbox.json(&["bindings", "confirm", proposal_id, "--project", "proj"]);
     assert_eq!(confirmed["binding"], "confirmed");
 
+    // Start a new index whose Model target differs from both raw scanner names.
+    std::fs::remove_file(&index_path).unwrap();
+    let definitions = project.join("lekalo/modules/taskboard/entities.yaml");
+    std::fs::write(
+        &definitions,
+        serde_json::to_vec(&json!({
+            "schema_version":"0.2.16", "definitions":[{
+                "id":"taskboard.title", "kind":"scalar", "version":1,
+                "description":"A stable reference for a title", "base":"uuid"
+            }, {
+                "id":"taskboard.label", "kind":"scalar", "version":1,
+                "description":"A stable reference for a label", "base":"uuid"
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let projected = evidence_package_with_binding(
+        &project,
+        "labels-provider",
+        json!({"type":"object","required":["id"],"properties":{"id":{"type":"string"}}}),
+        Some(
+            json!({"schema":"lekalo/evidence-binding-rules/v1.3.1", "kind":"scalar",
+            "identity":["id"], "match":{"id":"id"}, "source_roles":["subject","dependency"]}),
+        ),
+    );
+    config["scans"][0]["families"]["labels"] = projected.clone();
+    write_config(&config);
+    let mut projected_group = group("labels", &projected, json!({"id":"taskboard.title"}));
+    let title = |index: &Value| {
+        index["symbols"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|symbol| symbol["id"] == "taskboard.title")
+            .unwrap()
+            .clone()
+    };
+    let mut other = projected_group["facts"][0].clone();
+    other["subject"] = json!("dependency");
+    other["references"] = json!({"dependency":"root"});
+    other["payload"]["id"] = json!("taskboard.label");
+    projected_group["facts"].as_array_mut().unwrap().push(other);
+    let single: Value =
+        serde_json::from_slice(&accepted("1.4.0", &json!([projected_group]))).unwrap();
+    assert_eq!(title(&single)["stable_key"], "root");
+    projected_group["facts"][1]["payload"]["id"] = json!("taskboard.title");
+    let projected_index = accepted("1.4.0", &json!([projected_group]));
+    let multiple: Value = serde_json::from_slice(&projected_index).unwrap();
+    assert_eq!(title(&multiple)["stable_key"], "root");
+    let proposals = sandbox.json(&["bindings", "propose", "--project", "proj"]);
+    let proposed = proposals["proposals"].as_array().unwrap();
+    assert_eq!(proposed.len(), 1);
+    assert_eq!(proposed[0]["symbol"], "taskboard.title");
+    assert_eq!(proposed[0]["ambiguous"], true);
+    let candidates = proposed[0]["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(candidates[0]["confidence"], "exact");
+    assert_eq!(candidates[1]["confidence"], "high");
+    let batch = sandbox.json(&[
+        "bindings",
+        "confirm",
+        "--batch",
+        "--preview",
+        "--project",
+        "proj",
+    ]);
+    assert_eq!(batch["entries"], json!([]));
+    let proposal_id = proposed[0]["proposal"].as_str().unwrap();
+    projected_group["facts"][0]["key"] = json!("producer-uses-a-different-key");
+    let rekeyed: Value =
+        serde_json::from_slice(&accepted("1.4.0", &json!([projected_group]))).unwrap();
+    assert_eq!(rekeyed["revision"], multiple["revision"]);
+    assert_eq!(rekeyed["evidence_groups"], multiple["evidence_groups"]);
+    assert_scan_refusal(
+        &sandbox.run(&[
+            "--json",
+            "bindings",
+            "confirm",
+            proposal_id,
+            "--project",
+            "proj",
+        ]),
+        "ambiguous-candidates",
+    );
+    assert_scan_refusal(
+        &sandbox.run(&[
+            "--json",
+            "observe",
+            "confirm",
+            "taskboard.title",
+            "--project",
+            "proj",
+        ]),
+        "ambiguous-candidates",
+    );
+    let selected = sandbox.json(&[
+        "bindings",
+        "confirm",
+        proposal_id,
+        "--candidate",
+        "root",
+        "--project",
+        "proj",
+    ]);
+    assert_eq!(selected["native"], "root");
+    let unchanged: Value =
+        serde_json::from_slice(&accepted("1.4.0", &json!([projected_group]))).unwrap();
+    assert_eq!(title(&unchanged)["state"], "current");
+    assert_eq!(title(&unchanged)["status"], "confirmed");
+
+    assert_eq!(
+        title(&unchanged)["evidence"]["references"][0]["target"],
+        "taskboard.title"
+    );
+    // Only the semantic destination of the reference changes. The root
+    // declaration and its rule fact both stay byte-for-byte the same.
+    projected_group["facts"][1]["payload"]["id"] = json!("taskboard.label");
+    let remapped: Value =
+        serde_json::from_slice(&accepted("1.4.0", &json!([projected_group]))).unwrap();
+    assert_eq!(title(&remapped)["state"], "stale");
+    assert_eq!(title(&remapped)["evidence"], title(&unchanged)["evidence"]);
+    assert_scan_refusal(
+        &sandbox.run(&["--json", "observe", "check", "--project", "proj"]),
+        "state-stale",
+    );
+    let proposals = sandbox.json(&["bindings", "propose", "--project", "proj"]);
+    let title_proposal = |proposals: &Value| {
+        proposals["proposals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|proposal| proposal["symbol"] == "taskboard.title")
+            .unwrap()["proposal"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    sandbox.json(&[
+        "bindings",
+        "confirm",
+        &title_proposal(&proposals),
+        "--project",
+        "proj",
+    ]);
+    let reconfirmed: Value = serde_json::from_slice(&std::fs::read(&index_path).unwrap()).unwrap();
+    assert_eq!(title(&reconfirmed)["state"], "current");
+    assert_eq!(
+        title(&reconfirmed)["evidence"]["references"][0]["target"],
+        "taskboard.label"
+    );
+
+    std::fs::write(&dependency, "// dependency changed after confirmation\n").unwrap();
+    for fact in projected_group["facts"].as_array_mut().unwrap() {
+        fact["sources"] = json!([source("src/tasks.ts"), source("src/ids.ts")]);
+    }
+    let refreshed: Value =
+        serde_json::from_slice(&accepted("1.4.0", &json!([projected_group]))).unwrap();
+    assert_eq!(title(&refreshed)["state"], "stale");
+    assert_eq!(title(&refreshed)["stable_key"], "root");
+    assert_eq!(
+        title(&refreshed)["provenance"],
+        title(&reconfirmed)["provenance"]
+    );
+    assert_eq!(
+        refreshed["evidence_groups"][1]["facts"][0]["id"],
+        reconfirmed["evidence_groups"][1]["facts"][0]["id"]
+    );
+    let audit = sandbox.run(&["--json", "bindings", "audit", "--project", "proj"]);
+    assert_scan_refusal(&audit, "state-stale");
+    let proposals = sandbox.json(&["bindings", "propose", "--project", "proj"]);
+    let current_id = title_proposal(&proposals);
+    assert_ne!(current_id, proposal_id);
+    sandbox.json(&[
+        "bindings",
+        "confirm",
+        &current_id,
+        "--candidate",
+        "root",
+        "--project",
+        "proj",
+    ]);
+    sandbox.json(&["bindings", "audit", "--project", "proj"]);
+    sandbox.json(&["lock", "--offline", "--project", "proj"]);
+    let verified = sandbox.json(&["verify", "--project", "proj"]);
+    assert!(verified["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|component| {
+            component["id"] == "bindings.registry" && component["state"] == "pass"
+        }));
+    std::fs::remove_file(&definitions).unwrap();
+
     std::fs::remove_file(&config_path).unwrap();
     std::fs::remove_file(&index_path).unwrap();
     let http = accepted("1.2.0", &json!([]));

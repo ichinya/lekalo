@@ -367,6 +367,7 @@ pub fn run(
         &project,
         request,
         EvidenceAdmission::Standalone {
+            model: &ctx.model,
             policy: policy.as_ref(),
             read_scopes: &outcome.confinement.effective.read_scopes,
         },
@@ -594,24 +595,14 @@ fn string_member(map: &serde_json::Map<String, Json>, key: &str) -> Result<Strin
  * target verbatim (an external or unresolved edge). Either way the
  * edge survives into the merged evidence.
  */
-fn resolve_reference_target(target: &str, entries: &[wire::ScanEntry]) -> String {
-    for entry in entries {
-        let Some(detail_text) = &entry.detail else {
-            continue;
-        };
-        let Ok(value) = serde_json::from_str::<Json>(detail_text) else {
-            continue;
-        };
-        let Some(map) = value.as_object() else {
-            continue;
-        };
-        if map.get("n").and_then(Json::as_str) == Some(target) {
-            if let Some(semantic) = map.get("s").and_then(Json::as_str) {
-                return semantic.to_owned();
-            }
-        }
-    }
-    target.to_owned()
+fn resolve_reference_target(
+    target: &str,
+    semantics: &std::collections::BTreeMap<String, String>,
+) -> String {
+    semantics
+        .get(target)
+        .cloned()
+        .unwrap_or_else(|| target.to_owned())
 }
 
 /// The sha256 of one project file through the confined filesystem; a
@@ -628,6 +619,7 @@ fn file_fingerprint(fs: &crate::project_fs::Fs, path: &str) -> Option<String> {
 
 enum EvidenceAdmission<'a> {
     Standalone {
+        model: &'a crate::loader::NormalizedModel,
         policy: Option<&'a super::evidence::Policy>,
         read_scopes: &'a [String],
     },
@@ -654,15 +646,10 @@ fn build_document(
         })
     })?;
 
-    // Pass one: parse every entry, keying candidates by semantic id and
-    // collecting native test bindings. The entry path is the symbol's
-    // source file (the adapter walks only inside its read scopes).
-    let mut order: Vec<String> = Vec::new();
-    let mut grouped: std::collections::HashMap<
-        String,
-        Vec<(String, &wire::ScanEntry, EntryDetail)>,
-    > = std::collections::HashMap::new();
-    let mut tests: Vec<(String, String)> = Vec::new();
+    let native_inventory =
+        crate::target_protocol::version::supports_native_scan(&response.protocol_version);
+    let mut parsed = Vec::with_capacity(entries.len());
+    let mut native_symbols = Vec::new();
     for entry in entries {
         if crate::project_fs::path_violation(&entry.path).is_some() {
             return Err(invalid_set("entry-path"));
@@ -680,24 +667,96 @@ fn build_document(
             return Err(invalid_set("entry-kind"));
         }
         let detail = parse_detail(entry)?;
-        if !order.contains(&detail.semantic) {
-            order.push(detail.semantic.clone());
+        if native_inventory {
+            let evidence = entry
+                .evidence
+                .as_ref()
+                .ok_or_else(|| invalid_set("native-inventory"))?;
+            let nodes = evidence
+                .native_symbols
+                .as_ref()
+                .ok_or_else(|| invalid_set("native-inventory"))?;
+            if !crate::native_symbols::valid_entry(nodes, &detail.native, &entry.path)
+                || nodes
+                    .iter()
+                    .find(|node| node.native == detail.native)
+                    .map(|node| &node.signature)
+                    != Some(&evidence.signature)
+            {
+                return Err(invalid_set("native-inventory"));
+            }
+            native_symbols.extend(nodes.iter().cloned());
         }
+        parsed.push((entry, detail));
+    }
+    native_symbols.sort_by(|a, b| a.native.cmp(&b.native));
+    if native_inventory && !crate::native_symbols::valid(&native_symbols) {
+        return Err(invalid_set("native-inventory"));
+    }
+    let mut admitted = match &admission {
+        EvidenceAdmission::Standalone {
+            policy,
+            read_scopes,
+            ..
+        } => super::evidence::admit(
+            *policy,
+            response,
+            (project, request.target, request.profile),
+            entries,
+            &native_symbols,
+            read_scopes,
+        )
+        .map_err(invalid_set)?,
+        EvidenceAdmission::Ephemeral => None,
+        EvidenceAdmission::Conformance(read_scopes) => {
+            super::evidence::verify_envelope(response, entries, &native_symbols, read_scopes)
+                .map_err(invalid_set)?;
+            None
+        }
+    };
+    if let (
+        Some(evidence),
+        EvidenceAdmission::Standalone {
+            model,
+            policy: Some(policy),
+            ..
+        },
+    ) = (&mut admitted, &admission)
+    {
+        let roots = parsed
+            .iter()
+            .map(|(_, detail)| detail.native.as_str())
+            .collect();
+        evidence
+            .resolve_bindings(policy, model, &roots)
+            .map_err(invalid_set)?;
+    }
+
+    let mut grouped: std::collections::BTreeMap<
+        String,
+        Vec<(String, &wire::ScanEntry, EntryDetail)>,
+    > = std::collections::BTreeMap::new();
+    let mut semantics = std::collections::BTreeMap::new();
+    let mut tests = Vec::new();
+    for (entry, mut detail) in parsed {
+        let kind = if let Some((symbol, kind)) =
+            admitted.as_ref().and_then(|e| e.binding(&detail.native))
+        {
+            detail.semantic = symbol.to_owned();
+            kind.key().to_owned()
+        } else {
+            entry.kind.clone()
+        };
+        semantics
+            .entry(detail.native.clone())
+            .or_insert_with(|| detail.semantic.clone());
         if let Some(test) = &detail.test {
             tests.push((detail.semantic.clone(), test.clone()));
         }
-        grouped.entry(detail.semantic.clone()).or_default().push((
-            entry.kind.clone(),
-            entry,
-            detail,
-        ));
+        let group = grouped.entry(detail.semantic.clone()).or_default();
+        group.push((kind, entry, detail));
     }
-    order.sort();
 
-    // Pass two: one observed-scan symbol per semantic id. Fingerprints
-    // come from the real tree, so the freshness evidence is byte-truth.
-    let native_inventory =
-        crate::target_protocol::version::supports_native_scan(&response.protocol_version);
     let legacy_http =
         response.protocol_version == crate::target_protocol::version::HTTP_SCAN_VERSION;
     let http_inventory = legacy_http
@@ -724,14 +783,19 @@ fn build_document(
             return Err(invalid_set("native-uncertainty-custody"));
         }
     }
-    let mut native_symbols = Vec::new();
     let mut binding_evidence = Vec::new();
-    let mut symbols = Vec::with_capacity(order.len());
-    for semantic in &order {
-        let group = grouped
-            .get(semantic)
-            .ok_or_else(|| invalid_set("entry-detail"))?;
+    let mut symbols = Vec::with_capacity(grouped.len());
+    for (semantic, group) in &grouped {
         let kind = group[0].0.clone();
+        if group.iter().any(|(other, _, _)| other != &kind)
+            && admitted.as_ref().is_some_and(|e| {
+                group
+                    .iter()
+                    .any(|(_, _, detail)| e.binding(&detail.native).is_some())
+            })
+        {
+            return Err(invalid_set("evidence-binding-kind-conflict"));
+        }
         let mut candidates = Vec::with_capacity(group.len());
         for (_, entry, detail) in group {
             candidates.push(serde_json::json!({
@@ -786,7 +850,7 @@ fn build_document(
                     .map(|reference| {
                         serde_json::json!({
                             "target": resolve_reference_target(
-                                &reference.target, entries,
+                                &reference.target, &semantics,
                             ),
                             "role": reference.role,
                             "confidence": reference.confidence,
@@ -805,30 +869,13 @@ fn build_document(
                     .evidence
                     .as_ref()
                     .ok_or_else(|| invalid_set("native-inventory"))?;
-                let nodes = ev
-                    .native_symbols
-                    .as_ref()
-                    .ok_or_else(|| invalid_set("native-inventory"))?;
-                if !crate::native_symbols::valid_entry(
-                    nodes,
-                    &candidate_detail.native,
-                    &candidate_entry.path,
-                ) || nodes
-                    .iter()
-                    .find(|n| n.native == candidate_detail.native)
-                    .map(|n| &n.signature)
-                    != Some(&ev.signature)
-                {
-                    return Err(invalid_set("native-inventory"));
-                }
-                native_symbols.extend(nodes.iter().cloned());
                 let mut fresh = serde_json::Map::new();
                 if let Some(signature) = &ev.signature {
                     fresh.insert("signature".to_owned(), serde_json::json!(signature));
                 }
                 if !ev.references.is_empty() {
                     fresh.insert("references".to_owned(), Json::Array(ev.references.iter().map(|r| serde_json::json!({
-                        "target": resolve_reference_target(&r.target, entries), "role":r.role, "confidence":r.confidence
+                        "target": resolve_reference_target(&r.target, &semantics), "role":r.role, "confidence":r.confidence
                     })).collect()));
                 }
                 binding_evidence.push(serde_json::json!({"symbol":semantic,"native":candidate_detail.native,"evidence":fresh}));
@@ -888,30 +935,6 @@ fn build_document(
         serde_json::to_vec(&revision_payload)
     }
     .map_err(|_| invalid_set("document-shape"))?;
-    native_symbols.sort_by(|a, b| a.native.cmp(&b.native));
-    if native_inventory && !crate::native_symbols::valid(&native_symbols) {
-        return Err(invalid_set("native-inventory"));
-    }
-    let admitted = match admission {
-        EvidenceAdmission::Standalone {
-            policy,
-            read_scopes,
-        } => super::evidence::admit(
-            policy,
-            response,
-            (project, request.target, request.profile),
-            entries,
-            &native_symbols,
-            read_scopes,
-        )
-        .map_err(invalid_set)?,
-        EvidenceAdmission::Ephemeral => None,
-        EvidenceAdmission::Conformance(read_scopes) => {
-            super::evidence::verify_envelope(response, entries, &native_symbols, read_scopes)
-                .map_err(invalid_set)?;
-            None
-        }
-    };
     let revision = if let Some(ref evidence) = admitted {
         crate::runtime::digest(
             &serde_json::to_vec(&(revision_bytes, evidence.revision_digest()))
@@ -974,8 +997,7 @@ fn build_document(
             .map_err(invalid_set)?
             .unwrap_or_default();
         let mut endpoints = Vec::new();
-        for entry in entries {
-            let detail = parse_detail(entry)?;
+        for (kind, entry, detail) in grouped.values().flatten() {
             let routes = if legacy_http {
                 entry.evidence.as_ref().and_then(|e| e.http_routes.clone())
             } else {
@@ -984,7 +1006,7 @@ fn build_document(
             let Some(routes) = routes else {
                 continue;
             };
-            if entry.kind != "endpoint" || routes.len() > 64 {
+            if kind != "endpoint" || routes.len() > 64 {
                 return Err(invalid_set("http-projection-carrier"));
             }
             for route in routes {
@@ -1106,6 +1128,7 @@ mod envelope_tests {
             "taskboard",
             &request,
             EvidenceAdmission::Standalone {
+                model: &ctx.model,
                 policy: None,
                 read_scopes: &["src/**".into()],
             },

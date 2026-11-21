@@ -83,8 +83,16 @@ in the package's payload schema. The source roles include `subject` and can
 also name references carried by the fact.
 
 `lekalo validate` checks the declarations and package pins. A scan checks that
-each admitted fact supplies the selected fields and source roles. Binding
-proposals and confirmations continue to use the existing observed binding flow.
+each admitted fact supplies the selected fields and source roles. A matching
+fact contributes its native declaration as a candidate for the existing Model
+symbol. When several native declarations match the same symbol, confirmation
+requires choosing a candidate explicitly. The index derives the rule-backed
+fact key from the selected identity fields and scopes it by project, target,
+profile, family, provider and native subject. A change to the provider's opaque
+key alone preserves the fact and proposal identities.
+
+On rescan, changed rule-backed evidence keeps the previous confirmation stale
+until the user reviews and confirms a current candidate.
 Confirmation also checks the current facts for the chosen native declaration.
 An edit to a source cited by those facts invalidates confirmation even when
 the native declaration's own file is unchanged. `bindings audit` reports the
