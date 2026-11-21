@@ -1,0 +1,89 @@
+name: Package release assets v0.1.0
+on:
+  push:
+    branches: [release/package-assets-010]
+    paths: [.github/workflows/package-assets-010.yml]
+permissions:
+  contents: read
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-22.04, platform: linux-amd64, suffix: ''}
+          - {os: ubuntu-22.04-arm, platform: linux-arm64, suffix: ''}
+          - {os: macos-15-intel, platform: darwin-amd64, suffix: ''}
+          - {os: macos-15, platform: darwin-arm64, suffix: ''}
+          - {os: windows-2022, platform: windows-amd64, suffix: .exe}
+    defaults:
+      run:
+        shell: bash
+    env:
+      PLATFORM: ${{ matrix.platform }}
+      SUFFIX: ${{ matrix.suffix }}
+      CARGO_BUILD_JOBS: '2'
+      CGO_ENABLED: '0'
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24.x'
+          cache: false
+      - name: Build the pinned package executables
+        run: |
+          set -euo pipefail
+          test "$(go env GOOS)-$(go env GOARCH)" = "$PLATFORM"
+          mkdir -p source dist
+          export CARGO_TARGET_DIR="$(pwd)/package-target"
+          while read -r repository commit directory binary; do
+            checkout="source/$repository"
+            if [ ! -d "$checkout/.git" ]; then
+              git init -q "$checkout"
+              git -C "$checkout" -c core.autocrlf=false fetch -q --depth 1 "https://github.com/ichinya/$repository.git" "$commit"
+              git -C "$checkout" -c core.autocrlf=false checkout -q --detach FETCH_HEAD
+            fi
+            test "$(git -C "$checkout" rev-parse HEAD)" = "$commit"
+            asset="$binary-$PLATFORM$SUFFIX"
+            if [ "$repository" = lekalo-postgres ]; then
+              (cd "$checkout" && go test ./... && go build -trimpath -ldflags="-s -w" -o "../../dist/$asset" .)
+            else
+              cargo build --manifest-path "$checkout/$directory/Cargo.toml" --release --locked --bin "$binary"
+              cp "$CARGO_TARGET_DIR/release/$binary$SUFFIX" "dist/$asset"
+            fi
+            if [ "$binary" = lekalo-openspec ] || [ "$binary" = lekalo-hlv ]; then
+              request_id="$(printf 'sha256:%064d' 0)"
+              printf '{"protocol":"lekalo/runtime/v1","request_id":"%s","operation":"describe","input":{}}' "$request_id" |
+                "./dist/$asset" | grep -Fq "\"id\":\"$binary\""
+            fi
+            printf '%s %s %s\n' "$repository" "$commit" "$asset" >> dist/sources.txt
+          done <<'SOURCES'
+          lekalo-go 2a7d8344cba39e3975ba517cf4d3a56db0045114 crates/discovery lekalo-go-discovery
+          lekalo-go 2a7d8344cba39e3975ba517cf4d3a56db0045114 crates/expressions lekalo-expressions-go
+          lekalo-hlv 83aa6ca07183eab17d3bf3372c5270cd4d126d00 . lekalo-hlv
+          lekalo-openspec bcb111dc75af46544b8de05a3d16aa46391c6332 . lekalo-openspec
+          lekalo-php adfd15c523f640fd2060d5961becfae1b0c50fbe crates/discovery lekalo-php-discovery
+          lekalo-php adfd15c523f640fd2060d5961becfae1b0c50fbe crates/expressions lekalo-expressions-php
+          lekalo-php-laravel 72287100bd69fc7af4c5f24a14aed4cb564edeb0 crates/attachments lekalo-laravel-attachments
+          lekalo-python afff15d1d8af8c09d5b7c75f31ea209932c90ba6 . lekalo-target-python
+          lekalo-python afff15d1d8af8c09d5b7c75f31ea209932c90ba6 crates/discovery lekalo-python-discovery
+          lekalo-rust 6e458ef68d1253af0a8b1bf8f3c62f84b68f4efc crates/discovery lekalo-rust-discovery
+          lekalo-typescript 0c525ed76f55235bb68d5bdac8c3d6cb9af34778 crates/discovery lekalo-typescript-discovery
+          lekalo-typescript 0c525ed76f55235bb68d5bdac8c3d6cb9af34778 crates/expressions lekalo-expressions-node
+          lekalo-postgres b39f23016d5f4d365d0dc409d9178cddf38d24b3 . lekalo-postgres
+          SOURCES
+          if command -v sha256sum >/dev/null; then
+            (cd dist && sha256sum -- * > SHA256SUMS.txt)
+          else
+            (cd dist && shasum -a 256 -- * > SHA256SUMS.txt)
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package-assets-${{ matrix.platform }}-${{ github.run_attempt }}
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
