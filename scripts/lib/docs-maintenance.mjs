@@ -90,6 +90,7 @@ families["external-runtime"]="external-runtimes";
 families["external-services"]="external-services";
 families["discovery-scope"]="adopt";
 families["workspace"]="external-runtimes";
+families["workspace-doctor"]="doctor";
 families["compiler-runtime"]="typescript-native-runtime";
 families["discovery-scope-receipt"]="adopt";
 for (const family of ["native-execution-policy", "native-tool-catalog", "native-execution-plan", "native-command-output"]) families[family]="native-gates";

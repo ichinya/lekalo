@@ -1,7 +1,7 @@
 // Exercise parent imports and module exports through a standalone protocol fixture.
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
-import {cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
+import {cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import test from 'node:test';
@@ -18,8 +18,8 @@ function fixture(t) {
   const env = {...process.env, LEKALO_PACKAGE_HOME: join(tmp, 'cache')};
   delete env.LEKALO_PROJECT;
   delete env.LEKALO_SERVICES;
-  function run(cwd, args, expected = 0) {
-    const result = spawnSync(cli, ['--json', ...args], {cwd, env, encoding: 'utf8', timeout: 120000});
+  function run(cwd, args, expected = 0, overrides = {}) {
+    const result = spawnSync(cli, ['--json', ...args], {cwd, env: {...env, ...overrides}, encoding: 'utf8', timeout: 120000});
     assert.equal(result.status, expected, String(result.error ?? '') + result.stderr + result.stdout);
     return JSON.parse(result.stdout || result.stderr);
   }
@@ -83,6 +83,31 @@ test('parent validation identifies the consumer of a changed runtime contract', 
   assert.deepEqual(run(parent, validate).dependencies, [
     {consumer: 'web', import: 'routes', producer: 'api', export: 'routes', digest: bundle.digest},
   ]);
+
+  const doctor = ['doctor', '--workspace'];
+  const lockPath = join(api, 'lekalo.runtime.lock');
+  const before = readFileSync(lockPath);
+  const report = run(parent, doctor);
+  assert.equal(report.identity, 'dev.lekalo.workspace-doctor@1.3.1');
+  assert.equal(report.verdict, 'incomplete');
+  assert.deepEqual(Object.keys(report.children), ['api', 'web']);
+  assert.equal(report.children.api.path, 'api');
+  const inventory = report.children.api.runtime;
+  assert.equal(inventory.state, 'pinned');
+  assert.equal(inventory.sourceCheck, 'not-run');
+  assert.equal(inventory.components.app.runtime.id, 'independent-zen');
+  assert.equal(inventory.components.app.rules[0].digest, pins[0]);
+  assert.deepEqual(report.contracts, [
+    {consumer: 'web', import: 'routes', producer: 'api', export: 'routes',
+      digest: bundle.digest, state: 'not-checked', detail: 'runtime-export'},
+  ]);
+  assert.ok(!JSON.stringify(report).includes(tmp), 'report omits cache and executable paths');
+  const missingCache = join(tmp, 'missing-cache');
+  const missing = run(parent, doctor, 0, {LEKALO_PACKAGE_HOME: missingCache});
+  assert.equal(missing.verdict, 'blocked');
+  assert.deepEqual(missing.children.api.runtime, {state: 'blocked', reason: 'package-home-unavailable'});
+  assert.ok(!existsSync(missingCache), 'doctor does not create a cache');
+  assert.deepEqual(readFileSync(lockPath), before);
 
   apiRoutes('/orders', '/health');
   run(parent, validate);
@@ -155,6 +180,10 @@ test('a parent classifies module API changes against the web project’s accepte
   accept();
   const check = ['workspace', 'check', '--project', 'workspace'];
   run(tmp, check);
+  const doctor = ['doctor', '--workspace', '--project', 'workspace'];
+  const initial = run(tmp, doctor);
+  assert.equal(initial.children.api.model.state, 'valid');
+  assert.equal(initial.contracts[0].state, 'current');
 
   const specPath = join(api, 'module-api.json');
   const spec = JSON.parse(readFileSync(specPath));
@@ -173,6 +202,10 @@ test('a parent classifies module API changes against the web project’s accepte
   tasks.exports.push({export:'tasks.reference',kind:'scalar',since:'1.3.0',aliasOf:null});
   write(specPath, spec);
   assert.match(JSON.stringify(run(tmp, check, 1)), /workspace-contract-changed\/web\/tasks\/api\/compatible/);
+  const changed = run(tmp, doctor);
+  assert.equal(changed.verdict, 'blocked');
+  assert.equal(changed.contracts[0].state, 'changed');
+  assert.equal(changed.contracts[0].detail, 'compatible');
   const additive = accept();
   run(tmp, check);
 
@@ -183,6 +216,7 @@ test('a parent classifies module API changes against the web project’s accepte
   run(web, ['validate', '--strict']);
   renameSync(join(tmp, 'separate-api-checkout'), api);
   assert.match(JSON.stringify(run(tmp, check, 1)), /workspace-contract-changed\/web\/tasks\/api\/breaking/);
+  assert.equal(run(tmp, doctor).contracts[0].detail, 'breaking');
   assert.deepEqual(JSON.parse(readFileSync(bundlePath)), additive);
 });
 
@@ -205,5 +239,8 @@ test('strict parent validation reports a child schema lock mismatch', t => {
   write(schema, false);
   const failure = run(parent, ['validate', '--strict'], 1);
   assert.match(JSON.stringify(failure), /workspace-child-invalid\/api\/lock\.digest-mismatch/);
+  const doctor = run(parent, ['doctor', '--workspace']);
+  assert.equal(doctor.verdict, 'blocked');
+  assert.deepEqual(doctor.children.api.schemaPins.diagnostics, ['lock.digest-mismatch']);
   assert.deepEqual(readFileSync(lockPath), acceptedLock);
 });
