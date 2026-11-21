@@ -12,7 +12,9 @@ use crate::target_protocol::{scopes, version, wire, LaunchPin};
 
 use super::binding_rule::Rule;
 use super::index::read_fingerprint;
-use super::types::{BindingState, ObservedIndex, ScanSymbol, SymbolKind, SymbolRecord};
+use super::types::{
+    BindingEvidence, BindingState, ObservedIndex, ScanSymbol, SymbolKind, SymbolRecord,
+};
 
 const CONFIG: &str = "lekalo.evidence.json";
 pub(super) const RULE_KEY_PREFIX: &str = "binding:sha256:";
@@ -282,6 +284,7 @@ impl Admitted {
         previous: &ObservedIndex,
         old: &SymbolRecord,
         current: &ScanSymbol,
+        bindings: &[BindingEvidence],
     ) -> Option<bool> {
         let native = old.stable_key.as_deref();
         let prior = native
@@ -304,6 +307,12 @@ impl Admitted {
                         })
                         && candidate.fingerprint == old.fingerprint
                 })
+                && bindings
+                    .binary_search_by(|candidate| {
+                        (candidate.symbol.as_str(), candidate.native.as_str())
+                            .cmp(&(old.id.as_str(), id))
+                    })
+                    .is_ok_and(|position| bindings[position].evidence == old.evidence)
                 && prior
                     .as_ref()
                     .is_some_and(|prior| *prior == rule_facts(&self.groups, id))
@@ -356,6 +365,22 @@ impl Admitted {
     }
 }
 
+fn is_current_rule_fact(record: &Record) -> bool {
+    record.state == State::Current && record.fact.key.starts_with(RULE_KEY_PREFIX)
+}
+
+pub(super) fn rule_subjects(index: &ObservedIndex) -> BTreeSet<&str> {
+    index
+        .evidence_groups
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .flat_map(|group| &group.facts)
+        .filter(|record| is_current_rule_fact(record))
+        .map(|record| record.fact.subject.as_str())
+        .collect()
+}
+
 fn rule_facts<'a>(groups: &'a [GroupRecord], native: &str) -> Vec<(&'a str, &'a Record)> {
     groups
         .iter()
@@ -363,11 +388,7 @@ fn rule_facts<'a>(groups: &'a [GroupRecord], native: &str) -> Vec<(&'a str, &'a 
             group
                 .facts
                 .iter()
-                .filter(|record| {
-                    record.state == State::Current
-                        && record.fact.subject == native
-                        && record.fact.key.starts_with(RULE_KEY_PREFIX)
-                })
+                .filter(|record| record.fact.subject == native && is_current_rule_fact(record))
                 .map(|record| (group.family.as_str(), record))
         })
         .collect()

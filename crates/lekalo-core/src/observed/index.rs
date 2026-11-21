@@ -427,7 +427,9 @@ fn merge_index(
         if let (Some(evidence), Some(previous), Some(old)) = (&evidence, &previous, previous_record)
         {
             if old.status != BindingStatus::Inferred || old.promoted {
-                if let Some(unchanged) = evidence.owned_binding_current(previous, old, symbol) {
+                if let Some(unchanged) =
+                    evidence.owned_binding_current(previous, old, symbol, &scan.binding_evidence)
+                {
                     let mut retained = old.clone();
                     if old.status == BindingStatus::Confirmed && !old.promoted && !unchanged {
                         retained.state = BindingState::Stale;

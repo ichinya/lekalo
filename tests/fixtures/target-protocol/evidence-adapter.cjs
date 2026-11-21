@@ -33,9 +33,14 @@ if (request.operation === "describe") {
   ].map(([path, symbol, kind, family, native]) => {
     const source_digest = digest(fs.readFileSync(path));
     return {
-      path, kind, detail: JSON.stringify({ s: "taskboard." + symbol, n: native, l: 1 }),
+      path, kind, detail: JSON.stringify({
+        s: "taskboard." + symbol, n: native, l: 1, q: native === "root" ? "high" : "exact",
+      }),
       evidence: {
         source_digest, signature: source_digest,
+        references: native === "root" ? [
+          { target: "dependency", role: "reference", confidence: "high" },
+        ] : [],
         native_symbols: [{
           native, qualified_name: native, family, path, line: 1, end_line: 1,
           slot: "static", declaration_only: true, signature: source_digest,

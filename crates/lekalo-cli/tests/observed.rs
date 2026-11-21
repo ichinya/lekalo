@@ -950,6 +950,9 @@ fn generic_scan_uses_pinned_provider_schemas_through_the_public_cli() {
             "schema_version":"0.2.16", "definitions":[{
                 "id":"taskboard.title", "kind":"scalar", "version":1,
                 "description":"A stable reference for a title", "base":"uuid"
+            }, {
+                "id":"taskboard.label", "kind":"scalar", "version":1,
+                "description":"A stable reference for a label", "base":"uuid"
             }]
         }))
         .unwrap(),
@@ -977,7 +980,19 @@ fn generic_scan_uses_pinned_provider_schemas_through_the_public_cli() {
     assert_eq!(proposed.len(), 1);
     assert_eq!(proposed[0]["symbol"], "taskboard.title");
     assert_eq!(proposed[0]["ambiguous"], true);
-    assert_eq!(proposed[0]["candidates"].as_array().unwrap().len(), 2);
+    let candidates = proposed[0]["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(candidates[0]["confidence"], "exact");
+    assert_eq!(candidates[1]["confidence"], "high");
+    let batch = sandbox.json(&[
+        "bindings",
+        "confirm",
+        "--batch",
+        "--preview",
+        "--project",
+        "proj",
+    ]);
+    assert_eq!(batch["entries"], json!([]));
     let proposal_id = proposed[0]["proposal"].as_str().unwrap();
     projected_group["facts"][0]["key"] = json!("producer-uses-a-different-key");
     assert_eq!(
@@ -1021,31 +1036,77 @@ fn generic_scan_uses_pinned_provider_schemas_through_the_public_cli() {
     assert_eq!(unchanged["symbols"][0]["state"], "current");
     assert_eq!(unchanged["symbols"][0]["status"], "confirmed");
 
+    let title = |index: &Value| {
+        index["symbols"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|symbol| symbol["id"] == "taskboard.title")
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        title(&unchanged)["evidence"]["references"][0]["target"],
+        "taskboard.title"
+    );
+    // Only the semantic destination of the reference changes. The root
+    // declaration and its rule fact both stay byte-for-byte the same.
+    projected_group["facts"][1]["payload"]["id"] = json!("taskboard.label");
+    let remapped: Value =
+        serde_json::from_slice(&accepted("1.4.0", &json!([projected_group]))).unwrap();
+    assert_eq!(title(&remapped)["state"], "stale");
+    assert_eq!(title(&remapped)["evidence"], title(&unchanged)["evidence"]);
+    let proposals = sandbox.json(&["bindings", "propose", "--project", "proj"]);
+    let title_proposal = |proposals: &Value| {
+        proposals["proposals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|proposal| proposal["symbol"] == "taskboard.title")
+            .unwrap()["proposal"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    sandbox.json(&[
+        "bindings",
+        "confirm",
+        &title_proposal(&proposals),
+        "--project",
+        "proj",
+    ]);
+    let reconfirmed: Value = serde_json::from_slice(&std::fs::read(&index_path).unwrap()).unwrap();
+    assert_eq!(title(&reconfirmed)["state"], "current");
+    assert_eq!(
+        title(&reconfirmed)["evidence"]["references"][0]["target"],
+        "taskboard.label"
+    );
+
     std::fs::write(&dependency, "// dependency changed after confirmation\n").unwrap();
     for fact in projected_group["facts"].as_array_mut().unwrap() {
         fact["sources"] = json!([source("src/tasks.ts"), source("src/ids.ts")]);
     }
     let refreshed: Value =
         serde_json::from_slice(&accepted("1.4.0", &json!([projected_group]))).unwrap();
-    assert_eq!(refreshed["symbols"][0]["state"], "stale");
-    assert_eq!(refreshed["symbols"][0]["stable_key"], "root");
+    assert_eq!(title(&refreshed)["state"], "stale");
+    assert_eq!(title(&refreshed)["stable_key"], "root");
     assert_eq!(
-        refreshed["symbols"][0]["provenance"],
-        unchanged["symbols"][0]["provenance"]
+        title(&refreshed)["provenance"],
+        title(&reconfirmed)["provenance"]
     );
     assert_eq!(
         refreshed["evidence_groups"][1]["facts"][0]["id"],
-        unchanged["evidence_groups"][1]["facts"][0]["id"]
+        reconfirmed["evidence_groups"][1]["facts"][0]["id"]
     );
     let audit = sandbox.run(&["--json", "bindings", "audit", "--project", "proj"]);
     assert_scan_refusal(&audit, "state-stale");
     let proposals = sandbox.json(&["bindings", "propose", "--project", "proj"]);
-    let current_id = proposals["proposals"][0]["proposal"].as_str().unwrap();
+    let current_id = title_proposal(&proposals);
     assert_ne!(current_id, proposal_id);
     sandbox.json(&[
         "bindings",
         "confirm",
-        current_id,
+        &current_id,
         "--candidate",
         "root",
         "--project",

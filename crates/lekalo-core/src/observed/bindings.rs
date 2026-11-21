@@ -7,7 +7,7 @@
 //!
 //! - [`propose`] derives one deterministic proposal per inferred binding
 //!   with the full ranked candidate set. An ambiguous adapter mapping
-//!   (two or more equally confident candidates) is never resolved by
+//!   (equal top confidence or competing rule-backed candidates) is never resolved by
 //!   picking the first match: the proposal lists every candidate and
 //!   refuses confirmation until the user names exactly one.
 //! - [`confirm`] and [`confirm_batch`] turn inferred bindings into
@@ -25,6 +25,7 @@
 //!   adapter/version/fingerprint, and freshness state.
 
 use serde::Serialize;
+use std::collections::BTreeSet;
 
 use crate::diagnostics::DiagnosticSet;
 use crate::project_fs::Fs;
@@ -89,8 +90,7 @@ pub struct Proposal {
     pub source: &'static str,
     /// The confidence of the top-ranked candidate.
     pub confidence: String,
-    /// Whether the top two candidates tie: confirmation then requires
-    /// naming exactly one candidate, and nothing is picked silently.
+    /// Whether confirmation requires naming a candidate.
     pub ambiguous: bool,
     /// The full ranked candidate set (best first, name-ascending inside
     /// one confidence tier).
@@ -251,7 +251,11 @@ fn proposal_id(index: &ObservedIndex, symbol: &str, candidates: &[CandidateRecor
 /// Project one proposal from one inferred record; `None` for records
 /// with no native identity at all (a placeholder no confirmation could
 /// resolve).
-fn proposal_of(index: &ObservedIndex, record: &SymbolRecord) -> Option<Proposal> {
+fn proposal_of(
+    index: &ObservedIndex,
+    record: &SymbolRecord,
+    rule_subjects: &BTreeSet<&str>,
+) -> Option<Proposal> {
     let candidates = ranked_candidates(record);
     let first = candidates.first()?;
     let id = proposal_id(index, &record.id, &candidates);
@@ -268,7 +272,11 @@ fn proposal_of(index: &ObservedIndex, record: &SymbolRecord) -> Option<Proposal>
             "inferred"
         },
         confidence: first.confidence.key().to_owned(),
-        ambiguous: ambiguous(&candidates),
+        ambiguous: ambiguous(&candidates)
+            || (candidates.len() > 1
+                && candidates
+                    .iter()
+                    .any(|candidate| rule_subjects.contains(candidate.native.as_str()))),
         candidates: candidates
             .iter()
             .map(|candidate| ProposalCandidate {
@@ -285,6 +293,7 @@ fn proposal_of(index: &ObservedIndex, record: &SymbolRecord) -> Option<Proposal>
 /// Derive every current proposal from the recorded index. Pure: the same
 /// index always produces the same proposals with the same identifiers.
 pub(crate) fn proposals_of(index: &ObservedIndex) -> Vec<Proposal> {
+    let rule_subjects = super::evidence::rule_subjects(index);
     let mut proposals: Vec<Proposal> = Vec::new();
     for record in &index.symbols {
         let native = version::native_index(&index.schema_version);
@@ -306,7 +315,7 @@ pub(crate) fn proposals_of(index: &ObservedIndex) -> Vec<Proposal> {
         {
             continue;
         }
-        if let Some(proposal) = proposal_of(index, record) {
+        if let Some(proposal) = proposal_of(index, record, &rule_subjects) {
             proposals.push(proposal);
         }
     }
