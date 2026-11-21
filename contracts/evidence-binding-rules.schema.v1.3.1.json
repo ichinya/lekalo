@@ -22,15 +22,14 @@
       }
     },
     "source_roles": {
-      "allOf": [
-        {"$ref": "#/$defs/selectors"},
-        {"contains": {"const": "subject"}}
-      ]
+      "type": "array",
+      "$ref": "#/$defs/selectors",
+      "contains": {"const": "subject"}
     }
   },
   "if": {"properties": {"kind": {"not": {"const": "endpoint"}}}},
   "then": {
-    "properties": {"match": {"required": ["id"], "maxProperties": 1}}
+    "properties": {"match": {"type": "object", "properties": {"id": true}, "required": ["id"], "maxProperties": 1}}
   },
   "$defs": {
     "token": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$"},
