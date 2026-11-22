@@ -18,6 +18,7 @@ node_modules/
 /.tmp-ajv/
 /.tmp-research/
 /.lekalo/
+/lekalo.runtime.lock
 
 # Generated pilot-fixture runtime residue: no CLI-produced cache or
 # state under the public fixture ever gets committed.

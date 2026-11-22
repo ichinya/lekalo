@@ -20,24 +20,32 @@ const refused = (r,detail) => {assert.notEqual(r.status,0);assert.equal(JSON.par
 // Both implement the same portable evidence contract; no shared scanner is used.
 function runtime(id,reader) {
   return `import{readFileSync}from'node:fs';
+import{createHash}from'node:crypto';
 const request=JSON.parse(readFileSync(0,'utf8'));
 const description={id:${JSON.stringify(id)},version:'1.0.0',rules_api:['lekalo/contract-rules/v1'],capabilities:['http.routes/v1'],operations:['check']};
 let result=description;
 if(request.operation==='check'){
+  for (const file of request.input.files) {
+    const hash = createHash('sha256').update(file.content).digest('hex');
+    if (file.digest !== 'sha256:' + hash) throw Error('source digest');
+  }
   const routes=${reader};
   const facts={};
   for(const pack of request.input.rules){facts[pack.id]={};for(const check of pack.rules.checks)facts[pack.id][check.id]={routes};}
   result={state:'complete',facts};
 }
+const envelope={protocol:request.protocol,request_id:request.request_id,result};
 if(request.operation==='check'){
-  const text=request.input.files.map(f=>f.content).join(' ');
+  const text=request.input.files.map(file=>file.content).join(' ');
   if(text.includes('MODE_PARTIAL'))result.state='partial';
   if(text.includes('MODE_MISSING'))result.facts={};
-  if(text.includes('MODE_WRONG_ID'))request.request_id='wrong';
-  if(text.includes('MODE_WRONG_VERSION'))request.protocol='lekalo/runtime/v99';
+  if(text.includes('MODE_WRONG_ID'))envelope.request_id='wrong';
+  if(text.includes('MODE_WRONG_VERSION'))envelope.protocol='lekalo/runtime/v99';
+  if(text.includes('MODE_EXTRA_ENVELOPE'))envelope.extra=true;
+  if(text.includes('MODE_EXTRA_RESULT'))result.extra=true;
   if(text.includes('MODE_YAML')){process.stdout.write('protocol: invalid');process.exit(0);}
 }
-process.stdout.write(JSON.stringify({protocol:request.protocol,request_id:request.request_id,result}));`;
+process.stdout.write(JSON.stringify(envelope));`;
 }
 
 test('unknown runtimes share portable rules, pins, confined inputs and offline Git packages',()=>{
@@ -94,7 +102,15 @@ for(const attempt of [()=>readHost(${JSON.stringify(secret)}),()=>writeHost(${JS
     assert.equal(JSON.parse(mismatch.stderr).diagnostics[0].data.rule,'route-contract');
     writeFileSync(join(project,'app','server.zen'),'route GET /health\n');
 
-    for (const [mode,detail] of [['PARTIAL','runtime-incomplete'],['MISSING','rules-result-missing'],['WRONG_ID','runtime-response-mismatch'],['WRONG_VERSION','runtime-response-mismatch'],['YAML','runtime-response-invalid']]) {
+    for (const [mode, detail] of [
+      ['PARTIAL', 'runtime-incomplete'],
+      ['MISSING', 'rules-result-missing'],
+      ['WRONG_ID', 'runtime-response-mismatch'],
+      ['WRONG_VERSION', 'runtime-response-mismatch'],
+      ['EXTRA_ENVELOPE', 'runtime-response-invalid'],
+      ['EXTRA_RESULT', 'runtime-result-invalid'],
+      ['YAML', 'runtime-response-invalid'],
+    ]) {
       writeFileSync(join(project,'app','server.zen'),`route GET /health\nMODE_${mode}\n`);
       refused(run(project,['runtime','check','--component','zen'],cache),detail);
     }

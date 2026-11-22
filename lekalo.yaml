@@ -1,0 +1,9 @@
+schema: lekalo/runtime-config/v1
+components:
+  runtime-protocol:
+    path: crates/lekalo-core/src/runtime
+    runtime:
+      command:
+        - lekalo-rust-check
+    rules:
+      - path:lekalo/rules/runtime-protocol

@@ -1,0 +1,45 @@
+{
+  "schema": "lekalo/contract-rules/v1",
+  "requires": ["source.matches/v1"],
+  "bindings": {
+    "lekalo-rust.queries/v1": {
+      "strict-runtime-response": "(\n  (attribute_item\n    (attribute (identifier) @_serde arguments: (token_tree (identifier) @_field)))\n  .\n  (attribute_item)*\n  .\n  (struct_item name: (type_identifier) @boundary)\n  (#eq? @_serde \"serde\")\n  (#eq? @_field \"deny_unknown_fields\")\n  (#match? @boundary \"^(Response|ResultRecord)$\")\n)"
+    }
+  },
+  "checks": [
+    {
+      "id": "strict-runtime-response",
+      "schema": {
+        "type": "object",
+        "required": ["matches"],
+        "properties": {
+          "matches": {
+            "type": "array",
+            "allOf": [
+              { "contains": { "$ref": "#/$defs/response" } },
+              { "contains": { "$ref": "#/$defs/result" } }
+            ]
+          }
+        },
+        "$defs": {
+          "boundary": {
+            "type": "object",
+            "required": ["path", "kind", "name"],
+            "properties": {
+              "path": { "const": "mod.rs" },
+              "kind": { "const": "boundary" }
+            }
+          },
+          "response": {
+            "$ref": "#/$defs/boundary",
+            "properties": { "name": { "const": "Response" } }
+          },
+          "result": {
+            "$ref": "#/$defs/boundary",
+            "properties": { "name": { "const": "ResultRecord" } }
+          }
+        }
+      }
+    }
+  ]
+}

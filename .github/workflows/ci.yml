@@ -333,6 +333,16 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: /usr/bin/bwrap --unshare-all --ro-bind / / --dev /dev --proc /proc /bin/true
+      - uses: dtolnay/rust-toolchain@1.89.0
+      - name: Check Lekalo with the native Rust rules runtime
+        env:
+          CARGO_BUILD_JOBS: "1"
+          CARGO_TARGET_DIR: ${{ runner.temp }}/lekalo-rust-check-target
+        run: |
+          set -euo pipefail
+          cargo install --locked --debug --git https://github.com/ichinya/lekalo-rust.git \
+            --rev fa2fa022c4ce44d07fab3cbb8e869734af4d9b5f --root "$RUNNER_TEMP/lekalo-rust-check" lekalo-rust-check
+          PATH="$RUNNER_TEMP/lekalo-rust-check/bin:$PATH" bash scripts/test-self-runtime.sh
       - name: Check portable runtime rules, workspace imports and selected services
         run: |
           set -euo pipefail
