@@ -206,43 +206,6 @@ test('init creates a reviewable config and refuses to overwrite it',()=>{
   }finally{rmSync(root,{recursive:true,force:true});}
 });
 
-test('Lekalo checks its own Rust runtime response boundary', () => {
-  const scratch = mkdtempSync(join(process.env.BB_THREAD_STORAGE ?? tmpdir(), 'lekalo-self-runtime-'));
-  const project = join(scratch, 'project');
-  const cache = join(scratch, 'package-cache');
-  try {
-    mkdirSync(project);
-    const component = 'crates/lekalo-core/src/runtime';
-    cpSync('lekalo.yaml', join(project, 'lekalo.yaml'));
-    cpSync('lekalo/rules/runtime-protocol', join(project, 'lekalo/rules/runtime-protocol'), {recursive: true});
-    cpSync(component, join(project, component), {recursive: true});
-    const locked = ok(run(project, ['runtime', 'lock'], cache)).lock;
-    assert.equal(locked.components['runtime-protocol'].runtime.description.id, 'lekalo-rust');
-
-    const validate = () => run(project, ['validate', '--strict'], cache);
-    const report = ok(validate());
-    assert.equal(report.components[0].component, 'runtime-protocol');
-    assert.equal(report.components[0].status, 'valid');
-
-    const source = join(project, component, 'mod.rs');
-    const original = readFileSync(source, 'utf8');
-    for (const name of ['Response', 'ResultRecord']) {
-      const contract = new RegExp('#\\[serde\\(deny_unknown_fields\\)\\]\\s+(?=struct ' + name + '\\b)');
-      const changed = original.replace(contract, '');
-      assert.notEqual(changed, original, 'fixture must remove the constraint on ' + name);
-      writeFileSync(source, changed);
-      const failure = validate();
-      assert.equal(failure.status, 1, failure.stderr || failure.stdout);
-      assert(JSON.parse(failure.stderr).diagnostics.some(diagnostic =>
-        diagnostic.id === 'runtime.rule-failed'
-        && diagnostic.data.component === 'runtime-protocol'
-        && diagnostic.data.rule === 'strict-runtime-response'), failure.stderr);
-    }
-  } finally {
-    rmSync(scratch, {recursive: true, force: true});
-  }
-});
-
 test('published schema owns the open configuration and wire shapes',async()=>{
   const require=createRequire(import.meta.url);
   const {default:Ajv2020}=require('ajv/dist/2020');

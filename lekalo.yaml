@@ -2,6 +2,8 @@ schema: lekalo/runtime-config/v1
 components:
   runtime-protocol:
     path: crates/lekalo-core/src/runtime
-    runtime: gh/ichinya/lekalo-rust#6e458ef68d1253af0a8b1bf8f3c62f84b68f4efc
+    runtime:
+      command:
+        - lekalo-rust-check
     rules:
       - path:lekalo/rules/runtime-protocol
