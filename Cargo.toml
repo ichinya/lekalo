@@ -23,7 +23,7 @@ saphyr-parser = "0.3"
 sha2 = "0.11"
 unicode-normalization = "0.1"
 tempfile = "3"
-notify = "8"
+notify = "9"
 ignore = "0.4"
 
 [workspace.dependencies.rustix]
